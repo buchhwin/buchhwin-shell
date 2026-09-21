@@ -148,59 +148,100 @@ hl.animation({ leaf = "borderangle", enabled = false, speed = 1, bezier = "buchh
 -- Lua binds show up as `__lua` in `hyprctl binds`; the descriptions are the
 -- titles Settings > Shortcuts shows (services/shortcuts/ShortcutLogic.js).
 local function exec(command) return hl.dsp.exec_cmd(command) end
+-- Where a shortcut sits, as opposed to what it does.
+--
+-- What each binding *does* stays in this file and nowhere else. A user who
+-- moves one writes only the new combination into
+-- `~/.config/buchhwin-shell/shortcut-keys.txt`, one `default = replacement`
+-- per line, and `keyFor` looks it up. Settings > Shortcuts writes that file.
+--
+-- Why not read the binding back from the compositor and rebind it there: with
+-- a Lua configuration every bind is a closure, so `hyprctl -j binds` reports
+-- `dispatcher = "__lua"` and an internal index. The *name* of a shortcut can
+-- be read from outside; the *action* cannot. So the move has to happen where
+-- the action is, which is here.
+--
+-- Plain text rather than a Lua table, and parsed by hand: this file is the
+-- session's configuration and must not execute something another program
+-- wrote. The default combination is the key because descriptions are not
+-- unique - four bindings are called "Resize window".
+local shortcutKeys = {}
+do
+    local configHome = os.getenv("XDG_CONFIG_HOME")
+    if not configHome or configHome == "" then
+        configHome = (os.getenv("HOME") or "") .. "/.config"
+    end
+    local file = io.open(configHome .. "/buchhwin-shell/shortcut-keys.txt", "r")
+    if file then
+        for line in file:lines() do
+            if not line:match("^%s*#") then
+                local from, to = line:match("^%s*(.-)%s*=%s*(.-)%s*$")
+                if from and to and #from > 0 and #to > 0 then shortcutKeys[from] = to end
+            end
+        end
+        file:close()
+    end
+end
+
+local function keyFor(default)
+    local wanted = shortcutKeys[default]
+    if type(wanted) == "string" and #wanted > 0 then return wanted end
+    return default
+end
+
 
 -- Applications and safe shell recovery.
-hl.bind("SUPER + RETURN", exec(terminal), { description = "Terminal" })
-hl.bind("SUPER + B", exec(browser), { description = "Web browser" })
-hl.bind("SUPER + E", exec(fileManager), { description = "File manager" })
-hl.bind("SUPER + CTRL + R", exec(projectPath .. "/scripts/reload-shell.sh"), { description = "Restart buchhwin-shell" })
-hl.bind("SUPER + ALT + E", exec(ipc .. "editor toggle"), { description = "Layout editor" })
-hl.bind("SUPER + ALT + D", exec(ipc .. "desktop cycleMode"), { description = "Desktop mode: widgets, bar, notch" })
-hl.bind("SUPER + ALT + P", exec(ipc .. "profile cycle"), { description = "Profile: minimal, work, gaming, laptop, docked" })
+hl.bind(keyFor("SUPER + RETURN"), exec(terminal), { description = "Terminal" })
+hl.bind(keyFor("SUPER + B"), exec(browser), { description = "Web browser" })
+hl.bind(keyFor("SUPER + E"), exec(fileManager), { description = "File manager" })
+hl.bind(keyFor("SUPER + CTRL + R"), exec(projectPath .. "/scripts/reload-shell.sh"), { description = "Restart buchhwin-shell" })
+hl.bind(keyFor("SUPER + ALT + E"), exec(ipc .. "editor toggle"), { description = "Layout editor" })
+hl.bind(keyFor("SUPER + ALT + D"), exec(ipc .. "desktop cycleMode"), { description = "Desktop mode: widgets, bar, notch" })
+hl.bind(keyFor("SUPER + ALT + P"), exec(ipc .. "profile cycle"), { description = "Profile: minimal, work, gaming, laptop, docked" })
 -- F1, not ?: on a German layout ? is Shift+ss and unreliable as a binding.
-hl.bind("SUPER + F1", exec(ipc .. "shortcuts toggleSheet"), { description = "All keyboard shortcuts" })
-hl.bind("SUPER + D", exec(ipc .. "launcher toggle"), { description = "Launcher" })
-hl.bind("SUPER + O", exec(ipc .. "controlCenter toggle"), { description = "Control center" })
-hl.bind("SUPER + I", exec(ipc .. "settings toggle"), { description = "Settings" })
-hl.bind("SUPER + N", exec(ipc .. "notifications toggle"), { description = "Notification center" })
-hl.bind("SUPER + K", exec(ipc .. "dashboard toggle"), { description = "Dashboard" })
-hl.bind("SUPER + M", exec(ipc .. "powerMenu toggle"), { description = "Session menu" })
-hl.bind("SUPER + W", exec(ipc .. "overview toggle"), { description = "Overview" })
-hl.bind("SUPER + SHIFT + W", exec(ipc .. "wallpaperPicker toggle"), { description = "Wallpaper picker" })
-hl.bind("SUPER + SHIFT + C", exec(ipc .. "colorPicker pick"), { description = "Pick a colour off the screen" })
+hl.bind(keyFor("SUPER + F1"), exec(ipc .. "shortcuts toggleSheet"), { description = "All keyboard shortcuts" })
+hl.bind(keyFor("SUPER + D"), exec(ipc .. "launcher toggle"), { description = "Launcher" })
+hl.bind(keyFor("SUPER + O"), exec(ipc .. "controlCenter toggle"), { description = "Control center" })
+hl.bind(keyFor("SUPER + I"), exec(ipc .. "settings toggle"), { description = "Settings" })
+hl.bind(keyFor("SUPER + N"), exec(ipc .. "notifications toggle"), { description = "Notification center" })
+hl.bind(keyFor("SUPER + K"), exec(ipc .. "dashboard toggle"), { description = "Dashboard" })
+hl.bind(keyFor("SUPER + M"), exec(ipc .. "powerMenu toggle"), { description = "Session menu" })
+hl.bind(keyFor("SUPER + W"), exec(ipc .. "overview toggle"), { description = "Overview" })
+hl.bind(keyFor("SUPER + SHIFT + W"), exec(ipc .. "wallpaperPicker toggle"), { description = "Wallpaper picker" })
+hl.bind(keyFor("SUPER + SHIFT + C"), exec(ipc .. "colorPicker pick"), { description = "Pick a colour off the screen" })
 -- Alt+Tab switcher: releasing Alt focuses the selection (transparent, so apps
 -- still see the release; a confirm without an open switcher does nothing).
-hl.bind("ALT + TAB", exec(ipc .. "switcher next"), { description = "Next window" })
-hl.bind("ALT + SHIFT + TAB", exec(ipc .. "switcher previous"), { description = "Previous window" })
-hl.bind("ALT + ALT_L", exec(ipc .. "switcher confirm"), { release = true, transparent = true, description = "Switch to selected window" })
-hl.bind("SUPER + V", exec(ipc .. "clipboard toggle"), { description = "Clipboard history" })
-hl.bind("SUPER + PERIOD", exec(ipc .. "emoji toggle"), { description = "Emoji picker" })
-hl.bind("SUPER + L", exec(projectPath .. "/scripts/session-action.sh lock"), { description = "Lock screen" })
+hl.bind(keyFor("ALT + TAB"), exec(ipc .. "switcher next"), { description = "Next window" })
+hl.bind(keyFor("ALT + SHIFT + TAB"), exec(ipc .. "switcher previous"), { description = "Previous window" })
+hl.bind(keyFor("ALT + ALT_L"), exec(ipc .. "switcher confirm"), { release = true, transparent = true, description = "Switch to selected window" })
+hl.bind(keyFor("SUPER + V"), exec(ipc .. "clipboard toggle"), { description = "Clipboard history" })
+hl.bind(keyFor("SUPER + PERIOD"), exec(ipc .. "emoji toggle"), { description = "Emoji picker" })
+hl.bind(keyFor("SUPER + L"), exec(projectPath .. "/scripts/session-action.sh lock"), { description = "Lock screen" })
 
 -- Screenshots.
-hl.bind("SUPER + S", exec(projectPath .. "/scripts/screenshot.sh region"), { description = "Screenshot of a region" })
-hl.bind("SUPER + SHIFT + S", exec(projectPath .. "/scripts/screenshot.sh screen"), { description = "Screenshot of the screen" })
-hl.bind("SUPER + ALT + S", exec(projectPath .. "/scripts/screenshot.sh window"), { description = "Screenshot of a window" })
-hl.bind("Print", exec(projectPath .. "/scripts/screenshot.sh region"), { description = "Screenshot of a region" })
+hl.bind(keyFor("SUPER + S"), exec(projectPath .. "/scripts/screenshot.sh region"), { description = "Screenshot of a region" })
+hl.bind(keyFor("SUPER + SHIFT + S"), exec(projectPath .. "/scripts/screenshot.sh screen"), { description = "Screenshot of the screen" })
+hl.bind(keyFor("SUPER + ALT + S"), exec(projectPath .. "/scripts/screenshot.sh window"), { description = "Screenshot of a window" })
+hl.bind(keyFor("Print"), exec(projectPath .. "/scripts/screenshot.sh region"), { description = "Screenshot of a region" })
 -- Screen recording (pressing it again stops).
-hl.bind("SUPER + SHIFT + R", exec(ipc .. "recording toggle region"), { description = "Record a region" })
-hl.bind("SUPER + CTRL + SHIFT + R", exec(ipc .. "recording toggle screen"), { description = "Record the screen" })
+hl.bind(keyFor("SUPER + SHIFT + R"), exec(ipc .. "recording toggle region"), { description = "Record a region" })
+hl.bind(keyFor("SUPER + CTRL + SHIFT + R"), exec(ipc .. "recording toggle screen"), { description = "Record the screen" })
 
 -- Window actions.
-hl.bind("SUPER + Q", hl.dsp.window.close(), { description = "Close window" })
-hl.bind("SUPER + F", hl.dsp.window.fullscreen({ mode = "fullscreen" }), { description = "Fullscreen" })
+hl.bind(keyFor("SUPER + Q"), hl.dsp.window.close(), { description = "Close window" })
+hl.bind(keyFor("SUPER + F"), hl.dsp.window.fullscreen({ mode = "fullscreen" }), { description = "Fullscreen" })
 
 -- SUPER + arrows resize repeatedly; in tiled dwindle layouts this moves the split.
-hl.bind("SUPER + RIGHT", hl.dsp.window.resize({ x = 30, y = 0, relative = true }), { repeating = true, description = "Resize window" })
-hl.bind("SUPER + LEFT", hl.dsp.window.resize({ x = -30, y = 0, relative = true }), { repeating = true, description = "Resize window" })
-hl.bind("SUPER + DOWN", hl.dsp.window.resize({ x = 0, y = 30, relative = true }), { repeating = true, description = "Resize window" })
-hl.bind("SUPER + UP", hl.dsp.window.resize({ x = 0, y = -30, relative = true }), { repeating = true, description = "Resize window" })
+hl.bind(keyFor("SUPER + RIGHT"), hl.dsp.window.resize({ x = 30, y = 0, relative = true }), { repeating = true, description = "Resize window" })
+hl.bind(keyFor("SUPER + LEFT"), hl.dsp.window.resize({ x = -30, y = 0, relative = true }), { repeating = true, description = "Resize window" })
+hl.bind(keyFor("SUPER + DOWN"), hl.dsp.window.resize({ x = 0, y = 30, relative = true }), { repeating = true, description = "Resize window" })
+hl.bind(keyFor("SUPER + UP"), hl.dsp.window.resize({ x = 0, y = -30, relative = true }), { repeating = true, description = "Resize window" })
 
 -- Conflict-free focus navigation.
-hl.bind("SUPER + ALT + LEFT", hl.dsp.focus({ direction = "left" }), { description = "Move focus left" })
-hl.bind("SUPER + ALT + RIGHT", hl.dsp.focus({ direction = "right" }), { description = "Move focus right" })
-hl.bind("SUPER + ALT + UP", hl.dsp.focus({ direction = "up" }), { description = "Move focus up" })
-hl.bind("SUPER + ALT + DOWN", hl.dsp.focus({ direction = "down" }), { description = "Move focus down" })
+hl.bind(keyFor("SUPER + ALT + LEFT"), hl.dsp.focus({ direction = "left" }), { description = "Move focus left" })
+hl.bind(keyFor("SUPER + ALT + RIGHT"), hl.dsp.focus({ direction = "right" }), { description = "Move focus right" })
+hl.bind(keyFor("SUPER + ALT + UP"), hl.dsp.focus({ direction = "up" }), { description = "Move focus up" })
+hl.bind(keyFor("SUPER + ALT + DOWN"), hl.dsp.focus({ direction = "down" }), { description = "Move focus down" })
 
 -- Workspaces 1-9, through the shell: with workspaces per monitor, `Super+3`
 -- means "the third workspace of the monitor under the focus", and only the
@@ -215,29 +256,29 @@ for i = 1, 9 do
 end
 
 -- Pointer moving and resizing.
-hl.bind("SUPER + mouse:272", hl.dsp.window.drag(), { mouse = true, description = "Move window" })
-hl.bind("SUPER + mouse:273", hl.dsp.window.resize(), { mouse = true, description = "Resize window" })
+hl.bind(keyFor("SUPER + mouse:272"), hl.dsp.window.drag(), { mouse = true, description = "Move window" })
+hl.bind(keyFor("SUPER + mouse:273"), hl.dsp.window.resize(), { mouse = true, description = "Resize window" })
 
 -- Hardware keys talk to the system backends directly; the shell follows the
 -- resulting PipeWire, backlight and MPRIS events.
-hl.bind("XF86AudioRaiseVolume", exec("wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"), { locked = true, repeating = true, description = "Volume up" })
-hl.bind("XF86AudioLowerVolume", exec("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"), { locked = true, repeating = true, description = "Volume down" })
-hl.bind("XF86AudioMute", exec("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"), { locked = true, description = "Mute audio" })
-hl.bind("XF86AudioMicMute", exec("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"), { locked = true, description = "Mute microphone" })
-hl.bind("XF86MonBrightnessUp", exec("brightnessctl -e4 -n2 set 5%+ && " .. ipc .. "brightness refresh"), { locked = true, repeating = true, description = "Brightness up" })
-hl.bind("XF86MonBrightnessDown", exec("brightnessctl -e4 -n2 set 5%- && " .. ipc .. "brightness refresh"), { locked = true, repeating = true, description = "Brightness down" })
+hl.bind(keyFor("XF86AudioRaiseVolume"), exec("wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"), { locked = true, repeating = true, description = "Volume up" })
+hl.bind(keyFor("XF86AudioLowerVolume"), exec("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"), { locked = true, repeating = true, description = "Volume down" })
+hl.bind(keyFor("XF86AudioMute"), exec("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"), { locked = true, description = "Mute audio" })
+hl.bind(keyFor("XF86AudioMicMute"), exec("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"), { locked = true, description = "Mute microphone" })
+hl.bind(keyFor("XF86MonBrightnessUp"), exec("brightnessctl -e4 -n2 set 5%+ && " .. ipc .. "brightness refresh"), { locked = true, repeating = true, description = "Brightness up" })
+hl.bind(keyFor("XF86MonBrightnessDown"), exec("brightnessctl -e4 -n2 set 5%- && " .. ipc .. "brightness refresh"), { locked = true, repeating = true, description = "Brightness down" })
 -- The keyboard light goes through the shell rather than running brightnessctl
 -- here: the LED's name carries its driver's prefix (tpacpi on this ThinkPad,
 -- asus or dell elsewhere) and a key binding cannot know it.
-hl.bind("XF86KbdBrightnessUp", exec(ipc .. "kbdBacklight up"), { locked = true, repeating = true, description = "Keyboard light up" })
-hl.bind("XF86KbdBrightnessDown", exec(ipc .. "kbdBacklight down"), { locked = true, repeating = true, description = "Keyboard light down" })
-hl.bind("XF86KbdLightOnOff", exec(ipc .. "kbdBacklight toggle"), { locked = true, description = "Keyboard light on or off" })
-hl.bind("XF86AudioPlay", exec("playerctl play-pause"), { locked = true, description = "Play or pause" })
-hl.bind("XF86AudioPause", exec("playerctl play-pause"), { locked = true, description = "Play or pause" })
-hl.bind("XF86AudioNext", exec("playerctl next"), { locked = true, description = "Next track" })
-hl.bind("XF86AudioPrev", exec("playerctl previous"), { locked = true, description = "Previous track" })
-hl.bind("switch:on:Lid Switch", exec(ipc .. "power lidClosed"), { locked = true, description = "Lid closed" })
-hl.bind("switch:off:Lid Switch", exec(ipc .. "power lidOpened"), { locked = true, description = "Lid opened" })
+hl.bind(keyFor("XF86KbdBrightnessUp"), exec(ipc .. "kbdBacklight up"), { locked = true, repeating = true, description = "Keyboard light up" })
+hl.bind(keyFor("XF86KbdBrightnessDown"), exec(ipc .. "kbdBacklight down"), { locked = true, repeating = true, description = "Keyboard light down" })
+hl.bind(keyFor("XF86KbdLightOnOff"), exec(ipc .. "kbdBacklight toggle"), { locked = true, description = "Keyboard light on or off" })
+hl.bind(keyFor("XF86AudioPlay"), exec("playerctl play-pause"), { locked = true, description = "Play or pause" })
+hl.bind(keyFor("XF86AudioPause"), exec("playerctl play-pause"), { locked = true, description = "Play or pause" })
+hl.bind(keyFor("XF86AudioNext"), exec("playerctl next"), { locked = true, description = "Next track" })
+hl.bind(keyFor("XF86AudioPrev"), exec("playerctl previous"), { locked = true, description = "Previous track" })
+hl.bind(keyFor("switch:on:Lid Switch"), exec(ipc .. "power lidClosed"), { locked = true, description = "Lid closed" })
+hl.bind(keyFor("switch:off:Lid Switch"), exec(ipc .. "power lidOpened"), { locked = true, description = "Lid opened" })
 
 -- Rules ---------------------------------------------------------------------
 -- Quickshell surfaces use their own transparent layer windows. Blur only goes
@@ -247,11 +288,23 @@ hl.bind("switch:off:Lid Switch", exec(ipc .. "power lidOpened"), { locked = true
 -- the higher threshold; its card over that scrim stays above it.
 hl.layer_rule({ name = "buchhwin-layers", match = { namespace = "^(buchhwin-.*)$" }, blur = true, ignore_alpha = 0.35 })
 hl.layer_rule({ name = "buchhwin-session-menu", match = { namespace = "^(buchhwin-powerMenu)$" }, ignore_alpha = 0.5 })
--- Surfaces that can never show what is behind them: the wallpaper covers the
--- screen and the notch is opaque black. Blurring behind them is invisible and
--- costs a two-pass blur of their area on every frame they animate.
+-- Surfaces that can never show what is behind them, or that are mostly empty:
+-- the wallpaper covers the screen, the notch is opaque black, and the screen
+-- corners are four small shapes on a surface the size of the whole display.
+-- Blurring behind them buys nothing and costs a two-pass blur of their area on
+-- every frame.
+--
+-- **The rule above is a catch-all, so every full-screen layer this shell adds
+-- lands in it by default and has to be taken out again by hand.** That is how
+-- `buchhwin-screencorners` came to blur the entire screen on every monitor,
+-- every frame, behind four rounded corners: it was added after the other two
+-- and nobody thought of this line. The user felt it as the notch and the
+-- panels being sluggish at the dock, and turning blur off entirely was the
+-- first thing that made it better. If a new layer covers a lot of screen and
+-- shows little, put it here.
 hl.layer_rule({ name = "buchhwin-wallpaper", match = { namespace = "^(buchhwin-wallpaper)$" }, blur = false })
 hl.layer_rule({ name = "buchhwin-notch-noblur", match = { namespace = "^(buchhwin-notch)$" }, blur = false })
+hl.layer_rule({ name = "buchhwin-corners-noblur", match = { namespace = "^(buchhwin-screencorners)$" }, blur = false })
 -- Helper windows that must keep running but never show (list shared with the
 -- shell in services/hypr/HiddenWindows.js). xwaylandvideobridge (KDE autostart)
 -- otherwise opens a black, uncloseable window on workspace 1.

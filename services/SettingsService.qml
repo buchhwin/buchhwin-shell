@@ -44,7 +44,11 @@ Singleton {
             "borderSize": 1,
             "gapsIn": 6,
             "gapsOut": 12,
-            "locale": "en_GB"
+            "locale": "en_GB",
+            // "locale" follows the language above; "24" and "12" override it.
+            // The shell could only ever show 24 hours before this, whatever
+            // the locale said - the date followed it, the time did not.
+            "clockFormat": "locale"
         },
         // Own opacity per window group (PanelStyleService); -1 uses appearance.panelOpacity.
         "panelOpacity": {
@@ -322,9 +326,20 @@ Singleton {
     readonly property int gapsOut: Math.max(0, Math.min(60, value("appearance.gapsOut")))
     readonly property string localeName: value("appearance.locale")
     readonly property var locale: Qt.locale(localeName === "system" ? Qt.locale().name : localeName)
+    // Whether a time is shown as "6:52 PM" or "18:52". "locale" asks the
+    // language itself: a 12-hour format carries "A"/"AP" for the meridiem, and
+    // no 24-hour one does. Everything that draws a time reads this and passes
+    // it to `TimeFormat`.
+    readonly property bool twelveHourClock: {
+        const mode = value("appearance.clockFormat")
+        if (mode === "12") return true
+        if (mode === "24") return false
+        return /a/i.test(locale.timeFormat(Locale.ShortFormat))
+    }
 
     readonly property var allowed: ({
         "appearance.theme": ["dark", "light", "auto"],
+        "appearance.clockFormat": ["locale", "24", "12"],
         "appearance.animationMode": ["full", "reduced", "off"],
         "wallpaper.order": ["sequential", "random"],
         "wallpaper.slideshowSource": ["all", "favourites", "chosen", "folder"],

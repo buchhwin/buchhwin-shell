@@ -8,6 +8,7 @@ import "../../services/calendar/WeekLogic.js" as Week
 import "../../services/arrange/ArrangeLogic.js" as Arrange
 import "../../services/dashboard/DashboardLogic.js" as Dash
 import "../../services/arrange/FitLogic.js" as Fit
+import "../../services/appearance/TimeFormat.js" as TimeFormat
 
 // Time / weather / calendar dashboard (Super+K or click on the clock).
 // Weather comes from Open-Meteo, events from the KDE calendars (Akonadi).
@@ -368,7 +369,7 @@ ShellPanel {
                 // Raw Text, not ShellText: the clock needs tabular figures so
                 // the digits do not shift every minute.
                 Text {
-                    text: Qt.formatTime(clock.date, "HH") + " : " + Qt.formatTime(clock.date, "mm")
+                    text: TimeFormat.time(clock.date, SettingsService.twelveHourClock, " : ")
                     color: Colors.text
                     font.family: Typography.family
                     font.pixelSize: clockBody.tiny ? Typography.headlineSize

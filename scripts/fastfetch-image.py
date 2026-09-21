@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Read or set the logo image of the session's Fastfetch configuration.
 
-  fastfetch-image.py get          print {"source": "<path or empty>", "width": columns}
+  fastfetch-image.py get          print {"kind": "builtin"|"image", "source": …, "width": …}
   fastfetch-image.py set IMAGE    use IMAGE (PNG, JPEG, WebP or BMP) as logo
+  fastfetch-image.py builtin      go back to the distribution's own ASCII logo
   fastfetch-image.py size COLS    logo width in terminal columns (8-60)
 
 Only the width is written: with kitty-direct a fixed height stretches the image
@@ -107,8 +108,13 @@ def get(path):
     logo = load(path).get("logo")
     logo = logo if isinstance(logo, dict) else {}
     source = logo.get("source", "")
+    source = source if isinstance(source, str) else ""
     width = logo.get("width")
-    return {"source": source if isinstance(source, str) else "",
+    # Which of the two states the configuration is in. Without this the caller
+    # could only guess from an empty source, and "no source" and "an image that
+    # was deleted" are not the same thing to a settings page.
+    return {"kind": "image" if source else "builtin",
+            "source": source,
             "width": width if isinstance(width, int) else 0}
 
 
@@ -151,12 +157,32 @@ def set_image(path, image):
     return {"source": image}
 
 
+def set_builtin(path):
+    """Back to the logo Fastfetch picks for the distribution.
+
+    It detects Fedora on its own when nothing names a source, so the way back
+    is to take the image keys out rather than to name a logo. The padding stays:
+    it is layout, not logo, and losing it would move the whole greeting.
+    """
+    data = load(path)
+    logo = data.get("logo") if isinstance(data.get("logo"), dict) else {}
+    changed = any(key in logo for key in ("source", "type", "width"))
+    for key in ("source", "type", "width", "height", "preserveAspectRatio"):
+        logo.pop(key, None)
+    data["logo"] = logo
+    if changed:
+        write_atomic(path, data)
+    return {"kind": "builtin", "changed": changed}
+
+
 def main(argv):
     try:
         if argv[:1] == ["get"] and len(argv) == 1:
             result = get(config_path())
         elif argv[:1] == ["set"] and len(argv) == 2:
             result = set_image(config_path(), argv[1])
+        elif argv[:1] == ["builtin"] and len(argv) == 1:
+            result = set_builtin(config_path())
         elif argv[:1] == ["size"] and len(argv) == 2:
             result = set_size(config_path(), argv[1])
         else:

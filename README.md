@@ -39,16 +39,60 @@ sudo dnf install hyprland quickshell
 
 ## Installation
 
-### 1. The packages the shell talks to
+```sh
+git clone https://github.com/buchhwin/buchhwin-shell.git
+cd buchhwin-shell
+./install/bootstrap.sh            # dry run: prints every command it would run
+./install/bootstrap.sh --apply
+```
+
+Then log out and choose **buchhwin-shell** from the session list.
+
+`bootstrap.sh` is the only script here that reaches the network, so it is
+deliberately the loudest: without `--apply` it prints every command, in order,
+and changes nothing. It runs as **you**, not as root, and calls `sudo` for the
+steps that need it — the user step installs into `$HOME`, and a `$HOME` owned
+by root is a worse problem than the one this solves.
+
+It installs the packages the shell talks to, the icon font (Fedora packages no
+Nerd Font, and without one every glyph in the interface is an empty box), a
+browser and the handful of applications the session points at, and then runs
+the two installers below. Re-running it is safe: `dnf` skips what is already
+installed, repositories are only added when missing, and a default application
+is only set when that category has none.
+
+| | |
+| --- | --- |
+| `--minimal` | only what the shell itself needs — no recording, fingerprint, phone, calendar writing or applications |
+| `--skip-apps` | no browser, file manager or media applications |
+| `--skip-fonts` | leave fonts alone |
+
+Two repositories are added: **Hyprland** from a Copr (Quickshell is in Fedora's
+own), and **Brave** from Brave's RPM repository — the native build, not the
+Flatpak. Everything else comes from Fedora.
+
+The applications it sets as this session's defaults are Brave (browser),
+Dolphin (files), Kitty (terminal), VLC (video and music), Okular (PDF),
+Gwenview (images) and Ark (archives). These are **session-local**: they go to
+`buchhwin-shell-mimeapps.list`, which is only read when `XDG_CURRENT_DESKTOP`
+starts with `buchhwin-shell`, so Plasma keeps its own.
+
+### By hand, if you would rather see each step
+
+<details>
+<summary>The packages, the source and the two installers</summary>
 
 ```sh
+sudo dnf copr enable sachesi/hyprland
 sudo dnf install \
+  hyprland quickshell \
   kitty zsh starship fastfetch \
   brightnessctl wireplumber pipewire-utils playerctl NetworkManager \
   plocate jq curl grim slurp swappy wl-clipboard cliphist gammastep \
   swaylock kdialog udisks2 \
   python3-dbus python3-gobject python3-pillow \
-  xdg-desktop-portal-kde polkit-kde kf6-kwallet
+  xdg-desktop-portal-kde polkit-kde kf6-kwallet \
+  rsms-inter-fonts jetbrains-mono-fonts fontconfig unzip
 ```
 
 Optional, each for one feature:
@@ -63,16 +107,11 @@ sudo dnf install merkuro kdepim-addons \
   python3-kf6-kcoreaddons python3-kf6-kcalendarcore   # calendar, incl. writing events
 ```
 
-### 2. Get the source
+The icon font is not packaged; take the `*Propo*` faces out of
+[FiraCode.zip](https://github.com/ryanoasis/nerd-fonts/releases/latest/download/FiraCode.zip),
+put them in `~/.local/share/fonts/FiraCode` and run `fc-cache -f`.
 
-```sh
-git clone https://github.com/buchhwin/buchhwin-shell.git
-cd buchhwin-shell
-```
-
-### 3. Look before you install
-
-Neither of these changes anything:
+Then look before you install — neither of these changes anything:
 
 ```sh
 ./scripts/doctor.sh          # what this machine has and what it is missing
@@ -81,12 +120,16 @@ Neither of these changes anything:
 ./install/install.sh         # dry run: prints every file it would touch
 ```
 
-### 4. Install
+and install:
 
 ```sh
 ./install/install.sh --apply
 sudo ./install/system-install.sh
 ```
+
+</details>
+
+### What the two installers do
 
 The user step links the project to `~/.local/share/buchhwin-shell`, the session
 launcher to `~/.local/bin`, the systemd targets
@@ -102,9 +145,7 @@ launcher updates need no sudo), the display-manager entry, and the lock screen
 PAM services `buchhwin-lock` and `buchhwin-lock-password` (existing files are
 kept).
 
-### 5. Log in
-
-Log out and choose **buchhwin-shell** from the session list.
+### Logging in
 
 The session runs Hyprland with `hypr/hyprland.lua`. If that start fails within
 ten seconds it starts once more with `hypr/hyprland.conf`. To choose the format
@@ -115,7 +156,6 @@ All visual choices are session-local. KDE's wallet, dialogs and colours are
 reused: the session identifies as `buchhwin-shell:Hyprland`, routes the Secret
 portal to KWallet (Brave keeps sync and cookies), uses KDE file dialogs and
 sets `QT_QPA_PLATFORMTHEME=kde`.
-
 
 ### Optional login screen theme
 

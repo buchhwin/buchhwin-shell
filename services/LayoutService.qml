@@ -267,6 +267,26 @@ Singleton {
         return true
     }
 
+    // Which screens carry the bar. Its own function rather than a case in
+    // `setBarOption`, which validates scalars by value; this one is a list and
+    // an empty list is the meaningful default ("every screen").
+    //
+    // A caller that names every screen there is gets an empty list stored, so
+    // the answer stays "all" when the next monitor arrives instead of quietly
+    // excluding it.
+    function setBarScreens(names, allNames) {
+        if (readOnly) return false
+        const wanted = (Array.isArray(names) ? names : [])
+            .filter(name => typeof name === "string" && name.length)
+        const all = Array.isArray(allNames) ? allNames : []
+        const covers = all.length > 0 && all.every(name => wanted.indexOf(name) >= 0)
+        return changeBar(bar => {
+            const next = JSON.parse(JSON.stringify(bar))
+            next.screens = covers ? [] : wanted
+            return next
+        })
+    }
+
     function resetBar() {
         const template = templates[activeProfile]
         return changeBar(() => Logic.sanitizeBar(template && template.bar ? template.bar : null))

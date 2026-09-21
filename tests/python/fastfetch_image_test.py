@@ -44,7 +44,8 @@ with tempfile.TemporaryDirectory() as directory:
     text = base / "notes.png"
     text.write_text("not an image", encoding="utf-8")
 
-    check(module.get(config) == {"source": "/old/x.png", "width": 30}, "get reads the current logo")
+    check(module.get(config) == {"kind": "image", "source": "/old/x.png", "width": 30},
+          "get reads the current logo")
     check(module.set_image(config, str(png)) == {"source": str(png)}, "set accepts PNG")
     saved = json.loads(config.read_text(encoding="utf-8"))
     check(saved["logo"]["source"] == str(png) and saved["logo"]["width"] == 30, "logo replaced, other logo keys kept")
@@ -70,10 +71,27 @@ with tempfile.TemporaryDirectory() as directory:
         pass
     check(json.loads(config.read_text(encoding="utf-8"))["logo"]["source"] == str(png), "failed set leaves the file unchanged")
     missing = base / "new" / "fastfetch.jsonc"
-    check(module.get(missing) == {"source": "", "width": 0}, "missing config has no logo")
+    check(module.get(missing) == {"kind": "builtin", "source": "", "width": 0},
+          "missing config has no logo")
     module.set_image(missing, str(png))
     check(json.loads(missing.read_text(encoding="utf-8"))["logo"]["type"] == "kitty-direct", "set creates a config")
     check(not [name for name in missing.parent.iterdir() if name.name.startswith(".fastfetch-")], "no temporary files left")
+
+    # The way back. Before this there was none: once an image was chosen, only
+    # a text editor could undo it.
+    back = base / "back.jsonc"
+    back.write_text('{"logo": {"type": "kitty-direct", "source": "/x.png", "width": 30,'
+                    ' "padding": {"left": 1}}, "display": {"separator": "  "}}', encoding="utf-8")
+    check(module.set_builtin(back) == {"kind": "builtin", "changed": True}, "builtin reports the change")
+    saved = json.loads(back.read_text(encoding="utf-8"))
+    check("source" not in saved["logo"] and "type" not in saved["logo"], "builtin drops the image keys")
+    check(saved["logo"]["padding"] == {"left": 1}, "builtin keeps the padding, which is layout")
+    check(saved["display"]["separator"] == "  ", "builtin leaves the rest of the file alone")
+    check(module.get(back)["kind"] == "builtin", "get agrees afterwards")
+    check(module.set_builtin(back)["changed"] is False, "a second builtin changes nothing")
+    round_trip = module.set_image(back, str(png))
+    check(round_trip == {"source": str(png)}, "an image can be chosen again afterwards")
+    check(module.get(back)["kind"] == "image", "and get says so")
 
 if failures:
     for failure in failures:

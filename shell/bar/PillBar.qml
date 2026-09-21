@@ -17,7 +17,23 @@ import "../../services/bar/BarLogic.js" as BarLogic
 // differs between the two is a `vertical` test here; the arithmetic itself is
 // in BarLogic, written in the bar's own directions rather than in x and y.
 Variants {
-    model: Quickshell.screens
+    // Which screens the bar appears on. It used to be every one, with no way
+    // to say otherwise - widgets could be placed per monitor from the layout
+    // editor, the bar could not, so a portrait screen beside two landscape
+    // ones got the same strip whether it was wanted there or not.
+    //
+    // An empty list means every screen, which is what a bar always did, so
+    // nothing changes for a configuration written before this and a monitor
+    // plugged in later is included rather than left bare.
+    model: {
+        const wanted = LayoutService.bar.screens || []
+        if (!wanted.length) return Quickshell.screens
+        const shown = Quickshell.screens.filter(screen => wanted.indexOf(screen.name) >= 0)
+        // Never all of them off: a list that matches nothing on this machine
+        // (an old name, a monitor left behind) would leave no bar and no way
+        // back to one except the settings file.
+        return shown.length ? shown : Quickshell.screens
+    }
 
     PanelWindow {
         id: window

@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../services/appearance/TimeFormat.js" as TimeFormat
 
 // Next 24 hours in three-hour steps.
 ShellCard {
@@ -27,7 +28,7 @@ ShellCard {
                 spacing: Metrics.spaceXxs
                 ShellText {
                     Layout.alignment: Qt.AlignHCenter
-                    text: index === 0 ? "Now" : Qt.formatTime(modelData.time, "HH")
+                    text: index === 0 ? "Now" : TimeFormat.hourLabel(modelData.time, SettingsService.twelveHourClock)
                     role: "caption"
                 }
                 ShellIcon {

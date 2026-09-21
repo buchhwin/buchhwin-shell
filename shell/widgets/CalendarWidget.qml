@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Layouts
 import qs.theme
 import qs.services
+import "../../services/appearance/TimeFormat.js" as TimeFormat
 
 // Next of today's remaining events. small: one line; medium: up to three
 // events. Hidden when nothing else happens today.
@@ -68,9 +69,10 @@ ColumnLayout {
                 // number. `lineHeight` pulls the pair back into one time.
                 lineHeight: root.vertical && !row.running ? 0.92 : 1
                 text: row.running ? "Now"
-                    : root.vertical ? Qt.formatTime(row.modelData.start, "HH") + "\n"
-                        + Qt.formatTime(row.modelData.start, "mm")
-                    : Qt.formatTime(row.modelData.start, "HH:mm")
+                    : root.vertical
+                        ? TimeFormat.hour(row.modelData.start, SettingsService.twelveHourClock) + "\n"
+                            + TimeFormat.minute(row.modelData.start)
+                    : TimeFormat.time(row.modelData.start, SettingsService.twelveHourClock, ":")
                 color: row.running ? Colors.accentForeground : root.mutedTextColor
                 font.family: Typography.family
                 font.pixelSize: Typography.bodySize * root.scaleFactor

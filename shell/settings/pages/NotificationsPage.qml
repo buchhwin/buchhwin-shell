@@ -36,12 +36,13 @@ ColumnLayout {
         title: "Popups"
         SettingRow {
             label: "Duration"
-            hint: "When the app does not set its own duration"
+            hint: "When the app does not set its own duration. The volume, brightness and keyboard-light displays have their own, much shorter one; this is only for notifications."
             SegmentedControl {
                 focusOnTab: true
                 Layout.fillWidth: true
                 current: String(SettingsService.value("notifications.popupTimeoutMs"))
-                options: [{ value: "4000", label: "4 s" }, { value: "6000", label: "6 s" }, { value: "10000", label: "10 s" }]
+                options: [{ value: "2000", label: "2 s" }, { value: "4000", label: "4 s" },
+                          { value: "6000", label: "6 s" }, { value: "10000", label: "10 s" }]
                 onSelected: value => SettingsService.set("notifications.popupTimeoutMs", parseInt(value))
             }
         }

@@ -48,6 +48,19 @@ ColumnLayout {
         title: "Clock"
         SettingRow {
             Layout.fillWidth: true
+            label: "Time format"
+            hint: "Automatic follows the interface language. Applies to the clock, the notch, the dashboard, the lock screen and the weather."
+            SegmentedControl {
+                Layout.fillWidth: true
+                current: SettingsService.value("appearance.clockFormat")
+                options: [{ value: "locale", label: "Automatic" },
+                          { value: "24", label: "24 hours" },
+                          { value: "12", label: "12 hours" }]
+                onSelected: value => SettingsService.set("appearance.clockFormat", value)
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
             labelFills: true
             label: "Hints next to the clock"
             hint: "Only when needed: screen sharing, upcoming event, microphone in use, unread notifications or Do Not Disturb, charging, battery below 20%"

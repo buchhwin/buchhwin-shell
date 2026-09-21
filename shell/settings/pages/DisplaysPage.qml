@@ -13,6 +13,21 @@ ColumnLayout {
 
     readonly property var monitors: DisplayService.draft
     readonly property var enabledMonitors: monitors.filter(monitor => !monitor.disabled)
+
+    // One monitor's settings at a time. Three screens meant three stacked
+    // copies of resolution, refresh rate, scale and rotation, and the page was
+    // mostly a wall of the same four rows.
+    //
+    // `chosen` rather than `selected` alone: a name can point at a monitor that
+    // has just been unplugged, so the page falls back to the focused screen and
+    // then to the first rather than showing nothing.
+    property string selected: ""
+    readonly property string chosen: {
+        const names = monitors.map(monitor => monitor.name)
+        if (names.indexOf(selected) >= 0) return selected
+        const focused = monitors.find(monitor => monitor.focused)
+        return focused ? focused.name : (names.length ? names[0] : "")
+    }
     property string dragging: ""
     property var frozen: null          // layout box frozen while dragging
 
@@ -44,28 +59,50 @@ ColumnLayout {
             radius: Metrics.radiusCard
             color: Colors.surface
             clip: true
+
             readonly property var layoutBox: root.box()
             readonly property real factor: Math.min(width / Math.max(1, layoutBox.spanX), height / Math.max(1, layoutBox.spanY))
             readonly property real offsetX: (width - layoutBox.spanX * factor) / 2
             readonly property real offsetY: (height - layoutBox.spanY * factor) / 2
 
             Repeater {
-                model: root.enabledMonitors
+                // **A count, not the array.** `enabledMonitors` is a fresh JS
+                // array on every draft change, so a Repeater bound to it threw
+                // its delegates away and built new ones after every nudge -
+                // and the rectangle holding the keyboard went with them. Only
+                // the first arrow key after a click ever did anything, which
+                // nobody noticed because the test asked whether the draft
+                // turned dirty and one press is enough for that.
+                //
+                // Bound to the length, the delegates are only rebuilt when a
+                // monitor really appears or disappears; everything else is a
+                // binding that updates in place, and the focus stays put.
+                model: root.enabledMonitors.length
                 Rectangle {
                     id: monitorRect
-                    required property var modelData
                     required property int index
-                    readonly property var size: DisplayService.logicalSize(modelData)
-                    readonly property real homeX: canvas.offsetX + (modelData.x - canvas.layoutBox.minX) * canvas.factor
-                    readonly property real homeY: canvas.offsetY + (modelData.y - canvas.layoutBox.minY) * canvas.factor
+                    readonly property var modelData: root.enabledMonitors[index] || null
+                    // Guarded: when a monitor is unplugged the count drops a
+                    // frame before the delegate goes, and a binding error here
+                    // lands in the log the smoke test reads.
+                    readonly property var size: modelData ? DisplayService.logicalSize(modelData)
+                                                          : ({ width: 0, height: 0 })
+                    readonly property real homeX: modelData
+                        ? canvas.offsetX + (modelData.x - canvas.layoutBox.minX) * canvas.factor : 0
+                    readonly property real homeY: modelData
+                        ? canvas.offsetY + (modelData.y - canvas.layoutBox.minY) * canvas.factor : 0
                     x: dragArea.drag.active ? x : homeX
                     y: dragArea.drag.active ? y : homeY
                     width: size.width * canvas.factor
                     height: size.height * canvas.factor
                     radius: Metrics.radiusInner
-                    color: modelData.focused ? Colors.accentSoft : Colors.elevatedSurface
-                    border.width: dragArea.drag.active || modelData.focused ? Metrics.focusBorderWidth : Metrics.borderWidth
-                    border.color: dragArea.drag.active || modelData.focused ? Colors.accent : Colors.border
+                    // The accent belongs to the **selection** now. It used to
+                    // mark the screen Hyprland had focused, and two markings
+                    // competing for one colour means neither can be read.
+                    readonly property bool chosen: modelData !== null && modelData.name === root.chosen
+                    color: chosen ? Colors.accentSoft : Colors.elevatedSurface
+                    border.width: dragArea.drag.active || chosen ? Metrics.focusBorderWidth : Metrics.borderWidth
+                    border.color: dragArea.drag.active || chosen ? Colors.accent : Colors.border
                     z: dragArea.drag.active ? 2 : 1
 
                     // One tab stop per monitor, and the arrows move it. The
@@ -77,12 +114,17 @@ ColumnLayout {
                     // arrangement and useless for "this one is twelve pixels
                     // low", which is the whole reason the keys are here.
                     activeFocusOnTab: !DisplayService.confirming
+                    // Tab selects too, so the keyboard and the pointer mean
+                    // the same thing: whatever you land on is what the
+                    // settings below are about.
+                    onActiveFocusChanged: if (activeFocus && modelData) root.selected = modelData.name
                     Keys.onLeftPressed: event => monitorRect.nudge(-1, 0, event)
                     Keys.onRightPressed: event => monitorRect.nudge(1, 0, event)
                     Keys.onUpPressed: event => monitorRect.nudge(0, -1, event)
                     Keys.onDownPressed: event => monitorRect.nudge(0, 1, event)
 
                     function nudge(dx, dy, event) {
+                        if (!modelData) return
                         const fine = (event.modifiers & Qt.ShiftModifier) !== 0
                         DisplayService.nudge(modelData.name, dx, dy,
                                             fine ? Metrics.nudgeFineStep : Metrics.nudgeStep)
@@ -94,7 +136,7 @@ ColumnLayout {
                         anchors.centerIn: parent
                         spacing: 0
                         ShellText { Layout.alignment: Qt.AlignHCenter; text: String(monitorRect.index + 1); role: "headline" }
-                        ShellText { Layout.alignment: Qt.AlignHCenter; text: monitorRect.modelData.name; role: "caption" }
+                        ShellText { Layout.alignment: Qt.AlignHCenter; text: monitorRect.modelData ? monitorRect.modelData.name : ""; role: "caption" }
                     }
 
                     MouseArea {
@@ -107,11 +149,13 @@ ColumnLayout {
                         // Clicking a monitor hands it the keyboard, so the
                         // arrows act on the one you just pointed at.
                         onPressed: {
+                            if (!monitorRect.modelData) return
                             monitorRect.forceActiveFocus()
+                            root.selected = monitorRect.modelData.name
                             root.frozen = canvas.layoutBox
                         }
                         onReleased: {
-                            if (drag.active || root.frozen) {
+                            if (monitorRect.modelData && (drag.active || root.frozen)) {
                                 const logicalX = (monitorRect.x - canvas.offsetX) / canvas.factor + canvas.layoutBox.minX
                                 const logicalY = (monitorRect.y - canvas.offsetY) / canvas.factor + canvas.layoutBox.minY
                                 const snapped = DisplayService.snap(monitorRect.modelData.name, logicalX, logicalY,
@@ -133,6 +177,28 @@ ColumnLayout {
         }
     }
 
+    // A disabled monitor has no rectangle on the canvas - it is not in
+    // `enabledMonitors` and has no position to draw. With the canvas as the
+    // only way to choose, it could never be switched back on, so this row
+    // carries **every** monitor.
+    SettingsSection {
+        Layout.fillWidth: true
+        visible: root.monitors.length > 1
+        title: "Display"
+        description: "Settings below apply to the display you choose here"
+
+        SegmentedControl {
+            Layout.fillWidth: true
+            compact: true
+            current: root.chosen
+            options: root.monitors.map((monitor, index) => ({
+                value: monitor.name,
+                label: (index + 1) + " · " + monitor.name + (monitor.disabled ? " (off)" : "")
+            }))
+            onSelected: value => root.selected = value
+        }
+    }
+
     Repeater {
         model: root.monitors
         SettingsSection {
@@ -140,6 +206,9 @@ ColumnLayout {
             required property var modelData
             required property int index
             readonly property var monitor: modelData
+            // One at a time. An invisible item is left out of the layout, so
+            // the others cost nothing but their own bindings.
+            visible: monitor.name === root.chosen
             Layout.fillWidth: true
             title: "Display " + (index + 1) + " · " + monitor.name
             description: [monitor.make, monitor.model].filter(value => value && value.length).join(" ")

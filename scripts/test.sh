@@ -66,6 +66,7 @@ done
 
 printf '== Installers and session launcher\n'
 "$project_dir/tests/install-test.sh"
+"$project_dir/tests/bootstrap-test.sh"
 "$project_dir/tests/sddm-theme-install-test.sh"
 "$project_dir/tests/session-launcher-test.sh"
 "$project_dir/tests/deploy-test.sh"

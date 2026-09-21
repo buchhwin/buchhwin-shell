@@ -18,6 +18,12 @@ ColumnLayout {
     property string appId: ""
     property string error: ""
     property string query: ""
+    // Which built-in shortcut is being moved, by the combination it sits on by
+    // default. Empty means none - only ever one at a time, so the list stays a
+    // list and does not grow two controls on every row.
+    property string editingCombo: ""
+    property string rowError: ""
+    property var rowMods: []
 
     readonly property var groups: ShortcutService.grouped(query)
     readonly property var appOptions: DesktopEntries.applications.values
@@ -44,6 +50,25 @@ ColumnLayout {
         captured = { mods: result.mods, key: result.key }
         const used = ShortcutService.usedBy(result.mods, result.key)
         error = ShortcutService.comboError(result.mods, result.key) || (used ? "Already used by " + used : "")
+    }
+
+    // Moving a built-in. The combination it started on is the identity,
+    // because a Lua configuration hides what a binding does and four of them
+    // are called "Resize window".
+    function startMove(defaultCombo) {
+        editingCombo = defaultCombo
+        rowMods = []
+        rowError = ""
+    }
+    function captureMove(event) {
+        const result = ShortcutService.captureKey(event.key, event.modifiers, event.nativeScanCode)
+        if (result.cancel) { editingCombo = ""; return }
+        if (result.waiting) { rowMods = result.mods; return }
+        if (result.unsupported) { rowError = "This key cannot be used"; return }
+        const combo = result.mods.concat([result.key]).join(" + ").toUpperCase()
+        const problem = ShortcutService.setKey(editingCombo, combo)
+        if (problem) { rowError = problem; rowMods = []; return }
+        editingCombo = ""
     }
 
     function add() {
@@ -267,16 +292,77 @@ ColumnLayout {
                     RowLayout {
                         id: bindRow
                         required property var modelData
+                        readonly property string defaultCombo: ShortcutService.defaultCombo(modelData.modmask, modelData.key)
+                        readonly property bool movable: defaultCombo.length > 0
+                        readonly property string movedFrom: ShortcutService.movedFrom(modelData.modmask, modelData.key)
+                        // Both empty compare equal, and the rows that stand
+                        // for nine bindings at once ("Go to workspace 1-9")
+                        // have no single combination - so they all showed
+                        // themselves as the one being edited.
+                        readonly property bool editing: defaultCombo.length > 0 && root.editingCombo === defaultCombo
                         Layout.fillWidth: true
                         Layout.minimumHeight: Metrics.controlHeight
                         spacing: Metrics.spaceMd
+
+                        // The row takes the keys while it is the one being
+                        // moved; the page's own capture area belongs to the
+                        // form above and must not fight it.
+                        focus: bindRow.editing
+                        Keys.onPressed: event => {
+                            if (!bindRow.editing) return
+                            event.accepted = true
+                            root.captureMove(event)
+                        }
+                        onFocusChanged: if (focus) forceActiveFocus()
                         ShellText {
                             Layout.fillWidth: true
                             text: bindRow.modelData.title
                             font.family: bindRow.modelData.raw ? Typography.monoFamily : Typography.family
                             color: bindRow.modelData.raw ? Colors.mutedText : Colors.text
                         }
-                        KeyChips { keys: bindRow.modelData.keys }
+                        // What a moved shortcut started on, so the list says
+                        // so instead of quietly reading differently than the
+                        // documentation does.
+                        ShellText {
+                            visible: bindRow.movedFrom.length > 0 && !bindRow.editing
+                            text: "was " + bindRow.movedFrom
+                            role: "small"; muted: true
+                        }
+                        KeyChips {
+                            Layout.alignment: Qt.AlignVCenter
+                            visible: !bindRow.editing
+                            keys: bindRow.modelData.keys
+                        }
+
+                        // While one is being moved the row becomes its editor,
+                        // so nothing but a single quiet button is permanent.
+                        ShellText {
+                            visible: bindRow.editing
+                            text: root.rowError.length ? root.rowError
+                                : root.rowMods.length ? "…" : "Press a key combination · Esc cancels"
+                            role: "small"
+                            color: root.rowError.length ? Colors.danger : Colors.accentForeground
+                        }
+                        KeyChips {
+                            visible: bindRow.editing && root.rowMods.length > 0
+                            accent: true
+                            keys: root.rowMods.map(mod => mod.charAt(0) + mod.slice(1).toLowerCase())
+                        }
+                        ShellButton {
+                            visible: bindRow.editing && bindRow.movedFrom.length > 0
+                            text: "Reset"; variant: "ghost"; compact: true
+                            onClicked: { ShortcutService.resetKey(bindRow.defaultCombo); root.editingCombo = "" }
+                        }
+                        ShellButton {
+                            visible: bindRow.movable
+                            icon: bindRow.editing ? Icons.close : Icons.edit
+                            toolTip: bindRow.editing ? "Cancel" : "Move this shortcut"
+                            variant: "ghost"; compact: true; focusOnTab: true
+                            onClicked: {
+                                if (bindRow.editing) root.editingCombo = ""
+                                else root.startMove(bindRow.defaultCombo)
+                            }
+                        }
                     }
                 }
             }

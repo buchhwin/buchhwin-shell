@@ -1,6 +1,8 @@
 import QtQuick
 import QtQuick.Effects
 import qs.theme
+import qs.services
+import "../../services/appearance/TimeFormat.js" as TimeFormat
 
 // Large lock screen clock: rolling digits with a soft glow behind and a deep
 // shadow, so it stands out from any backdrop.
@@ -10,7 +12,7 @@ Item {
     implicitWidth: digits.implicitWidth
     implicitHeight: digits.implicitHeight
 
-    readonly property string text: Qt.formatTime(time, "HH:mm")
+    readonly property string text: TimeFormat.time(time, SettingsService.twelveHourClock, ":")
     readonly property font clockFont: Qt.font({
         family: Typography.family, pixelSize: Typography.lockClockSize, weight: Typography.bold,
         letterSpacing: -Typography.clockTracking * 2, features: { "tnum": 1 }

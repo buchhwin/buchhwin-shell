@@ -19,15 +19,25 @@ links=(
 config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
 fastfetch_source="$config_home/buchhwin-dwl/fastfetch.jsonc"
 fastfetch_target="$config_home/buchhwin-shell/fastfetch.jsonc"
+# What a machine without a dwl configuration gets. Shipped rather than copied,
+# so a fresh install has the greeting the session was designed around instead
+# of Fastfetch's own defaults - `zsh/buchhwin.zsh` only passes --config when
+# this file exists, so without it nothing here applies at all.
+fastfetch_default="$project_dir/config/fastfetch.jsonc"
 
 if ! $apply; then
   printf 'Dry run. The following links would be installed:\n'
   for entry in "${links[@]}"; do
     printf '  %s -> %s\n' "${entry#*:}" "${entry%%:*}"
   done
-  if [[ -r "$fastfetch_source" && ! -e "$fastfetch_target" ]]; then
-    printf 'The Fastfetch configuration would be copied once:\n  %s -> %s\n' \
-      "$fastfetch_source" "$fastfetch_target"
+  if [[ ! -e "$fastfetch_target" ]]; then
+    if [[ -r "$fastfetch_source" ]]; then
+      printf 'The Fastfetch configuration would be copied once:\n  %s -> %s\n' \
+        "$fastfetch_source" "$fastfetch_target"
+    else
+      printf 'The shipped Fastfetch configuration would be installed:\n  %s -> %s\n' \
+        "$fastfetch_default" "$fastfetch_target"
+    fi
   fi
   printf 'Run %s --apply to continue.\n' "$0"
   exit 0
@@ -89,8 +99,12 @@ elif [[ -r "$fastfetch_source" ]]; then
   mkdir -p -- "$(dirname -- "$fastfetch_target")"
   install -m600 -- "$fastfetch_source" "$fastfetch_target"
   printf 'Copied Fastfetch configuration to %s\n' "$fastfetch_target"
+elif [[ -r "$fastfetch_default" ]]; then
+  mkdir -p -- "$(dirname -- "$fastfetch_target")"
+  install -m600 -- "$fastfetch_default" "$fastfetch_target"
+  printf 'Installed the shipped Fastfetch configuration at %s\n' "$fastfetch_target"
 else
-  printf 'No dwl Fastfetch configuration found; Fastfetch uses its defaults.\n'
+  printf 'No Fastfetch configuration found; Fastfetch uses its defaults.\n'
 fi
 
 printf 'Global Kitty settings were not changed; the session uses %s directly.\n' "$project_dir/kitty/kitty.conf"

@@ -65,8 +65,28 @@ ColumnLayout {
             hint: "ff and fastfetch always work manually. Labels use the prompt color (the shell accent by default)."
             ShellToggle { focusOnTab: true; checked: root.options.fastfetchOnStart; onToggled: value => root.set("fastfetchOnStart", value) }
         }
+        // Which logo, before anything about images. Choosing one used to be a
+        // one-way door: the picker could set an image and nothing could take it
+        // back short of a text editor.
+        SettingRow {
+            Layout.fillWidth: true
+            label: "Logo"
+            hint: "The distribution's own ASCII logo, or a picture of your own"
+            SegmentedControl {
+                Layout.fillWidth: true
+                current: TerminalService.fastfetchLogo
+                options: [{ value: "builtin", label: "Fedora logo" }, { value: "image", label: "Image" }]
+                onSelected: value => {
+                    if (value === "builtin") TerminalService.useBuiltinLogo()
+                    else if (!TerminalService.fastfetchImage.length) TerminalService.chooseImage()
+                }
+            }
+        }
         RowLayout {
             spacing: Metrics.spaceMd
+            // An image picker beside an ASCII logo is a control that does
+            // nothing, so it only appears once "Image" is the answer.
+            visible: TerminalService.fastfetchLogo === "image"
             RoundedImage {
                 Layout.preferredWidth: Metrics.thumbnailSize
                 Layout.preferredHeight: Metrics.thumbnailSize
@@ -98,6 +118,7 @@ ColumnLayout {
 
     SettingsSection {
         Layout.fillWidth: true
+        visible: TerminalService.fastfetchLogo === "image"
         title: "Fastfetch image size"
         description: "Width in terminal columns; the image keeps its proportions"
 

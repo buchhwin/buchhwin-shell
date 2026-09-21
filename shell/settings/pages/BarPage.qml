@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
@@ -170,6 +171,40 @@ ColumnLayout {
                 options: [{ value: "top", label: "Top" }, { value: "bottom", label: "Bottom" },
                           { value: "left", label: "Left" }, { value: "right", label: "Right" }]
                 onSelected: value => LayoutService.setBarOption("edge", value)
+            }
+        }
+        // Only worth asking when there is more than one screen to ask about.
+        SettingRow {
+            visible: Quickshell.screens.length > 1
+            label: "Show on"
+            hint: "Which displays carry the bar. Widgets could always be placed per monitor; the bar could not. With every display ticked a new one gets a bar too, which is why \"all\" is stored as \"all\" rather than as a list of the screens that happen to be here today."
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Metrics.spaceSm
+                Repeater {
+                    model: Quickshell.screens
+                    ChipButton {
+                        required property var modelData
+                        readonly property var wanted: page.bar.screens || []
+                        compact: true
+                        title: modelData.name
+                        // An empty list means every screen, so nothing ticked
+                        // in the file is everything ticked on screen.
+                        active: !wanted.length || wanted.indexOf(modelData.name) >= 0
+                        focusOnTab: true
+                        onClicked: {
+                            const all = Quickshell.screens.map(screen => screen.name)
+                            const current = wanted.length ? wanted.slice() : all.slice()
+                            const at = current.indexOf(modelData.name)
+                            if (at >= 0) current.splice(at, 1)
+                            else current.push(modelData.name)
+                            // Taking the last one away would leave no bar and
+                            // no control to bring it back, so it is refused.
+                            if (!current.length) return
+                            LayoutService.setBarScreens(current, all)
+                        }
+                    }
+                }
             }
         }
         SettingRow {

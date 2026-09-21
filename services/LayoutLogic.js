@@ -249,6 +249,7 @@ function defaultBar() {
         edge: "top",
         panelSpot: "widget",
         notificationSpot: "widget",
+        screens: [],
         left: [{ id: "pill-1", items: [{ type: "nowPlaying", display: "icon", options: {} }] }],
         center: [{ id: "pill-2", items: [{ type: "clock", display: "full", options: {} }] }],
         right: [{ id: "pill-3", items: [{ type: "network", display: "icon", options: {} }] }]
@@ -685,7 +686,13 @@ function sanitizeBar(bar) {
         // there was a choice, so a file written without them reads as one that
         // asked for what it already had.
         panelSpot: BarLogic.spot(bar.panelSpot),
-        notificationSpot: BarLogic.spot(bar.notificationSpot)
+        notificationSpot: BarLogic.spot(bar.notificationSpot),
+        // Which screens carry the bar. **Empty means every screen**, which is
+        // what every bar did before there was a choice - so a file written
+        // without it reads as one that asked for what it already had, and a
+        // monitor plugged in later is included rather than left bare.
+        screens: Array.isArray(bar.screens)
+            ? bar.screens.filter(name => typeof name === "string" && name.length) : []
     }
     const zones = sanitizeZones(bar, ZONES)
     for (const zone of ZONES) result[zone] = zones[zone]

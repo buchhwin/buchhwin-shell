@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import QtQuick
 import "weather/WeatherLogic.js" as Logic
+import "appearance/TimeFormat.js" as TimeFormat
 
 // Weather from Open-Meteo for the city chosen in Settings > Weather. Requests
 // only run while some UI tracks the weather (dashboard, widget); the last
@@ -36,7 +37,8 @@ Singleton {
     readonly property var current: hasData ? model.current : null
     readonly property var daily: hasData ? model.daily : []
     readonly property var hourly: hasData ? Logic.upcomingHours(model.hourly, clock.date) : []
-    readonly property string updatedText: updated ? Qt.formatTime(updated, "HH:mm") : ""
+    readonly property string updatedText: updated
+        ? TimeFormat.time(updated, SettingsService.twelveHourClock, ":") : ""
 
     function formatTemperature(value) { return Logic.formatTemperature(value) }
     function sampleHours(step, count) { return Logic.sampleHours(hourly, step, count) }

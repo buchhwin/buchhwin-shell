@@ -2,6 +2,7 @@ import Quickshell
 import QtQuick
 import qs.theme
 import qs.services
+import "../../services/appearance/TimeFormat.js" as TimeFormat
 
 // 24-hour clock. small: time (date on hover), medium: time and short date,
 // large: time, weekday and date.
@@ -133,9 +134,10 @@ Item {
         // colon hanging at the end of the hours reads as a missing number.
         // `lineHeight` pulls the pair together so it reads as one time.
         lineHeight: root.stacked ? 0.92 : 1
-        text: root.stacked ? Qt.formatTime(clock.date, "HH") + "\n" + Qt.formatTime(clock.date, "mm")
-            : root.inGroup ? Qt.formatTime(clock.date, "HH:mm")
-            : Qt.formatTime(clock.date, "HH") + " : " + Qt.formatTime(clock.date, "mm")
+        text: root.stacked
+            ? TimeFormat.hour(clock.date, SettingsService.twelveHourClock) + "\n" + TimeFormat.minute(clock.date)
+            : root.inGroup ? TimeFormat.time(clock.date, SettingsService.twelveHourClock, ":")
+            : TimeFormat.time(clock.date, SettingsService.twelveHourClock, " : ")
         color: root.textColor
         font.family: Typography.family
         font.pixelSize: root.timeSize

@@ -369,6 +369,88 @@ function syncPlan(binds, custom) {
     return { unbind: unbind, bind: bind, conflicts: conflicts }
 }
 
+// Default key combinations --------------------------------------------------
+
+// What each built-in shortcut sits on *by default*, read out of
+// `hypr/hyprland.lua`.
+//
+// It has to be read rather than asked for. With a Lua configuration every bind
+// is a closure, so `hyprctl -j binds` answers `dispatcher: "__lua"` and an
+// internal index: the *name* of a shortcut is readable from outside, the
+// *action* is not, and neither is the combination it started on once it has
+// been moved. The configuration is therefore the only place that knows, and
+// the string has to match it exactly - which is why this reads the file rather
+// than rebuilding the combination from a modmask and hoping the spelling and
+// the order of the modifiers agree.
+//
+// Descriptions are deliberately **not** the key: four bindings are called
+// "Resize window".
+// One spelling to compare two combinations by. The configuration writes
+// "SUPER + D" and "Print"; `hyprctl -j binds` answers a modmask and "D" or
+// "PRINT". Neither the case nor the order of the modifiers can be relied on,
+// so both sides are reduced to sorted modifiers plus an upper-case key.
+// Measured against the real configuration: all 56 built-in bindings match this
+// way, and none of them matched by order or by description.
+var MOD_NAMES = ["SUPER", "SHIFT", "CTRL", "ALT"]
+
+function canonicalCombo(text) {
+    const parts = String(text || "").split("+").map(part => part.trim().toUpperCase()).filter(part => part.length)
+    const mods = parts.filter(part => MOD_NAMES.indexOf(part) >= 0).sort()
+    const keys = parts.filter(part => MOD_NAMES.indexOf(part) < 0)
+    return mods.concat(keys).join("+")
+}
+
+// The same, from what the compositor reports.
+function canonicalBind(modmask, key) {
+    const mask = Number(modmask) || 0
+    const mods = []
+    if (mask & 64) mods.push("SUPER")
+    if (mask & 1) mods.push("SHIFT")
+    if (mask & 4) mods.push("CTRL")
+    if (mask & 8) mods.push("ALT")
+    return mods.sort().concat([String(key || "").toUpperCase()]).join("+")
+}
+
+function parseDefaults(text) {
+    const result = []
+    const pattern = /hl\.bind\(keyFor\("([^"]+)"\)[\s\S]*?description\s*=\s*"([^"]*)"/g
+    let match
+    while ((match = pattern.exec(String(text || ""))) !== null) {
+        const combo = match[1].trim()
+        if (!combo.length || result.some(item => item.combo === combo)) continue
+        // `combo` verbatim, because hyprland.lua looks the override up by the
+        // exact string it wrote; `canon` for comparing against a live bind.
+        result.push({ combo: combo, canon: canonicalCombo(combo), description: match[2] })
+    }
+    return result
+}
+
+// `default = replacement` per line, the format hyprland.lua parses by hand.
+// Comments and blank lines are ignored on both sides, so a file a person has
+// edited survives a round trip through the shell.
+function parseKeyOverrides(text) {
+    const result = {}
+    for (const line of String(text || "").split("\n")) {
+        if (/^\s*#/.test(line)) continue
+        const match = line.match(/^\s*([^=]+?)\s*=\s*(.+?)\s*$/)
+        if (!match) continue
+        const from = match[1].trim(), to = match[2].trim()
+        if (from.length && to.length) result[from] = to
+    }
+    return result
+}
+
+function serializeKeyOverrides(map) {
+    const lines = ["# buchhwin-shell: where a shortcut sits, written by Settings > Shortcuts.",
+                   "# One `default = replacement` per line. What a shortcut does stays in",
+                   "# hypr/hyprland.lua; this file only moves it."]
+    for (const from of Object.keys(map || {}).sort()) {
+        const to = String(map[from] || "").trim()
+        if (to.length && to !== from) lines.push(from + " = " + to)
+    }
+    return lines.join("\n") + "\n"
+}
+
 // Key capture ----------------------------------------------------------------
 
 // Qt key codes (Qt::Key) → keysym names Hyprland understands.

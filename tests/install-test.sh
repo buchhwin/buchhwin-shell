@@ -32,10 +32,12 @@ home="$sandbox/home"
 checkout="$home/.local/share/buchhwin-shell-stable"
 link="$home/.local/share/buchhwin-shell"
 mkdir -p "$checkout"
-for part in install session scripts shell-completion zsh systemd session/xdg-desktop-portal; do
+for part in install session scripts shell-completion zsh systemd config session/xdg-desktop-portal; do
   mkdir -p "$checkout/$part"
 done
 cp "$project_dir/install/install.sh" "$checkout/install/"
+# The real one, not a stub: the checks below read its contents.
+cp "$project_dir/config/fastfetch.jsonc" "$checkout/config/"
 for file in session/buchhwin-shell-session scripts/buchhwin shell-completion/_buchhwin \
   zsh/buchhwin.zsh systemd/buchhwin-shell-session.target \
   systemd/buchhwin-shell-autostart.target \
@@ -52,6 +54,14 @@ export XDG_CONFIG_HOME="$home/.config"
 
 check '[[ -L "$link" ]]' 'the session link is a symlink'
 check '[[ $(readlink -f -- "$link") == "$checkout" ]]' 'the session link points at the checkout'
+
+# A machine with no dwl configuration gets the shipped one. Without it
+# zsh/buchhwin.zsh passes no --config at all and none of the session's
+# Fastfetch look applies, which is what a fresh install used to get.
+fastfetch="$XDG_CONFIG_HOME/buchhwin-shell/fastfetch.jsonc"
+check '[[ -r "$fastfetch" ]]' 'a fresh install has a Fastfetch configuration'
+check '! grep -q "\"source\"" "$fastfetch"' 'the shipped configuration names no image file'
+check 'grep -q "Compositor" "$fastfetch"' 'the shipped configuration is the session'"'"'s one'
 
 # ---- second run: through the link it just installed -----------------------
 # This is the path a user takes, and it used to back the good link up and

@@ -33,6 +33,10 @@ Singleton {
 
     property string previewText: ""
     property string previewError: ""
+    // "builtin" (the distribution's own ASCII logo) or "image". Read from the
+    // configuration rather than inferred from an empty path, because "no image
+    // chosen" and "the chosen image is gone" are not the same thing to say.
+    property string fastfetchLogo: "builtin"
     property string fastfetchImage: ""
     property string fastfetchError: ""
     property bool choosingImage: false
@@ -82,6 +86,11 @@ Singleton {
     }
 
     function refreshImage() { imageProc.running = true }
+
+    function useBuiltinLogo() {
+        if (choosingImage) return
+        builtinProc.running = true
+    }
 
     function chooseImage() {
         if (choosingImage) return
@@ -175,12 +184,20 @@ Singleton {
                 try {
                     const result = JSON.parse(text)
                     root.fastfetchImage = result.source || ""
+                    root.fastfetchLogo = result.kind === "image" ? "image" : "builtin"
                     root.fastfetchError = result.error || ""
                 } catch (error) {
                     root.fastfetchError = "Fastfetch configuration unreadable"
                 }
             }
         }
+    }
+
+    Process {
+        id: builtinProc
+        stderr: ErrorLog { label: "TerminalService.builtinProc" }
+        command: ["python3", Paths.script("fastfetch-image.py"), "builtin"]
+        onExited: root.refreshImage()
     }
 
     Process {

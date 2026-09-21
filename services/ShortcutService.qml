@@ -15,6 +15,17 @@ Singleton {
 
     property var binds: []
     property var custom: []
+    // Where each built-in shortcut sits by default, read out of
+    // hypr/hyprland.lua, and where the user has moved any of them.
+    //
+    // It has to be read from the file. With a Lua configuration every bind is
+    // a closure, so `hyprctl -j binds` answers `dispatcher: "__lua"` and an
+    // internal index - the *name* of a shortcut is readable from outside, the
+    // *action* is not, and neither is the combination it started on once it
+    // has moved. So the configuration keeps the only copy of what a shortcut
+    // does, and this file only ever says where it sits.
+    property var defaults: []
+    property var keyOverrides: ({})
     property bool storeLoaded: false
     property bool loading: false
     // Combinations of stored shortcuts that a config bind already uses.
@@ -39,6 +50,63 @@ Singleton {
         return app ? LauncherService.iconSource(app.icon) : ""
     }
     function comboOf(entry) { return Logic.comboOf(entry) }
+
+    // The combination a shortcut started on. For one that has not been moved
+    // that is where it is now; for one that has, the store is the only record.
+    // Which built-in a live binding is, found by comparing canonical
+    // combinations: the configuration writes "SUPER + D", Hyprland answers a
+    // modmask and "D", and neither case nor modifier order agrees.
+    function entryFor(modmask, key) {
+        const live = Logic.canonicalBind(modmask, key)
+        for (const item of defaults) {
+            const wanted = keyOverrides[item.combo]
+            const now = wanted ? Logic.canonicalCombo(wanted) : item.canon
+            if (now === live) return item
+        }
+        return null
+    }
+    function defaultCombo(modmask, key) {
+        const item = entryFor(modmask, key)
+        return item ? item.combo : ""
+    }
+    function movable(modmask, key) { return entryFor(modmask, key) !== null }
+    function movedFrom(modmask, key) {
+        const item = entryFor(modmask, key)
+        return item && keyOverrides[item.combo] ? item.combo : ""
+    }
+
+    // Move a built-in shortcut, or put it back. Both write the file the
+    // configuration reads and then ask Hyprland to read it again - the
+    // overrides are real configuration, so they hold even when this shell is
+    // not running, which a runtime bind never could.
+    function setKey(fromCombo, toCombo) {
+        if (!fromCombo || !toCombo || fromCombo === toCombo) return "Nothing to change"
+        if (!defaults.some(item => item.combo === fromCombo)) return "That shortcut is not one of the built-in ones"
+        const wanted = Logic.canonicalCombo(toCombo)
+        const taken = defaults.find(item => item.combo !== fromCombo
+            && Logic.canonicalCombo(keyOverrides[item.combo] || item.combo) === wanted)
+        if (taken) return "Already used by " + taken.description
+        const next = Object.assign({}, keyOverrides)
+        next[fromCombo] = toCombo
+        writeKeys(next)
+        return ""
+    }
+    function resetKey(fromCombo) {
+        if (!keyOverrides[fromCombo]) return
+        const next = Object.assign({}, keyOverrides)
+        delete next[fromCombo]
+        writeKeys(next)
+    }
+    function resetAllKeys() { writeKeys({}) }
+
+    function writeKeys(map) {
+        keyOverrides = map
+        keysFile.setText(Logic.serializeKeyOverrides(map))
+        // A reload re-reads the whole configuration, which is the price of the
+        // overrides being configuration rather than runtime binds. It is a
+        // deliberate, occasional action; nothing here loops.
+        reloadProc.running = true
+    }
     function keyParts(entry) { return Logic.keyParts(Logic.modmask(entry.mods), entry.key) }
     function grouped(query) { return Logic.grouped(rows, query) }
     function comboError(mods, key) { return Logic.comboError(mods, key) }
@@ -114,6 +182,30 @@ Singleton {
         applying = true
         HyprCompat.configure(HyprCompat.commands.combine(commands))
         rereadDelay.restart()
+    }
+
+    Process {
+        id: reloadProc
+        stderr: ErrorLog { label: "ShortcutService.reloadProc" }
+        command: ["hyprctl", "reload"]
+        onExited: root.refresh()
+    }
+
+    // The configuration is the only record of what a shortcut does and where
+    // it started, so it is read rather than asked for.
+    FileView {
+        path: Paths.shellFile("hypr/hyprland.lua")
+        printErrors: false
+        onLoaded: root.defaults = Logic.parseDefaults(text())
+    }
+
+    FileView {
+        id: keysFile
+        path: Paths.configDir + "/shortcut-keys.txt"
+        atomicWrites: true
+        watchChanges: true
+        printErrors: false
+        onLoaded: root.keyOverrides = Logic.parseKeyOverrides(text())
     }
 
     Process {
