@@ -1,0 +1,4 @@
+#%PAM-1.0
+# buchhwin-shell lock screen (lock.qml). Same shape as Fedora's /etc/pam.d/vlock.
+auth       include      system-auth
+account    required     pam_permit.so

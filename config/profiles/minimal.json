@@ -1,0 +1,9 @@
+{
+  "configVersion": 2,
+  "name": "minimal",
+  "label": "Minimal",
+  "description": "Just the clock",
+  "widgets": [
+    { "key": "clock", "type": "clock", "screen": "*", "anchorX": "right", "x": 0.985, "y": 0.02, "size": "small", "style": "minimal" }
+  ]
+}

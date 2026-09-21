@@ -1,0 +1,13 @@
+{
+  "note": "Synthetic events shaped like Plasma calendar event data (no real data).",
+  "events": [
+    { "startDateTime": "2026-03-10T00:00:00", "endDateTime": "2026-03-10T00:00:00", "isAllDay": true, "title": "Feiertag Beispiel", "description": "", "eventColor": "#16a765", "eventType": "Event" },
+    { "startDateTime": "2026-03-10T09:00:00", "endDateTime": "2026-03-10T09:30:00", "isAllDay": false, "title": "Team-Standup", "description": "", "eventColor": "#9fe1e7", "eventType": "Event" },
+    { "startDateTime": "2026-03-10T14:00:00", "endDateTime": "2026-03-10T15:00:00", "isAllDay": false, "title": " Zahnarzt, Kontrolle ", "description": "Karte mitbringen", "eventColor": "not-a-colour", "eventType": "Event" },
+    { "startDateTime": "2026-03-09T22:00:00", "endDateTime": "2026-03-11T08:00:00", "isAllDay": false, "title": "Nachtfahrt", "description": "", "eventColor": "#42d692", "eventType": "Event" },
+    { "startDateTime": "2026-03-12T00:00:00", "endDateTime": "2026-03-14T00:00:00", "isAllDay": true, "title": "Urlaub", "description": "", "eventColor": "#16a765", "eventType": "Event" },
+    { "startDateTime": "2026-03-10T09:00:00", "endDateTime": "2026-03-10T09:30:00", "isAllDay": false, "title": "Team-Standup", "description": "", "eventColor": "#9fe1e7", "eventType": "Event" },
+    { "startDateTime": "2026-03-08T10:00:00", "endDateTime": "2026-03-08T11:00:00", "isAllDay": false, "title": "", "description": "", "eventColor": "", "eventType": "Todo" },
+    { "startDateTime": "invalid", "endDateTime": "", "isAllDay": false, "title": "Kaputt", "eventColor": "", "eventType": "Event" }
+  ]
+}

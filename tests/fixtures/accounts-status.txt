@@ -1,0 +1,91 @@
+@tools kaccounts systemsettings accountwizard notatool
+@server running
+@type akonadi_google_resource
+name {"type":"s","data":["Google Groupware"]}
+comment {"type":"s","data":["Access your Google Calendars, Contacts and Tasks from KDE"]}
+icon {"type":"s","data":["account-google"]}
+mime {"type":"as","data":[["text/calendar","text/directory","application/x-vnd.akonadi.calendar.event"]]}
+caps {"type":"as","data":[["Resource","FreeBusyProvider"]]}
+@type akonadi_davgroupware_resource
+name {"type":"s","data":["DAV groupware resource"]}
+comment {"type":"s","data":["Access to groupware servers"]}
+icon {"type":"s","data":["folder-remote"]}
+mime {"type":"as","data":[["text/calendar","text/directory"]]}
+caps {"type":"as","data":[["Resource"]]}
+@type akonadi_ical_resource
+name {"type":"s","data":["iCal Calendar File"]}
+comment {"type":"s","data":["Loads data from an iCal file"]}
+icon {"type":"s","data":["text-calendar"]}
+mime {"type":"as","data":[["text/calendar"]]}
+caps {"type":"as","data":[["Resource"]]}
+@type akonadi_imap_resource
+name {"type":"s","data":["IMAP E-Mail Server"]}
+comment {"type":"s","data":["Connects to an IMAP server"]}
+icon {"type":"s","data":["network-server"]}
+mime {"type":"as","data":[["message/rfc822"]]}
+caps {"type":"as","data":[["Resource"]]}
+@type akonadi_contacts_resource
+name {"type":"s","data":["Personal Contacts"]}
+comment {"type":"s","data":["The address book with personal contacts"]}
+icon {"type":"s","data":["text-directory"]}
+mime {"type":"as","data":[["text/directory"]]}
+caps {"type":"as","data":[["Resource"]]}
+@type akonadi_birthdays_resource
+name {"type":"s","data":["Birthdays & Anniversaries"]}
+comment {"type":"s","data":["Birthdays of contacts as calendar events"]}
+icon {"type":"s","data":["view-calendar-birthday"]}
+mime {"type":"as","data":[["text/calendar"]]}
+caps {"type":"as","data":[["Resource","Unique"]]}
+@instance akonadi_google_resource_0
+type {"type":"s","data":["akonadi_google_resource"]}
+name {"type":"s","data":["Test Account (Google)"]}
+status {"type":"i","data":[1]}
+message {"type":"s","data":["Fetching calendars"]}
+online {"type":"b","data":[true]}
+progress {"type":"u","data":[42]}
+@instance akonadi_davgroupware_resource_0
+type {"type":"s","data":["akonadi_davgroupware_resource"]}
+name {"type":"s","data":["Sample DAV server"]}
+status {"type":"i","data":[0]}
+message {"type":"s","data":["Ready"]}
+online {"type":"b","data":[false]}
+progress {"type":"u","data":[0]}
+@instance akonadi_ical_resource_0
+type {"type":"s","data":["akonadi_ical_resource"]}
+name {"type":"s","data":["Sample Holidays File"]}
+status {"type":"i","data":[2]}
+message {"type":"s","data":["The file could not be opened"]}
+online {"type":"b","data":[true]}
+progress {"type":"u","data":[0]}
+@instance akonadi_imap_resource_0
+type {"type":"s","data":["akonadi_imap_resource"]}
+name {"type":"s","data":["Sample Mailbox"]}
+status {"type":"i","data":[0]}
+message {"type":"s","data":["Ready"]}
+online {"type":"b","data":[true]}
+progress {"type":"u","data":[0]}
+@instance akonadi_contacts_resource_0
+type {"type":"s","data":["akonadi_contacts_resource"]}
+name {"type":"s","data":[""]}
+status {"type":"i","data":[3]}
+message {"type":"s","data":["Not configured"]}
+online {"type":"b","data":[true]}
+progress {"type":"u","data":[0]}
+@instance akonadi_birthdays_resource
+type {"type":"s","data":["akonadi_birthdays_resource"]}
+name {"type":"s","data":["Birthdays"]}
+status {"type":"i","data":[0]}
+message {"type":"s","data":["Ready"]}
+online {"type":"b","data":[true]}
+progress {"type":"u","data":[0]}
+@instance akonadi_unknown_resource_0
+type {"type":"s","data":["akonadi_unknown_resource"]}
+name {"type":"s","data":["Sample Unknown"]}
+status {"type":"i","data":[0]}
+message {"type":"s","data":["Ready"]}
+online {"type":"b","data":[true]}
+progress {"type":"u","data":[0]}
+@instance bad/id
+type {"type":"s","data":["akonadi_imap_resource"]}
+name {"type":"s","data":["Never shown"]}
+@end

@@ -1,0 +1,64 @@
+# Alacritty for Plasma, installed by install/plasma-terminal.sh.
+[general]
+live_config_reload = true
+
+[terminal.shell]
+program = "zsh"
+args = ["-l"]
+
+[window]
+padding = { x = 12, y = 12 }
+dynamic_padding = true
+opacity = 0.86
+blur = true
+
+[scrolling]
+history = 100000
+multiplier = 3
+
+[font]
+normal = { family = "JetBrains Mono", style = "Regular" }
+bold = { family = "JetBrains Mono", style = "Bold" }
+italic = { family = "JetBrains Mono", style = "Italic" }
+bold_italic = { family = "JetBrains Mono", style = "Bold Italic" }
+size = 11.0
+builtin_box_drawing = true
+
+[colors.primary]
+background = "#0d0f14"
+foreground = "#eceef2"
+
+[colors.cursor]
+text = "#0d0f14"
+cursor = "#4f8ff7"
+
+[colors.selection]
+text = "#ffffff"
+background = "#2a3b5c"
+
+[colors.normal]
+black = "#1a1d25"
+red = "#f07178"
+green = "#8bd49c"
+yellow = "#f2c38a"
+blue = "#6ea8fe"
+magenta = "#a28bfe"
+cyan = "#7fd4f7"
+white = "#c9ced8"
+
+[colors.bright]
+black = "#4b5263"
+red = "#f59fa3"
+green = "#a8e2b7"
+yellow = "#f7d7ab"
+blue = "#92bdff"
+magenta = "#bfb0ff"
+cyan = "#a3e3fb"
+white = "#ffffff"
+
+[cursor]
+style = { shape = "Beam", blinking = "On" }
+blink_interval = 600
+
+[selection]
+save_to_clipboard = true

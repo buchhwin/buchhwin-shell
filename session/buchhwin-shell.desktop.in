@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=buchhwin-shell
+Comment=Minimal Hyprland desktop with the buchhwin Quickshell
+Exec=@SESSION_EXEC@
+Type=Application
+DesktopNames=Hyprland;buchhwin-shell;
+Keywords=tiling;wayland;compositor;quickshell;

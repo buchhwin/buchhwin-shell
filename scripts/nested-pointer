@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pointer input for nested test sessions: move, click, scroll, drag and hover
+# on the headless BUCHTEST output through zwlr_virtual_pointer_manager_v1.
+# Refuses to run unless HYPRLAND_INSTANCE_SIGNATURE and WAYLAND_DISPLAY belong
+# to the session started by scripts/nested-session.sh (same
+# BUCHHWIN_NESTED_DIR). Coordinates are logical pixels of the output.
+#
+#   scripts/nested-pointer move X Y | hover X Y MS | sleep MS
+#   scripts/nested-pointer click [left|right|middle] X Y | down [BUTTON] | up [BUTTON]
+#   scripts/nested-pointer scroll NOTCHES X Y | drag X1 Y1 X2 Y2 [STEPS]
+#   scripts/nested-pointer scroll-finger PIXELS X Y [STEPS]   (touchpad-like)
+#   scripts/nested-pointer --build          only build the helper (exit 3: cannot build)
+# Several commands can follow each other in one call.
+# BUCHHWIN_POINTER_OUTPUT picks another nested output (default BUCHTEST).
+
+project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+source_file="$project_dir/tests/tools/nested-pointer.c"
+protocol="$project_dir/tests/tools/protocols/wlr-virtual-pointer-unstable-v1.xml"
+build_dir="$project_dir/.cache/nested-pointer"
+binary="$build_dir/nested-pointer"
+output=${BUCHHWIN_POINTER_OUTPUT:-BUCHTEST}
+
+build() {
+  [[ -x $binary && $binary -nt $source_file && $binary -nt $protocol ]] && return 0
+  local tool
+  for tool in wayland-scanner gcc pkg-config; do
+    command -v "$tool" >/dev/null || { printf 'nested-pointer: %s is missing; cannot build\n' "$tool" >&2; return 3; }
+  done
+  local flags
+  flags=$(pkg-config --cflags --libs wayland-client 2>/dev/null) \
+    || { printf 'nested-pointer: wayland-client development files are missing; cannot build\n' >&2; return 3; }
+  mkdir -p -- "$build_dir"
+  local work
+  work=$(mktemp -d "$build_dir/build.XXXXXX")
+  # shellcheck disable=SC2086 # pkg-config output is a word list
+  if wayland-scanner client-header "$protocol" "$work/wlr-virtual-pointer-unstable-v1-client-protocol.h" \
+    && wayland-scanner private-code "$protocol" "$work/wlr-virtual-pointer-unstable-v1-protocol.c" \
+    && gcc -std=c11 -O2 -Wall -Wextra -I"$work" -o "$work/nested-pointer" \
+         "$source_file" "$work/wlr-virtual-pointer-unstable-v1-protocol.c" $flags; then
+    mv -f -- "$work/nested-pointer" "$binary"
+    rm -rf -- "$work"
+  else
+    rm -rf -- "$work"
+    printf 'nested-pointer: build failed; cannot build\n' >&2
+    return 3
+  fi
+}
+
+if [[ $# -eq 0 || ${1:-} == --help || ${1:-} == -h ]]; then
+  sed -n '4,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  exit 2
+fi
+
+status=0
+build || status=$?
+(( status == 0 )) || exit "$status"
+[[ $1 == --build ]] && exit 0
+
+# shellcheck source=lib/nested-guard.sh
+source "$project_dir/scripts/lib/nested-guard.sh"
+nested_guard "$output" || exit 1
+
+extent=$(hyprctl -j monitors | jq -r --arg o "$output" \
+  '.[] | select(.name == $o) | if (.transform % 2) == 1 then "\(.height / .scale | round)x\(.width / .scale | round)" else "\(.width / .scale | round)x\(.height / .scale | round)" end')
+exec "$binary" --output "$output" --extent "$extent" "$@"

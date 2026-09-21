@@ -1,0 +1,14 @@
+{
+  "configVersion": 1,
+  "monitors": {
+    "eDP-1": {
+      "x": 0.9,
+      "y": 0.05,
+      "scale": 1.2,
+      "widgets": {
+        "date-main": { "x": 0.7, "y": 0.8, "scale": 1, "visible": true },
+        "battery-main": { "x": 0.6, "y": 0.1, "scale": 1, "visible": false }
+      }
+    }
+  }
+}

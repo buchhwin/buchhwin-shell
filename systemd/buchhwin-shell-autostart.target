@@ -1,0 +1,9 @@
+[Unit]
+Description=buchhwin-shell XDG autostart applications
+Documentation=file:///home/%u/.local/share/buchhwin-shell/README.md
+# xdg-desktop-autostart.target has RefuseManualStart=yes and must be pulled in
+# by another unit, like plasma-workspace.target does in Plasma.
+Wants=xdg-desktop-autostart.target
+Before=xdg-desktop-autostart.target
+After=buchhwin-shell-session.target
+PartOf=graphical-session.target

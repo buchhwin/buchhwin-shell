@@ -1,0 +1,13 @@
+@item 4
+{"type":"a{sv}","data":[{"internalId":{"type":"s","data":"0|org.example.chat|4"},"appName":{"type":"s","data":"Chat"},"ticker":{"type":"s","data":"Sample Contact: See you at six"},"title":{"type":"s","data":"Sample Contact"},"text":{"type":"s","data":"See you at six"},"dismissable":{"type":"b","data":true},"hasIcon":{"type":"b","data":true},"silent":{"type":"b","data":false},"replyId":{"type":"s","data":"reply-4"}}]}
+
+@item 2
+{"type":"a{sv}","data":[{"appName":{"type":"s","data":"Calendar"},"ticker":{"type":"s","data":"Team sync in 10 minutes"},"title":{"type":"s","data":"Team sync in 10 minutes"},"text":{"type":"s","data":"Meeting room 2"},"dismissable":{"type":"b","data":true},"hasIcon":{"type":"b","data":false},"silent":{"type":"b","data":true}}]}
+
+@item 7
+{"type":"a{sv}","data":[{"appName":{"type":"s","data":"Music"},"ticker":{"type":"s","data":"Sample Track"},"title":{"type":"s","data":""},"text":{"type":"s","data":""},"dismissable":{"type":"b","data":false},"hasIcon":{"type":"b","data":true},"silent":{"type":"b","data":true}}]}
+
+@item bad/id
+{"type":"a{sv}","data":[{"appName":{"type":"s","data":"Ignored"}}]}
+
+@end

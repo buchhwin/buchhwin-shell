@@ -1,0 +1,63 @@
+@daemon running
+@self
+{"type":"s","data":["00000000000000000000000000000000"]}
+
+@name
+{"type":"s","data":["test-laptop"]}
+
+@devices
+{"type":"a{ss}","data":[{"11111111111111111111111111111111":"Test Phone","22222222222222222222222222222222":"Tablet: Living Room","33333333333333333333333333333333":"Nearby Phone","4444-4444":"Bad Id","_55555555_5555_5555_5555_555555555555_":"Guest Phone"}]}
+@requests
+{"type":"as","data":["_55555555_5555_5555_5555_555555555555_","bad/id"]}
+
+@device 11111111111111111111111111111111
+{"type":"a{sv}","data":[{"type":{"type":"s","data":"phone"},"name":{"type":"s","data":"Test Phone"},"iconName":{"type":"s","data":"smartphone"},"statusIconName":{"type":"s","data":"smartphoneconnected"},"isReachable":{"type":"b","data":true},"isPaired":{"type":"b","data":true},"isPairRequested":{"type":"b","data":false},"isPairRequestedByPeer":{"type":"b","data":false},"pairState":{"type":"i","data":3},"supportedPlugins":{"type":"as","data":["kdeconnect_battery","kdeconnect_ping","kdeconnect_share","kdeconnect_clipboard","kdeconnect_connectivity_report","kdeconnect_mprisremote","kdeconnect_notifications","kdeconnect_sms","kdeconnect_lockdevice"]}}]}
+
+@battery 11111111111111111111111111111111
+{"type":"a{sv}","data":[{"charge":{"type":"i","data":76},"isCharging":{"type":"b","data":true}}]}
+
+@key 11111111111111111111111111111111
+{"type":"s","data":["AB12 CD34"]}
+
+@connectivity 11111111111111111111111111111111
+{"type":"a{sv}","data":[{"cellularNetworkType":{"type":"s","data":"LTE"},"cellularNetworkStrength":{"type":"i","data":3},"iconName":{"type":"s","data":"network-mobile-80-lte"}}]}
+
+@mpris 11111111111111111111111111111111
+{"type":"a{sv}","data":[{"playerList":{"type":"as","data":["Sample Player","Podcasts"]},"player":{"type":"s","data":"Sample Player"},"isPlaying":{"type":"b","data":true},"title":{"type":"s","data":"Sample Track"},"artist":{"type":"s","data":"Sample Artist"},"album":{"type":"s","data":"Sample Album"},"volume":{"type":"i","data":42},"length":{"type":"i","data":210000},"position":{"type":"i","data":30000},"canSeek":{"type":"b","data":true}}]}
+
+@lock 11111111111111111111111111111111
+{"type":"a{sv}","data":[{"isLocked":{"type":"b","data":false}}]}
+
+@notify 11111111111111111111111111111111
+{"type":"as","data":[["4","2","7","bad/id"]]}
+
+@commands 11111111111111111111111111111111
+{"type":"s","data":["{\"a1b2\":{\"name\":\"Screenshot\",\"command\":\"scrot\"},\"c3d4\":{\"name\":\"Reboot\",\"command\":\"reboot\"}}"]}
+
+@sftp 11111111111111111111111111111111
+{"type":"b","data":[false]}
+
+@device 22222222222222222222222222222222
+{"type":"a{sv}","data":[{"type":{"type":"s","data":"tablet"},"name":{"type":"s","data":"Tablet: Living Room"},"isReachable":{"type":"b","data":false},"isPaired":{"type":"b","data":true},"isPairRequested":{"type":"b","data":false},"isPairRequestedByPeer":{"type":"b","data":false},"pairState":{"type":"i","data":3},"supportedPlugins":{"type":"as","data":[]}}]}
+
+@battery 22222222222222222222222222222222
+{"type":"a{sv}","data":[{"charge":{"type":"i","data":-1},"isCharging":{"type":"b","data":false}}]}
+
+@key 22222222222222222222222222222222
+
+@device 33333333333333333333333333333333
+{"type":"a{sv}","data":[{"type":{"type":"s","data":"phone"},"name":{"type":"s","data":"Nearby Phone"},"isReachable":{"type":"b","data":true},"isPaired":{"type":"b","data":false},"isPairRequested":{"type":"b","data":true},"isPairRequestedByPeer":{"type":"b","data":false},"pairState":{"type":"i","data":1},"supportedPlugins":{"type":"as","data":["kdeconnect_ping"]}}]}
+
+@battery 33333333333333333333333333333333
+
+@key 33333333333333333333333333333333
+
+@device _55555555_5555_5555_5555_555555555555_
+{"type":"a{sv}","data":[{"type":{"type":"s","data":"phone"},"name":{"type":"s","data":"Guest Phone"},"isReachable":{"type":"b","data":true},"isPaired":{"type":"b","data":false},"isPairRequested":{"type":"b","data":false},"isPairRequestedByPeer":{"type":"b","data":true},"pairState":{"type":"i","data":2},"supportedPlugins":{"type":"as","data":["kdeconnect_ping","kdeconnect_findmyphone"]}}]}
+
+@battery _55555555_5555_5555_5555_555555555555_
+
+@key _55555555_5555_5555_5555_555555555555_
+{"type":"s","data":["9F3E 12AB"]}
+
+@end

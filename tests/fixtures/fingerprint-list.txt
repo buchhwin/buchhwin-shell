@@ -1,0 +1,6 @@
+found 1 devices
+Device at /net/reactivated/Fprint/Device/0
+Using device /net/reactivated/Fprint/Device/0
+Fingerprints for user sample on Sample Fingerprint Reader (press):
+ - #0: right-index-finger
+ - #1: left-thumb

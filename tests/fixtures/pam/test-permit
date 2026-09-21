@@ -1,0 +1,5 @@
+#%PAM-1.0
+# Nested lock screen tests only (BUCHHWIN_NESTED=1): asks for a password and
+# accepts any answer.
+auth     required  pam_exec.so expose_authtok quiet /usr/bin/true
+account  required  pam_permit.so

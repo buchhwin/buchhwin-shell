@@ -1,0 +1,35 @@
+# Prompt for buchhwin terminals: user@host, directory, git and a blue arrow.
+add_newline = true
+format = "$username$hostname$directory$git_branch$git_status$cmd_duration$jobs$line_break$character"
+
+[username]
+show_always = true
+style_user = "bold #6ea8fe"
+style_root = "bold #f07178"
+format = "[$user]($style)"
+
+[hostname]
+ssh_only = false
+style = "bold #6ea8fe"
+format = "[@$hostname]($style) "
+
+[directory]
+style = "#9ba2ae"
+truncation_length = 3
+truncate_to_repo = false
+home_symbol = "~"
+
+[git_branch]
+symbol = "󰊢 "
+style = "#a28bfe"
+
+[git_status]
+style = "#f07178"
+
+[cmd_duration]
+min_time = 1500
+style = "#9ba2ae"
+
+[character]
+success_symbol = "[❯](bold #4f8ff7)"
+error_symbol = "[❯](bold #f07178)"

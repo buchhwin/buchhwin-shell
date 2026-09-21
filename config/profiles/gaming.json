@@ -1,0 +1,10 @@
+{
+  "configVersion": 2,
+  "name": "gaming",
+  "label": "Gaming",
+  "description": "Do Not Disturb, reduced interface, clock hidden",
+  "effects": { "dnd": "manual", "animationMode": "reduced" },
+  "widgets": [
+    { "key": "clock", "type": "clock", "screen": "*", "anchorX": "right", "x": 0.985, "y": 0.02, "size": "small", "style": "minimal", "visible": false }
+  ]
+}

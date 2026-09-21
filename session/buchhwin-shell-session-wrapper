@@ -1,0 +1,11 @@
+#!/bin/sh
+# buchhwin-shell display-manager session, installed as
+# /usr/local/bin/buchhwin-shell-session by install/system-install.sh. It only
+# runs the user's launcher, so launcher changes need no sudo.
+project_dir=${BUCHHWIN_SHELL_PATH:-"$HOME/.local/share/buchhwin-shell"}
+launcher="$project_dir/session/buchhwin-shell-session"
+if [ -r "$launcher" ]; then
+  exec bash "$launcher" "$@"
+fi
+printf 'buchhwin-shell: %s is missing; run install/install.sh --apply as this user\n' "$launcher" >&2
+exit 1

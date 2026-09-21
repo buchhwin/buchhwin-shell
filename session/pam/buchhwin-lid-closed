@@ -1,0 +1,45 @@
+#!/bin/sh
+# buchhwin-shell: is the laptop lid closed? Installed to
+# /usr/local/bin/buchhwin-lid-closed by install/fingerprint-lid.sh and called
+# by pam_exec in system-auth directly before pam_fprintd:
+#
+#   auth [success=1 default=ignore] pam_exec.so quiet quiet_log /usr/local/bin/buchhwin-lid-closed
+#
+# Exit 0 only when a lid exists and is closed; PAM then jumps over pam_fprintd
+# (on a dock the sensor cannot be reached). Every other outcome (lid open, no
+# lid, unreadable state, errors, a missing or blocked helper) returns non-zero,
+# which the line ignores, so the normal stack runs. The result can only remove
+# the fingerprint step, never grant access. The environment comes from the
+# calling user and is not used; /proc is read first, UPower only without ACPI
+# lid files and with a short timeout.
+#
+#   buchhwin-lid-closed [--lid-dir DIR] [--no-upower]   (options for tests)
+PATH=/usr/bin:/bin
+export PATH
+lid_dir=/proc/acpi/button/lid
+upower=1
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --lid-dir) [ $# -ge 2 ] || exit 2; lid_dir=$2; shift 2 ;;
+    --no-upower) upower=0; shift ;;
+    *) exit 2 ;;
+  esac
+done
+
+found=0
+for state in "$lid_dir"/*/state; do
+  [ -r "$state" ] || continue
+  found=1
+  # "state:      closed"
+  case "$(head -c 64 "$state" 2>/dev/null)" in
+    *closed*) exit 0 ;;
+  esac
+done
+[ "$found" = 1 ] && exit 1
+
+if [ "$upower" = 1 ] && [ -x /usr/bin/busctl ]; then
+  answer=$(timeout 2 busctl --system --timeout=1 get-property org.freedesktop.UPower \
+    /org/freedesktop/UPower org.freedesktop.UPower LidIsClosed 2>/dev/null)
+  [ "$answer" = "b true" ] && exit 0
+fi
+exit 1

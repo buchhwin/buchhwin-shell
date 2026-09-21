@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1200" width="1920" height="1200">
+  <!-- Neutral fallback wallpaper: dark blue-grey with two soft light pools. -->
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b2233"/>
+      <stop offset="1" stop-color="#101217"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0.22" cy="0.18" r="0.6">
+      <stop offset="0" stop-color="#4f8ff7" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#4f8ff7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0.85" cy="0.9" r="0.55">
+      <stop offset="0" stop-color="#8a6cf0" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#8a6cf0" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1200" fill="url(#base)"/>
+  <rect width="1920" height="1200" fill="url(#glowA)"/>
+  <rect width="1920" height="1200" fill="url(#glowB)"/>
+</svg>

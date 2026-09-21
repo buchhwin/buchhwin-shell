@@ -1,0 +1,11 @@
+[SddmGreeterTheme]
+Name=buchhwin
+Description=Login screen in the style of the buchhwin-shell lock screen
+Author=buchhwin-shell
+Type=sddm-theme
+Version=1.0
+MainScript=Main.qml
+ConfigFile=theme.conf
+Theme-Id=buchhwin
+Theme-API=2.0
+QtVersion=6

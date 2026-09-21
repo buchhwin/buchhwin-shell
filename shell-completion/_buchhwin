@@ -1,0 +1,29 @@
+#compdef buchhwin
+# Completion for the buchhwin command: the targets and functions come from the
+# running shell itself (`buchhwin show`), so it never goes stale.
+
+_buchhwin() {
+  local -a targets functions
+  case $CURRENT in
+    2)
+      targets=(${(f)"$(buchhwin targets 2>/dev/null)"})
+      _describe -t targets 'target' targets
+      _values 'command' help targets show
+      ;;
+    3)
+      case ${words[2]} in
+        show)
+          targets=(${(f)"$(buchhwin targets 2>/dev/null)"})
+          _describe -t targets 'target' targets
+          ;;
+        help|targets) ;;
+        *)
+          functions=(${(f)"$(buchhwin show ${words[2]} 2>/dev/null | sed -n 's/^  function \([a-zA-Z]*\)(.*/\1/p')"})
+          _describe -t functions 'function' functions
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_buchhwin "$@"

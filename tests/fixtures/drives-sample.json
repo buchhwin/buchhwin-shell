@@ -1,0 +1,63 @@
+{
+  "kind": "drives",
+  "drives": [
+    {
+      "id": "Example_Flash_Drive_0001",
+      "name": "Example Flash Drive",
+      "bus": "usb",
+      "size": 32000000000,
+      "canPowerOff": true,
+      "ejectable": false,
+      "volumes": [
+        { "id": "sdb1", "device": "/dev/sdb1", "label": "PHOTOS", "fsType": "exfat", "size": 31990000000,
+          "mountPoints": ["/run/media/user/PHOTOS"], "readOnly": false }
+      ]
+    },
+    {
+      "id": "Example_External_Disk_0002",
+      "name": "Example External Disk",
+      "bus": "usb",
+      "size": 2000000000000,
+      "canPowerOff": true,
+      "ejectable": false,
+      "volumes": [
+        { "id": "sdc1", "device": "/dev/sdc1", "label": "Data", "fsType": "ntfs", "size": 1500000000000,
+          "mountPoints": ["/run/media/user/Data"], "readOnly": false },
+        { "id": "sdc2", "device": "/dev/sdc2", "label": "Backup", "fsType": "ext4", "size": 500000000000,
+          "mountPoints": [], "readOnly": false }
+      ]
+    },
+    {
+      "id": "SD_MMC_Reader_0003",
+      "name": "SD/MMC Reader",
+      "bus": "sdio",
+      "size": 64000000000,
+      "canPowerOff": false,
+      "ejectable": false,
+      "volumes": [
+        { "id": "mmcblk0p1", "device": "/dev/mmcblk0p1", "label": "", "fsType": "vfat", "size": 63900000000,
+          "mountPoints": [], "readOnly": true }
+      ]
+    },
+    {
+      "id": "Example_Secure_Drive_0004",
+      "name": "Example Secure Drive",
+      "bus": "usb",
+      "size": 128000000000,
+      "canPowerOff": true,
+      "ejectable": false,
+      "volumes": [
+        { "id": "sdd1", "device": "/dev/sdd1", "label": "VAULT", "fsType": "crypto_LUKS", "size": 64000000000,
+          "mountPoints": [], "readOnly": false, "encrypted": true, "unlocked": false, "clearDevice": "" },
+        { "id": "sdd2", "device": "/dev/sdd2", "label": "Archive", "fsType": "ext4", "size": 63900000000,
+          "mountPoints": ["/run/media/user/Archive"], "readOnly": false, "encrypted": true, "unlocked": true,
+          "clearDevice": "/dev/dm-1" }
+      ]
+    }
+  ],
+  "phones": [
+    { "id": "mtp-example_phone_0005", "name": "Example Phone", "uri": "mtp://example_phone_0005/",
+      "mountPoint": "", "mounted": false }
+  ],
+  "mtp": true
+}

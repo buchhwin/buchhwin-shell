@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Display-manager entry point of the buchhwin-shell session. The system copy in
+# /usr/local/bin is a small wrapper (session/buchhwin-shell-session-wrapper)
+# that runs this file from ~/.local/share/buchhwin-shell, so changes here need
+# no sudo.
+project_dir=${BUCHHWIN_SHELL_PATH:-"$HOME/.local/share/buchhwin-shell"}
+export BUCHHWIN_SHELL_PATH="$project_dir"
+
+log() { printf 'buchhwin-shell: %s\n' "$*" >&2; }
+
+# Configuration format: hyprland.lua (Hyprland 0.56+, the only format from
+# 0.57 on) whenever it exists, hyprland.conf otherwise. Overrides, e.g. to
+# rescue a session from a TTY:
+#   BUCHHWIN_HYPR_CONFIG=lua|conf
+#   ${XDG_CONFIG_HOME:-~/.config}/buchhwin-shell/hypr-config containing lua or conf
+choice_file=${XDG_CONFIG_HOME:-"$HOME/.config"}/buchhwin-shell/hypr-config
+requested=${BUCHHWIN_HYPR_CONFIG:-}
+requested_from="BUCHHWIN_HYPR_CONFIG"
+if [[ -z $requested && -r $choice_file ]]; then
+  read -r requested _ <"$choice_file" || true
+  requested_from=$choice_file
+fi
+case ${requested,,} in
+  lua|conf) config_format=${requested,,} ;;
+  ""|auto) config_format=auto ;;
+  *) log "ignoring unknown configuration format '$requested' from $requested_from"; config_format=auto ;;
+esac
+lua_config="$project_dir/hypr/hyprland.lua"
+conf_config="$project_dir/hypr/hyprland.conf"
+if [[ $config_format == auto ]]; then
+  if [[ -f $lua_config ]]; then config_format=lua; else config_format=conf; fi
+fi
+# A requested format whose file is missing uses the other one.
+if [[ $config_format == lua && ! -f $lua_config && -f $conf_config ]]; then config_format=conf; fi
+if [[ $config_format == conf && ! -f $conf_config && -f $lua_config ]]; then config_format=lua; fi
+config_file="$project_dir/hypr/hyprland.$config_format"
+if [[ ! -f $config_file ]]; then
+  log "missing $config_file"
+  exit 1
+fi
+# A Lua start that fails within this many seconds is retried once with
+# hyprland.conf (safety net while the Lua config is new).
+lua_fallback_seconds=${BUCHHWIN_LUA_FALLBACK_SECONDS:-10}
+
+# Session-scoped markers let services distinguish this desktop without changing
+# the user's global KDE, Hyprland or application configuration.
+export XDG_CURRENT_DESKTOP=Hyprland
+export XDG_SESSION_DESKTOP=buchhwin-shell
+export DESKTOP_SESSION=buchhwin-shell
+export QT_QPA_PLATFORM=wayland
+
+run_hyprland() {
+  local started=$SECONDS
+  set +e
+  start-hyprland -- --config "$1"
+  session_status=$?
+  set -e
+  session_seconds=$((SECONDS - started))
+}
+
+session_status=0
+session_seconds=0
+run_hyprland "$config_file"
+if [[ $config_format == lua && $session_status -ne 0 && $session_seconds -lt $lua_fallback_seconds && -f $conf_config ]]; then
+  log "Hyprland exited with status $session_status after ${session_seconds}s using hyprland.lua; starting once more with hyprland.conf"
+  # scripts/session-check.sh reports the fallback.
+  export BUCHHWIN_HYPR_CONFIG_FALLBACK=1
+  run_hyprland "$conf_config"
+fi
+
+# Autostart entries masked for this session by scripts/session-init.sh.
+if [[ -r $project_dir/scripts/lib/autostart-skip.sh ]]; then
+  # shellcheck source=../scripts/lib/autostart-skip.sh
+  source "$project_dir/scripts/lib/autostart-skip.sh"
+  mapfile -t skipped_units < <(autostart_skip_units 2>/dev/null || true)
+  if (( ${#skipped_units[@]} )); then
+    systemctl --user unmask --runtime "${skipped_units[@]}" >/dev/null 2>&1 || true
+  fi
+fi
+systemctl --user stop buchhwin-shell-session.target 2>/dev/null || true
+exit "$session_status"

@@ -1,0 +1,40 @@
+*.log
+*.backup-*
+.qmlls.ini
+.cache/
+
+# Local environment and private user data
+.env
+.env.*
+!.env.example
+config/local/
+config/private/
+config/user.json
+config/secrets.json
+config/credentials.json
+config/accounts.json
+config/location.json
+*.local.json
+
+# Credentials, tokens and private keys
+*.key
+*.pem
+*.p12
+*.pfx
+*.kdbx
+*oauth*.json
+*token*.json
+*credentials*.json
+*secret*.json
+
+# Runtime and generated state
+.direnv/
+result
+build/
+dist/
+__pycache__/
+*.swp
+*.tmp
+
+# Agent worktrees
+.claude/worktrees/

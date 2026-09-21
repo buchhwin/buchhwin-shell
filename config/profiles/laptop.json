@@ -1,0 +1,14 @@
+{
+  "configVersion": 2,
+  "name": "laptop",
+  "label": "Laptop",
+  "description": "Clock, battery and Wi-Fi",
+  "widgets": [
+    { "key": "network", "type": "network", "screen": "*" },
+    { "key": "battery", "type": "battery", "screen": "*" },
+    { "key": "clock", "type": "clock", "screen": "*", "size": "small" }
+  ],
+  "groups": [
+    { "members": ["network", "battery", "clock"], "anchorX": "right", "x": 0.985, "y": 0.02, "style": "minimal" }
+  ]
+}

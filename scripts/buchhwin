@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Short front end for the shell's IPC, so a script or a shortcut can say
+#   buchhwin wallpaper next
+# instead of
+#   quickshell --path ~/.local/share/buchhwin-shell ipc call wallpaper next
+#
+# It talks to the running session's shell. BUCHHWIN_SHELL_PATH overrides the
+# path, which is what a nested test session needs.
+set -euo pipefail
+
+project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+installed_dir="$HOME/.local/share/buchhwin-shell"
+if [[ -n ${BUCHHWIN_SHELL_PATH:-} ]]; then
+  shell_path=$BUCHHWIN_SHELL_PATH
+elif [[ -e "$installed_dir/shell.qml" ]]; then
+  shell_path=$installed_dir
+else
+  shell_path=$project_dir
+fi
+
+usage() {
+  cat <<'USAGE'
+buchhwin - talk to the running buchhwin-shell
+
+  buchhwin <target> <function> [arguments…]   call an IPC function
+  buchhwin targets                            list the targets
+  buchhwin show [target]                      list the functions of a target
+  buchhwin help                               this text
+
+Examples
+  buchhwin launcher toggle
+  buchhwin wallpaperPicker open
+  buchhwin notifications setDnd 1h
+  buchhwin settings get appearance.theme
+USAGE
+}
+
+case "${1:-help}" in
+  help|-h|--help)
+    usage
+    exit 0
+    ;;
+  targets)
+    quickshell --path "$shell_path" ipc show 2>/dev/null | awk '/^target /{print $2}'
+    exit 0
+    ;;
+  show)
+    if [[ $# -ge 2 ]]; then
+      quickshell --path "$shell_path" ipc show | awk -v t="$2" '
+        $1 == "target" { keep = ($2 == t) }
+        keep { print }'
+    else
+      quickshell --path "$shell_path" ipc show
+    fi
+    exit 0
+    ;;
+esac
+
+if [[ $# -lt 2 ]]; then
+  usage >&2
+  exit 2
+fi
+
+exec quickshell --path "$shell_path" ipc call "$@"

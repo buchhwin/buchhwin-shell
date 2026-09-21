@@ -1,0 +1,11 @@
+#%PAM-1.0
+# Nested lock screen tests only (BUCHHWIN_NESTED=1): behaves like pam_fprintd.
+# Shows the fingerprint prompt without asking, waits 25 s like the reader,
+# reports a timeout and then asks for a password that is always rejected. The
+# lock screen pairs it with test-permit for the password-only conversation, so
+# a password submitted during the wait unlocks only through that switch.
+auth     optional  pam_echo.so Place your finger on the fingerprint reader
+auth     optional  pam_exec.so quiet /usr/bin/sleep 25
+auth     optional  pam_echo.so Verification timed out
+auth     required  pam_exec.so expose_authtok quiet /usr/bin/false
+account  required  pam_permit.so

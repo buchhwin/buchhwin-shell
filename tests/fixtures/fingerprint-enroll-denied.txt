@@ -1,0 +1,3 @@
+Using device /net/reactivated/Fprint/Device/0
+Enrolling right-index-finger finger.
+EnrollStart failed: GDBus.Error:net.reactivated.Fprint.Error.PermissionDenied: Not Authorized: net.reactivated.fprint.device.enroll

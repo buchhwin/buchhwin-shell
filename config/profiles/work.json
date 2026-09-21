@@ -1,0 +1,12 @@
+{
+  "configVersion": 2,
+  "name": "work",
+  "label": "Work",
+  "description": "Clock, workspace, active window and events",
+  "widgets": [
+    { "key": "clock", "type": "clock", "screen": "*", "anchorX": "right", "x": 0.985, "y": 0.02, "size": "medium", "style": "minimal" },
+    { "key": "workspace", "type": "workspace", "screen": "*", "anchorX": "left", "x": 0.015, "y": 0.02, "style": "capsule" },
+    { "key": "window", "type": "activeWindow", "screen": "*", "anchorX": "center", "x": 0.5, "y": 0.02, "style": "minimal" },
+    { "key": "calendar", "type": "calendarSummary", "screen": "*", "anchorX": "right", "x": 0.985, "y": 0.14, "style": "card" }
+  ]
+}
