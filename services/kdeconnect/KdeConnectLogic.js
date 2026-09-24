@@ -390,11 +390,14 @@ function validPlayer(name) {
 }
 
 // "Send link or text": a web address is opened on the phone (share plugin
-// shareUrl), everything else arrives as text. Bare hosts get https://.
+// shareUrl), everything else arrives as text. Bare hosts get https://, and a
+// bare host's last label holds a letter - "1.5" or "v2.0" is text, not a site.
+var BARE_HOST = /^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z0-9-]*[a-z][a-z0-9-]*(\/\S*)?$/i
+
 function shareAction(input) {
     const value = String(input === undefined || input === null ? "" : input).trim()
     if (!value.length) return null
-    if (/^(https?:\/\/|www\.)\S+$/i.test(value) || /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(value)) {
+    if (/^(https?:\/\/|www\.)\S+$/i.test(value) || BARE_HOST.test(value)) {
         const url = /^https?:\/\//i.test(value) ? value : "https://" + value
         if (validUrl(url)) return { action: "url", value: url }
     }

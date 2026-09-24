@@ -152,7 +152,16 @@ function gridLayout(cells, columns, width, gap, unit) {
             height: step * h + space * (h - 1)
         })
     }
-    return { cells: placed, height: rows > 0 ? rows * step + space * (rows - 1) : 0 }
+    return { cells: placed, height: rows > 0 ? rows * step + space * (rows - 1) : 0, rows: rows }
+}
+
+// How many rows a list of sized cells packs into - the same packing as
+// gridLayout, with no pixel in the sum. It is what a surface that sizes its
+// own step from its layout reads: the launcher's rows are a share of the
+// card, and the share is one over this and not over the catalogue's ceiling,
+// or a layout of seven rows leaves an eighth of the card empty.
+function gridRows(cells, columns) {
+    return gridLayout(cells, columns, 0, 0, 1).rows
 }
 
 // The size a corner dragged to (x, y) inside the grid asks for, in steps.
@@ -179,7 +188,10 @@ function sizeAt(x, y, origin, columns, width, gap, unit, maxRows, least) {
     const w = Math.round((across + space) / (column + space))
     const h = Math.round((down + space) / (step + space))
     const from = Math.max(0, Math.min(count - 1, Math.round(Number(origin.x) / (column + space))))
-    const rows = Math.max(1, Math.round(Number(maxRows) || 0) || h)
+    // No ceiling is no ceiling, not "the height asked for": the latter let a
+    // floor of two rows lose to a drag to one, because the ceiling had
+    // become the one row the hand was at.
+    const rows = Math.max(0, Math.round(Number(maxRows)) || 0) || Infinity
     const floor = least || {}
     const leastW = Math.max(1, Math.round(Number(floor.w)) || 1)
     const leastH = Math.max(1, Math.round(Number(floor.h)) || 1)

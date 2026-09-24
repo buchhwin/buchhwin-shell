@@ -24,6 +24,20 @@ ShellCard {
     // columns to spare; one column gets play and pause alone.
     readonly property bool roomForTransport: shape === "wide" || shape === "large"
 
+    // A click anywhere the card is not already a control. The transport
+    // buttons, the seek bar and the player chips are declared after this, so
+    // they are above it and keep their own clicks - pressing play must not
+    // also open a window.
+    signal clicked()
+    property bool clickOpens: false
+
+    MouseArea {
+        anchors.fill: parent
+        enabled: root.clickOpens
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.clicked()
+    }
+
     ColumnLayout {
         id: column
         // Centred in the cell rather than stretched across it. The cell decides

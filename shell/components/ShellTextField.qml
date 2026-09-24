@@ -66,9 +66,13 @@ Rectangle {
                 if (text.length) { event.accepted = false; return }
                 root.deleteOnEmpty()
             }
+            // Escape clears what is typed; only an Escape with nothing to
+            // clear is the field's owner's. Both used to happen in one press,
+            // so a dialog that closes "when the field is empty" closed on the
+            // draft it had just cleared.
             Keys.onEscapePressed: event => {
-                if (text.length) text = ""
-                else event.accepted = false
+                if (text.length) { text = ""; return }
+                event.accepted = false
                 root.escapePressed()
             }
             ShellText {

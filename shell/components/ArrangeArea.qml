@@ -34,6 +34,32 @@ Item {
     // being dragged turns this off: every cell changes in every frame, and a
     // glide behind the hand reads as lag rather than as motion.
     property bool animated: true
+
+    // **And they do not glide for the first moment a surface is on screen.**
+    // An item whose content is not ready yet reports no height and so holds no
+    // place, and the ones after it pack into the slot it has not claimed; when
+    // it arrives the whole grid corrects itself. That correction is right - the
+    // resting order is the stored order either way, and nothing is written -
+    // but gliding through it is the "opening the quick panel after a while
+    // shuffles every widget once, and opening it straight away does not" that
+    // was reported. On a second open the tiles are already there, which is why
+    // it only happens cold.
+    //
+    // So the correction is made unseen rather than delayed: at this point the
+    // panel is still animating in, and a tile that is simply *drawn* in its
+    // right place costs nothing.
+    readonly property bool gliding: animated && warm
+    property bool warm: false
+    onVisibleChanged: {
+        area.warm = false
+        if (visible) warmTimer.restart()
+    }
+    Component.onCompleted: if (visible) warmTimer.restart()
+    Timer {
+        id: warmTimer
+        interval: Animations.popupOpen
+        onTriggered: area.warm = true
+    }
     // The ceiling a cell may be dragged to, in rows - the one the layout file
     // is sanitized against, so nothing is previewed that the write undoes.
     property int maxRows: 0
@@ -139,6 +165,21 @@ Item {
     }
 
     implicitHeight: placement.height
+
+    // The rows the committed cells pack into, in steps. Read this to size a
+    // step from the layout rather than the other way round: it depends on the
+    // model and on which items hold a place, and on nothing that depends on
+    // `unit` - not even `sized`, which is `unit > 0` and made this a binding
+    // loop in the log although its value never changes. A surface whose unit
+    // is a share of its height over *this* is safe; the launcher is that
+    // surface, see its `gridUnit`. On a surface that is not sized the model
+    // carries no `w`/`h` and every cell counts as one step, and nobody reads it.
+    readonly property int rowsUsed: {
+        const cells = []
+        for (const entry of (model || []))
+            if (area.heights[entry.id] !== 0) cells.push({ id: entry.id, w: entry.w || 1, h: entry.h || 1 })
+        return Arrange.gridRows(cells, columns)
+    }
 
     // ---- the drag ---------------------------------------------------------
 

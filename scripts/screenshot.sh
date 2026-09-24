@@ -5,9 +5,17 @@ set -euo pipefail
 # the clipboard and announced with a notification offering to edit (swappy)
 # or open the folder.
 #   screenshot.sh region | screen | window
+# A nested test session keeps its screenshots in its own state directory: the
+# user's Pictures folder is the host's, and a test must not fill it.
+# shellcheck source=lib/nested-guard.sh
+source "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/lib/nested-guard.sh"
 mode=${1:-region}
-pictures=$(xdg-user-dir PICTURES 2>/dev/null || printf '%s/Pictures' "$HOME")
-target_dir="$pictures/Screenshots"
+if nested_environment; then
+  target_dir="${XDG_STATE_HOME:-$HOME/.local/state}/buchhwin-shell/screenshots"
+else
+  pictures=$(xdg-user-dir PICTURES 2>/dev/null || printf '%s/Pictures' "$HOME")
+  target_dir="$pictures/Screenshots"
+fi
 mkdir -p -- "$target_dir"
 file="$target_dir/Screenshot_$(date +%Y-%m-%d_%H-%M-%S).png"
 

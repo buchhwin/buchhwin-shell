@@ -66,7 +66,13 @@ Item {
     // Sliding selection: a capsule for "pill", a line for "underline".
     Rectangle {
         id: indicator
-        visible: root.indicatorReady
+        // Nothing selected, nothing drawn. `indicatorReady` only says the
+        // capsule has been given a width at some point; it stays true when
+        // `current` later matches no option, and the capsule then sits empty
+        // wherever it last was - which is what a profile that is not the
+        // active one looked like on the Profiles page: a blank grey pill
+        // floating between two glyphs.
+        visible: root.indicatorReady && root.currentIndex >= 0
         x: root.activeX + (root.style === "underline" ? Metrics.spaceLg : 0)
         width: Math.max(0, root.activeWidth - (root.style === "underline" ? Metrics.spaceLg * 2 : 0))
         y: root.style === "underline" ? parent.height - height : Metrics.spaceXs
@@ -117,6 +123,14 @@ Item {
                 RowLayout {
                     id: segmentRow
                     anchors.centerIn: parent
+                    // Never wider than the segment: the row narrows and the
+                    // label elides. The segment's width is read here and fed
+                    // back into nothing - a Layout.maximumWidth on the label
+                    // made from segment.width was a recursive rearrange in
+                    // compact mode, because the label's cap is part of this
+                    // row's implicit width, which is what the segment's own
+                    // width comes from when it does not fill.
+                    width: Math.min(implicitWidth, Math.max(0, segment.width - (root.compact ? Metrics.controlPaddingSm : Metrics.controlPadding) * 2))
                     spacing: Metrics.spaceSm
                     ShellIcon {
                         visible: (segment.modelData.icon || "").length > 0
@@ -128,8 +142,10 @@ Item {
                         visible: !root.compact || segment.active || !(segment.modelData.icon || "").length
                         text: segment.modelData.label
                         color: segment.active ? (root.style === "pill" ? Colors.text : Colors.accentForeground) : Colors.mutedText
-                        // Cut the label rather than paint it over the neighbour.
-                        Layout.maximumWidth: segment.width - (root.compact ? Metrics.controlPaddingSm : Metrics.controlPadding)
+                        // Cut the label rather than paint it over the
+                        // neighbour: the label is what gives way when the
+                        // row above is narrower than its content.
+                        Layout.fillWidth: true
                         elide: Text.ElideRight
                     }
                     // Small tag after the label, e.g. "Current".
@@ -137,7 +153,7 @@ Item {
                         visible: (segment.modelData.badge || "").length > 0 && (!root.compact || segment.active)
                         Layout.preferredWidth: badgeText.implicitWidth + Metrics.spaceSm * 2
                         Layout.preferredHeight: badgeText.implicitHeight + Metrics.spaceXxs * 2
-                        radius: Metrics.radiusPill
+                        radius: Metrics.pillRadius(height)
                         color: segment.active ? Colors.accent : Colors.elevatedSurface
                         ShellText {
                             id: badgeText

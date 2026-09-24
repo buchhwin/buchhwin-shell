@@ -23,6 +23,7 @@ ColumnLayout {
                 : CalendarService.status === "sandbox" ? "Not available in the test session"
                 : CalendarService.status === "disabled" ? "Turned off" : "Loading …"
             ShellToggle {
+                focusOnTab: true
                 checked: SettingsService.value("calendar.enabled")
                 onToggled: value => SettingsService.set("calendar.enabled", value)
             }
@@ -30,8 +31,9 @@ ColumnLayout {
 
         RowLayout {
             spacing: Metrics.spaceSm
-            ShellButton { icon: "󰃭"; text: "Manage in Merkuro"; onClicked: CalendarService.openManager() }
+            ShellButton { focusOnTab: true; icon: "󰃭"; text: "Manage in Merkuro"; onClicked: CalendarService.openManager() }
             ShellButton {
+                focusOnTab: true
                 icon: Icons.refresh
                 text: "Refresh"
                 enabledState: CalendarService.status === "ok"
@@ -52,6 +54,7 @@ ColumnLayout {
             Repeater {
                 model: groupSection.modelData.calendars
                 ListRow {
+                    focusOnTab: true
                     id: calendarRow
                     required property var modelData
                     readonly property bool shown: CalendarService.hiddenIds.indexOf(modelData.id) < 0
@@ -63,6 +66,7 @@ ColumnLayout {
                     active: shown
                     onClicked: CalendarService.setCalendarVisible(modelData.id, !shown)
                     ShellToggle {
+                        focusOnTab: true
                         checked: calendarRow.shown
                         onToggled: value => CalendarService.setCalendarVisible(calendarRow.modelData.id, value)
                     }
@@ -98,6 +102,7 @@ ColumnLayout {
             labelFills: true
             label: "Show upcoming events"
             ShellToggle {
+                focusOnTab: true
                 checked: SettingsService.value("calendar.eventHint")
                 onToggled: value => SettingsService.set("calendar.eventHint", value)
             }

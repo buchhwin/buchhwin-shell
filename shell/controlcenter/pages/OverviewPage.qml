@@ -412,6 +412,11 @@ ColumnLayout {
         MediaCard {
             shape: fitClass
             readonly property bool shown: true
+            // The tile is a summary; the player is a surface of its own, and
+            // the bar's media pill has always opened it. Closing it comes back
+            // here rather than to the desktop.
+            clickOpens: true
+            onClicked: PanelService.openOver("mediaPopup", {}, {})
         }
     }
 
@@ -571,7 +576,7 @@ ColumnLayout {
                     Layout.fillWidth: true
                     compact: chipRow.tight
                     icon: Colors.dark ? "󰖔" : "󰖙"
-                    title: "Dark Mode"
+                    title: "Dark mode"
                     subtitle: Colors.dark ? "On" : "Off"
                     active: Colors.dark
                     onClicked: SettingsService.set("appearance.theme", Colors.dark ? "light" : "dark")

@@ -56,6 +56,7 @@ Singleton {
     function isFavourite(path) { return state.favourites.indexOf(path) >= 0 }
     function toggleFavourite(path) { saveState(Logic.toggleFavourite(state, path)) }
     function isInSlideshow(path) { return state.slideshow.indexOf(path) >= 0 }
+    function toggleSlideshow(path) { saveState(Logic.toggleSlideshow(state, path)) }
 
     function saveState(next) {
         state = next

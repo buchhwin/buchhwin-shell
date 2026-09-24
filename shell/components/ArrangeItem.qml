@@ -58,7 +58,7 @@ Item {
     // its ghost is, and that one follows the pointer directly - and while it
     // is sized, a glide would trail the corner being pulled.
     readonly property bool glides: Animations.motionEnabled && !item.dragging
-        && !item.sizing && (!item.area || item.area.animated)
+        && !item.sizing && (!item.area || item.area.gliding)
     Behavior on x {
         enabled: item.glides
         NumberAnimation { duration: Animations.reorder; easing.type: Animations.easing }

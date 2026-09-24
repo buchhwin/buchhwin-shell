@@ -56,15 +56,16 @@ ShellRoot {
         T.eq(JSON.stringify(L.defaultLock()), JSON.stringify(d), "none of it touched the input")
 
         // ---- it lives beside the others, and never in them -------------------
-        const config = L.sanitize({ configVersion: 2, profiles: { minimal: {} } })
+        const config = L.sanitize({ configVersion: 3, profiles: { default: { modes: { minimal: {} } } } })
+        const mode = L.modeConfig(config, "default", "minimal")
         T.ok(config.lock !== undefined && config.notch !== undefined,
-             "the lock screen sits outside profiles, next to the notch")
-        T.eq(config.profiles.minimal.lock, undefined, "and not inside one")
+             "the lock screen sits outside the profiles, next to the notch")
+        T.eq(mode.lock, undefined, "and not inside a mode")
         T.eq(types(config.lock), types(d), "a file without one gets the default, with no migration")
         const ids = L.lockItems(config.lock).map(item => item.id)
             .concat(L.notchItems(config.notch, "expanded").map(item => item.id))
-            .concat(L.quickItems(config.profiles.minimal.quick).map(item => item.id))
-            .concat(L.dashboardItems(config.profiles.minimal.dashboard).map(item => item.id))
+            .concat(L.quickItems(mode.quick).map(item => item.id))
+            .concat(L.dashboardItems(mode.dashboard).map(item => item.id))
         T.eq(ids.length, new Set(ids).size, "and no surface's ids collide with another's")
 
         T.finish("LockSurfaceTest")

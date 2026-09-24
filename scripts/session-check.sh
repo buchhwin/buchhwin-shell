@@ -95,7 +95,7 @@ if [[ -n $log ]]; then
   # keep the screen black), so Qt's registration attempt can fail once. Only a
   # portal that stays unreachable is a problem.
   if grep -q 'Failed to register with host portal' <<<"$log"; then
-    busctl --user status org.freedesktop.portal.Desktop >/dev/null 2>&1 \
+    busctl --user --timeout=3 status org.freedesktop.portal.Desktop >/dev/null 2>&1 \
       && ok "portal registration retried after the shell started" \
       || warn "the portal is not reachable (the shell could not register with it)"
   fi
@@ -116,8 +116,13 @@ else
   warn "no startup timeline yet (it is written at the next login)"
 fi
 layout_version=$(jq -r '.configVersion // empty' "$config_home/buchhwin-shell/layout.json" 2>/dev/null)
-[[ $layout_version == 2 ]] && ok "layout.json uses format v2" || warn "layout.json not migrated yet (version '${layout_version:-missing}')"
-owner=$(busctl --user status org.freedesktop.Notifications 2>/dev/null | sed -n 's/^Comm=//p')
+# The version the shell writes. A check that names it has to be changed with
+# it, or the next migration reports itself as a failure - which is what v3 did.
+layout_current=$(sed -n 's/^var CURRENT_VERSION = \([0-9]\+\).*/\1/p' "$project_dir/config/migrations/Migrations.js" 2>/dev/null)
+layout_current=${layout_current:-3}
+[[ $layout_version == "$layout_current" ]] && ok "layout.json uses format v$layout_current" \
+    || warn "layout.json not migrated yet (version '${layout_version:-missing}', the shell writes v$layout_current)"
+owner=$(busctl --user --timeout=3 status org.freedesktop.Notifications 2>/dev/null | sed -n 's/^Comm=//p')
 [[ $owner == quickshell || $owner == .quickshell* ]] && ok "notifications are handled by the shell" || warn "notification service is owned by '${owner:-nobody}'"
 
 section "Keyring and portals"
@@ -125,7 +130,7 @@ section "Keyring and portals"
 # nothing: `org.freedesktop.portal.Desktop` is an activatable name, so a plain
 # introspect *starts* the portal on a session where it is down. The same guard
 # accounts-status.sh and kdeconnect-status.sh already use.
-if busctl --user --auto-start=no introspect org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop 2>/dev/null | grep -q 'org.freedesktop.portal.Secret'; then ok "Secret portal available (Brave sync through KWallet)"; else fail "Secret portal is missing or not running"; fi
+if busctl --user --timeout=3 --auto-start=no introspect org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop 2>/dev/null | grep -q 'org.freedesktop.portal.Secret'; then ok "Secret portal available (Brave sync through KWallet)"; else fail "Secret portal is missing or not running"; fi
 # ksecretd is the one PAM unlocks; kwalletd6 is the legacy daemon nothing
 # unlocks, so anything that woke it will be asking for a password by hand.
 #
@@ -134,7 +139,7 @@ if busctl --user --auto-start=no introspect org.freedesktop.portal.Desktop /org/
 # is a different fact - and a check that claims more than it measures is worse
 # than no check, because the next person believes it.
 if running ksecretd; then
-  wallet_locked=$(busctl --user get-property org.freedesktop.secrets \
+  wallet_locked=$(busctl --user --timeout=3 get-property org.freedesktop.secrets \
     /org/freedesktop/secrets/collection/kdewallet \
     org.freedesktop.Secret.Collection Locked 2>/dev/null | awk '{print $2}')
   case "$wallet_locked" in
@@ -145,8 +150,21 @@ if running ksecretd; then
 else
   warn "the secret service is not running yet (starts on first access)"
 fi
+# kwalletd6 is the other wallet, D-Bus activated by whoever asks for
+# `org.kde.kwalletd6` - here Brave, by name, on purpose (docs/system.md >
+# Host changes). Whether its own wallet is open is what decides whether the
+# user is asked for a password, so that is read rather than assumed from the
+# daemon being alive: it has been open since the login PAM opened, and a
+# warning that says nobody unlocks it sends the next person after a problem
+# that is not there.
 if running kwalletd6; then
-  warn "kwalletd6 is also running: something asked for the legacy interface, which nothing unlocks"
+  wallet_open=$(busctl --user --timeout=3 --auto-start=no call org.kde.kwalletd6 \
+    /modules/kwalletd6 org.kde.KWallet isOpen s kdewallet 2>/dev/null | awk '{print $2}')
+  case "$wallet_open" in
+    true)  ok "kwalletd6 is open too (Brave stores its passwords there)" ;;
+    false) warn "kwalletd6 is running for Brave and its wallet is locked: it will ask for a password" ;;
+    *)     warn "kwalletd6 is running; whether its wallet is open could not be read" ;;
+  esac
 fi
 # Process names are cut to 15 characters (polkit-kde-authentication-agent-1).
 running polkit-kde-auth && ok "PolicyKit agent is running" || fail "PolicyKit agent is missing"

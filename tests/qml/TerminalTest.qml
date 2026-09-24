@@ -45,6 +45,12 @@ ShellRoot {
 
         T.eq(L.ansiToRich("\x1b[1;38;2;79;143;247mme\x1b[0m <a>"), "<font color=\"#4f8ff7\"><b>me</b></font>&nbsp;&lt;a&gt;", "ANSI colour and bold to rich text")
         T.eq(L.ansiToRich("%{\x1b[31m%}x%{\x1b[0m%}\ny"), "<font color=\"#f07178\">x</font><br>y", "zsh wrappers removed, basic colours, line break")
+        // A background is not painted, and its arguments are not foreground
+        // codes: `48;2;30;30;30` used to paint the text with colour 30.
+        T.eq(L.ansiToRich("\x1b[48;2;30;30;30mx\x1b[0m"), "x", "a true-colour background leaves the text alone")
+        T.eq(L.ansiToRich("\x1b[48;5;31mx\x1b[0m"), "x", "so does a palette background")
+        T.eq(L.ansiToRich("\x1b[48;2;1;2;3;31mx\x1b[0m"), "<font color=\"#f07178\">x</font>",
+             "and a foreground after it is still read")
         // cmatrix colour name and cava gradient follow the prompt accent.
         const accentOpts = { promptColor: "shell" }
         T.eq([L.cmatrixColor(accentOpts, "#50e2cb"), L.cmatrixColor(accentOpts, "#ff2200"),

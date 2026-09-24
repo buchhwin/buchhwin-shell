@@ -119,6 +119,26 @@ ShellRoot {
         T.eq(W.monitorOrder([{ name: "B", x: 0, y: 0 }, { name: "A", x: 0, y: 0 }]), ["A", "B"],
              "same place: by name, so the answer is at least stable")
         T.eq(W.monitorOrder(null), [], "nothing known yet")
+
+        // What a reboot leaves: the compositor gave each monitor a workspace
+        // before the rules were in. 3 and 4 belong to the first block.
+        const order = ["DP-8", "DP-10", "DP-13"]
+        const afterBoot = [
+            { id: 1, monitor: "DP-8" }, { id: 3, monitor: "DP-10" }, { id: 4, monitor: "DP-13" },
+            { id: 12, monitor: "DP-10" }, { id: -98, monitor: "DP-8" }
+        ]
+        T.eq(W.misplaced(order, afterBoot), [{ id: 3, monitor: "DP-8" }, { id: 4, monitor: "DP-8" }],
+             "the workspaces on the wrong monitor, and where they go")
+        T.eq(W.misplaced(order, [{ id: 12, monitor: "DP-10" }, { id: 21, monitor: "DP-13" }]), [],
+             "nothing to move when every block sits on its monitor")
+        T.eq(W.misplaced(["DP-8", "DP-13"], [{ id: 12, monitor: "DP-13" }, { id: 25, monitor: "DP-13" }]),
+             [], "with a monitor gone its block follows the order, and a block beyond the monitors stays")
+        T.eq(W.misplaced(["DP-8", "DP-13"], [{ id: 12, monitor: "DP-8" }]), [{ id: 12, monitor: "DP-13" }],
+             "the second block belongs to whoever is second now")
+        T.eq(W.misplaced([], afterBoot), [], "no monitors known, nothing moves")
+        T.eq(W.misplaced(order, null), [], "no workspaces, nothing moves")
+        T.eq(W.misplaced(order, [{ id: "3", monitor: "DP-13" }, { id: 4 }]),
+             [{ id: 3, monitor: "DP-8" }, { id: 4, monitor: "DP-8" }], "string ids and a missing monitor")
         T.eq(W.monitorOrder([{ x: 0 }, { name: "", x: 0 }]), [], "a monitor with no name is not a monitor")
         T.eq([W.monitorIndex(screens, "DP-8"), W.monitorIndex(screens, "DP-10"), W.monitorIndex(screens, "DP-13")],
              [0, 1, 2], "each monitor's slot")

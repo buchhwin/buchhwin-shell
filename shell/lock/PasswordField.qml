@@ -38,7 +38,7 @@ Item {
             anchors.leftMargin: Metrics.spaceLg
             anchors.verticalCenter: parent.verticalCenter
             visible: root.length === 0
-            text: root.lockState.busy ? "Checking …" : "Enter Password"
+            text: root.lockState.busy ? "Checking …" : "Enter password"
             color: Colors.lockMuted
         }
 

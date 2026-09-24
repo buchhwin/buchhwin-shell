@@ -99,6 +99,28 @@ hl.config({
     },
     animations = { enabled = true },
     dwindle = { preserve_split = true },
+    -- XWayland draws in real device pixels rather than being scaled up afterwards.
+    --
+    -- Without this, XWayland tells its clients the *logical* size of a scaled
+    -- monitor - `xrandr` reported 2560x1440 for a 3840x2160 screen at 1.5 - so an
+    -- X11 application renders 2560x1440 pixels and the compositor stretches them
+    -- over 3840x2160. Reported as "the font in Citrix is almost unreadably
+    -- pixelated on the 4K screen, and fine on the Full HD one", which is exactly
+    -- the shape of it: the Full HD screen runs at scale 1, where logical and
+    -- physical are the same size and nothing is stretched.
+    --
+    -- The price is that an X11 application now draws at its own idea of 1x on a
+    -- 1.5x screen, which is a third smaller. So the shell tells X11 the real
+    -- scale through `Xft.dpi` (scripts/apply-x11-dpi.sh), which only X11 clients
+    -- read; a toolkit that ignores it still needs its own scale -
+    -- `GDK_SCALE`/`GDK_DPI_SCALE` for GTK, `QT_SCALE_FACTOR` for Qt - in the
+    -- launcher that starts it. Those cannot be set for the session as a whole,
+    -- because the same variables reach Wayland applications, which are already
+    -- scaled correctly and would double.
+    --
+    -- It only applies to surfaces created afterwards: an application already
+    -- running when this changes keeps the old scaling until it is restarted.
+    xwayland = { force_zero_scaling = false },
     misc = {
         disable_hyprland_logo = true,
         force_default_wallpaper = 0,
@@ -197,7 +219,8 @@ hl.bind(keyFor("SUPER + E"), exec(fileManager), { description = "File manager" }
 hl.bind(keyFor("SUPER + CTRL + R"), exec(projectPath .. "/scripts/reload-shell.sh"), { description = "Restart buchhwin-shell" })
 hl.bind(keyFor("SUPER + ALT + E"), exec(ipc .. "editor toggle"), { description = "Layout editor" })
 hl.bind(keyFor("SUPER + ALT + D"), exec(ipc .. "desktop cycleMode"), { description = "Desktop mode: widgets, bar, notch" })
-hl.bind(keyFor("SUPER + ALT + P"), exec(ipc .. "profile cycle"), { description = "Profile: minimal, work, gaming, laptop, docked" })
+hl.bind(keyFor("SUPER + ALT + P"), exec(ipc .. "mode cycle"), { description = "Mode: minimal, work, gaming, laptop, docked" })
+hl.bind(keyFor("SUPER + P"), exec(ipc .. "profile toggle"), { description = "Profiles and modes" })
 -- F1, not ?: on a German layout ? is Shift+ss and unreliable as a binding.
 hl.bind(keyFor("SUPER + F1"), exec(ipc .. "shortcuts toggleSheet"), { description = "All keyboard shortcuts" })
 hl.bind(keyFor("SUPER + D"), exec(ipc .. "launcher toggle"), { description = "Launcher" })
@@ -230,6 +253,10 @@ hl.bind(keyFor("SUPER + CTRL + SHIFT + R"), exec(ipc .. "recording toggle screen
 -- Window actions.
 hl.bind(keyFor("SUPER + Q"), hl.dsp.window.close(), { description = "Close window" })
 hl.bind(keyFor("SUPER + F"), hl.dsp.window.fullscreen({ mode = "fullscreen" }), { description = "Fullscreen" })
+-- Floating on and off. There was no binding for this at all until somebody
+-- asked how to do it: `hyprctl binds` found none, while the shortcut sheet has
+-- known the title "Toggle floating" since it was written.
+hl.bind(keyFor("SUPER + C"), hl.dsp.window.float(), { description = "Toggle floating" })
 
 -- SUPER + arrows resize repeatedly; in tiled dwindle layouts this moves the split.
 hl.bind(keyFor("SUPER + RIGHT"), hl.dsp.window.resize({ x = 30, y = 0, relative = true }), { repeating = true, description = "Resize window" })
@@ -248,12 +275,31 @@ hl.bind(keyFor("SUPER + ALT + DOWN"), hl.dsp.focus({ direction = "down" }), { de
 -- shell knows which monitor that is. The `||` tail is the old, global
 -- behaviour, for a session whose shell is not running.
 -- Moving a window keeps the user on the current workspace.
-for i = 1, 9 do
-    hl.bind("SUPER + " .. i, exec(ipc .. "workspaces switchTo " .. i .. " || hyprctl dispatch workspace " .. i),
-            { description = "Go to workspace " .. i })
-    hl.bind("SUPER + SHIFT + " .. i, exec(ipc .. "workspaces move " .. i .. " || hyprctl dispatch movetoworkspacesilent " .. i),
-            { description = "Move window to workspace " .. i })
-end
+--
+-- Written out rather than in a loop, and each with its command spelled out:
+-- these go through `keyFor` like every other bind, so Settings > Shortcuts
+-- can move them; the shell reads the default combination out of this file
+-- as the literal string `keyFor("SUPER + 1")` (ShortcutLogic.parseDefaults),
+-- and scripts/lib/checks.py reads the command the same way, so a helper
+-- function that built it would hide the action from the drift check.
+hl.bind(keyFor("SUPER + 1"), exec(ipc .. "workspaces switchTo 1 || hyprctl dispatch workspace 1"), { description = "Go to workspace 1" })
+hl.bind(keyFor("SUPER + 2"), exec(ipc .. "workspaces switchTo 2 || hyprctl dispatch workspace 2"), { description = "Go to workspace 2" })
+hl.bind(keyFor("SUPER + 3"), exec(ipc .. "workspaces switchTo 3 || hyprctl dispatch workspace 3"), { description = "Go to workspace 3" })
+hl.bind(keyFor("SUPER + 4"), exec(ipc .. "workspaces switchTo 4 || hyprctl dispatch workspace 4"), { description = "Go to workspace 4" })
+hl.bind(keyFor("SUPER + 5"), exec(ipc .. "workspaces switchTo 5 || hyprctl dispatch workspace 5"), { description = "Go to workspace 5" })
+hl.bind(keyFor("SUPER + 6"), exec(ipc .. "workspaces switchTo 6 || hyprctl dispatch workspace 6"), { description = "Go to workspace 6" })
+hl.bind(keyFor("SUPER + 7"), exec(ipc .. "workspaces switchTo 7 || hyprctl dispatch workspace 7"), { description = "Go to workspace 7" })
+hl.bind(keyFor("SUPER + 8"), exec(ipc .. "workspaces switchTo 8 || hyprctl dispatch workspace 8"), { description = "Go to workspace 8" })
+hl.bind(keyFor("SUPER + 9"), exec(ipc .. "workspaces switchTo 9 || hyprctl dispatch workspace 9"), { description = "Go to workspace 9" })
+hl.bind(keyFor("SUPER + SHIFT + 1"), exec(ipc .. "workspaces move 1 || hyprctl dispatch movetoworkspacesilent 1"), { description = "Move window to workspace 1" })
+hl.bind(keyFor("SUPER + SHIFT + 2"), exec(ipc .. "workspaces move 2 || hyprctl dispatch movetoworkspacesilent 2"), { description = "Move window to workspace 2" })
+hl.bind(keyFor("SUPER + SHIFT + 3"), exec(ipc .. "workspaces move 3 || hyprctl dispatch movetoworkspacesilent 3"), { description = "Move window to workspace 3" })
+hl.bind(keyFor("SUPER + SHIFT + 4"), exec(ipc .. "workspaces move 4 || hyprctl dispatch movetoworkspacesilent 4"), { description = "Move window to workspace 4" })
+hl.bind(keyFor("SUPER + SHIFT + 5"), exec(ipc .. "workspaces move 5 || hyprctl dispatch movetoworkspacesilent 5"), { description = "Move window to workspace 5" })
+hl.bind(keyFor("SUPER + SHIFT + 6"), exec(ipc .. "workspaces move 6 || hyprctl dispatch movetoworkspacesilent 6"), { description = "Move window to workspace 6" })
+hl.bind(keyFor("SUPER + SHIFT + 7"), exec(ipc .. "workspaces move 7 || hyprctl dispatch movetoworkspacesilent 7"), { description = "Move window to workspace 7" })
+hl.bind(keyFor("SUPER + SHIFT + 8"), exec(ipc .. "workspaces move 8 || hyprctl dispatch movetoworkspacesilent 8"), { description = "Move window to workspace 8" })
+hl.bind(keyFor("SUPER + SHIFT + 9"), exec(ipc .. "workspaces move 9 || hyprctl dispatch movetoworkspacesilent 9"), { description = "Move window to workspace 9" })
 
 -- Pointer moving and resizing.
 hl.bind(keyFor("SUPER + mouse:272"), hl.dsp.window.drag(), { mouse = true, description = "Move window" })
@@ -305,6 +351,7 @@ hl.layer_rule({ name = "buchhwin-session-menu", match = { namespace = "^(buchhwi
 hl.layer_rule({ name = "buchhwin-wallpaper", match = { namespace = "^(buchhwin-wallpaper)$" }, blur = false })
 hl.layer_rule({ name = "buchhwin-notch-noblur", match = { namespace = "^(buchhwin-notch)$" }, blur = false })
 hl.layer_rule({ name = "buchhwin-corners-noblur", match = { namespace = "^(buchhwin-screencorners)$" }, blur = false })
+hl.layer_rule({ name = "buchhwin-scrim-noblur", match = { namespace = "^(buchhwin-scrim)$" }, blur = false })
 -- Helper windows that must keep running but never show (list shared with the
 -- shell in services/hypr/HiddenWindows.js). xwaylandvideobridge (KDE autostart)
 -- otherwise opens a black, uncloseable window on workspace 1.

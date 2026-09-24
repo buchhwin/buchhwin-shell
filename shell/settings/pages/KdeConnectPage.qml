@@ -16,8 +16,10 @@ ColumnLayout {
 
     readonly property var status: KdeConnectService.status
 
-    Component.onCompleted: KdeConnectService.track()
-    Component.onDestruction: KdeConnectService.untrack()
+    PageActivity {
+        onOpened: KdeConnectService.track()
+        onClosed: KdeConnectService.untrack()
+    }
 
     SettingsSection {
         Layout.fillWidth: true
@@ -32,6 +34,7 @@ ColumnLayout {
             subtitle: KdeConnectService.running ? "Phones in the same network can find this computer"
                 : "The service starts automatically when you log in"
             ShellButton {
+                focusOnTab: true
                 visible: KdeConnectService.known && !KdeConnectService.running
                 text: "Start KDE Connect"
                 compact: true
@@ -65,12 +68,14 @@ ColumnLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceSm
             ShellButton {
+                focusOnTab: true
                 icon: Icons.refresh
                 text: KdeConnectService.loading ? "Refreshing …" : "Refresh"
                 compact: true
                 onClicked: KdeConnectService.discover()
             }
             ShellButton {
+                focusOnTab: true
                 icon: Icons.settings
                 text: "Open KDE Connect"
                 compact: true
@@ -105,11 +110,13 @@ ColumnLayout {
                 Row {
                     spacing: Metrics.spaceSm
                     ShellButton {
+                        focusOnTab: true
                         text: "Reject"
                         compact: true
                         onClicked: KdeConnectService.run("reject", modelData)
                     }
                     ShellButton {
+                        focusOnTab: true
                         text: "Accept"
                         compact: true
                         variant: "accent"
@@ -173,6 +180,7 @@ ColumnLayout {
                             muted: true
                         }
                         ShellButton {
+                            focusOnTab: true
                             anchors.verticalCenter: parent.verticalCenter
                             icon: Icons.remove
                             compact: true
@@ -188,6 +196,7 @@ ColumnLayout {
                     visible: deviceItem.connected
                     spacing: Metrics.spaceSm
                     ShellButton {
+                        focusOnTab: true
                         icon: "󰒊"
                         text: "Ping"
                         compact: true
@@ -195,6 +204,7 @@ ColumnLayout {
                         onClicked: KdeConnectService.run("ping", deviceItem.modelData)
                     }
                     ShellButton {
+                        focusOnTab: true
                         icon: "󰂞"
                         text: "Find my phone"
                         compact: true
@@ -202,6 +212,7 @@ ColumnLayout {
                         onClicked: KdeConnectService.run("ring", deviceItem.modelData)
                     }
                     ShellButton {
+                        focusOnTab: true
                         icon: "󰈔"
                         text: "Send files …"
                         compact: true
@@ -209,6 +220,7 @@ ColumnLayout {
                         onClicked: KdeConnectService.sendFiles(deviceItem.modelData)
                     }
                     ShellButton {
+                        focusOnTab: true
                         icon: "󰌷"
                         text: "Send link or text …"
                         compact: true
@@ -220,6 +232,7 @@ ColumnLayout {
                         }
                     }
                     ShellButton {
+                        focusOnTab: true
                         icon: "󰅍"
                         text: "Send clipboard"
                         compact: true
@@ -227,6 +240,7 @@ ColumnLayout {
                         onClicked: KdeConnectService.run("clipboard", deviceItem.modelData)
                     }
                     ShellButton {
+                        focusOnTab: true
                         icon: "󰍡"
                         text: "Messages"
                         compact: true
@@ -235,6 +249,7 @@ ColumnLayout {
                         onClicked: KdeConnectService.openSms(deviceItem.modelData)
                     }
                     ShellButton {
+                        focusOnTab: true
                         icon: deviceItem.modelData.locked ? "󰍁" : "󰌾"
                         text: deviceItem.modelData.locked ? "Unlock phone" : "Lock phone"
                         compact: true
@@ -242,6 +257,7 @@ ColumnLayout {
                         onClicked: KdeConnectService.run(deviceItem.modelData.locked ? "unlock" : "lock", deviceItem.modelData)
                     }
                     ShellButton {
+                        focusOnTab: true
                         icon: "󰂚"
                         text: deviceItem.notificationsOpen ? "Hide notifications"
                             : KdeConnectService.notificationCountText(deviceItem.modelData.notificationCount)
@@ -254,6 +270,7 @@ ColumnLayout {
                     // The daemon mounts the phone over SFTP and opens the file
                     // manager itself, so this is one button and no path.
                     ShellButton {
+                        focusOnTab: true
                         icon: Icons.folder
                         text: deviceItem.modelData.mounted ? "Browse files" : "Browse files …"
                         compact: true
@@ -262,6 +279,7 @@ ColumnLayout {
                         onClicked: KdeConnectService.browseFiles(deviceItem.modelData)
                     }
                     ShellButton {
+                        focusOnTab: true
                         icon: "󰆍"
                         text: deviceItem.commandsOpen ? "Hide commands"
                             : deviceItem.modelData.commands.length + (deviceItem.modelData.commands.length === 1
@@ -290,6 +308,7 @@ ColumnLayout {
                             icon: "󰆍"
                             title: modelData.name
                             ShellButton {
+                                focusOnTab: true
                                 text: "Run"
                                 compact: true
                                 variant: "ghost"
@@ -308,6 +327,7 @@ ColumnLayout {
                     visible: deviceItem.connected && deviceItem.shareOpen
                     spacing: Metrics.spaceSm
                     ShellTextField {
+                        focusOnTab: true
                         id: shareField
                         Layout.fillWidth: true
                         icon: "󰌷"
@@ -316,6 +336,7 @@ ColumnLayout {
                         onEscapePressed: deviceItem.shareOpen = false
                     }
                     ShellButton {
+                        focusOnTab: true
                         text: "Send"
                         compact: true
                         variant: "accent"
@@ -353,10 +374,12 @@ ColumnLayout {
                             }
                         }
                         ShellButton {
+                            focusOnTab: true
                             icon: Icons.previous; compact: true; variant: "ghost"; toolTip: "Previous"
                             onClicked: KdeConnectService.media(deviceItem.modelData, "previous")
                         }
                         ShellButton {
+                            focusOnTab: true
                             icon: deviceItem.player && deviceItem.player.playing ? Icons.pause : Icons.play
                             compact: true
                             variant: "accent"
@@ -364,6 +387,7 @@ ColumnLayout {
                             onClicked: KdeConnectService.media(deviceItem.modelData, "play")
                         }
                         ShellButton {
+                            focusOnTab: true
                             icon: Icons.next; compact: true; variant: "ghost"; toolTip: "Next"
                             onClicked: KdeConnectService.media(deviceItem.modelData, "next")
                         }
@@ -374,6 +398,7 @@ ColumnLayout {
                         spacing: Metrics.spaceMd
                         ShellIcon { glyph: "󰕾"; size: Metrics.iconSm; color: Colors.mutedText }
                         ShellSlider {
+                            focusOnTab: true
                             Layout.fillWidth: true
                             from: 0
                             to: 100
@@ -382,6 +407,7 @@ ColumnLayout {
                         }
                     }
                     ShellSelect {
+                        focusOnTab: true
                         Layout.fillWidth: true
                         visible: deviceItem.player !== null && deviceItem.player.players.length > 1
                         options: deviceItem.player
@@ -401,12 +427,12 @@ ColumnLayout {
                     visible: deviceItem.connected && deviceItem.notificationsOpen
                     spacing: Metrics.spaceXxs
 
-                    ShellText {
+                    EmptyState {
                         Layout.fillWidth: true
                         visible: KdeConnectService.notifications.length === 0
-                        text: KdeConnectService.notificationsLoading ? "Reading notifications …" : "No notifications right now"
-                        role: "caption"
-                        muted: true
+                        row: true
+                        icon: KdeConnectService.notificationsLoading ? Icons.busy : "󰂚"
+                        title: KdeConnectService.notificationsLoading ? "Reading notifications …" : "No notifications right now"
                     }
                     Repeater {
                         model: deviceItem.notificationsOpen ? KdeConnectService.notifications : []
@@ -427,24 +453,33 @@ ColumnLayout {
                                 subtitle: noteRow.modelData.appName.length && noteRow.modelData.text.length
                                     ? noteRow.modelData.appName + " · " + noteRow.modelData.text
                                     : noteRow.modelData.text.length ? noteRow.modelData.text : noteRow.modelData.appName
-                                ShellButton {
-                                    text: noteRow.answering ? "Cancel" : "Reply"
-                                    compact: true
-                                    variant: "ghost"
-                                    // Only where the phone says an answer is
-                                    // possible: it refuses the rest.
-                                    visible: noteRow.modelData.replyId.length > 0
-                                    onClicked: {
-                                        noteRow.answering = !noteRow.answering
-                                        if (noteRow.answering) Qt.callLater(replyField.focusInput)
+                                // The trailing slot is a plain Item: two
+                                // buttons put straight into it sit on top of
+                                // each other, so they go in a Row like the
+                                // other rows on this page.
+                                Row {
+                                    spacing: Metrics.spaceSm
+                                    ShellButton {
+                                        focusOnTab: true
+                                        text: noteRow.answering ? "Cancel" : "Reply"
+                                        compact: true
+                                        variant: "ghost"
+                                        // Only where the phone says an answer is
+                                        // possible: it refuses the rest.
+                                        visible: noteRow.modelData.replyId.length > 0
+                                        onClicked: {
+                                            noteRow.answering = !noteRow.answering
+                                            if (noteRow.answering) Qt.callLater(replyField.focusInput)
+                                        }
                                     }
-                                }
-                                ShellButton {
-                                    text: "Dismiss"
-                                    compact: true
-                                    variant: "ghost"
-                                    visible: noteRow.modelData.dismissable
-                                    onClicked: KdeConnectService.dismissNotification(deviceItem.modelData, noteRow.modelData)
+                                    ShellButton {
+                                        focusOnTab: true
+                                        text: "Dismiss"
+                                        compact: true
+                                        variant: "ghost"
+                                        visible: noteRow.modelData.dismissable
+                                        onClicked: KdeConnectService.dismissNotification(deviceItem.modelData, noteRow.modelData)
+                                    }
                                 }
                             }
 
@@ -465,6 +500,7 @@ ColumnLayout {
                                     }
                                 }
                                 ShellButton {
+                                    focusOnTab: true
                                     text: "Send"
                                     variant: "accent"
                                     compact: true
@@ -505,6 +541,7 @@ ColumnLayout {
                 title: modelData.name
                 subtitle: KdeConnectService.stateText(modelData)
                 ShellButton {
+                    focusOnTab: true
                     text: modelData.requested ? "Requested" : "Pair"
                     compact: true
                     variant: "accent"

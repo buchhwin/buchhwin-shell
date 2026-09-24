@@ -28,6 +28,21 @@ Variants {
         // "Reserve space" maps the surface again.
         property bool remapping: false
 
+        // ---- the third shape: the notch *is* the display -------------------
+        // Volume, a notification or a track change, shown in the notch instead
+        // of in a surface below it. It is a strip the height of the notch, only
+        // wider - not a second overview, which is the thing it replaces.
+        //
+        // Only the screen the display was raised on takes it, and only while
+        // the overview is not open: the arbitration itself is NotchDisplay.
+        readonly property bool displaying: NotchService.displayKind.length > 0
+            && NotchService.displayScreen === screenName && !expanded
+            && NotchService.takesDisplay(NotchService.displayKind, screenName)
+        readonly property var displayContent: NotchService.display ? NotchService.display.content : null
+        readonly property real displayWidth: Math.max(collapsedWidth,
+            Math.min(Metrics.notchMaxExpandedWidth,
+                     displayLoader.item ? displayLoader.item.implicitWidth : collapsedWidth))
+
         // Expansion: hover (after a short delay) or IPC; a panel opening closes it.
         property bool hoverExpanded: false
         readonly property bool wantExpanded: active && (hoverExpanded || NotchService.forcedScreen === screenName)
@@ -51,7 +66,9 @@ Variants {
         readonly property int expandedWidth: expandedSize.width
         readonly property real overviewHeight: expandedSize.height
 
-        NotchValue { id: bodyWidth; minimum: Math.min(window.collapsedWidth, to); to: window.expanded ? window.expandedWidth : window.collapsedWidth }
+        NotchValue { id: bodyWidth; minimum: Math.min(window.collapsedWidth, to)
+                     to: window.expanded ? window.expandedWidth
+                         : window.displaying ? window.displayWidth : window.collapsedWidth }
         // The body may use the whole surface but its bottom margin, so the
         // clamp and the surface can never drift apart.
         readonly property real maxBodyHeight: Metrics.notchSurfaceHeight - Metrics.spaceXl
@@ -368,6 +385,24 @@ Variants {
                 }
             }
 
+            // The display, in the notch's own place. It fades over the strip
+            // rather than replacing it, so the clock is still there underneath
+            // and comes back without a second morph.
+            Loader {
+                id: displayLoader
+                x: (hitArea.width - width) / 2
+                width: Math.max(0, bodyWidth.value)
+                height: Metrics.notchHeight
+                active: window.displaying || opacity > 0
+                opacity: window.displaying ? 1 : 0
+                visible: opacity > 0
+                Behavior on opacity { NumberAnimation { duration: Animations.notchContentFade; easing.type: Animations.easing } }
+                sourceComponent: NotchDisplayContent {
+                    anchors.centerIn: parent
+                    content: window.displayContent || ({})
+                }
+            }
+
             // Collapsed content: the strip the user arranged - the time by
             // default, and while recording a red dot with the elapsed time
             // leading it (a click stops the recording).
@@ -376,7 +411,7 @@ Variants {
                 x: (hitArea.width - width) / 2
                 width: window.collapsedWidth
                 height: Metrics.notchHeight
-                opacity: window.expanded ? 0 : 1
+                opacity: window.expanded || window.displaying ? 0 : 1
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: Animations.hover; easing.type: Animations.easing } }
 

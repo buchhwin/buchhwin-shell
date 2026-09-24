@@ -25,6 +25,13 @@ ShellRoot {
         T.eq(D.logicalSize(edp), { width: 1920, height: 1200 }, "logical size uses scale")
         T.eq(D.logicalSize(Object.assign({}, dp, { transform: 1 })), { width: 1440, height: 2560 }, "rotation swaps size")
 
+        // The one scale X11 gets: the largest any enabled screen runs at.
+        T.eq(D.x11Scale(monitors), 1.5, "x11 scale is the largest screen's")
+        T.eq(D.x11Scale([dp]), 1, "nothing scaled, nothing to tell")
+        T.eq(D.x11Scale(D.update(monitors, "eDP-1", { disabled: true })), 1, "a disabled screen does not count")
+        T.eq(D.x11Scale([]), 1, "no monitors is 1")
+        T.eq(D.x11Scale(monitors.concat([Object.assign({}, dp, { name: "DP-2", scale: 2 })])), 2, "two scaled screens: the larger")
+
         T.eq(D.ruleFor(dp), "DP-1,2560x1440@143.97,1920x0,1,transform,0,vrr,0", "monitor rule")
         T.eq(D.ruleFor(Object.assign({}, dp, { disabled: true })), "DP-1,disable", "disable rule")
 
@@ -64,6 +71,16 @@ ShellRoot {
         const allOff = D.toSaved(monitors.map(m => Object.assign({}, m, { disabled: true })))
         T.eq(D.enabledCount(D.applySaved(monitors, allOff)), 2, "saved settings never disable every monitor")
         T.eq(D.applySaved(monitors, { version: 9 }), monitors, "unknown file version ignored")
+        // A saved scale is taken within a range, not against a list that the
+        // value itself was appended to (which refused nothing).
+        const scaled = value => D.applySaved(monitors, D.toSaved(D.update(monitors, "DP-1", { scale: value })))[1].scale
+        T.eq(scaled(1.6), 1.6, "a custom scale is kept")
+        T.eq(scaled(0.5), 0.5, "down to a half")
+        T.eq(scaled(3), 3, "and up to three")
+        T.eq(scaled(0), dp.scale, "zero keeps the monitor's own scale")
+        T.eq(scaled(7), dp.scale, "so does a scale no panel runs at")
+        T.eq(scaled("x"), dp.scale, "and a scale that is not a number")
+        T.eq([D.validScale(0.49), D.validScale(3.01), D.validScale(-1)], [false, false, false], "the edges of the range")
         const docked = [{ name: "eDP-1", disabled: false }, { name: "DP-2", disabled: false }]
         T.ok(D.isInternal("eDP-1") && D.isInternal("LVDS-1") && !D.isInternal("DP-2"), "internal panels detected")
         T.eq(D.lidPlan(docked, "eDP-1"), "disable", "lid closed with a dock disables the panel")

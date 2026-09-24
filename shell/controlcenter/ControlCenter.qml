@@ -21,7 +21,7 @@ ShellPanel {
     // which its body computed to nothing.
     readonly property real minPanelHeight: header.height + Metrics.quickGridUnit
         + Metrics.panelPadding * 2 + Metrics.panelGap + Metrics.spaceXs
-    readonly property var sizeBounds: ({ minWidth: Metrics.controlCenterMinWidth,
+    sizeBounds: ({ minWidth: Metrics.controlCenterMinWidth,
                                          maxWidth: Metrics.controlCenterMaxWidth,
                                          width: Metrics.controlCenterWidth,
                                          minHeight: minPanelHeight,
@@ -32,9 +32,11 @@ ShellPanel {
     // While the grip is being pulled the card takes the size under the hand,
     // so the panel resizes live and the tiles reflow as it goes; the release
     // is only when it is written down.
-    property bool sizing: false
-    property real dragWidth: 0
-    property real dragHeight: 0
+    // The grip and the drag live in ShellPanel; this says when the grip is
+    // reachable and where the result goes.
+    resizable: true
+    gripShown: LayoutService.quickEditing && root.page.length === 0
+    onResized: (width, height) => LayoutService.quickResize(width, height)
     cardWidth: sizing ? dragWidth : box.width
     // The dragged height belongs to the overview. Every detail page used to
     // inherit it, so a short page left a dead area and a panel shrunk to fit
@@ -74,79 +76,6 @@ ShellPanel {
     // anchored top right, so its bottom left is the one that moves. On the
     // overlay rather than in the card, which clips. Only on the overview,
     // because only the overview keeps a dragged height.
-    Rectangle {
-        parent: root.overlay
-        visible: LayoutService.quickEditing && root.page.length === 0
-        x: root.cardRect.x + Metrics.spaceXxs
-        y: root.cardRect.y + root.cardRect.height - height - Metrics.spaceXxs
-        width: Metrics.iconSm
-        height: width
-        radius: width / 2
-        // Accent and opaque, like the handle on every tile: at 11.5 % white it
-        // vanished on a light panel.
-        color: grip.pulling || grip.containsMouse ? Colors.accentHover : Colors.accent
-        border.width: Metrics.borderWidth
-        border.color: Colors.accent
-
-        MouseArea {
-            id: grip
-            anchors.fill: parent
-            anchors.margins: -Metrics.spaceXs
-            acceptedButtons: Qt.LeftButton
-            hoverEnabled: true
-            preventStealing: true
-            cursorShape: Qt.SizeBDiagCursor
-            readonly property bool pulling: root.sizing
-            // The corner the card is anchored by, taken once at the press. The
-            // live edge cannot be used: ShellPanel anchors this panel to the
-            // desktop clock whenever that clock sits in the left two thirds,
-            // and then both edges move with the width, so the drag chased its
-            // own result - the gearing halved and it never landed where it was
-            // let go.
-            property real fromRight: 0
-            property real fromTop: 0
-            property real pressX: 0
-            property real pressY: 0
-            property bool moved: false
-            onPressed: mouse => {
-                const point = mapToItem(root.overlay, mouse.x, mouse.y)
-                fromRight = root.cardRect.x + root.cardRect.width
-                fromTop = root.cardRect.y
-                pressX = point.x
-                pressY = point.y
-                moved = false
-                root.dragWidth = root.cardRect.width
-                root.dragHeight = root.cardRect.height
-                root.sizing = true
-            }
-            onPositionChanged: mouse => {
-                if (!root.sizing) return
-                const point = mapToItem(root.overlay, mouse.x, mouse.y)
-                if (!moved) {
-                    if (Math.abs(point.x - pressX) + Math.abs(point.y - pressY) < Metrics.dragThreshold) return
-                    moved = true
-                }
-                const wanted = Arrange.panelDragTo(point.x, point.y,
-                                                 { right: fromRight, top: fromTop }, root.sizeBounds)
-                root.dragWidth = wanted.width
-                root.dragHeight = wanted.height
-            }
-            onReleased: {
-                if (!root.sizing) return
-                root.sizing = false
-                // A press that never moved is not a resize. It used to write
-                // the size the card happened to be clamped to at that moment,
-                // which on a narrower screen silently shrank the stored one.
-                if (moved) LayoutService.quickResize(root.dragWidth, root.dragHeight)
-                moved = false
-            }
-            onCanceled: {
-                root.sizing = false
-                moved = false
-            }
-        }
-    }
-
     ColumnLayout {
         width: parent.width
         spacing: Metrics.panelGap

@@ -24,7 +24,7 @@ Item {
     activeFocusOnTab: focusOnTab && enabledState
     Keys.onLeftPressed: if (enabledState) root.released(Math.max(from, value - (to - from) / 20))
     Keys.onRightPressed: if (enabledState) root.released(Math.min(to, value + (to - from) / 20))
-    implicitWidth: 160
+    implicitWidth: Metrics.sliderWidth
     implicitHeight: Metrics.sliderHandle + Metrics.spaceXs
     opacity: enabledState ? 1 : Effects.disabledOpacity
 

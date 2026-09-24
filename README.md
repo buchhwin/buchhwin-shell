@@ -48,6 +48,12 @@ cd buchhwin-shell
 
 Then log out and choose **buchhwin-shell** from the session list.
 
+Later updates come from the same clone: **Settings > Updates > The shell**
+shows what the remote has that your checkout has not, and *Update the shell*
+fast-forwards it, re-runs the installer and restarts the shell — or lets the
+automatic check do that for you. It never merges over local changes; the
+command-line equivalent is `git pull --ff-only && ./install/install.sh --apply`.
+
 `bootstrap.sh` is the only script here that reaches the network, so it is
 deliberately the loudest: without `--apply` it prints every command, in order,
 and changes nothing. It runs as **you**, not as root, and calls `sudo` for the
@@ -187,7 +193,7 @@ portal to KWallet (Brave keeps sync and cookies), uses KDE file dialogs and sets
 | --- | --- |
 | `Super+Enter` | Default terminal (Kitty: Zsh, Starship, Fastfetch) |
 | `Super+B` / `Super+E` | Default browser / file manager (Brave / Dolphin unless changed) |
-| `Super+D` | Launcher: apps by category, `>` commands, `/` files, `@` settings, `=` calculator, `?` web search (`Tab` mode, `Ctrl+↑/↓` category) |
+| `Super+D` | Launcher: apps by category, `>` commands, `/` files, `@` settings, `=` calculator, `?` web search (`Tab` mode, `Ctrl+↑/↓` category; its own parts are arranged on a grid from the pencil in its header) |
 | `Super+O` | Control center |
 | `Super+I` | Settings |
 | `Super+N` | Notifications |
@@ -205,6 +211,7 @@ portal to KWallet (Brave keeps sync and cookies), uses KDE file dialogs and sets
 | `Super+Alt+D` | Desktop mode: widgets → bar → notch |
 | `Super+Ctrl+R` | Restart the shell |
 | `Super+Q` / `Super+F` | Close window / fullscreen |
+| `Super+C` | Floating on and off |
 | `Super+1…9`, `Super+Shift+1…9` | Switch workspace / move window silently |
 | `Super+Arrows` | Resize the active window (repeatable) |
 | `Super+Alt+Arrows` | Move focus |

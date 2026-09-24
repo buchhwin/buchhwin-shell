@@ -3,7 +3,9 @@
 .import "quick/QuickLogic.js" as QuickLogic
 .import "dashboard/DashboardLogic.js" as DashboardLogic
 .import "arrange/FitLogic.js" as Fit
+.import "launcher/LauncherCatalogue.js" as LauncherCatalogue
 .import "lock/LockCatalogue.js" as LockCatalogue
+.import "profile/ProfileLogic.js" as Profile
 
 // Pure layout operations shared by LayoutService and the unit tests.
 var ANCHORS = ["left", "center", "right"]
@@ -21,11 +23,11 @@ var SCALE_MAX = 2.0
 // Desktop modes, exactly one at a time: floating widgets, the top bar (pill
 // or bar style) or a notch at the top centre (time only, a small overview on
 // hover).
-var MODES = ["widgets", "pills", "notch"]
-// Mode names of older layouts. "both" showed widgets and the bar together;
-// it becomes the bar and keeps every widget and pill in the profile.
-var LEGACY_MODES = { both: "pills" }
-var MODE_LABELS = { widgets: "Widgets", pills: "Bar", notch: "Notch" }
+var DESKTOP_MODES = ["widgets", "pills", "notch"]
+// Desktop mode names of older layouts. "both" showed widgets and the bar
+// together; it becomes the bar and keeps every widget and pill in the mode.
+var LEGACY_DESKTOP_MODES = { both: "pills" }
+var DESKTOP_MODE_LABELS = { widgets: "Widgets", pills: "Bar", notch: "Notch" }
 var ZONES = ["left", "center", "right"]
 // Pill item looks: full, icon (compact) and expanded (only some widgets
 // draw more, e.g. media with artist and controls; others treat it as full).
@@ -33,25 +35,32 @@ var DISPLAYS = ["full", "icon", "expanded"]
 // A grid cell is at most this many columns and rows. The bounds are here and
 // not at the surface so a layout file can never ask for a tile taller than the
 // screen it is drawn on.
+//
+// `GRID_MAX_H` is what a surface gets unless it says otherwise: the bar, the
+// notch, the control center and the dashboard all stop at six rows. A surface
+// with a taller grid passes its own ceiling down through `sanitizeZones` - the
+// launcher's is eight, because its grid is eight rows of an eighth of its card
+// each. Raising the shared number instead quietly raised it for every surface,
+// which `tests/qml/BarTest.qml` caught within the minute.
 var GRID_MAX_W = 4
 var GRID_MAX_H = 6
 var FULLSCREEN = ["hide", "show"]
 
-// A stored mode name as one of MODES: legacy names migrate, unknown ones
+// A stored mode name as one of DESKTOP_MODES: legacy names migrate, unknown ones
 // become "widgets".
-function modeName(mode) {
-    const migrated = LEGACY_MODES[mode] || mode
-    return MODES.indexOf(migrated) >= 0 ? migrated : "widgets"
+function desktopModeName(mode) {
+    const migrated = LEGACY_DESKTOP_MODES[mode] || mode
+    return DESKTOP_MODES.indexOf(migrated) >= 0 ? migrated : "widgets"
 }
 
 // Which desktop surface a mode shows; exactly one of the three is true.
-function modeShows(mode) {
-    const name = modeName(mode)
+function desktopModeShows(mode) {
+    const name = desktopModeName(mode)
     return { widgets: name === "widgets", bar: name === "pills", notch: name === "notch" }
 }
 
-function modeLabel(mode) {
-    return MODE_LABELS[modeName(mode)]
+function desktopModeLabel(mode) {
+    return DESKTOP_MODE_LABELS[desktopModeName(mode)]
 }
 
 function clamp(value, low, high) {
@@ -109,46 +118,197 @@ function sanitizeGroup(group) {
     }
 }
 
-// Rebuild a v2 layout from whitelisted primitive fields only.
+// ---- profiles and modes ----------------------------------------------------
+// Two levels. A **mode** is one of the five the user switches between -
+// minimal, work, gaming, laptop, docked - and holds a whole desktop: widgets,
+// groups, screens, which surface it shows, the bar, the quick panel, the
+// dashboard and the appearance it wants. A **profile** holds its own five of
+// them. `ProfileLogic` defines both words and which settings a mode owns.
+var MODE_NAMES = Profile.MODE_NAMES
+var DEFAULT_PROFILE = "default"
+var DEFAULT_PROFILE_LABEL = "Default"
+
+// A mode nobody has touched yet. It is what `modeConfig` hands back for a mode
+// that is not in the file, so every reader gets a whole object rather than a
+// hole - and it is not written anywhere, so a mode stays absent until the first
+// edit or the first materialize from its template.
+function emptyMode() {
+    return { widgets: [], groups: [], screens: [], desktopMode: "widgets", bar: defaultBar(),
+             quick: defaultQuick(), dashboard: defaultDashboard(), launcher: defaultLauncher(),
+             appearance: {} }
+}
+
+// The settings this mode owns, from the one list in ProfileLogic. Values are
+// only kept when they are primitives and the key is on that list, so the file
+// can never smuggle a setting into a mode that the mode is not allowed to set.
+function sanitizeAppearance(appearance) {
+    const result = {}
+    if (!appearance || typeof appearance !== "object") return result
+    for (const leaf of Profile.MODE_SCOPED) {
+        const value = appearance[leaf]
+        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+            result[leaf] = value
+    }
+    return result
+}
+
+function sanitizeMode(mode) {
+    const source = mode && typeof mode === "object" ? mode : {}
+    const widgets = (Array.isArray(source.widgets) ? source.widgets : [])
+        .filter(widget => widget && widget.id !== undefined && widget.type !== undefined && widget.screen !== undefined)
+        .map(sanitizeWidget)
+    const ids = widgets.map(widget => widget.id)
+    const groups = (Array.isArray(source.groups) ? source.groups : [])
+        .filter(group => group && group.id !== undefined && group.screen !== undefined)
+        .map(sanitizeGroup)
+        .map(group => Object.assign(group, { members: group.members.filter(id => ids.indexOf(id) >= 0) }))
+        .filter(group => group.members.length > 0)
+    const groupIds = groups.map(group => group.id)
+    for (const widget of widgets)
+        if (widget.group.length && groupIds.indexOf(widget.group) < 0) widget.group = ""
+    return {
+        widgets: widgets,
+        groups: groups,
+        screens: (Array.isArray(source.screens) ? source.screens : []).map(String),
+        // `mode` was this field's name until v3, when the thing holding it
+        // became a mode itself. The migration renames it; reading both keeps a
+        // hand-edited or hand-restored file working.
+        desktopMode: desktopModeName(source.desktopMode !== undefined ? source.desktopMode : source.mode),
+        bar: sanitizeBar(source.bar),
+        quick: sanitizeQuick(source.quick),
+        dashboard: sanitizeDashboard(source.dashboard),
+        // A mode written before the launcher had a layout simply gets the
+        // default, the way one without a `quick` does - so no version bump and
+        // no migration step, the same as `bar.screens` the round before.
+        launcher: sanitizeLauncher(source.launcher),
+        appearance: sanitizeAppearance(source.appearance)
+    }
+}
+
+function sanitizeProfile(profile) {
+    const source = profile && typeof profile === "object" ? profile : {}
+    const modes = source.modes && typeof source.modes === "object" ? source.modes : {}
+    const result = { label: typeof source.label === "string" && source.label.length ? source.label : "",
+                     modes: {} }
+    // Only the five: a mode name the shell has no template for has nothing to
+    // switch to it and nothing to reset it from.
+    for (const name of MODE_NAMES)
+        if (modes[name] !== undefined) result.modes[name] = sanitizeMode(modes[name])
+    return result
+}
+
+// Rebuild a v3 layout from whitelisted primitive fields only.
 function sanitize(config) {
     // The notch and the lock screen sit outside `profiles` because they are
     // the same on every one.
-    // A file without it simply gets the default, the way a profile without a
+    // A file without it simply gets the default, the way a mode without a
     // `quick` does, so no version bump and no migration step is needed.
-    const result = { configVersion: 2, activeProfile: "minimal", profiles: {}, notch: defaultNotch(),
-                     lock: defaultLock(), adopted: [] }
+    const result = { configVersion: 3, activeProfile: DEFAULT_PROFILE, activeMode: MODE_NAMES[0],
+                     profiles: {}, notch: defaultNotch(), lock: defaultLock(), adopted: [] }
     if (!config || typeof config !== "object") return result
     if (Array.isArray(config.adopted))
         result.adopted = config.adopted.filter(name => typeof name === "string" && name.length).map(String)
     if (config.notch) result.notch = sanitizeNotch(config.notch)
     if (config.lock) result.lock = sanitizeLock(config.lock)
-    if (typeof config.activeProfile === "string") result.activeProfile = config.activeProfile
+    if (typeof config.activeProfile === "string" && config.activeProfile.length)
+        result.activeProfile = config.activeProfile
+    if (typeof config.activeMode === "string" && MODE_NAMES.indexOf(config.activeMode) >= 0)
+        result.activeMode = config.activeMode
     const profiles = config.profiles && typeof config.profiles === "object" ? config.profiles : {}
-    for (const name of Object.keys(profiles)) {
-        const profile = profiles[name] || {}
-        const widgets = (Array.isArray(profile.widgets) ? profile.widgets : [])
-            .filter(widget => widget && widget.id !== undefined && widget.type !== undefined && widget.screen !== undefined)
-            .map(sanitizeWidget)
-        const ids = widgets.map(widget => widget.id)
-        const groups = (Array.isArray(profile.groups) ? profile.groups : [])
-            .filter(group => group && group.id !== undefined && group.screen !== undefined)
-            .map(sanitizeGroup)
-            .map(group => Object.assign(group, { members: group.members.filter(id => ids.indexOf(id) >= 0) }))
-            .filter(group => group.members.length > 0)
-        const groupIds = groups.map(group => group.id)
-        for (const widget of widgets)
-            if (widget.group.length && groupIds.indexOf(widget.group) < 0) widget.group = ""
-        result.profiles[String(name)] = {
-            widgets: widgets,
-            groups: groups,
-            screens: (Array.isArray(profile.screens) ? profile.screens : []).map(String),
-            mode: modeName(profile.mode),
-            bar: sanitizeBar(profile.bar),
-            quick: sanitizeQuick(profile.quick),
-            dashboard: sanitizeDashboard(profile.dashboard)
-        }
-    }
+    for (const name of Object.keys(profiles))
+        result.profiles[String(name)] = sanitizeProfile(profiles[name])
+    // A file with no profile at all still has one to be in, and the active
+    // profile always names a profile that exists - otherwise every read falls
+    // through to `emptyMode` and the user's desktop is simply gone.
+    if (!Object.keys(result.profiles).length)
+        result.profiles[DEFAULT_PROFILE] = { label: DEFAULT_PROFILE_LABEL, modes: {} }
+    if (!result.profiles[result.activeProfile])
+        result.activeProfile = Object.keys(result.profiles)[0]
     return result
+}
+
+// ---- reading the two levels ------------------------------------------------
+
+function profileNames(config) {
+    return Object.keys(config && config.profiles ? config.profiles : {})
+}
+
+function profileLabel(config, name) {
+    const profile = config && config.profiles ? config.profiles[String(name)] : null
+    return profile && profile.label ? profile.label : String(name || "")
+}
+
+// The modes of one profile, always an object.
+function modesOf(config, profileName) {
+    const profile = config && config.profiles ? config.profiles[String(profileName)] : null
+    return profile && profile.modes ? profile.modes : {}
+}
+
+// The configuration of one mode of one profile. A mode that is not in the file
+// reads as an empty one rather than as nothing at all.
+function modeConfig(config, profileName, modeName) {
+    const modes = modesOf(config, profileName)
+    return modes[String(modeName)] || emptyMode()
+}
+
+// ---- changing the profile level --------------------------------------------
+// All four return a new config and never mutate the input. None of them touches
+// the notch, the lock screen or the adoption markers: those are global.
+
+function copyConfig(config) {
+    return JSON.parse(JSON.stringify(config))
+}
+
+// A new profile starts with **no** modes. Each one is then materialized from
+// its factory template (`config/profiles/<mode>.json`) the first time it is
+// entered, which is what "copies from the factory state, not from Default"
+// means in practice - and it is the path a mode nobody had visited yet has
+// always taken.
+function addProfile(config, label) {
+    const next = copyConfig(config)
+    const name = Profile.uniqueName(label, Object.keys(next.profiles))
+    next.profiles[name] = { label: String(label || "").trim() || name, modes: {} }
+    return { config: sanitize(next), name: name }
+}
+
+// The other case: this profile as it stands, copied whole.
+function duplicateProfile(config, source, label) {
+    const next = copyConfig(config)
+    const from = next.profiles[String(source)]
+    if (!from) return { config: sanitize(next), name: "" }
+    const name = Profile.uniqueName(label, Object.keys(next.profiles))
+    next.profiles[name] = { label: String(label || "").trim() || name,
+                            modes: JSON.parse(JSON.stringify(from.modes || {})) }
+    return { config: sanitize(next), name: name }
+}
+
+function renameProfile(config, name, label) {
+    const next = copyConfig(config)
+    const profile = next.profiles[String(name)]
+    if (!profile) return sanitize(next)
+    profile.label = String(label || "").trim() || String(name)
+    return sanitize(next)
+}
+
+// The last profile is not removable: there has to be one to be in.
+function removeProfile(config, name) {
+    const next = copyConfig(config)
+    const key = String(name)
+    if (!next.profiles[key] || Object.keys(next.profiles).length < 2) return sanitize(next)
+    delete next.profiles[key]
+    if (next.activeProfile === key) next.activeProfile = Object.keys(next.profiles)[0]
+    return sanitize(next)
+}
+
+// Back to the factory state, by emptying it: the next `ensureScreens` fills
+// each mode from its template again. One mode by name, or the whole profile.
+function resetProfile(config, name, modeName) {
+    const next = copyConfig(config)
+    const profile = next.profiles[String(name)]
+    if (!profile) return sanitize(next)
+    if (modeName === undefined || modeName === null || modeName === "") profile.modes = {}
+    else delete profile.modes[String(modeName)]
+    return sanitize(next)
 }
 
 // One-shot migrations that have already run on this file. The marker belongs
@@ -256,7 +416,7 @@ function defaultBar() {
     }
 }
 
-function sanitizeBarItem(item) {
+function sanitizeBarItem(item, ceiling) {
     return {
         type: String(item.type),
         display: oneOf(item.display, DISPLAYS, "full"),
@@ -267,7 +427,7 @@ function sanitizeBarItem(item) {
         // today, the dashboard next. A surface laid out along one line, like
         // the bar, ignores both.
         w: clamp(Math.round(num(item.w, 1)), 1, GRID_MAX_W),
-        h: clamp(Math.round(num(item.h, 1)), 1, GRID_MAX_H),
+        h: clamp(Math.round(num(item.h, 1)), 1, ceiling || GRID_MAX_H),
         options: sanitizeOptions(item.options)
     }
 }
@@ -275,7 +435,7 @@ function sanitizeBarItem(item) {
 // The zone -> pill -> item model, for any surface that uses it. The bar is the
 // first; the notch, the quick panel and the dashboard are meant to follow, and
 // keeping the shape in one function is what makes that possible.
-function sanitizeZones(config, zoneNames) {
+function sanitizeZones(config, zoneNames, maxH) {
     const zones = Array.isArray(zoneNames) && zoneNames.length ? zoneNames : ZONES
     const result = {}
     const taken = []
@@ -284,7 +444,7 @@ function sanitizeZones(config, zoneNames) {
             .filter(pill => pill && Array.isArray(pill.items))
             .map(pill => {
                 const items = pill.items.filter(item => item && typeof item.type === "string" && item.type.length)
-                    .map(sanitizeBarItem)
+                    .map(item => sanitizeBarItem(item, maxH))
                 let id = typeof pill.id === "string" && pill.id.length ? pill.id : "pill"
                 if (taken.indexOf(id) >= 0) id = uniqueId("pill", taken)
                 taken.push(id)
@@ -367,7 +527,19 @@ function sanitizeNotch(notch) {
     // An empty overview is a notch that does nothing on hover, which is a
     // choice; an empty strip is a notch that is not there, which is not.
     if (!shape.collapsed.length) shape.collapsed = notchList(NOTCH_COLLAPSED_DEFAULT)
+    // The floor the editor applies is applied to the file as well: a media
+    // item written one cell wide by hand, or by a version that had no floor,
+    // used to load at one cell and only stop at two once it was dragged.
+    for (const zone of NOTCH_ZONES)
+        for (const pill of shape[zone])
+            raiseToLeast(pill.items[0], notchMinSize(pill.items[0].type))
     return shape
+}
+
+function raiseToLeast(item, least) {
+    item.w = Math.max(item.w, least.w)
+    item.h = Math.max(item.h, least.h)
+    return item
 }
 
 function notchTypes(notch, zone) {
@@ -466,6 +638,35 @@ function adoptNotchHeader(notch) {
     return sanitizeNotch(next)
 }
 
+// ---- the launcher -----------------------------------------------------------
+// The fourth surface of tiles, and the last to become one. It had stacked
+// blocks with two hand-written pairing rules - the mode switch riding in the
+// search field's row, the categories standing beside the result list - on the
+// reasoning that a free grid is one in which you can build yourself a result
+// list two rows high. The user asked for the grid anyway, twice, and named the
+// reason the second time: the rest of the shell works like that, and a surface
+// that does not is the odd one out. So the pairings are gone and the launcher
+// is a grid like the control center and the dashboard, with its own catalogue.
+//
+// **Four columns, eight rows, and a row is an eighth of the card's height.**
+// Everything else here uses a fixed row height and scrolls; the launcher
+// cannot, because the result list has to reach the bottom of a window the user
+// drags. A grid that scales with the card does both: the default is today's
+// picture, and pulling the window bigger makes every block bigger with it.
+const LAUNCHER = {
+    strict: true,
+    maxH: LauncherCatalogue.rows,
+    maxW: LauncherCatalogue.columns,
+    zone: "launcher",
+    defaults: LauncherCatalogue.defaults,
+    sizeOf: LauncherCatalogue.size,
+    leastOf: LauncherCatalogue.minSize,
+    knows: LauncherCatalogue.isKnown,
+    // The block that may not be taken off, and that a file without it gets
+    // back (see sanitizeTiles).
+    fixed: LauncherCatalogue.fixed
+}
+
 // ---- a surface of tiles in one zone ---------------------------------------
 // The control center's tiles and the dashboard's cards are the same thing with
 // a different catalogue: one zone, one tile per pill, each carrying its own
@@ -488,7 +689,7 @@ const QUICK = {
 }
 const DASHBOARD = {
     zone: "dashboard",
-    defaults: ["clock", "weather", "calendar", "agenda", "events"],
+    defaults: ["clock", "weather", "calendar", "events"],
     sizeOf: DashboardLogic.size,
     leastOf: DashboardLogic.minSize,
     knows: DashboardLogic.isKnown
@@ -522,11 +723,36 @@ function defaultTiles(kind) {
 
 function sanitizeTiles(kind, surface) {
     if (!surface || typeof surface !== "object") return defaultTiles(kind)
-    const zones = sanitizeZones(surface, [kind.zone])
+    const zones = sanitizeZones(surface, [kind.zone], kind.maxH)
     // One tile per pill: anything the file smuggled in beyond the first is
-    // dropped rather than silently shown twice.
-    const tiles = zones[kind.zone].map(pill => ({ id: pill.id, items: [pill.items[0]] }))
-    return tiles.length ? { [kind.zone]: tiles } : defaultTiles(kind)
+    // dropped rather than silently shown twice. The height is clamped again
+    // here because `sanitizeZones` clamps to the tallest cell *any* surface
+    // allows - it cannot know which one this is - and each surface's own
+    // ceiling is `kind.maxH`.
+    // A surface that accepts desktop widgets cannot drop what its catalogue
+    // does not know - the registry is not reachable from here, and dropping
+    // them would take every widget off the panel on the first load. The
+    // launcher takes no widgets, so for it an unknown type is a hand-edited
+    // file and goes.
+    const known = kind.strict ? zones[kind.zone].filter(pill => kind.knows(pill.items[0].type))
+                              : zones[kind.zone]
+    // The floor the editor applies is applied to the file as well, so a tile
+    // written below its catalogue's minimum loads at the minimum rather than
+    // at a size it only stops at once dragged.
+    const tiles = known.map(pill => ({ id: pill.id, items: [raiseToLeast(pill.items[0], tileMinSize(kind, pill.items[0].type))] }))
+    if (!tiles.length) return defaultTiles(kind)
+    // A block the surface cannot do without - the launcher's search field -
+    // goes back in front when a file lost it: `removeTile` refuses to take
+    // it off, and a hand-edited file must not get past that refusal.
+    if (kind.fixed && !tiles.some(pill => kind.fixed(pill.items[0].type))) {
+        const taken = tiles.map(pill => pill.id)
+        for (const type of kind.defaults.filter(kind.fixed).reverse()) {
+            const id = uniqueId(kind.zone + "-" + type, taken)
+            taken.push(id)
+            tiles.unshift(tilePill(kind, type, id))
+        }
+    }
+    return { [kind.zone]: tiles }
 }
 
 function tileList(kind, surface) {
@@ -562,8 +788,8 @@ function setTileSize(kind, surface, id, w, h) {
     if (index < 0) return next
     const item = next[kind.zone][index].items[0]
     const least = tileMinSize(kind, item.type)
-    item.w = clamp(Math.round(num(w, item.w)), least.w, GRID_MAX_W)
-    item.h = clamp(Math.round(num(h, item.h)), least.h, GRID_MAX_H)
+    item.w = clamp(Math.round(num(w, item.w)), least.w, kind.maxW || GRID_MAX_W)
+    item.h = clamp(Math.round(num(h, item.h)), least.h, kind.maxH || GRID_MAX_H)
     return sanitizeTiles(kind, next)
 }
 
@@ -637,6 +863,27 @@ function adoptTileSizes(kind, surface) {
 // ---- the two surfaces, by name --------------------------------------------
 // Thin wrappers so a call site reads as what it is working on rather than as
 // a descriptor plus a generic verb.
+
+// The launcher, on the same operations. `launcherAdd` refuses a type the
+// catalogue does not know rather than taking widgets as well: the objection on
+// the record is that a search surface is at heart its result list, and it is
+// why pinned apps was the module that got built instead of a widget grid.
+function defaultLauncher() { return defaultTiles(LAUNCHER) }
+function sanitizeLauncher(surface) { return sanitizeTiles(LAUNCHER, surface) }
+function launcherItems(surface) { return tileItems(LAUNCHER, surface) }
+function launcherTypes(surface) { return tileTypes(LAUNCHER, surface) }
+function moveLauncherBlockTo(surface, id, index) { return moveTileTo(LAUNCHER, surface, id, index) }
+function setLauncherBlockSize(surface, id, w, h) { return setTileSize(LAUNCHER, surface, id, w, h) }
+function addLauncherBlock(surface, type) { return addTile(LAUNCHER, surface, type) }
+function launcherBlockMinSize(type) { return tileMinSize(LAUNCHER, type) }
+
+// The search field is the one block that may not be taken off - see the
+// catalogue for why - so this is `removeTile` with that one refusal in front.
+function removeLauncherBlock(surface, id) {
+    const found = findTile(LAUNCHER, surface, id)
+    if (found >= 0 && LauncherCatalogue.fixed(tileList(LAUNCHER, surface)[found].items[0].type)) return copyTiles(LAUNCHER, surface)
+    return removeTile(LAUNCHER, surface, id)
+}
 
 function defaultQuick() { return defaultTiles(QUICK) }
 function sanitizeQuick(quick) { return sanitizeTiles(QUICK, quick) }

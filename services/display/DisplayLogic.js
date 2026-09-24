@@ -20,6 +20,18 @@ function round2(value) {
     return Math.round(Number(value) * 100) / 100
 }
 
+// The scales a saved file may ask for: the presets and anything in between
+// or near them. Half is the smallest Hyprland accepts without complaint and
+// three is beyond any panel the shell has met; a number outside that range
+// is a file written by hand or by a bug, and the monitor keeps its own.
+var SCALE_MIN = 0.5
+var SCALE_MAX = 3
+
+function validScale(value) {
+    const scale = Number(value)
+    return isFinite(scale) && scale >= SCALE_MIN && scale <= SCALE_MAX
+}
+
 function modeKey(width, height, refresh) {
     return width + "x" + height + "@" + round2(refresh).toFixed(2)
 }
@@ -84,6 +96,19 @@ function logicalSize(monitor) {
     const width = (rotated ? monitor.height : monitor.width) / (monitor.scale || 1)
     const height = (rotated ? monitor.width : monitor.height) / (monitor.scale || 1)
     return { width: Math.round(width), height: Math.round(height) }
+}
+
+// The one scale X11 gets. X11 has a single DPI for its whole screen, so with
+// Settings > Displays > "Sharp X11 applications" on, its clients are told the
+// largest scale any enabled monitor runs at: that is the screen the setting
+// exists for, and an X11 window carried to the smaller screen is then a
+// little large rather than a third small on the big one. 1 while nothing is
+// scaled, which is also "nothing to tell".
+function x11Scale(monitors) {
+    let best = 1
+    for (const monitor of (Array.isArray(monitors) ? monitors : []))
+        if (monitor && !monitor.disabled && round2(monitor.scale) > best) best = round2(monitor.scale)
+    return best
 }
 
 function ruleFor(monitor) {
@@ -218,7 +243,10 @@ function applySaved(monitors, saved) {
             height: mode ? mode.height : monitor.height,
             refresh: mode ? mode.refresh : monitor.refresh,
             x: Number(entry.x) || 0, y: Number(entry.y) || 0,
-            scale: SCALES.concat([round2(entry.scale)]).indexOf(round2(entry.scale)) >= 0 && entry.scale > 0 ? round2(entry.scale) : monitor.scale,
+            // A custom scale is allowed, within what a monitor can be run at;
+            // the old whitelist appended the value to itself before looking
+            // it up and so refused nothing.
+            scale: validScale(entry.scale) ? round2(entry.scale) : monitor.scale,
             transform: [0, 1, 2, 3].indexOf(entry.transform) >= 0 ? entry.transform : 0,
             vrr: [0, 1, 2].indexOf(entry.vrr) >= 0 ? entry.vrr : 0,
             disabled: entry.disabled === true

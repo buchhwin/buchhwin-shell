@@ -16,11 +16,12 @@ ColumnLayout {
     // Finger selector shown before an enrollment starts.
     property bool enrollOpen: false
     property string enrollFinger: FingerprintService.defaultFinger()
-    property string confirmDelete: ""
     readonly property var enrollment: FingerprintService.enrollment
 
-    Component.onCompleted: FingerprintService.track()
-    Component.onDestruction: FingerprintService.untrack()
+    PageActivity {
+        onOpened: FingerprintService.track()
+        onClosed: FingerprintService.untrack()
+    }
 
     SettingsSection {
         Layout.fillWidth: true
@@ -31,6 +32,7 @@ ColumnLayout {
             ShellIcon { glyph: "󰌾"; size: Metrics.iconLg; color: Colors.accentForeground }
             ShellText { Layout.fillWidth: true; text: "Super+L locks the screen"; muted: true }
             ShellButton {
+                focusOnTab: true
                 text: "Lock now"
                 icon: "󰌾"
                 variant: "accent"
@@ -56,6 +58,7 @@ ColumnLayout {
             Repeater {
                 model: Lock.missing(LayoutService.lockTypes)
                 ShellButton {
+                    focusOnTab: true
                     required property var modelData
                     icon: modelData.icon
                     text: modelData.label
@@ -71,6 +74,7 @@ ColumnLayout {
             label: "Back to the default arrangement"
             hint: "Time, date and the player, as the lock screen started out"
             ShellButton {
+                focusOnTab: true
                 text: "Reset"
                 variant: "danger"
                 confirm: true
@@ -99,6 +103,7 @@ ColumnLayout {
                 label: optionRow.modelData.label
                 hint: optionRow.modelData.hint
                 ShellToggle {
+                    focusOnTab: true
                     checked: SettingsService.value(optionRow.modelData.key)
                     onToggled: value => SettingsService.set(optionRow.modelData.key, value)
                 }
@@ -124,6 +129,7 @@ ColumnLayout {
                    : FingerprintService.fingers.length + " fingers enrolled")
                   + (FingerprintService.preview ? " · preview data" : "")
             ShellButton {
+                focusOnTab: true
                 icon: Icons.refresh
                 compact: true
                 variant: "ghost"
@@ -137,16 +143,20 @@ ColumnLayout {
         ColumnLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceSm
-            ShellText { text: "Use fingerprint" }
-            SegmentedControl {
+            SettingRow {
                 Layout.fillWidth: true
-                current: FingerprintService.mode
-                options: [
-                    { value: "auto", label: "Automatic", icon: "󰌢" },
-                    { value: "on", label: "On", icon: "󰈷" },
-                    { value: "off", label: "Off", icon: "󰌾" }
-                ]
-                onSelected: value => FingerprintService.setMode(value)
+                label: "Use fingerprint"
+                SegmentedControl {
+                    focusOnTab: true
+                    Layout.fillWidth: true
+                    current: FingerprintService.mode
+                    options: [
+                        { value: "auto", label: "Automatic", icon: "󰌢" },
+                        { value: "on", label: "On", icon: "󰈷" },
+                        { value: "off", label: "Off", icon: "󰌾" }
+                    ]
+                    onSelected: value => FingerprintService.setMode(value)
+                }
             }
             ShellText {
                 Layout.fillWidth: true
@@ -208,33 +218,28 @@ ColumnLayout {
             ListRow {
                 id: fingerRow
                 required property string modelData
-                readonly property bool confirming: root.confirmDelete === modelData
                 Layout.fillWidth: true
                 icon: "󰈷"
                 title: FingerprintService.fingerLabel(modelData)
                 subtitle: FingerprintService.deleting === modelData ? "Deleting …" : "Unlocks the lock screen"
                 ShellButton {
-                    text: fingerRow.confirming ? "Click again to delete" : "Delete"
+                    focusOnTab: true
+                    text: "Delete"
                     icon: Icons.remove
                     compact: true
-                    variant: fingerRow.confirming ? "danger" : "surface"
+                    // An enrolled finger cannot be brought back; the button
+                    // asks twice, the way every destructive one does.
+                    confirm: true
+                    confirmText: "Click again to delete"
                     enabledState: FingerprintService.actionsAllowed
-                    onClicked: {
-                        if (fingerRow.confirming) {
-                            root.confirmDelete = ""
-                            FingerprintService.remove(fingerRow.modelData)
-                        } else {
-                            root.confirmDelete = fingerRow.modelData
-                            confirmReset.restart()
-                        }
-                    }
+                    onClicked: FingerprintService.remove(fingerRow.modelData)
                 }
             }
         }
-        Timer { id: confirmReset; interval: 4000; onTriggered: root.confirmDelete = "" }
 
         // Enroll: pick a finger, then follow the reader.
         ShellButton {
+            focusOnTab: true
             visible: FingerprintService.available && !root.enrollOpen && root.enrollment === null
             text: "Enroll finger …"
             icon: Icons.add
@@ -251,12 +256,16 @@ ColumnLayout {
             Layout.fillWidth: true
             visible: root.enrollOpen && root.enrollment === null
             spacing: Metrics.spaceSm
-            ShellText { text: "Finger" }
-            ShellSelect {
+            SettingRow {
                 Layout.fillWidth: true
-                options: FingerprintService.fingerOptions
-                current: root.enrollFinger
-                onSelected: value => root.enrollFinger = value
+                label: "Finger"
+                ShellSelect {
+                    focusOnTab: true
+                    Layout.fillWidth: true
+                    options: FingerprintService.fingerOptions
+                    current: root.enrollFinger
+                    onSelected: value => root.enrollFinger = value
+                }
             }
             ShellText {
                 Layout.fillWidth: true
@@ -267,6 +276,7 @@ ColumnLayout {
             RowLayout {
                 spacing: Metrics.spaceSm
                 ShellButton {
+                    focusOnTab: true
                     text: "Start"
                     icon: "󰈷"
                     variant: "accent"
@@ -275,6 +285,7 @@ ColumnLayout {
                     onClicked: FingerprintService.enroll(root.enrollFinger)
                 }
                 ShellButton {
+                    focusOnTab: true
                     text: "Cancel"
                     compact: true
                     onClicked: root.enrollOpen = false
@@ -282,14 +293,12 @@ ColumnLayout {
             }
         }
 
-        Rectangle {
+        // A card inside the section: the enrollment in progress.
+        ShellCard {
             Layout.fillWidth: true
+            level: 2
             visible: root.enrollment !== null
             implicitHeight: enrollColumn.implicitHeight + Metrics.spaceXl * 2
-            radius: Metrics.radiusCard
-            color: Colors.surface
-            border.width: Metrics.borderWidth
-            border.color: Colors.border
 
             ColumnLayout {
                 id: enrollColumn
@@ -342,12 +351,14 @@ ColumnLayout {
                     Layout.alignment: Qt.AlignHCenter
                     spacing: Metrics.spaceSm
                     ShellButton {
+                        focusOnTab: true
                         visible: FingerprintService.enrolling
                         text: FingerprintService.cancelling ? "Cancelling …" : "Cancel"
                         compact: true
                         onClicked: FingerprintService.cancel()
                     }
                     ShellButton {
+                        focusOnTab: true
                         visible: root.enrollment !== null && root.enrollment.finished && !root.enrollment.success
                         text: "Try again"
                         compact: true
@@ -358,6 +369,7 @@ ColumnLayout {
                         }
                     }
                     ShellButton {
+                        focusOnTab: true
                         visible: root.enrollment !== null && root.enrollment.finished
                         text: "Done"
                         variant: "accent"

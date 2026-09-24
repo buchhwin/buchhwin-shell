@@ -75,6 +75,44 @@ with tempfile.TemporaryDirectory() as scratch:
         else:
             os.environ["BUCHHWIN_NESTED"] = previous
 
+    # ... and a nested session is recognised by its files as well as by the
+    # flag (scripts/lib/nested-guard.sh): the testing recipe exports the nested
+    # WAYLAND_DISPLAY and signature and never BUCHHWIN_NESTED.
+    nested = pathlib.Path(scratch) / "nested"
+    nested.mkdir()
+    (nested / "wayland-display").write_text("wayland-9\n")
+    (nested / "instance").write_text("sig-9\n")
+    saved_env = {name: os.environ.get(name) for name in
+                 ("BUCHHWIN_NESTED", "BUCHHWIN_NESTED_DIR", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE")}
+
+    def with_env(**values):
+        for name in saved_env:
+            os.environ.pop(name, None)
+        os.environ.update(values)
+
+    try:
+        with_env(BUCHHWIN_NESTED_DIR=str(nested), WAYLAND_DISPLAY="wayland-9")
+        check(module.nested_environment(), "the nested display names a nested environment")
+        with redirect_stderr(io.StringIO()):
+            check(module.main(["--state", str(path)]) == 0, "nested display: status")
+        check(json.loads(path.read_text()) == state, "nested display: the state file is kept")
+        with_env(BUCHHWIN_NESTED_DIR=str(nested), HYPRLAND_INSTANCE_SIGNATURE="sig-9")
+        check(module.nested_environment(), "the nested signature names a nested environment")
+        with_env(BUCHHWIN_NESTED_DIR=str(nested), WAYLAND_DISPLAY="wayland-1", HYPRLAND_INSTANCE_SIGNATURE="sig-1")
+        check(not module.nested_environment(), "another display and signature are the real session")
+        with_env(BUCHHWIN_NESTED_DIR=str(pathlib.Path(scratch) / "absent"), WAYLAND_DISPLAY="wayland-9")
+        check(not module.nested_environment(), "no nested files: the real session")
+    finally:
+        for name, value in saved_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+        # The listing check below wants the scratch directory as it was.
+        for file in nested.iterdir():
+            file.unlink()
+        nested.rmdir()
+
     # Missing or broken files are fine.
     check(module.main(["--state", str(pathlib.Path(scratch) / "missing.json"), "--dry-run"]) == 0, "missing file")
     broken = pathlib.Path(scratch) / "broken.json"
@@ -95,6 +133,8 @@ with tempfile.TemporaryDirectory() as scratch:
         previous_path = os.environ.get("PATH", "")
         previous_nested = os.environ.pop("BUCHHWIN_NESTED", None)
         os.environ["PATH"] = str(stubs)
+        # No nested session's files can reach here, whatever the caller's shell exported.
+        os.environ["BUCHHWIN_NESTED_DIR"] = str(pathlib.Path(scratch) / "absent")
         try:
             with redirect_stderr(io.StringIO()) as errors:
                 status = module.main(["--state", str(path)])
@@ -288,6 +328,8 @@ with tempfile.TemporaryDirectory() as scratch:
         previous_path = os.environ.get("PATH", "")
         previous_nested = os.environ.pop("BUCHHWIN_NESTED", None)
         os.environ["PATH"] = str(stubs)
+        # No nested session's files can reach here, whatever the caller's shell exported.
+        os.environ["BUCHHWIN_NESTED_DIR"] = str(pathlib.Path(scratch) / "absent")
         try:
             with redirect_stderr(io.StringIO()) as errors:
                 status = module.main(["--state", str(state_file)])

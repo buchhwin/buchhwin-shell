@@ -79,6 +79,11 @@ ShellRoot {
         T.eq(L.quickItems(L.setQuickTileSize(q, first.id, 2, 4))[0].w, 2, "a corner dragged out")
         T.eq(L.quickItems(L.setQuickTileSize(q, first.id, 99, 99))[0].h, 6, "never past the grid")
         T.eq(L.quickItems(L.setQuickTileSize(q, "nothing", 2, 2))[0], first, "an unknown id changes nothing")
+        // The catalogue's floor holds for the file too, not only for a drag: a
+        // drives tile written one column wide loads at its two.
+        const flat = L.quickItems(L.sanitizeQuick({ quick: [{ id: "d", items: [{ type: "drives", w: 1, h: 1 }] },
+                                                             { id: "m", items: [{ type: "media", w: 1, h: 1 }] }] }))
+        T.eq(flat.map(item => [item.w, item.h]), [[2, 1], [1, 2]], "a file below the floor is raised to it on load")
         T.eq(Q.missing(["wifi", "bluetooth"]).length, Q.catalogue.length - 2, "the picker offers what is not shown")
         T.eq(Q.missing([]).length, Q.catalogue.length, "an empty panel can have everything back")
         T.eq(Q.missing(Q.catalogue.map(tile => tile.type)).length, 0, "a full panel offers nothing")

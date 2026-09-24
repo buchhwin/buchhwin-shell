@@ -72,7 +72,10 @@ ColumnLayout {
             implicitHeight: rowLayout.implicitHeight + Metrics.spaceXs * 2
             opacity: past ? Effects.mutedOpacity : 1
             radius: Metrics.radiusCard
-            color: down ? Colors.pressed : rowMouse.containsMouse ? Colors.hover : "transparent"
+            // The card's own steps, not the control's: the list sits on a card
+            // (the dashboard's section, the popup's ScrollList), and `hover`
+            // at 0.06 is invisible on `surface1` at 0.07.
+            color: down ? Colors.surface1Pressed : rowMouse.containsMouse ? Colors.surface1Hover : "transparent"
             scale: down ? Effects.pressScaleWide : 1
             Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
             Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }

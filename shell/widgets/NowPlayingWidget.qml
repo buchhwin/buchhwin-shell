@@ -57,8 +57,8 @@ GridLayout {
 
     Text {
         visible: !root.compactCover && root.sizeClass !== "medium"
-        text: MprisService.playing ? "󰎈" : Icons.pause
-        color: Colors.accentForeground
+        text: MprisService.playing ? Icons.play : Icons.pause
+        color: root.textColor
         font.family: Typography.iconFamily
         font.pixelSize: Typography.titleSize * root.scaleFactor
     }
@@ -109,7 +109,10 @@ GridLayout {
         Text {
             required property var modelData
             text: modelData.icon
-            color: controlMouse.containsMouse ? Colors.accentForeground : root.textColor
+            // The surface's ink, like the title: `accentForeground` is made
+            // for the theme's panels and vanishes on the black notch in the
+            // light theme.
+            color: controlMouse.containsMouse ? root.textColor : root.mutedTextColor
             font.family: Typography.iconFamily
             font.pixelSize: (modelData.action === "toggle" ? Typography.titleSize : Typography.bodyLargeSize) * root.scaleFactor
             renderType: Typography.renderType

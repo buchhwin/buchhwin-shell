@@ -257,6 +257,11 @@ function ansiToRich(text) {
                 state.color = "#" + codes.slice(i + 2, i + 5).map(function (n) { return ("0" + Math.max(0, Math.min(255, n)).toString(16)).slice(-2) }).join("")
                 i += 4
             } else if (code === 38 && codes[i + 1] === 5) i += 2
+            // A background (48) is not painted, but its arguments have to be
+            // consumed the same way: left in the list, `48;2;30;30;30` read
+            // as three foreground codes and painted the text.
+            else if (code === 48 && codes[i + 1] === 2) i += 4
+            else if (code === 48 && codes[i + 1] === 5) i += 2
         }
     }
     emit(clean.slice(last))

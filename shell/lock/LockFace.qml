@@ -489,7 +489,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     glyph: PowerService.icon
                     size: Metrics.iconMd
-                    color: PowerService.charging ? Colors.success : Colors.lockText
+                    color: PowerService.charging ? Colors.successOnDark : Colors.lockText
                 }
                 LockLabel {
                     anchors.verticalCenter: parent.verticalCenter

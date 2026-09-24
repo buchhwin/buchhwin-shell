@@ -4,8 +4,11 @@ import Quickshell.Io
 import QtQuick
 
 // Adaptive behaviour: accent colour from the wallpaper, automatic Laptop /
-// Docked profile when external monitors come and go, and a focus mode that
+// Docked mode when external monitors come and go, and a focus mode that
 // silences notifications and hides desktop widgets except the clock.
+//
+// It switches the **mode**, never the profile: the profile is what the user
+// chose and nothing changes it on its own.
 Singleton {
     id: root
 
@@ -45,23 +48,23 @@ Singleton {
         onExited: if (root.wallpaper !== root.accentSource) accentDelay.restart()
     }
 
-    // ---- automatic profile ----------------------------------------------------
+    // ---- automatic mode ----------------------------------------------------
     readonly property bool autoProfile: SettingsService.value("desktop.autoProfile")
     readonly property var screenNames: Quickshell.screens.map(screen => screen.name)
     readonly property bool hasInternal: screenNames.some(name => /^(eDP|LVDS|DSI)/.test(name))
     readonly property int externalCount: screenNames.filter(name => !/^(eDP|LVDS|DSI)/.test(name)).length
-    // Only laptops switch; desktops without an internal panel keep their profile.
-    readonly property string suggestedProfile: !hasInternal ? "" : externalCount > 0 ? "docked" : "laptop"
+    // Only laptops switch; desktops without an internal panel keep their mode.
+    readonly property string suggestedMode: !hasInternal ? "" : externalCount > 0 ? "docked" : "laptop"
 
-    onSuggestedProfileChanged: profileDelay.restart()
-    onAutoProfileChanged: if (autoProfile) profileDelay.restart()
+    onSuggestedModeChanged: modeDelay.restart()
+    onAutoProfileChanged: if (autoProfile) modeDelay.restart()
     Timer {
-        id: profileDelay
+        id: modeDelay
         interval: 1500
         onTriggered: {
-            if (root.autoProfile && root.suggestedProfile.length && LayoutService.loaded
-                    && LayoutService.activeProfile !== root.suggestedProfile)
-                LayoutService.setActiveProfile(root.suggestedProfile)
+            if (root.autoProfile && root.suggestedMode.length && LayoutService.loaded
+                    && LayoutService.activeMode !== root.suggestedMode)
+                LayoutService.setActiveMode(root.suggestedMode)
         }
     }
 

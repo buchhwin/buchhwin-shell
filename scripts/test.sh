@@ -7,6 +7,19 @@ set -euo pipefail
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
 strict_style=${BUCHHWIN_STRICT_STYLE:-1}
 
+# A section that needs a binary this machine does not have is **named**, here
+# and again at the end. Two of the thirteen need one (Hyprland and Quickshell)
+# and both are installable, so a skip is a fact about the machine, not about
+# the suite - and a run that skipped something must not read the same as one
+# that did not. The private-data check is the exception: it fails rather than
+# skips, because the one thing that must never be wrong is not worth a
+# "passed" that means "not looked at".
+skipped=()
+note_skip() {
+  skipped+=("$1")
+  printf 'skipped: %s\n' "$1"
+}
+
 printf '== JSON\n'
 python3 "$project_dir/scripts/lib/checks.py" json
 
@@ -22,16 +35,22 @@ zsh -n "$project_dir/zsh/.zshrc"
 sh -n "$project_dir/session/pam/buchhwin-lid-closed"
 
 printf '== Hyprland configuration\n'
-verify_output=$(Hyprland --verify-config --config "$project_dir/hypr/hyprland.conf" 2>&1)
-grep -q 'config ok' <<<"$verify_output" || { printf '%s\n' "$verify_output"; exit 1; }
-printf 'config ok\n'
+# The two dialects are the same session written twice; nothing but the drift
+# check holds them together, because --verify-config only says each file parses
+# on its own. That check is pure Python, so it runs whether or not Hyprland is
+# installed - only the two parses need the binary.
 python3 "$project_dir/scripts/lib/checks.py" binds
-# The two dialects are the same session written twice; nothing but this holds
-# them together, because --verify-config only says each file parses on its own.
 python3 "$project_dir/scripts/lib/checks.py" hypr
-lua_output=$(Hyprland --verify-config --config "$project_dir/hypr/hyprland.lua" 2>&1)
-grep -q 'config ok' <<<"$lua_output" || { printf '%s\n' "$lua_output"; exit 1; }
-printf 'lua config ok\n'
+if command -v Hyprland >/dev/null; then
+  verify_output=$(Hyprland --verify-config --config "$project_dir/hypr/hyprland.conf" 2>&1)
+  grep -q 'config ok' <<<"$verify_output" || { printf '%s\n' "$verify_output"; exit 1; }
+  printf 'config ok\n'
+  lua_output=$(Hyprland --verify-config --config "$project_dir/hypr/hyprland.lua" 2>&1)
+  grep -q 'config ok' <<<"$lua_output" || { printf '%s\n' "$lua_output"; exit 1; }
+  printf 'lua config ok\n'
+else
+  note_skip 'Hyprland configuration parses (Hyprland not installed; package hyprland)'
+fi
 
 printf '== Style tokens\n'
 if [[ $strict_style == 1 ]]; then
@@ -43,6 +62,7 @@ fi
 printf '== Signal handler parameters\n'
 python3 "$project_dir/scripts/lib/checks.py" handlers
 python3 "$project_dir/scripts/lib/checks.py" icons
+python3 "$project_dir/scripts/lib/checks.py" ipc
 
 printf '== QML lint\n'
 qmllint_bin=$(command -v qmllint || command -v qmllint-qt6 || true)
@@ -50,18 +70,31 @@ qmllint_bin=$(command -v qmllint || command -v qmllint-qt6 || true)
 if [[ -n $qmllint_bin ]]; then
   "$qmllint_bin" --max-warnings -1 $(find "$project_dir/shell" "$project_dir/services" "$project_dir/theme" -name '*.qml' 2>/dev/null) || true
 else
-  printf 'skipped (qmllint not installed; package qt6-qtdeclarative-devel)\n'
+  note_skip 'QML lint (qmllint not installed; package qt6-qtdeclarative-devel)'
 fi
 
 printf '== QML/JS unit tests\n'
-for test_file in "$project_dir"/tests/qml/*Test.qml; do
-  "$project_dir/tests/run-qml-test.sh" "$test_file"
-done
+if command -v quickshell >/dev/null; then
+  for test_file in "$project_dir"/tests/qml/*Test.qml; do
+    "$project_dir/tests/run-qml-test.sh" "$test_file"
+  done
+else
+  note_skip 'QML/JS unit tests (quickshell not installed; package quickshell)'
+fi
 
 printf '== Python helpers\n'
 python3 -m py_compile "$project_dir"/scripts/*.py
+# A test exits 77 (the autotools skip status) when this machine cannot run
+# it - pam_lid_test.py without a libpam that has pam_start_confdir - and says
+# why on its last line; that goes into the summary rather than into "passed".
 for test_file in "$project_dir"/tests/python/*_test.py; do
-  python3 "$test_file"
+  test_status=0; test_output=$(python3 "$test_file" 2>&1) || test_status=$?
+  printf '%s\n' "$test_output"
+  if [[ $test_status -eq 77 ]]; then
+    note_skip "${test_file##*/} ($(tail -n 1 <<<"$test_output"))"
+  elif [[ $test_status -ne 0 ]]; then
+    exit "$test_status"
+  fi
 done
 
 printf '== Installers and session launcher\n'
@@ -72,15 +105,28 @@ printf '== Installers and session launcher\n'
 "$project_dir/tests/deploy-test.sh"
 
 printf '== Session actions\n'
+"$project_dir/tests/start-shell-test.sh"
 "$project_dir/tests/session-action-test.sh"
 "$project_dir/tests/shell-control-test.sh"
+"$project_dir/tests/x11-dpi-test.sh"
+"$project_dir/tests/shell-update-test.sh"
 
-printf '== Fingerprint lid installer\n'
+printf '== Lid installers\n'
 "$project_dir/tests/fingerprint-lid-install-test.sh"
+"$project_dir/tests/logind-lid-install-test.sh"
+"$project_dir/tests/bluetooth-autoenable-test.sh"
 
 printf '== Environment\n'
-"$project_dir/scripts/doctor.sh" >/dev/null || { "$project_dir/scripts/doctor.sh"; exit 1; }
-printf 'doctor ok\n'
+# doctor.sh asks whether **this machine** can run the session - Kitty, Brave,
+# Dolphin, the backends. That is a fact about the machine, not about the code,
+# so a container that only builds and tests says so rather than installing a
+# browser to satisfy a check.
+if [[ ${BUCHHWIN_SKIP_ENVIRONMENT:-0} == 1 ]]; then
+  note_skip 'Environment (doctor.sh checks a session host: Kitty, Brave, Dolphin; BUCHHWIN_SKIP_ENVIRONMENT=1)'
+else
+  "$project_dir/scripts/doctor.sh" >/dev/null || { "$project_dir/scripts/doctor.sh"; exit 1; }
+  printf 'doctor ok\n'
+fi
 
 printf '== Private data\n'
 # The only check in this file that used no `command -v` guard: without ripgrep
@@ -98,11 +144,27 @@ if rg -n --hidden --glob '!.git/**' \
 fi
 printf 'none found\n'
 
+# The smoke test exits 77 when it had to skip its pointer steps (the tool
+# cannot build here) and everything else passed; that is a skip to name.
+smoke() {
+  local label=$1 smoke_status=0
+  "$project_dir/scripts/smoke-session.sh" --nested || smoke_status=$?
+  if [[ $smoke_status -eq 77 ]]; then
+    note_skip "$label: pointer steps (scripts/nested-pointer cannot build)"
+  elif [[ $smoke_status -ne 0 ]]; then
+    exit "$smoke_status"
+  fi
+}
 if [[ ${1:-} == --session ]]; then
   printf '== Nested session smoke test\n'
-  "$project_dir/scripts/smoke-session.sh" --nested
+  smoke 'Nested session smoke test'
   printf '== Nested session smoke test (Lua config)\n'
-  BUCHHWIN_NESTED_LUA=1 "$project_dir/scripts/smoke-session.sh" --nested
+  BUCHHWIN_NESTED_LUA=1 smoke 'Nested session smoke test (Lua config)'
 fi
 
-printf 'All checks passed.\n'
+if (( ${#skipped[@]} )); then
+  printf 'All checks passed, with %d section(s) skipped:\n' "${#skipped[@]}"
+  printf '  %s\n' "${skipped[@]}"
+else
+  printf 'All checks passed.\n'
+fi

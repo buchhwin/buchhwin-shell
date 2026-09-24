@@ -116,6 +116,12 @@ ShellRoot {
         // Not persistent: that would call thirty workspaces into existence for
         // three monitors, whether or not anything is in them.
         T.ok(H.workspaceRule(11, "DP-10").legacy.indexOf("persistent") < 0, "and it creates nothing")
+        // And the move a rule cannot make: a workspace that already exists.
+        T.eq(H.moveWorkspaceToMonitor(3, "DP-8").legacy, "moveworkspacetomonitor 3 DP-8",
+             "move a workspace to a monitor, legacy")
+        T.eq(H.moveWorkspaceToMonitor("3", "DP-8").lua,
+             "hl.dsp.workspace.move({ workspace = 3, monitor = \"DP-8\" })",
+             "move a workspace to a monitor, Lua")
 
         // Frame scheduling follows the screen count, not taste: on one output
         // it is what a stepping animation needs, on several it decides which

@@ -27,7 +27,33 @@ Singleton {
     // Semantic radii. Every surface picks one of these, so a hover highlight
     // can never end up rounder or squarer than the thing it sits in, and a
     // change to the shell corner setting moves all of them together.
-    readonly property int radiusPanel: radiusXl     // a floating panel card
+    // A floating panel card. **Derived, not picked off the ladder**: a card
+    // inside a panel sits `panelPadding` in from its edge, and the two corners
+    // only run parallel when the outer radius is the inset plus the inner one.
+    // At the old 20 with a 20 px inset and a 16 px card the gap between the
+    // two edges was 20 px down the straight sides and **26.6** into the
+    // corner - `20 + 0.414 * cardRadius` - which is the swell the user saw at
+    // the bottom right of the launcher's result list. 36 makes it 20 all the
+    // way round.
+    //
+    // The inset is scaled on the way *down* although the real `panelPadding` is
+    // not: a corner slider that changed how much content fits would be a
+    // different control, but a panel that stayed round while the slider asked
+    // for square would be a broken one. Above the designed setting the scaling
+    // stops, because there the inset is all the room there is and a rounder
+    // panel would only pull its corner away from the card again. So: exact at
+    // the designed setting and above it, approximate below, and square is
+    // square.
+    readonly property int radiusPanel:
+        radiusCard + Math.min(panelPadding, Math.round(panelPadding * cornerScale))
+    // The same derivation for a panel that insets its cards by something
+    // other than `panelPadding` (the switcher strip, which is a dense row of
+    // cards): the outer corner is the inner one plus the inset, scaled the
+    // same way, so `radiusPanel` is `panelRadius(panelPadding)`. Picking
+    // `radiusPanel` for a tighter inset put the corner 8 px off the card's.
+    function panelRadius(inset) {
+        return radiusCard + Math.min(inset, Math.round(inset * cornerScale))
+    }
     readonly property int radiusCard: radiusLg      // a card, tile, row, field or highlight on a panel
     readonly property int radiusInner: radiusSm     // a thumbnail, bar or swatch inside a card
     readonly property int radiusTiny: radiusXs      // the smallest marks
@@ -118,6 +144,8 @@ Singleton {
     // One UI slider: thick track, large round handle that overlaps it.
     readonly property int sliderTrack: 8
     readonly property int sliderHandle: 20
+    // What a slider is worth when nothing tells it to fill its row.
+    readonly property int sliderWidth: 160
     // Progress bars that are not sliders (battery, rain, OSD level).
     readonly property int progressTrack: 5
     // Microphone level bar in Settings > Audio.
@@ -149,6 +177,12 @@ Singleton {
     readonly property int dotSize: 6
     readonly property int toneSelectWidth: 150
     readonly property int launcherWidth: 880
+    // What the launcher may be pulled to. It is a search surface, so it is wide
+    // rather than tall by default and there is a floor below which the result
+    // list stops being a list.
+    readonly property int launcherMinWidth: 520
+    readonly property int launcherMaxWidth: 1400
+    readonly property int launcherMinHeight: 320
     readonly property int launcherSidebarWidth: 190
     readonly property int launcherHeight: 600
     // The wallpaper picker (Super+Shift+W): a grid of 16:9 thumbnails, with
@@ -156,6 +190,9 @@ Singleton {
     readonly property int wallpaperPickerWidth: 920
     readonly property int wallpaperPickerHeight: 660
     readonly property int wallpaperPickerTile: 260
+    // One cell of the image grid on Settings > Wallpaper; the column count
+    // follows the card's width through this.
+    readonly property int wallpaperGridCell: 170
     readonly property int notificationWidth: 380
     readonly property int notificationCenterWidth: 430
     // The session menu (Super+M). Wider and its tiles taller than a panel's,
@@ -170,6 +207,16 @@ Singleton {
     readonly property int settingsWidth: Math.round(980 * Typography.scale)
     readonly property int settingsHeight: Math.round(680 * Typography.scale)
     readonly property int settingsSidebarWidth: Math.round(230 * Typography.scale)
+    // The Super+F1 sheet. Wider and taller than the settings window because it
+    // is a wall of 69 short rows and nothing else: the width buys a third
+    // column and the height buys eleven more rows before anybody scrolls.
+    // `ShellPanel` clamps both to the screen, so a small display simply gets
+    // fewer columns.
+    readonly property int shortcutSheetWidth: Math.round(1320 * Typography.scale)
+    readonly property int shortcutSheetHeight: Math.round(760 * Typography.scale)
+    // What one column of the sheet needs before a third one is worth having:
+    // a title, its longest row and its keys without wrapping.
+    readonly property int shortcutColumnWidth: Math.round(380 * Typography.scale)
     // What the dashboard is worth before anybody drags it, and what it may be
     // dragged to. The grid is the same idea as the control center's, several
     // steps coarser, because a layout file clamps every cell to six rows
@@ -178,8 +225,6 @@ Singleton {
     // five and the day's events three, which is where they sat when the two
     // columns were hard-coded.
     readonly property int dashboardWidth: 900
-    // Week view: wider dashboard, hour rows, the scrolled time grid.
-    readonly property int dashboardWeekWidth: 1180
     readonly property int dashboardMinWidth: 420
     readonly property int dashboardMaxWidth: 1600
     readonly property int dashboardGridUnit: 64
@@ -266,6 +311,16 @@ Singleton {
     readonly property int notchHeight: 32
     readonly property int notchMinWidth: 164
     readonly property int notchPadding: 16
+    // The notch while it *is* the display: how wide a level track is, and how
+    // much room a title gets before it elides. Both are what keeps the shape a
+    // strip rather than letting a long notification stretch it across the
+    // screen.
+    readonly property int notchLevelWidth: 96
+    readonly property int notchDisplayTextWidth: 260
+    // How long a track change stays in the notch. Longer than an OSD, which is
+    // a value you already know you changed, and shorter than a notification,
+    // which you may have to read.
+    readonly property int notchTrackTimeout: 3200
     readonly property int notchEar: 7
     readonly property int notchRadius: 11
     // The two widths the notch used to be able to be. They are the default and
@@ -321,6 +376,11 @@ Singleton {
     readonly property int notchRecordingDot: 8
 
     readonly property int overviewCardWidth: 420
+    // The narrowest a workspace card may be squeezed to so a monitor's whole
+    // row - its workspaces and its "New workspace" card - fits on one line.
+    // Below this a preview stops showing anything and wrapping is the lesser
+    // evil.
+    readonly property int overviewCardMinWidth: 210
 
     // Alt+Tab window switcher cards.
     readonly property int switcherCardWidth: 208

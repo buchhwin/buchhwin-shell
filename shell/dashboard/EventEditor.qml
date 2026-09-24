@@ -150,47 +150,22 @@ ShellPanel {
         spacing: Metrics.spaceMd
 
         // ---- header ----------------------------------------------------
-        RowLayout {
+        // The one dialog header, like the Wi-Fi and pairing dialogs. The
+        // event keeps its calendar's colour as the ink of the glyph.
+        PanelHeader {
             Layout.fillWidth: true
-            spacing: Metrics.spaceMd
-            Rectangle {
-                readonly property color base: CalendarService.colorFor(root.event)
-                Layout.preferredWidth: Metrics.popupIconTile
-                Layout.preferredHeight: Metrics.popupIconTile
-                Layout.alignment: Qt.AlignTop
-                radius: width / 2
-                color: root.details ? Qt.rgba(base.r, base.g, base.b, Effects.eventSwatchFill) : Colors.accent // style: an event keeps its calendar's colour
-                ShellIcon {
-                    anchors.centerIn: parent
-                    glyph: root.details ? "󰃭" : Icons.add
-                    size: Metrics.iconMd
-                    color: root.details ? Colors.foreground(parent.base) : Colors.accentText
+            role: "title"
+            icon: root.details ? "󰃭" : Icons.add
+            iconColor: root.details ? Colors.foreground(CalendarService.colorFor(root.event)) : Colors.accentForeground
+            title: root.editing ? "Edit event" : root.details ? root.event.title : "New event"
+            subtitle: {
+                if (root.details && !root.editing) {
+                    const event = root.event
+                    const day = SettingsService.locale.toString(event.start, "dddd, MMMM d")
+                    return day + " · " + CalendarService.formatRange(event)
                 }
-            }
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 0
-                ShellText {
-                    Layout.fillWidth: true
-                    text: root.editing ? "Edit event" : root.details ? root.event.title : "New event"
-                    role: "title"
-                    wrapMode: Text.Wrap
-                    maximumLineCount: 3
-                }
-                ShellText {
-                    Layout.fillWidth: true
-                    role: "small"
-                    muted: true
-                    text: {
-                        if (root.details && !root.editing) {
-                            const event = root.event
-                            const day = SettingsService.locale.toString(event.start, "dddd, MMMM d")
-                            return day + " · " + CalendarService.formatRange(event)
-                        }
-                        const date = Draft.parseDate(root.draft.date)
-                        return date ? SettingsService.locale.toString(date, "dddd, MMMM d, yyyy") : "Choose a date"
-                    }
-                }
+                const date = Draft.parseDate(root.draft.date)
+                return date ? SettingsService.locale.toString(date, "dddd, MMMM d, yyyy") : "Choose a date"
             }
         }
 
@@ -231,7 +206,7 @@ ShellPanel {
                 id: titleField
                 Layout.fillWidth: true
                 focusOnTab: true
-                icon: "󰏫"
+                icon: Icons.edit
                 placeholder: "Title"
                 onTextChanged: root.update({ title: text })
                 onAccepted: root.submit()
@@ -264,7 +239,7 @@ ShellPanel {
                 spacing: Metrics.spaceSm
                 FieldLabel { text: root.draft.allDay ? "From" : "Date" }
                 ShellButton {
-                    icon: Icons.back; variant: "ghost"; compact: true
+                    icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Previous day"
                     onClicked: { dateField.text = Draft.shiftDate(dateField.text, -1); endDateField.text = Draft.shiftDate(endDateField.text, -1) }
                 }
                 ShellTextField {
@@ -283,7 +258,7 @@ ShellPanel {
                     onAccepted: root.submit()
                 }
                 ShellButton {
-                    icon: Icons.forward; variant: "ghost"; compact: true
+                    icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Next day"
                     onClicked: { dateField.text = Draft.shiftDate(dateField.text, 1); endDateField.text = Draft.shiftDate(endDateField.text, 1) }
                 }
             }
@@ -293,7 +268,7 @@ ShellPanel {
                 visible: root.draft.allDay && !root.locked
                 spacing: Metrics.spaceSm
                 FieldLabel { text: "Until" }
-                ShellButton { icon: Icons.back; variant: "ghost"; compact: true; onClicked: endDateField.text = Draft.shiftDate(endDateField.text, -1) }
+                ShellButton { icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Ends a day earlier"; onClicked: endDateField.text = Draft.shiftDate(endDateField.text, -1) }
                 ShellTextField {
                     id: endDateField
                     Layout.fillWidth: true
@@ -304,7 +279,7 @@ ShellPanel {
                     onTextChanged: root.update({ endDate: text })
                     onAccepted: root.submit()
                 }
-                ShellButton { icon: Icons.forward; variant: "ghost"; compact: true; onClicked: endDateField.text = Draft.shiftDate(endDateField.text, 1) }
+                ShellButton { icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Ends a day later"; onClicked: endDateField.text = Draft.shiftDate(endDateField.text, 1) }
             }
 
             RowLayout {
@@ -617,7 +592,7 @@ ShellPanel {
             Item { Layout.fillWidth: true }
             ShellButton { icon: Icons.leavesPanel; text: root.canChange ? "Merkuro" : "Open in Merkuro"; variant: root.canChange ? "ghost" : "accent"; onClicked: CalendarService.openManager() }
             ShellButton {
-                icon: "󰏫"
+                icon: Icons.edit
                 text: "Edit"
                 variant: "accent"
                 visible: root.canChange

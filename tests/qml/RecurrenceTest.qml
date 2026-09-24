@@ -54,6 +54,13 @@ ShellRoot {
              "The repetition ends before the event starts.", "an end before the start")
         T.eq(R.validate({ repeat: "daily", ending: "until", until: "2026-03-10" }, "2026-03-10").ok, true,
              "ending on the first day is allowed")
+        // Dates, not strings: "2026-9-5" sorts after "2026-12-24" as text.
+        T.eq(R.validate({ repeat: "daily", ending: "until", until: "2026-12-24" }, "2026-9-5").ok, true,
+             "an unpadded start day is still before a padded end date")
+        T.eq(R.validate({ repeat: "daily", ending: "until", until: "2026-9-4" }, "2026-09-05").ok, false,
+             "and an unpadded end date before the start is still refused")
+        T.eq(R.validate({ repeat: "daily", ending: "until", until: "2026-03-09" }, "junk").ok, true,
+             "a start day that is not a date is not compared against")
 
         // What reaches the helper
         T.eq(R.payload({ repeat: "" }), { repeat: "", weekday: "", count: 0, until: "" }, "no rule")

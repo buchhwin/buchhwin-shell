@@ -42,8 +42,14 @@ ColumnLayout {
             property string addType: "clock"
             Layout.fillWidth: true
             title: Quickshell.screens.length > 1 ? "Widgets on " + screenName : "Widgets"
-            description: ids.length ? "" : "No widgets on this display yet"
 
+            EmptyState {
+                Layout.fillWidth: true
+                visible: screenSection.ids.length === 0
+                row: true
+                icon: Icons.edit
+                title: "No widgets on this display yet"
+            }
             Repeater {
                 model: screenSection.ids
 
@@ -63,16 +69,19 @@ ColumnLayout {
                         RowLayout {
                             spacing: Metrics.spaceSm
                             ShellToggle {
+                                focusOnTab: true
                                 checked: row.entry ? row.entry.visible : true
                                 onToggled: value => LayoutService.updateItem(row.modelData, { visible: value })
                             }
                             ShellButton {
+                                focusOnTab: true
                                 icon: Icons.remove; variant: "ghost"; compact: true; toolTip: "Remove"
                                 onClicked: LayoutService.removeItem(row.modelData)
                             }
                         }
                     }
                     SegmentedControl {
+                        focusOnTab: true
                         Layout.fillWidth: true
                         current: row.entry ? row.entry.style : "minimal"
                         options: [{ value: "minimal", label: "Minimal" }, { value: "capsule", label: "Capsule" }, { value: "card", label: "Card" }]
@@ -85,6 +94,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 spacing: Metrics.spaceSm
                 ShellSelect {
+                    focusOnTab: true
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignTop
                     options: page.typeOptions
@@ -92,6 +102,7 @@ ColumnLayout {
                     onSelected: value => screenSection.addType = value
                 }
                 ShellButton {
+                    focusOnTab: true
                     Layout.alignment: Qt.AlignTop
                     icon: Icons.add; text: "Add widget"
                     onClicked: {
@@ -112,6 +123,7 @@ ColumnLayout {
             ? "The notch shows the time at the top center. Switch to Widgets to place widgets on the wallpaper again; the current widget layout is kept."
             : "The bar along the top edge replaces the desktop widgets. Switch to Widgets to place them on the wallpaper again; the current widget layout is kept."
         ShellButton {
+            focusOnTab: true
             icon: "󰘔"; text: "Open Bar & Notch"
             onClicked: PanelService.open("settings", { page: "bar" })
         }

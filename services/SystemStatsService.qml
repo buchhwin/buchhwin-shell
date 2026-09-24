@@ -43,23 +43,32 @@ Singleton {
 
     // Disk usage changes slowly: every 30 s (and when a new tracker starts).
     property int diskTick: 0
+    // Each file is read again and its figure worked out when that read
+    // finishes, in the view's own `loaded` handler. `reload()` is
+    // asynchronous - with `blockLoading` too, measured - so a `text()` right
+    // after it is the previous sample: every meter was one tick behind, and
+    // the first CPU reading compared the boot-time text with itself.
     function sample(withDisk) {
         statFile.reload()
-        const times = Logic.cpuTimes(statFile.text())
-        const busy = Logic.cpuUsage(lastCpu, times)
-        if (busy >= 0) cpu = busy
-        if (times) lastCpu = times
         memFile.reload()
-        memory = Logic.memory(memFile.text())
         loadFile.reload()
-        load = Logic.loadAverage(loadFile.text())
         diskTick = (diskTick + 1) % 15
         if ((withDisk || diskTick === 0) && !diskProc.running) diskProc.running = true
     }
 
-    FileView { id: statFile; path: "/proc/stat"; printErrors: false }
-    FileView { id: memFile; path: "/proc/meminfo"; printErrors: false }
-    FileView { id: loadFile; path: "/proc/loadavg"; printErrors: false }
+    FileView {
+        id: statFile
+        path: "/proc/stat"
+        printErrors: false
+        onLoaded: {
+            const times = Logic.cpuTimes(text())
+            const busy = Logic.cpuUsage(root.lastCpu, times)
+            if (busy >= 0) root.cpu = busy
+            if (times) root.lastCpu = times
+        }
+    }
+    FileView { id: memFile; path: "/proc/meminfo"; printErrors: false; onLoaded: root.memory = Logic.memory(text()) }
+    FileView { id: loadFile; path: "/proc/loadavg"; printErrors: false; onLoaded: root.load = Logic.loadAverage(text()) }
 
     Process {
         id: diskProc

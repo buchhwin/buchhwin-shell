@@ -20,8 +20,10 @@ ColumnLayout {
 
     function set(key, value) { SettingsService.set("terminal." + key, value) }
 
-    Component.onCompleted: TerminalService.pageOpen = true
-    Component.onDestruction: TerminalService.pageOpen = false
+    PageActivity {
+        onOpened: TerminalService.pageOpen = true
+        onClosed: TerminalService.pageOpen = false
+    }
 
     SettingsSection {
         Layout.fillWidth: true
@@ -36,19 +38,21 @@ ColumnLayout {
             border.width: Metrics.borderWidth
             border.color: Colors.border
 
-            Text {
+            ShellText {
                 id: previewLabel
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.margins: Metrics.spaceLg
+                role: "bodyLarge"
                 text: TerminalService.previewText.length ? TerminalService.previewText : TerminalService.previewError
                 textFormat: TerminalService.previewText.length ? Text.RichText : Text.PlainText
+                // The terminal's own colours and font: this is a preview of
+                // Kitty, not a line of the shell's text.
                 color: Colors.terminalForeground
                 font.family: root.options.fontFamily
-                font.pixelSize: Typography.bodyLargeSize
                 wrapMode: Text.WrapAnywhere
-                renderType: Typography.renderType
+                elide: Text.ElideNone
             }
         }
 
@@ -56,7 +60,7 @@ ColumnLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Show a Git repository in the preview"
-            ShellToggle { checked: root.options.previewGit; onToggled: value => root.set("previewGit", value) }
+            ShellToggle { focusOnTab: true; checked: root.options.previewGit; onToggled: value => root.set("previewGit", value) }
         }
         SettingRow {
             Layout.fillWidth: true
@@ -73,6 +77,7 @@ ColumnLayout {
             label: "Logo"
             hint: "The distribution's own ASCII logo, or a picture of your own"
             SegmentedControl {
+                focusOnTab: true
                 Layout.fillWidth: true
                 current: TerminalService.fastfetchLogo
                 options: [{ value: "builtin", label: "Fedora logo" }, { value: "image", label: "Image" }]
@@ -107,6 +112,7 @@ ColumnLayout {
                 }
             }
             ShellButton {
+                focusOnTab: true
                 text: TerminalService.choosingImage ? "Choosing …" : "Choose image …"
                 icon: "󰋩"
                 compact: true
@@ -123,6 +129,7 @@ ColumnLayout {
         description: "Width in terminal columns; the image keeps its proportions"
 
         SegmentedControl {
+            focusOnTab: true
             Layout.fillWidth: true
             current: String(root.options.imageSize)
             options: [{ value: "20", label: "Small" }, { value: "30", label: "Medium" }, { value: "40", label: "Large" }]
@@ -238,8 +245,10 @@ ColumnLayout {
                     height: width
                     radius: width / 2
                     color: modelData === "shell" ? Colors.accent : modelData
-                    border.width: active ? Metrics.focusBorderWidth + 1 : 0
-                    border.color: Colors.text
+                    border.width: active ? Metrics.focusBorderWidth + 1 : promptMouse.containsMouse ? Metrics.borderWidth : 0
+                    border.color: active ? Colors.text : Colors.borderStrong
+                    scale: promptMouse.pressed ? Effects.pressScale : 1
+                    Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
                     ShellIcon {
                         anchors.centerIn: parent
                         visible: parent.active || parent.modelData === "shell"
@@ -247,7 +256,13 @@ ColumnLayout {
                         size: Metrics.iconSm
                         color: Colors.textOn(parent.color)
                     }
-                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.set("promptColor", parent.modelData) }
+                    MouseArea {
+                        id: promptMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.set("promptColor", parent.modelData)
+                    }
                 }
             }
         }
@@ -264,10 +279,18 @@ ColumnLayout {
                     height: width
                     radius: width / 2
                     color: modelData
-                    border.width: active ? Metrics.focusBorderWidth + 1 : 0
-                    border.color: Colors.text
+                    border.width: active ? Metrics.focusBorderWidth + 1 : errorMouse.containsMouse ? Metrics.borderWidth : 0
+                    border.color: active ? Colors.text : Colors.borderStrong
+                    scale: errorMouse.pressed ? Effects.pressScale : 1
+                    Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
                     ShellIcon { anchors.centerIn: parent; visible: parent.active; glyph: Icons.check; size: Metrics.iconSm; color: Colors.textOn(parent.color) }
-                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.set("errorColor", parent.modelData) }
+                    MouseArea {
+                        id: errorMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.set("errorColor", parent.modelData)
+                    }
                 }
             }
         }
@@ -296,6 +319,7 @@ ColumnLayout {
                     icon: Icons.check
                     compact: true
                     variant: "ghost"
+                    toolTip: "Apply"
                     enabledState: symbolField.text !== root.options[symbolRow.modelData.key]
                     onClicked: root.set(symbolRow.modelData.key, symbolField.text)
                 }
@@ -320,7 +344,7 @@ ColumnLayout {
                     required property var modelData
                     Layout.fillWidth: true
                     ShellText { Layout.fillWidth: true; text: moduleRow.modelData.label }
-                    ShellToggle { checked: root.options[moduleRow.modelData.key]; onToggled: value => root.set(moduleRow.modelData.key, value) }
+                    ShellToggle { focusOnTab: true; checked: root.options[moduleRow.modelData.key]; onToggled: value => root.set(moduleRow.modelData.key, value) }
                 }
             }
         }
@@ -354,6 +378,7 @@ ColumnLayout {
         description: "Used when the clock module is on. %H hour, %M minute, %S second, %p AM/PM, %d day, %m month"
 
         SegmentedControl {
+            focusOnTab: true
             Layout.fillWidth: true
             current: root.options.timeFormat
             options: TerminalService.timeFormats
@@ -373,6 +398,7 @@ ColumnLayout {
                 icon: Icons.check
                 compact: true
                 variant: "ghost"
+                toolTip: "Apply"
                 enabledState: timeField.text !== root.options.timeFormat
                 onClicked: root.set("timeFormat", timeField.text)
             }

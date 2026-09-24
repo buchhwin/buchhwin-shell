@@ -37,16 +37,28 @@ function scrollFactor(value) {
     return Math.round(clamp(number, 0.2, 2) * 100) / 100
 }
 
+// A number the setting may not be: a missing or non-numeric value falls back
+// to the default rather than becoming NaN, which HyprCommands.luaValue
+// refuses and which would take every input option down with it.
+function number(value, fallback) {
+    const result = Number(value)
+    return isFinite(result) ? result : fallback
+}
+
 // Sanitised values for the given settings getter (path -> value).
 function values(get) {
-    const layout = /^[a-z0-9_,-]+$/i.test(get("input.kbLayout")) ? get("input.kbLayout") : "de"
-    const variant = /^[a-z0-9_,-]*$/i.test(get("input.kbVariant")) ? get("input.kbVariant") : ""
+    // Tested as text: a regex test of `undefined` is a test of "undefined",
+    // which passes and hands the compositor a layout of that name.
+    const layoutText = typeof get("input.kbLayout") === "string" ? get("input.kbLayout") : ""
+    const variantText = typeof get("input.kbVariant") === "string" ? get("input.kbVariant") : ""
+    const layout = /^[a-z0-9_,-]+$/i.test(layoutText) ? layoutText : "de"
+    const variant = /^[a-z0-9_,-]*$/i.test(variantText) ? variantText : ""
     return {
         kb_layout: layout,
         kb_variant: variant,
-        repeat_rate: Math.round(clamp(get("input.repeatRate"), 10, 80)),
-        repeat_delay: Math.round(clamp(get("input.repeatDelay"), 150, 1000)),
-        sensitivity: Math.round(clamp(get("input.sensitivity"), -1, 1) * 100) / 100,
+        repeat_rate: Math.round(clamp(number(get("input.repeatRate"), 25), 10, 80)),
+        repeat_delay: Math.round(clamp(number(get("input.repeatDelay"), 600), 150, 1000)),
+        sensitivity: Math.round(clamp(number(get("input.sensitivity"), 0), -1, 1) * 100) / 100,
         accel_profile: get("input.accelProfile") === "flat" ? "flat" : "adaptive",
         natural_scroll: get("input.mouseNaturalScroll") === true,
         "touchpad:natural_scroll": get("input.touchpadNaturalScroll") !== false,

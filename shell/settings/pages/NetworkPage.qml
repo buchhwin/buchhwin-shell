@@ -12,8 +12,10 @@ ColumnLayout {
 
     readonly property var back: ({ page: "network" })
 
-    Component.onCompleted: NetworkService.setScanning(true)
-    Component.onDestruction: NetworkService.setScanning(false)
+    PageActivity {
+        onOpened: NetworkService.setScanning(true)
+        onClosed: NetworkService.setScanning(false)
+    }
 
     SettingsSection {
         Layout.fillWidth: true
@@ -25,6 +27,7 @@ ColumnLayout {
             labelFills: true
             label: "Use Wi-Fi"
             ShellToggle {
+                focusOnTab: true
                 checked: NetworkService.wifiEnabled
                 enabledState: NetworkService.wifiAvailable
                 onToggled: value => NetworkService.setWifiEnabled(value)
@@ -42,15 +45,18 @@ ColumnLayout {
             text: NetworkService.helperError
             role: "small"; color: Colors.warning; wrapMode: Text.Wrap
         }
-        ShellText {
+        EmptyState {
+            Layout.fillWidth: true
             visible: NetworkService.wifiEnabled && NetworkService.networks.length === 0
-            text: "Searching for networks …"
-            muted: true
+            row: true
+            icon: Icons.busy
+            title: "Searching for networks …"
         }
 
         Repeater {
             model: NetworkService.wifiEnabled ? NetworkService.networks : []
             ListRow {
+                focusOnTab: true
                 required property var modelData
                 Layout.fillWidth: true
                 icon: NetworkService.signalIcon(modelData.signalStrength)
@@ -64,6 +70,7 @@ ColumnLayout {
                 Row {
                     spacing: Metrics.spaceSm
                     ShellButton {
+                        focusOnTab: true
                         visible: modelData.known
                         icon: Icons.remove
                         compact: true
@@ -76,6 +83,7 @@ ColumnLayout {
                         onClicked: NetworkService.forget(modelData)
                     }
                     ShellButton {
+                        focusOnTab: true
                         text: modelData.connected ? "Disconnect" : "Connect"
                         compact: true
                         variant: modelData.connected ? "surface" : "accent"
@@ -90,6 +98,7 @@ ColumnLayout {
             visible: NetworkService.wifiEnabled
             spacing: Metrics.spaceSm
             ShellButton {
+                focusOnTab: true
                 icon: "󰖩"
                 text: "Hidden network …"
                 compact: true
@@ -97,8 +106,9 @@ ColumnLayout {
             }
             Item { Layout.fillWidth: true }
             ShellButton {
+                focusOnTab: true
                 icon: Icons.settings
-                text: "Advanced …"
+                text: "Edit VPN and connections"
                 compact: true
                 variant: "ghost"
                 onClicked: NetworkService.openSystemDialog()
@@ -115,6 +125,7 @@ ColumnLayout {
             ShellIcon { glyph: "󰀂"; size: Metrics.iconMd; color: NetworkService.hotspotActive ? Colors.accentForeground : Colors.mutedText }
             ShellText { Layout.fillWidth: true; text: NetworkService.hotspotActive ? "Hotspot is on" : "Hotspot is off" }
             ShellButton {
+                focusOnTab: true
                 text: NetworkService.hotspotActive ? "Stop hotspot" : "Start hotspot …"
                 compact: true
                 variant: NetworkService.hotspotActive ? "accent" : "surface"
@@ -130,10 +141,11 @@ ColumnLayout {
         title: "VPN"
         description: "Turn VPN connections on or off. New VPNs are set up in KDE's connection editor."
 
-        EmptyState { Layout.fillWidth: true; visible: NetworkService.vpns.length === 0; icon: "󰖂"; title: "No VPN connections set up" }
+        EmptyState { Layout.fillWidth: true; visible: NetworkService.vpns.length === 0; icon: "󰖂"; title: "No VPN connections set up yet" }
         Repeater {
             model: NetworkService.vpns
             ListRow {
+                focusOnTab: true
                 required property var modelData
                 Layout.fillWidth: true
                 icon: "󰖂"
@@ -141,13 +153,14 @@ ColumnLayout {
                 subtitle: (modelData.active ? "Connected" : "Off") + " · " + (modelData.type === "wireguard" ? "WireGuard" : "VPN")
                 active: modelData.active
                 onClicked: NetworkService.setVpn(modelData.uuid, !modelData.active)
-                ShellToggle { checked: modelData.active; onToggled: value => NetworkService.setVpn(modelData.uuid, value) }
+                ShellToggle { focusOnTab: true; checked: modelData.active; onToggled: value => NetworkService.setVpn(modelData.uuid, value) }
             }
         }
         RowLayout {
             ShellButton {
+                focusOnTab: true
                 icon: Icons.settings
-                text: NetworkService.vpns.length ? "Edit connections …" : "Set up VPN …"
+                text: "Edit VPN and connections"
                 compact: true
                 onClicked: NetworkService.openSystemDialog()
             }

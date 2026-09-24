@@ -164,8 +164,10 @@ supervise() {
       folder)
         local uri
         uri=$(python3 -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).as_uri())' "$file")
-        gdbus call --session --dest org.freedesktop.FileManager1 --object-path /org/freedesktop/FileManager1 \
-          --method org.freedesktop.FileManager1.ShowItems "['$uri']" "" >/dev/null 2>&1 \
+        # The URI is an argument, not text inside a GVariant literal: a quote
+        # or bracket in the file name broke the literal and the call.
+        busctl --user --timeout=5 call org.freedesktop.FileManager1 /org/freedesktop/FileManager1 \
+          org.freedesktop.FileManager1 ShowItems ass 1 "$uri" "" >/dev/null 2>&1 \
           || xdg-open "${file%/*}" >/dev/null 2>&1 &
         ;;
     esac

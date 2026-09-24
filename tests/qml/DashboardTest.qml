@@ -14,7 +14,8 @@ ShellRoot {
         // ---- the catalogue --------------------------------------------------
         T.eq(D.label("calendar"), "Month", "a card has a name")
         T.eq(D.label("nonsense"), "nonsense", "an unknown type is its own name")
-        T.eq([D.isKnown("agenda"), D.isKnown("nonsense")], [true, false], "known and not")
+        T.eq([D.isKnown("calendar"), D.isKnown("agenda"), D.isKnown("nonsense")], [true, false, false],
+             "known and not - the week and day card is gone, so it is not one of them")
         T.ok(D.catalogue.every(card => card.icon.length > 0), "every card has an icon for the picker")
         // A start size that cannot be stored is not a start size: the layout
         // file clamps every cell to GRID_MAX_H, so nothing may begin above it.
@@ -28,7 +29,7 @@ ShellRoot {
 
         // ---- the surface ----------------------------------------------------
         const d = L.defaultDashboard()
-        T.eq(types(d), ["clock", "weather", "calendar", "agenda", "events"], "the dashboard it starts with")
+        T.eq(types(d), ["clock", "weather", "calendar", "events"], "the dashboard it starts with")
         T.ok(types(d).every(type => D.isKnown(type)), "and every one of them is in the catalogue")
         T.eq(L.dashboardItems(d)[0].id, "dashboard-1", "ids are the surface's own")
         T.eq([L.dashboardItems(d)[0].w, L.dashboardItems(d)[0].h], [1, 2], "a card is stored with its size")
@@ -41,12 +42,12 @@ ShellRoot {
 
         // Move, remove, add and resize, and none of them touches what it was given.
         const moved = L.moveDashboardCardTo(d, L.dashboardItems(d)[0].id, 3)
-        T.eq(types(moved), ["weather", "calendar", "agenda", "clock", "events"], "a card is moved to an index")
-        T.eq(types(d), ["clock", "weather", "calendar", "agenda", "events"], "the original is never changed")
+        T.eq(types(moved), ["weather", "calendar", "events", "clock"], "a card is moved to an index")
+        T.eq(types(d), ["clock", "weather", "calendar", "events"], "the original is never changed")
         const without = L.removeDashboardCard(d, L.dashboardItems(d)[1].id)
-        T.eq(types(without), ["clock", "calendar", "agenda", "events"], "a card is taken off")
+        T.eq(types(without), ["clock", "calendar", "events"], "a card is taken off")
         T.eq(types(L.addDashboardCard(without, "weather")),
-             ["clock", "calendar", "agenda", "events", "weather"], "and comes back at the end")
+             ["clock", "calendar", "events", "weather"], "and comes back at the end")
         T.eq(types(L.addDashboardCard(d, "weather")), types(d), "one that is already there is not added twice")
         T.eq(types(L.addDashboardCard(d, "")), types(d), "nor is nothing")
         const sized = L.setDashboardCardSize(d, L.dashboardItems(d)[0].id, 2, 4)
@@ -63,7 +64,7 @@ ShellRoot {
              "a default dashboard still has the two readouts to offer")
         T.eq(D.missing([]).length, D.catalogue.length, "an empty one can have everything back")
         T.eq(D.missing(["clock"]).map(card => card.type),
-             ["weather", "calendar", "agenda", "events", "media", "system"], "and the rest in catalogue order")
+             ["weather", "calendar", "events", "media", "system"], "and the rest in catalogue order")
         T.eq(D.missing(D.catalogue.map(card => card.type)).length, 0, "a dashboard with everything offers nothing")
 
         // The two new ones, and the reason their start sizes are not the
@@ -77,19 +78,18 @@ ShellRoot {
 
         // The two surfaces are the same surface: their ids never collide and
         // neither one's operations reach into the other.
-        const config = L.sanitize({ configVersion: 2, profiles: { minimal: {} } })
-        const profile = config.profiles.minimal
-        T.ok(profile.dashboard !== undefined && profile.quick !== undefined,
-             "a profile carries both surfaces")
-        T.eq(types(profile.dashboard), types(d), "the dashboard is filled in like the tiles are")
-        T.ok(L.dashboardItems(profile.dashboard).every(card => card.id.indexOf("dashboard-") === 0),
+        const config = L.sanitize({ configVersion: 3, profiles: { default: { modes: { minimal: {} } } } })
+        const mode = L.modeConfig(config, "default", "minimal")
+        T.ok(mode.dashboard !== undefined && mode.quick !== undefined,
+             "a mode carries both surfaces")
+        T.eq(types(mode.dashboard), types(d), "the dashboard is filled in like the tiles are")
+        T.ok(L.dashboardItems(mode.dashboard).every(card => card.id.indexOf("dashboard-") === 0),
              "and its ids are its own")
 
         // A card that names a floor cannot be pulled below it, and one that
         // does not goes down to a single step. A month grid below four rows
         // is a strip of numbers with no month in it.
         T.eq(D.minSize("calendar"), { w: 1, h: 4 }, "the month grid names its own floor")
-        T.eq(D.minSize("agenda"), { w: 1, h: 4 }, "and so does the week")
         T.eq(D.minSize("clock"), { w: 1, h: 1 }, "the clock is happy at a single step")
         T.eq(D.minSize("nothing at all"), { w: 1, h: 1 }, "and an unknown card has no floor to keep")
         const month = L.dashboardItems(L.setDashboardCardSize(d, "dashboard-3", 1, 1))

@@ -36,8 +36,12 @@ quickshell kill --path "$config_dir" 2>/dev/null || true
 # released its instance lock, and a busy shell can take several seconds to
 # exit. Wait for it (up to 10 s): a replacement started too early exits at
 # once because of --no-duplicate and leaves the session without a shell.
+# pgrep -f takes a regular expression; the path is a literal, so every
+# character that means something to an ERE is escaped first (a checkout under
+# `.claude/worktrees/agent-x+y` used to match the wrong thing, or nothing).
+config_pattern=$(printf '%s' "$config_dir" | sed 's,[][\.*^$+?(){}|\\],\\&,g')
 instance_running() {
-  pgrep -f "^quickshell .*--path ${config_dir}$" >/dev/null 2>&1 \
+  pgrep -f "^quickshell .*--path ${config_pattern}$" >/dev/null 2>&1 \
     || quickshell list --path "$config_dir" --json 2>/dev/null | grep -q '"id"'
 }
 for _ in {1..200}; do

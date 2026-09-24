@@ -24,10 +24,14 @@ env -u WAYLAND_DISPLAY -u DISPLAY QT_QPA_PLATFORM=offscreen \
   quickshell -p "$root/__test__.qml" >"$output" 2>&1 &
 pid=$!
 
+# A test fails on the same Qt complaints the smoke test reads out of the
+# session log (scripts/smoke-session.sh): a binding loop or a recursive
+# rearrange in a component under test is a defect whether or not every
+# assertion passed, and the unit test is where it is cheapest to see.
 status=2
 for _ in {1..150}; do
   if grep -q 'TESTS PASSED' "$output"; then status=0; break; fi
-  if grep -qE 'TESTS FAILED|TypeError|ReferenceError|SyntaxError|is not a type|failed to load' "$output"; then
+  if grep -qE 'TESTS FAILED|TypeError|ReferenceError|SyntaxError|is not a type|failed to load|Binding loop|recursive rearrange|Unable to assign|Cannot assign' "$output"; then
     status=1; sleep 0.2; break
   fi
   if ! kill -0 "$pid" 2>/dev/null; then status=1; break; fi
@@ -36,7 +40,7 @@ done
 kill "$pid" 2>/dev/null || true
 wait "$pid" 2>/dev/null || true
 
-sed -E 's/\x1b\[[0-9;]*m//g' "$output" | grep -E 'FAIL|TESTS|Error|WARN' || true
+sed -E 's/\x1b\[[0-9;]*m//g' "$output" | grep -E 'FAIL|TESTS|Error|WARN|Binding loop|recursive rearrange|Unable to assign|Cannot assign' || true
 if [[ $status -eq 2 ]]; then
   printf 'Timed out: %s\n' "$test_file" >&2
 fi

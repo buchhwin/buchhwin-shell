@@ -31,7 +31,7 @@ PopupPanel {
                 level: 1
                 icon: "󰹑"
                 title: HyprlandService.screencastActive ? "Screen is being shared" : "Not shared"
-                subtitle: HyprlandService.screencastActive ? "An app records or shares a screen or window." : ""
+                subtitle: HyprlandService.screencastActive ? "An app records or shares a screen or window" : ""
                 active: HyprlandService.screencastActive
             }
         }
@@ -63,6 +63,7 @@ PopupPanel {
             }
 
             ListRow {
+                focusOnTab: true
                 Layout.fillWidth: true
                 level: 1
                 icon: AudioService.micMuted ? "󰍭" : "󰍬"
@@ -70,6 +71,7 @@ PopupPanel {
                 subtitle: AudioService.source === null ? "No input device" : AudioService.micMuted ? "Muted for all apps" : "On"
                 onClicked: AudioService.toggleMute(AudioService.source)
                 ShellToggle {
+                    focusOnTab: true
                     checked: !AudioService.micMuted
                     enabledState: AudioService.source !== null
                     onToggled: AudioService.toggleMute(AudioService.source)

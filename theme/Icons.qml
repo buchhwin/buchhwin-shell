@@ -19,6 +19,13 @@ Singleton {
     readonly property string settings: "󰒓"
     readonly property string folder: "󰉋"
     readonly property string edit: "󰕰"
+    // Showing a password and hiding it again: the open eye and the closed one.
+    readonly property string reveal: "󰈈"
+    readonly property string conceal: "󰈉"
+    // Snapping to the grid in the layout editor. Its own glyph: the toolbar
+    // already shows `edit` on the mode switch beside it, and one glyph for
+    // two buttons in one row read as one button twice.
+    readonly property string grid: "󰋁"
 
     // Playing something. The media popup, the media card, the lock screen and
     // the phone page all drew the same four glyphs.
@@ -42,4 +49,11 @@ Singleton {
     readonly property string collapse: "󰅀"
     readonly property string raise: "\u{f0143}"        // the other way from collapse
     readonly property string leavesPanel: "󰏌"     // opens Settings instead
+
+    // Things. A window that stands for any window (no preview yet, none
+    // open, the per-window transparency row): the switcher and the overview
+    // drew two different ones and Settings > Appearance a third. The
+    // active-window widget's glyph is data (the window that is open) and
+    // stays with the registry.
+    readonly property string window: "󰖲"
 }

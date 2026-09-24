@@ -90,7 +90,10 @@ function validate(rule, startDay) {
     if (rule.ending === "until") {
         const until = Draft.parseDate(rule.until)
         if (!until) return { ok: false, error: "Enter the last date as YYYY-MM-DD." }
-        if (startDay && Draft.formatDate(until) < String(startDay))
+        // Both sides are parsed: compared as text, an unpadded start day
+        // ("2026-9-5") sorted after every padded end date in the same year.
+        const start = Draft.parseDate(startDay)
+        if (start && until.getTime() < start.getTime())
             return { ok: false, error: "The repetition ends before the event starts." }
     }
     return { ok: true, error: "" }

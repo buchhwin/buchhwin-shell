@@ -105,7 +105,7 @@ ShellPanel {
             ShellTextField {
                 id: search
                 Layout.fillWidth: true
-                icon: "󰋩"
+                icon: Icons.search
                 placeholder: "Search wallpapers …"
                 onTextChanged: root.query = text
                 onAccepted: root.apply(root.items[root.currentIndex])
@@ -322,7 +322,7 @@ ShellPanel {
             text: (WallpaperService.slideshowSource === "chosen"
                     ? WallpaperService.slideshowCount + " of " + WallpaperService.images.length
                       + " in the slideshow · " : "")
-                + "Enter sets · Ctrl+F or right click marks a favourite · Escape closes"
+                + "Enter sets · Ctrl+F or right click marks a favorite · Esc closes"
             role: "caption"; muted: true
             horizontalAlignment: Text.AlignHCenter
         }

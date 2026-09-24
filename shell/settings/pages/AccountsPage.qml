@@ -12,8 +12,10 @@ ColumnLayout {
     id: root
     spacing: Metrics.spaceLg
 
-    Component.onCompleted: AccountsService.track()
-    Component.onDestruction: AccountsService.untrack()
+    PageActivity {
+        onOpened: AccountsService.track()
+        onClosed: AccountsService.untrack()
+    }
 
     function toneColor(tone) {
         return tone === "error" ? Colors.danger : tone === "busy" ? Colors.accentForeground
@@ -47,6 +49,7 @@ ColumnLayout {
             Repeater {
                 model: AccountsService.addOptions
                 ShellButton {
+                    focusOnTab: true
                     required property var modelData
                     icon: Icons.add
                     text: modelData.label
@@ -57,6 +60,7 @@ ColumnLayout {
                 }
             }
             ShellButton {
+                focusOnTab: true
                 icon: Icons.refresh
                 text: AccountsService.loading ? "Refreshing …" : "Refresh"
                 compact: true
@@ -70,6 +74,14 @@ ColumnLayout {
             icon: "󰀉"
             title: "No account wizard found"
             description: "KDE's own wizards add the accounts; none of them is installed on this machine"
+        }
+        EmptyState {
+            Layout.fillWidth: true
+            visible: AccountsService.known && AccountsService.serverRunning && AccountsService.accounts.length === 0
+            row: true
+            icon: "󰀉"
+            title: "No accounts yet"
+            description: "Add a Google, Nextcloud, CalDAV, CardDAV, IMAP or iCal account with one of the buttons above; calendars and contacts then show up in the dashboard"
         }
         ShellText {
             Layout.fillWidth: true
@@ -102,7 +114,6 @@ ColumnLayout {
                 ColumnLayout {
                     id: accountItem
                     required property var modelData
-                    readonly property bool confirming: AccountsService.confirmRemoveId === accountItem.modelData.id
                     readonly property bool busy: AccountsService.isBusy(accountItem.modelData)
                     Layout.fillWidth: true
                     spacing: Metrics.spaceXxs
@@ -125,6 +136,7 @@ ColumnLayout {
                         Layout.leftMargin: Metrics.spaceMd + Metrics.iconLg + Metrics.spaceMd
                         spacing: Metrics.spaceSm
                         ShellButton {
+                            focusOnTab: true
                             icon: "󰚰"
                             text: "Sync now"
                             compact: true
@@ -132,6 +144,7 @@ ColumnLayout {
                             onClicked: AccountsService.sync(accountItem.modelData)
                         }
                         ShellButton {
+                            focusOnTab: true
                             icon: Icons.settings
                             text: "Settings …"
                             compact: true
@@ -139,31 +152,25 @@ ColumnLayout {
                             onClicked: AccountsService.configure(accountItem.modelData)
                         }
                         ShellButton {
+                            focusOnTab: true
                             icon: Icons.remove
-                            text: accountItem.confirming ? "Click again to remove" : "Remove"
+                            text: "Remove"
                             compact: true
-                            variant: accountItem.confirming ? "danger" : "surface"
+                            // The button asks twice, like every destructive
+                            // one; the service's own second-click guard is
+                            // satisfied up front so the confirmed click acts.
+                            confirm: true
+                            confirmText: "Click again to remove"
                             enabledState: !accountItem.busy
                             toolTip: "Takes the account out of KDE PIM; the account itself stays with its provider"
-                            onClicked: AccountsService.remove(accountItem.modelData)
-                        }
-                        ShellButton {
-                            visible: accountItem.confirming
-                            text: "Cancel"
-                            compact: true
-                            variant: "ghost"
-                            onClicked: AccountsService.cancelRemove()
+                            onClicked: {
+                                AccountsService.confirmRemoveId = accountItem.modelData.id
+                                AccountsService.remove(accountItem.modelData)
+                            }
                         }
                     }
                 }
             }
         }
-    }
-
-    SettingsSection {
-        Layout.fillWidth: true
-        visible: AccountsService.known && AccountsService.serverRunning && AccountsService.accounts.length === 0
-        title: "No accounts yet"
-        description: "Add a Google, Nextcloud, CalDAV, CardDAV, IMAP or iCal account with one of the buttons above. Calendars and contacts then show up in the dashboard."
     }
 }

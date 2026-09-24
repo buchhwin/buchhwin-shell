@@ -35,6 +35,11 @@ ShellRoot {
               "http://example.org/x"].map(W.looksLikeAddress), [true, true, true, true, true], "addresses")
         T.eq(["cats", "how to cook", "localhost", "1", "ftp://example.org", "a b.org",
               ""].map(W.looksLikeAddress), [false, false, false, false, false, false, false], "not addresses")
+        // A version number has dots too; the last label of a host holds a letter.
+        T.eq(["1.5", "v2.0", "3.14.159", "10.0.0"].map(W.looksLikeAddress), [false, false, false, false],
+             "numbers with dots are not addresses")
+        T.eq(["example.co2", "x.y", "a-b.c1d", "1.5.org"].map(W.looksLikeAddress), [true, true, true, true],
+             "a letter anywhere in the last label is enough")
         T.eq(W.addressUrl("example.org"), "https://example.org", "a bare host gets https")
         T.eq(W.addressUrl("http://example.org"), "http://example.org", "an explicit scheme is kept")
         T.eq(W.addressUrl("cats"), "", "a word is not an address")

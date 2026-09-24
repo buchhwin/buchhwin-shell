@@ -10,6 +10,9 @@ ShellRoot {
         return { left: describe("left"), center: describe("center"), right: describe("right") }
     }
 
+    // A layout file has two levels since v3; the bar belongs to a mode.
+    function mode(config, name) { return L.modeConfig(config, "default", name) }
+
     Component.onCompleted: {
         // Defaults and sanitizing
         const initial = L.sanitizeBar(undefined)
@@ -41,46 +44,50 @@ ShellRoot {
         T.eq(L.sanitizeBar({ edge: "sideways" }).edge, "top", "an edge nobody knows is the top")
         T.eq(L.copyBar(L.sanitizeBar({ edge: "bottom" })).edge, "bottom", "operations keep the edge")
         T.eq(L.addPill(L.sanitizeBar({ edge: "bottom" }), "left", "clock").edge, "bottom", "editing pills keeps it too")
-        T.eq(L.sanitize({ profiles: { work: { bar: { edge: "bottom", left: [], center: [], right: [] } } } })
-             .profiles.work.bar.edge, "bottom", "and a profile carries it")
+        T.eq(mode(L.sanitize({ profiles: { default: { modes: { work: { bar: { edge: "bottom", left: [], center: [], right: [] } } } } } }), "work")
+             .bar.edge, "bottom", "and a mode carries it")
         T.eq([L.sanitizeBar({ style: "bar", position: "attached" }).style, L.sanitizeBar({ style: "bar", position: "attached" }).position], ["bar", "attached"], "style and position kept")
         T.eq([L.sanitizeBar({ style: "island", position: 3 }).style, L.sanitizeBar({ style: "island", position: 3 }).position], ["pills", "floating"], "unknown style and position fall back")
         T.eq(L.copyBar(L.sanitizeBar({ style: "bar", position: "attached" })).position, "attached", "operations keep the style")
         T.eq(L.addPill(L.sanitizeBar({ style: "bar" }), "left", "clock").style, "bar", "editing pills keeps the bar style")
-        T.eq(L.sanitize({ profiles: { work: { mode: "pills", bar: { style: "bar", position: "attached", left: [], center: [], right: [] } } } }).profiles.work.bar.position, "attached", "profile keeps the bar position")
+        T.eq(mode(L.sanitize({ profiles: { default: { modes: { work: { desktopMode: "pills", bar: { style: "bar", position: "attached", left: [], center: [], right: [] } } } } } }), "work").bar.position, "attached", "a mode keeps the bar position")
         T.eq(L.sanitizeBar({ left: [{ id: "m", items: [{ type: "nowPlaying", display: "expanded" }] }] }).left[0].items[0].display, "expanded", "expanded display kept")
         T.eq(shape(L.sanitizeBar({ left: [], center: [], right: [] })), { left: [], center: [], right: [] }, "an emptied bar stays empty")
 
-        // Profile integration
-        const config = L.sanitize({ activeProfile: "work", profiles: { work: { widgets: [], groups: [], mode: "pills" }, minimal: { mode: "weird" } } })
-        T.eq(config.profiles.work.mode, "pills", "mode kept")
-        T.eq(config.profiles.minimal.mode, "widgets", "unknown mode falls back to widgets")
-        T.eq(shape(config.profiles.minimal.bar), shape(L.defaultBar()), "missing bar gets defaults")
-        const notchConfig = L.sanitize({ profiles: { work: { mode: "notch", bar: { left: [{ id: "x", items: [{ type: "battery" }] }], center: [], right: [] } } } })
-        T.eq(notchConfig.profiles.work.mode, "notch", "notch mode kept")
-        T.eq(shape(notchConfig.profiles.work.bar).left, ["battery"], "custom pills kept in notch mode")
+        // Mode integration. The stored field was called `mode` until v3 and is
+        // read either way, so a hand-restored file still works.
+        const config = L.sanitize({ activeMode: "work", profiles: { default: { modes: {
+            work: { widgets: [], groups: [], desktopMode: "pills" }, minimal: { mode: "weird" } } } } })
+        T.eq(mode(config, "work").desktopMode, "pills", "desktop mode kept")
+        T.eq(mode(config, "minimal").desktopMode, "widgets", "an unknown desktop mode falls back to widgets")
+        T.eq(shape(mode(config, "minimal").bar), shape(L.defaultBar()), "missing bar gets defaults")
+        const notchConfig = L.sanitize({ profiles: { default: { modes: { work: { desktopMode: "notch",
+            bar: { left: [{ id: "x", items: [{ type: "battery" }] }], center: [], right: [] } } } } } })
+        T.eq(mode(notchConfig, "work").desktopMode, "notch", "notch mode kept")
+        T.eq(shape(mode(notchConfig, "work").bar).left, ["battery"], "custom pills kept in notch mode")
 
         // Exactly one surface per mode
-        T.eq(L.MODES, ["widgets", "pills", "notch"], "three exclusive modes, no \"both\"")
-        T.eq(L.modeShows("widgets"), { widgets: true, bar: false, notch: false }, "widgets mode")
-        T.eq(L.modeShows("pills"), { widgets: false, bar: true, notch: false }, "pills mode shows only the bar")
-        T.eq(L.modeShows("notch"), { widgets: false, bar: false, notch: true }, "notch mode shows only the notch")
-        T.eq(L.modeShows(undefined), { widgets: true, bar: false, notch: false }, "unknown mode like widgets")
-        T.ok(L.MODES.every(mode => Object.keys(L.modeShows(mode)).filter(key => L.modeShows(mode)[key]).length === 1),
+        T.eq(L.DESKTOP_MODES, ["widgets", "pills", "notch"], "three exclusive modes, no \"both\"")
+        T.eq(L.desktopModeShows("widgets"), { widgets: true, bar: false, notch: false }, "widgets mode")
+        T.eq(L.desktopModeShows("pills"), { widgets: false, bar: true, notch: false }, "pills mode shows only the bar")
+        T.eq(L.desktopModeShows("notch"), { widgets: false, bar: false, notch: true }, "notch mode shows only the notch")
+        T.eq(L.desktopModeShows(undefined), { widgets: true, bar: false, notch: false }, "unknown mode like widgets")
+        T.ok(L.DESKTOP_MODES.every(mode => Object.keys(L.desktopModeShows(mode)).filter(key => L.desktopModeShows(mode)[key]).length === 1),
              "every mode shows exactly one surface")
 
         // Migration of the removed "both" mode
-        T.eq(L.modeName("both"), "pills", "\"both\" migrates to the bar")
-        T.eq([L.modeName("pills"), L.modeName("notch"), L.modeName("island"), L.modeName(undefined)],
+        T.eq(L.desktopModeName("both"), "pills", "\"both\" migrates to the bar")
+        T.eq([L.desktopModeName("pills"), L.desktopModeName("notch"), L.desktopModeName("island"), L.desktopModeName(undefined)],
              ["pills", "notch", "widgets", "widgets"], "known modes kept, unknown ones fall back")
-        T.eq(L.modeShows("both"), L.modeShows("pills"), "an old \"both\" layout shows the bar")
-        T.eq([L.modeLabel("widgets"), L.modeLabel("pills"), L.modeLabel("notch"), L.modeLabel("both")],
+        T.eq(L.desktopModeShows("both"), L.desktopModeShows("pills"), "an old \"both\" layout shows the bar")
+        T.eq([L.desktopModeLabel("widgets"), L.desktopModeLabel("pills"), L.desktopModeLabel("notch"), L.desktopModeLabel("both")],
              ["Widgets", "Bar", "Notch", "Bar"], "mode labels")
-        const legacy = L.sanitize({ profiles: { work: { mode: "both", widgets: [{ id: "w", type: "clock", screen: "S" }],
-                                                        bar: { left: [{ id: "p", items: [{ type: "battery" }] }], center: [], right: [] } } } })
-        T.eq(legacy.profiles.work.mode, "pills", "stored \"both\" migrates on load")
-        T.eq(legacy.profiles.work.widgets.length, 1, "the widgets of a \"both\" layout survive")
-        T.eq(shape(legacy.profiles.work.bar).left, ["battery"], "the pills of a \"both\" layout survive")
+        const legacy = L.sanitize({ profiles: { default: { modes: { work: { desktopMode: "both",
+            widgets: [{ id: "w", type: "clock", screen: "S" }],
+            bar: { left: [{ id: "p", items: [{ type: "battery" }] }], center: [], right: [] } } } } } })
+        T.eq(mode(legacy, "work").desktopMode, "pills", "stored \"both\" migrates on load")
+        T.eq(mode(legacy, "work").widgets.length, 1, "the widgets of a \"both\" layout survive")
+        T.eq(shape(mode(legacy, "work").bar).left, ["battery"], "the pills of a \"both\" layout survive")
 
         // Operations never mutate their input
         let bar = L.defaultBar()

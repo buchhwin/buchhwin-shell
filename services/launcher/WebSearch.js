@@ -48,8 +48,9 @@ function customError(template) {
 }
 
 // Hosts without a dot (localhost, a machine name) are not guessed at: only
-// what is unmistakably an address is offered as one.
-var ADDRESS = /^(https?:\/\/\S+|[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?(\/\S*)?)$/i
+// what is unmistakably an address is offered as one. The last label has to
+// hold a letter, or a version number ("1.5", "v2.0") is a host too.
+var ADDRESS = /^(https?:\/\/\S+|[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z0-9-]*[a-z][a-z0-9-]*(:\d+)?(\/\S*)?)$/i
 var SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i
 
 function looksLikeAddress(text) {

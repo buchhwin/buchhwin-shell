@@ -31,7 +31,8 @@ ColumnLayout {
     property string dragging: ""
     property var frozen: null          // layout box frozen while dragging
 
-    Component.onCompleted: DisplayService.refresh()
+    // Monitors may have come or gone since the page was last on screen.
+    PageActivity { onOpened: DisplayService.refresh() }
 
     function box() {
         if (frozen) return frozen
@@ -188,6 +189,7 @@ ColumnLayout {
         description: "Settings below apply to the display you choose here"
 
         SegmentedControl {
+            focusOnTab: true
             Layout.fillWidth: true
             compact: true
             current: root.chosen
@@ -218,6 +220,7 @@ ColumnLayout {
                 labelFills: true
                 label: "Enabled"
                 ShellToggle {
+                    focusOnTab: true
                     checked: !monitorSection.monitor.disabled
                     enabledState: !DisplayService.confirming && (monitorSection.monitor.disabled || root.enabledMonitors.length > 1)
                     onToggled: value => DisplayService.setEnabled(monitorSection.monitor.name, value)
@@ -271,7 +274,7 @@ ColumnLayout {
                     }
                 }
                 SettingRow {
-                    label: "Adaptive Sync"
+                    label: "Adaptive sync"
                     hint: "VRR / FreeSync"
                     SegmentedControl {
                         focusOnTab: true
@@ -343,4 +346,52 @@ ColumnLayout {
             }
         }
     }
+
+    // Off by default, and it changes nothing at all while every screen is at
+    // scale 1 - logical and physical are the same size there, so XWayland
+    // reports the same either way. It only means something with fractional
+    // scaling. There, X11 windows stop being stretched, and X11 is told the
+    // real scale through `Xft.dpi` (AppearanceService.applyX11Scale), which
+    // only X11 clients read - a toolkit that honours it comes up the right
+    // size, one that does not is a third smaller and needs its own scale in
+    // whatever launches it. Shown wherever there is a scaled screen, so the
+    // question is only asked of the people it can answer.
+    SettingsSection {
+        Layout.fillWidth: true
+        visible: root.monitors.some(monitor => Number(monitor.scale) !== 1)
+        title: "X11 applications"
+        description: "Applications that do not speak Wayland are drawn by XWayland, which is told the scaled size of a display rather than its real one - so on a screen at 1.5 they render 2560x1440 pixels and the compositor stretches them over 3840x2160. Citrix showed it as an almost unreadable font on a 4K screen and a sharp one on a Full HD screen beside it."
+
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Sharp X11 applications"
+            hint: "They draw in real pixels instead of being stretched, and X11 is told the real scale of the largest screen (Xft.dpi, which only X11 applications read). A toolkit that honours it comes up the right size; one that does not is a third smaller and needs its own scale (GDK_SCALE, QT_SCALE_FACTOR) in its launcher. Only applications started afterwards are affected."
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("display.xwaylandSharp")
+                onToggled: value => SettingsService.set("display.xwaylandSharp", value)
+            }
+        }
+        // X11 has one DPI for all its screens, so this is one number. "Auto"
+        // is the largest screen's scale; the others are for a session that is
+        // mostly one remote desktop and reads better a step larger than the
+        // screen itself. An X11 window on a screen at 1 is that much too
+        // large either way - the trade the switch above makes.
+        SettingRow {
+            Layout.fillWidth: true
+            visible: SettingsService.xwaylandSharp
+            label: "X11 scale"
+            hint: "What X11 is told its screen runs at. Auto follows the largest screen; a step larger makes a remote desktop easier to read. Applications started afterwards pick it up, a Citrix session on its next connection."
+            SegmentedControl {
+                focusOnTab: true
+                Layout.fillWidth: true
+                current: String(SettingsService.x11ScaleSetting)
+                options: [{ value: "0", label: "Auto" }, { value: "1.25", label: "125 %" }, { value: "1.5", label: "150 %" },
+                          { value: "1.75", label: "175 %" }, { value: "2", label: "200 %" }]
+                onSelected: value => SettingsService.set("display.x11Scale", Number(value))
+            }
+        }
+    }
+
 }

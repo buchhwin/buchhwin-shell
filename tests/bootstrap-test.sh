@@ -43,8 +43,10 @@ skipped=$("$script" --skip-apps)
 check '--skip-apps leaves the applications out' '[[ $skipped != *brave-browser* ]]'
 check '--skip-apps keeps the extras' '[[ $skipped == *wf-recorder* ]]'
 
-"$script" --help >/dev/null 2>&1
-check '--help exits 0' '[[ $? -eq 0 ]]'
+# Captured, not read back from $?: under set -e a failing --help would end
+# the script before the check, so the check could only ever pass.
+help_status=0; "$script" --help >/dev/null 2>&1 || help_status=$?
+check '--help exits 0' '[[ $help_status -eq 0 ]]'
 
 set +e
 "$script" --nonsense >/dev/null 2>&1

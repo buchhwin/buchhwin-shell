@@ -33,7 +33,9 @@ var modifiers = [
 var titleGroups = {
     "Terminal": "apps", "Web browser": "apps", "File manager": "apps",
     "Launcher": "panels", "Control center": "panels", "Settings": "panels", "Notification center": "panels",
-    "Emoji picker": "panels",
+    "Emoji picker": "panels", "Wallpaper picker": "panels", "Profiles and modes": "panels",
+    "All keyboard shortcuts": "panels", "Pick a colour off the screen": "panels",
+    "Desktop mode: widgets, bar, notch": "workspaces", "Mode: minimal, work, gaming, laptop, docked": "workspaces",
     "Dashboard": "panels", "Session menu": "panels", "Overview": "panels", "Clipboard history": "panels",
     "Layout editor": "panels",
     "Close window": "windows", "Fullscreen": "windows", "Maximize": "windows", "Toggle floating": "windows",
@@ -50,7 +52,8 @@ var titleGroups = {
 var panelTitles = {
     launcher: "Launcher", controlCenter: "Control center", settings: "Settings", notifications: "Notification center",
     dashboard: "Dashboard", powerMenu: "Session menu", overview: "Overview", clipboard: "Clipboard history",
-    editor: "Layout editor", emoji: "Emoji picker"
+    editor: "Layout editor", emoji: "Emoji picker", wallpaperPicker: "Wallpaper picker",
+    profile: "Profiles and modes", shortcuts: "All keyboard shortcuts"
 }
 
 var keyLabels = {
@@ -129,7 +132,19 @@ function describeExec(arg) {
         if (match[1] === "recording") return titleOf(/ toggle screen\b/.test(text) ? "Record the screen" : "Record a region")
         if (match[1] === "kbdBacklight") return titleOf(match[2] === "up" ? "Keyboard light up"
             : match[2] === "down" ? "Keyboard light down" : "Keyboard light on or off")
+        if (match[1] === "colorPicker") return titleOf("Pick a colour off the screen")
+        if (match[1] === "desktop") return titleOf("Desktop mode: widgets, bar, notch")
+        if (match[1] === "mode") return titleOf("Mode: minimal, work, gaming, laptop, docked")
         if (panelTitles[match[1]]) return titleOf(panelTitles[match[1]])
+    }
+    // The workspace binds carry their number and a `||` fallback to Hyprland's
+    // own dispatcher, so they need the number out of the text rather than a
+    // fixed title. Nine of each: without these, eighteen of the session's
+    // seventy-five shortcuts land in Other as raw command lines.
+    match = text.match(/ipc call workspaces (switchTo|move) (\d+)/)
+    if (match) {
+        return titleOf((match[1] === "move" ? "Move window to workspace " : "Go to workspace ") + match[2],
+            "workspaces")
     }
     match = text.match(/launch-default\.sh (terminal|browser|files)\b/)
     if (match) return titleOf(match[1] === "terminal" ? "Terminal" : match[1] === "browser" ? "Web browser" : "File manager")
@@ -251,6 +266,48 @@ function grouped(list, query) {
         rows: condensed.filter(row => row.group === group.id
             && (!q.length || (row.title + " " + row.combo + " " + row.command + " " + group.title).toLowerCase().indexOf(q) >= 0))
     })).filter(group => group.rows.length > 0)
+}
+
+// The sheet lays the groups out in columns, and a grid is the wrong tool for
+// it. In a `GridLayout` every row is as tall as its tallest cell, so a group
+// of three rows beside one of eleven leaves eight rows of nothing under it -
+// which is what "there are a lot of gaps" describes, with Apps (3) next to
+// Shell panels (11) at the top of the sheet.
+//
+// So the groups are dealt into columns here instead, each column packed tight
+// from the top. The weight of a group is its rows plus one for its own
+// heading, which is what stops four groups of one landing in a single column
+// beside one group of four.
+//
+// **Heaviest first, not in reading order.** Walking the list in order and
+// dropping each group into the shortest column sounds right and balances
+// badly: the biggest group is as likely to come last as first, and by then
+// there is nowhere level to put it. With the real eight groups in two columns
+// that gave 14 rows against 27. Taking the heaviest first gives 19 against 22,
+// and reading order is restored inside each column afterwards, so a column
+// still reads top to bottom in the order the groups are declared.
+//
+// Empty columns are kept, so the caller can rely on the length: a sheet three
+// columns wide with two groups in it still returns three.
+function columnise(list, count) {
+    const total = Math.max(1, Math.floor(count) || 1)
+    const columns = []
+    const weights = []
+    for (let index = 0; index < total; index++) { columns.push([]); weights.push(0) }
+    const weigh = group => ((group && group.rows) ? group.rows.length : 0) + 1
+    const order = (list || []).map((group, index) => ({ group: group, index: index }))
+    order.sort((a, b) => weigh(b.group) - weigh(a.group) || a.index - b.index)
+    for (const entry of order) {
+        let pick = 0
+        for (let index = 1; index < total; index++) {
+            if (weights[index] < weights[pick]) pick = index
+        }
+        columns[pick].push(entry)
+        weights[pick] += weigh(entry.group)
+    }
+    return columns.map(column => column
+        .sort((a, b) => a.index - b.index)
+        .map(entry => entry.group))
 }
 
 // Custom shortcuts ------------------------------------------------------------

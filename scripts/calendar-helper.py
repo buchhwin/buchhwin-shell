@@ -41,6 +41,7 @@ import datetime
 import json
 import os
 import pathlib
+import re
 import sys
 import uuid
 
@@ -48,6 +49,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
 import ical  # noqa: E402
 
 EVENT_MIME = "application/x-vnd.akonadi.calendar.event"
+# The editor's days are YYYY-MM-DD; anything else would go into DTSTART as
+# is. The `changes` of a modify carry the same fields.
+DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # Akonadi answers in milliseconds; nothing here should ever take this long.
 TIMEOUT_MS = 30000
 
@@ -69,6 +73,17 @@ def read_request():
     except ValueError:
         return None
     return value if isinstance(value, dict) else None
+
+
+def malformed_day(request):
+    """The name of the first day field that is present and not YYYY-MM-DD."""
+    changes = request.get("changes")
+    for holder in (request, changes if isinstance(changes, dict) else {}):
+        for field in ("day", "endDay"):
+            value = holder.get(field)
+            if value not in (None, "") and not (isinstance(value, str) and DAY.match(value)):
+                return field
+    return None
 
 
 def real_session():
@@ -118,6 +133,11 @@ def drive(steps):
             state["value"] = done.value
         except Failed as failure:
             state["raised"] = failure
+        except Exception as error:  # noqa: BLE001
+            # Raised inside a Qt slot, anything else would only be printed by
+            # the bindings: the loop would run on with no job to end it and
+            # the helper would hang - main() is where it becomes an answer.
+            state["raised"] = error
         else:
             def finished(ready):
                 problem = Failed(ready.errorString()) if ready.error() else None
@@ -523,10 +543,18 @@ def main():
     request = read_request()
     if request is None:
         return result(ok=False, error="The request could not be read.")
+    field = malformed_day(request)
+    if field is not None:
+        return result(ok=False, error=f"'{field}' is not a date (YYYY-MM-DD).")
     try:
         return drive(handler(request, args))
     except Failed as failure:
         return result(ok=False, error=str(failure))
+    except (ValueError, TypeError, KeyError) as error:
+        # A field of the wrong shape (a count that is not a number, a missing
+        # key) is an answer the shell can show, not a traceback on stderr and
+        # an empty stdout it cannot parse.
+        return result(ok=False, error=f"The request could not be handled: {error}")
 
 
 if __name__ == "__main__":

@@ -118,7 +118,9 @@ PanelWindow {
         anchors.centerIn: parent
         width: Math.min(contentWidth, window.width - Metrics.screenMargin * 4) + Metrics.spaceMd * 2
         height: window.cardHeight + Metrics.spaceMd * 2
-        radius: Metrics.radiusPanel
+        // The cards sit spaceMd in, not panelPadding, so the corner is
+        // derived from that inset and runs parallel to theirs.
+        radius: Metrics.panelRadius(Metrics.spaceMd)
         color: Colors.panelFor("switcher")
         border.width: Metrics.borderWidth
         border.color: Colors.panelBorder
@@ -133,7 +135,7 @@ PanelWindow {
         EmptyState {
             anchors.centerIn: parent
             visible: !SwitcherService.loading && SwitcherService.windows.length === 0
-            icon: "󰖲"
+            icon: Icons.window
             title: "No open windows"
         }
 
@@ -154,7 +156,7 @@ PanelWindow {
             preferredHighlightEnd: width - Metrics.switcherCardWidth
             highlightMoveDuration: Animations.navigation
 
-            delegate: Rectangle {
+            delegate: ShellCard {
                 id: card
                 required property var modelData
                 required property int index
@@ -166,11 +168,10 @@ PanelWindow {
                 readonly property real boxWidth: Metrics.switcherCardWidth - Metrics.spaceSm * 2
                 width: Metrics.switcherCardWidth
                 height: window.cardHeight
-                radius: Metrics.radiusCard
-                color: isSelected ? Colors.accentSoft : hover.hovered ? Colors.surface1Hover : "transparent"
-                border.width: isSelected ? Metrics.borderWidth : 0
-                border.color: Colors.accentBorder
-                Behavior on color { ColorAnimation { duration: Animations.hover } }
+                interactive: true
+                hovered: hover.hovered
+                pressed: cardMouse.pressed && cardMouse.containsMouse
+                highlighted: isSelected
 
                 HoverHandler { id: hover }
 
@@ -241,6 +242,7 @@ PanelWindow {
                 }
 
                 MouseArea {
+                    id: cardMouse
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
                     onClicked: SwitcherService.activate(card.index)

@@ -1,12 +1,15 @@
 .pragma library
 .import "v1_to_v2.js" as V1
+.import "v2_to_v3.js" as V2
 
 // Layout configuration migrations. migrate() never throws; callers must not
 // write when `readOnly` is set (unknown future version or unreadable file).
-var CURRENT_VERSION = 2
+var CURRENT_VERSION = 3
 
 function emptyConfig() {
-    return { configVersion: CURRENT_VERSION, activeProfile: "minimal", profiles: {} }
+    return { configVersion: CURRENT_VERSION, activeProfile: V2.DEFAULT_PROFILE,
+             activeMode: V2.DEFAULT_MODE,
+             profiles: { [V2.DEFAULT_PROFILE]: { label: V2.DEFAULT_LABEL, modes: {} } } }
 }
 
 function migrate(input) {
@@ -32,6 +35,7 @@ function migrate(input) {
 
     let config = parsed
     if (from < 2) config = V1.migrate(parsed)
+    if (from < 3) config = V2.migrate(config)
     return { ok: true, readOnly: false, changed: from !== CURRENT_VERSION, from: from,
              to: CURRENT_VERSION, config: config }
 }

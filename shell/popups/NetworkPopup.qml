@@ -68,6 +68,7 @@ PopupPanel {
                 Repeater {
                     model: NetworkService.networks
                     ListRow {
+                        focusOnTab: true
                         level: 1
                         required property var modelData
                         width: parent.width

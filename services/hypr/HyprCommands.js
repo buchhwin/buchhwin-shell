@@ -151,6 +151,19 @@ function workspaceRule(id, monitorName) {
     }
 }
 
+// A workspace onto a monitor: what a rule would have done had the workspace
+// been created after it. `hl.dsp.workspace.move` is the dispatcher's Lua name
+// (found by listing `hl.dsp.workspace` in the running compositor - the wiki
+// names none of them).
+function moveWorkspaceToMonitor(id, monitorName) {
+    const number = Math.round(Number(id))
+    const name = checkWord(monitorName)
+    return {
+        legacy: "moveworkspacetomonitor " + number + " " + name,
+        lua: "hl.dsp.workspace.move({ workspace = " + number + ", monitor = " + luaString(name) + " })"
+    }
+}
+
 function moveWindowSilent(id, windowAddress) {
     const target = address(windowAddress)
     const number = Math.round(Number(id))

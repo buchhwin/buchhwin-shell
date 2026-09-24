@@ -40,6 +40,10 @@ ShellPanel {
     onKindChanged: {
         codeField.text = ""
     }
+    // The panel takes the focus when it opens; a request of another kind
+    // that arrives while it is open changes keyForward (a code to type has a
+    // field, a confirmation has none), so the focus is taken again then.
+    onKeyForwardChanged: if (shown) Qt.callLater(focusEntry)
 
     ColumnLayout {
         width: parent.width
@@ -78,13 +82,14 @@ ShellPanel {
                 }
                 color: Colors.text
                 font.family: Typography.monoFamily
-                font.pixelSize: Typography.displaySize * 0.7
+                font.pixelSize: Typography.pairingCodeSize
                 font.weight: Typography.light
                 font.letterSpacing: Typography.captionTracking * 2
                 renderType: Typography.renderType
             }
 
             ShellTextField {
+                focusOnTab: true
                 id: codeField
                 Layout.fillWidth: true
                 visible: root.needsInput
@@ -104,11 +109,13 @@ ShellPanel {
             }
             Item { Layout.fillWidth: true }
             ShellButton {
+                focusOnTab: true
                 visible: root.kind !== "display"
                 text: "Decline"; variant: "ghost"
                 onClicked: BluetoothService.respond(false, "")
             }
             ShellButton {
+                focusOnTab: true
                 text: root.kind === "display" ? "Done" : root.kind === "confirm" ? "Pair" : root.kind === "authorize" || root.kind === "service" ? "Allow" : "Confirm"
                 variant: "accent"
                 enabledState: !root.needsInput || codeField.text.length > 0

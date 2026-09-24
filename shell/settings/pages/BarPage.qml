@@ -52,6 +52,7 @@ ColumnLayout {
         title: "The bar is hidden"
         description: "Widgets mode shows the widgets on the wallpaper instead of the bar. The pills below are kept and come back with the Bar mode."
         ShellButton {
+            focusOnTab: true
             icon: Icons.edit; text: "Open Widgets"
             onClicked: PanelService.open("settings", { page: "widgets" })
         }
@@ -67,6 +68,7 @@ ColumnLayout {
             label: "Size"
             hint: "Drag the notch itself in the layout editor (Super+Alt+E): the strip sideways, the hover overview in both directions"
             ShellButton {
+                focusOnTab: true
                 text: "Open the editor"
                 icon: Icons.edit
                 onClicked: { PanelService.close("settings"); LayoutService.editMode = true }
@@ -84,6 +86,7 @@ ColumnLayout {
                     model: [{ type: "weather", label: "Weather" }, { type: "media", label: "Media" },
                             { type: "events", label: "Events" }, { type: "status", label: "Status" }]
                     ChipButton {
+                        focusOnTab: true
                         required property var modelData
                         title: modelData.label
                         active: NotchService.shows(modelData.type)
@@ -104,6 +107,36 @@ ColumnLayout {
                 options: [{ value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3" }, { value: "4", label: "4" }]
                 onSelected: value => SettingsService.set("notch.eventCount", Number(value))
             }
+        }
+
+        // The notch *is* the display, instead of opening a surface below it.
+        // One switch per kind on purpose: a volume bar in the notch with
+        // notifications still under it is an ordinary thing to want.
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Volume and brightness in the notch"
+            hint: "The notch itself shows the level instead of a box below it. On a screen without a notch - widgets or bar mode, or a second monitor - it appears where it always did."
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("notch.displayOsd"); onToggled: value => SettingsService.set("notch.displayOsd", value) }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Notifications in the notch"
+            hint: "The newest one, in the notch instead of below it. The others wait; all of them are in the notification center either way."
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("notch.displayNotifications"); onToggled: value => SettingsService.set("notch.displayNotifications", value) }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Track changes in the notch"
+            hint: "A new song names itself for a few seconds. It has no other place to appear, so with this off nothing happens at all."
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("notch.displayMedia"); onToggled: value => SettingsService.set("notch.displayMedia", value) }
+        }
+        ShellText {
+            Layout.fillWidth: true
+            text: "While the overview is open the notch stays the overview, and whatever wanted it appears below instead. When two ask at once the newer one wins - a key you just pressed must show what it did."
+            role: "small"; muted: true; wrapMode: Text.Wrap
         }
 
         SettingRow {
@@ -269,11 +302,12 @@ ColumnLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceSm
             ShellButton {
+                focusOnTab: true
                 icon: Icons.edit; text: "Edit layout"; variant: "accent"
                 onClicked: { PanelService.close(); LayoutService.editMode = true }
             }
-            ShellButton { icon: Icons.undo; text: "Undo"; enabledState: LayoutService.undoStack.length > 0; onClicked: LayoutService.undo() }
-            ShellButton { icon: Icons.reset; text: "Restore default"; onClicked: { page.select("", -1); LayoutService.resetBar() } }
+            ShellButton { focusOnTab: true; icon: Icons.undo; text: "Undo"; enabledState: LayoutService.undoStack.length > 0; onClicked: LayoutService.undo() }
+            ShellButton { focusOnTab: true; icon: Icons.reset; text: "Restore default"; onClicked: { page.select("", -1); LayoutService.resetBar() } }
         }
         ShellText {
             Layout.fillWidth: true
@@ -357,8 +391,14 @@ ColumnLayout {
             property string addType: "clock"
             Layout.fillWidth: true
             title: page.zoneLabels[zone]
-            description: pills.length ? "" : page.unit === "group" ? "No groups yet" : "No pills yet"
 
+            EmptyState {
+                Layout.fillWidth: true
+                visible: zoneSection.pills.length === 0
+                row: true
+                icon: "󰘔"
+                title: page.unit === "group" ? "No groups yet" : "No pills yet"
+            }
             Repeater {
                 model: zoneSection.pills
 
@@ -372,9 +412,18 @@ ColumnLayout {
                     readonly property bool selected: page.selectedPill === pill.id
                     Layout.fillWidth: true
                     highlighted: selected
+                    interactive: true
+                    hovered: pillMouse.containsMouse
+                    pressed: pillMouse.pressed && pillMouse.containsMouse
                     implicitHeight: pillColumn.implicitHeight + Metrics.spaceMd * 2
 
-                    MouseArea { anchors.fill: parent; onClicked: page.select(pillCard.pill.id, -1) }
+                    MouseArea {
+                        id: pillMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: page.select(pillCard.pill.id, -1)
+                    }
 
                     ColumnLayout {
                         id: pillColumn
@@ -394,6 +443,7 @@ ColumnLayout {
                                 Repeater {
                                     model: pillCard.pill.items
                                     ShellButton {
+                                        focusOnTab: true
                                         required property var modelData
                                         required property int index
                                         compact: true
@@ -406,14 +456,16 @@ ColumnLayout {
                                 }
                             }
 
-                            ShellButton { icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Move left"; onClicked: LayoutService.barMovePill(pillCard.pill.id, -1) }
-                            ShellButton { icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Move right"; onClicked: LayoutService.barMovePill(pillCard.pill.id, 1) }
+                            ShellButton { focusOnTab: true; icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Move left"; onClicked: LayoutService.barMovePill(pillCard.pill.id, -1) }
+                            ShellButton { focusOnTab: true; icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Move right"; onClicked: LayoutService.barMovePill(pillCard.pill.id, 1) }
                             ShellButton {
+                                focusOnTab: true
                                 visible: pillCard.index < zoneSection.pills.length - 1
                                 icon: "󰘞"; variant: "ghost"; compact: true; toolTip: "Merge with next " + page.unit
                                 onClicked: LayoutService.barMergeWithNext(pillCard.pill.id)
                             }
                             ShellButton {
+                                focusOnTab: true
                                 icon: Icons.remove; variant: "ghost"; compact: true; toolTip: "Remove " + page.unit
                                 onClicked: { page.select("", -1); LayoutService.barRemovePill(pillCard.pill.id) }
                             }
@@ -428,28 +480,32 @@ ColumnLayout {
                             spacing: Metrics.spaceXs
 
                             SegmentedControl {
-                                Layout.preferredWidth: Metrics.editorSidebarWidth * (options.length > 2 ? 1.4 : 1)
+                                focusOnTab: true
+                                Layout.fillWidth: true
                                 current: itemActions.item ? itemActions.item.display : "full"
                                 options: itemActions.item ? WidgetRegistry.pillDisplays(itemActions.item.type) : []
                                 onSelected: value => LayoutService.barSetDisplay(pillCard.pill.id, page.selectedItem, value)
                             }
-                            Item { Layout.fillWidth: true }
                             ShellButton {
+                                focusOnTab: true
                                 icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Move item left"
                                 enabledState: page.selectedItem > 0
                                 onClicked: { LayoutService.barMoveItem(pillCard.pill.id, page.selectedItem, -1); page.selectedItem -= 1 }
                             }
                             ShellButton {
-                                icon: "󰁔"; variant: "ghost"; compact: true; toolTip: "Move item right"
+                                focusOnTab: true
+                                icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Move item right"
                                 enabledState: page.selectedItem < pillCard.pill.items.length - 1
                                 onClicked: { LayoutService.barMoveItem(pillCard.pill.id, page.selectedItem, 1); page.selectedItem += 1 }
                             }
                             ShellButton {
+                                focusOnTab: true
                                 visible: pillCard.pill.items.length > 1
                                 icon: "󰤼"; text: "Split off"; compact: true
                                 onClicked: { LayoutService.barSplitItem(pillCard.pill.id, page.selectedItem); page.select("", -1) }
                             }
                             ShellButton {
+                                focusOnTab: true
                                 icon: Icons.remove; text: "Remove"; variant: "danger"; compact: true
                                 onClicked: { LayoutService.barRemoveItem(pillCard.pill.id, page.selectedItem); page.select(pillCard.pill.id, -1) }
                             }
@@ -462,6 +518,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 spacing: Metrics.spaceSm
                 ShellSelect {
+                    focusOnTab: true
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignTop
                     options: page.typeOptions
@@ -469,11 +526,13 @@ ColumnLayout {
                     onSelected: value => zoneSection.addType = value
                 }
                 ShellButton {
+                    focusOnTab: true
                     Layout.alignment: Qt.AlignTop
                     icon: Icons.add; text: "New " + page.unit
                     onClicked: LayoutService.barAddPill(zoneSection.zone, zoneSection.addType, "")
                 }
                 ShellButton {
+                    focusOnTab: true
                     Layout.alignment: Qt.AlignTop
                     readonly property var place: page.selectedPill.length ? LayoutService.barPlace(page.selectedPill) : null
                     visible: place !== null && place.zone === zoneSection.zone

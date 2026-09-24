@@ -90,6 +90,28 @@ else
   check '[[ -d "$selfdir" && ! -L "$selfdir" ]]' 'the checkout is left alone'
 fi
 
+# ---- XDG_CONFIG_HOME and XDG_DATA_HOME elsewhere ---------------------------
+# systemd, xdg-desktop-portal, zsh and the shell itself read from the XDG
+# directories, so a user who moved them used to get links in ~/.config that
+# nothing ever read. The session link itself stays at ~/.local/share, the name
+# every script and the session entry use.
+xdghome="$sandbox/xdghome"
+xdgcheckout="$xdghome/.local/share/buchhwin-shell-stable"
+mkdir -p "$xdgcheckout"
+cp -r "$checkout/." "$xdgcheckout/"
+HOME="$xdghome" XDG_CONFIG_HOME="$sandbox/xdg/config" XDG_DATA_HOME="$sandbox/xdg/data" \
+  "$xdgcheckout/install/install.sh" --apply > "$sandbox/xdg.log" 2>&1 \
+  || { printf 'FAIL install: --apply with XDG dirs elsewhere exited non-zero\n'; cat "$sandbox/xdg.log"; exit 1; }
+check '[[ -L "$sandbox/xdg/config/systemd/user/buchhwin-shell-session.target" ]]' 'the systemd target goes under XDG_CONFIG_HOME'
+check '[[ -L "$sandbox/xdg/config/xdg-desktop-portal/buchhwin-shell-portals.conf" ]]' 'the portal configuration too'
+check '[[ -L "$sandbox/xdg/config/buchhwin-shell/shell.zsh" ]]' 'and the zsh fragment'
+check '[[ -f "$sandbox/xdg/config/buchhwin-shell/layout.json" ]]' 'layout.json is created under XDG_CONFIG_HOME'
+check '[[ -r "$sandbox/xdg/config/buchhwin-shell/fastfetch.jsonc" ]]' 'the Fastfetch configuration too'
+check '[[ ! -e "$xdghome/.config" ]]' 'nothing is written to ~/.config when XDG_CONFIG_HOME is elsewhere'
+check '[[ -L "$sandbox/xdg/data/zsh/site-functions/_buchhwin" ]]' 'the completion goes under XDG_DATA_HOME'
+check '[[ $(readlink -f -- "$xdghome/.local/share/buchhwin-shell") == "$xdgcheckout" ]]' 'the session link stays at ~/.local/share/buchhwin-shell'
+check '[[ -L "$xdghome/.local/bin/buchhwin" ]]' 'and the launchers at ~/.local/bin'
+
 if [[ $failures -gt 0 ]]; then
   printf 'install test: %d failure(s)\n' "$failures" >&2
   exit 1

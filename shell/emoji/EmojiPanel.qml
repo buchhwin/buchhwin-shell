@@ -122,7 +122,7 @@ ShellPanel {
                         anchors.margins: Metrics.spaceXxs
                         radius: Metrics.radiusInner
                         color: index === root.selected ? Colors.selection
-                            : cell.containsMouse ? Colors.hover : "transparent"
+                            : cell.containsMouse ? Colors.surface1Hover : "transparent"
 
                         Text {
                             anchors.centerIn: parent

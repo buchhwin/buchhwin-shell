@@ -90,9 +90,15 @@ ShellRoot {
         T.eq(spread.map(w => w.label), ["1", "2", "1", "2", "1", "2"], "labelled as each monitor's own")
 
         const rows = O.groups(spread, three)
-        T.eq(rows.map(row => row.monitor), ["DP-10", "DP-8", "DP-13"], "the focused screen first, the rest in order")
-        T.eq(rows.map(row => row.number), [2, 1, 3], "but each keeps the number the Displays page gives it")
-        T.eq(rows.map(row => row.workspaces.map(w => w.id)), [[11, 12], [1, 2], [21, 22]], "each row its own")
+        // Left to right, whichever screen has the focus. Pulling the focused
+        // row to the front made the overview stand in a different order every
+        // time it was opened, which is the opposite of what a row per monitor
+        // is for; the row says which monitor it is and draws it in the accent
+        // colour when it is the focused one.
+        T.eq(rows.map(row => row.monitor), ["DP-8", "DP-10", "DP-13"], "the rows are the monitors, left to right")
+        T.eq(rows.map(row => row.number), [1, 2, 3], "numbered the way they stand")
+        T.eq(rows.map(row => row.focused), [false, true, false], "and the focused one is marked, not moved")
+        T.eq(rows.map(row => row.workspaces.map(w => w.id)), [[1, 2], [11, 12], [21, 22]], "each row its own")
         T.near(rows[2].aspect, 1920 / 1080, "a rotated screen's row gets its own shape", 1e-9)
         T.near(rows[0].aspect, 2160 / 3840, "and a landscape one gets its", 1e-9)
 
@@ -101,7 +107,7 @@ ShellRoot {
         const stray = O.build([], three, [{ id: 5, name: "5", monitorID: 9 }], "open", 2, true)
         T.eq(O.groups(stray, three).length >= 1, true, "an unknown monitor still produces rows")
         T.eq(O.groups([{ id: 5, monitor: "GONE", windows: [] }], three).map(row => row.monitor),
-             ["DP-10", "DP-8", "DP-13", ""], "and the homeless one is last, not lost")
+             ["DP-8", "DP-10", "DP-13", ""], "and the homeless one is last, not lost")
 
         // Without blocks nothing changes: one row per monitor, global numbers.
         const flat = O.build([], three, [{ id: 1, name: "1", monitorID: 0 }, { id: 3, name: "3", monitorID: 1 }], "open", 2, false)

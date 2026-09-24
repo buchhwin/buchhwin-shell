@@ -48,35 +48,55 @@ Rectangle {
             ArrangeItem {
                 id: cell
                 required property var modelData
+                required property int index
                 area: grid
                 itemId: modelData.id
                 contentHeight: 1
                 onResized: (w, h) => LayoutService.lockSetSize(cell.modelData.id, w, h)
 
-                Rectangle {
+                // Only the face leans, as on the other arranged surfaces: the
+                // remove button and the corner handle stay where the hand
+                // expects them.
+                Item {
+                    id: face
                     anchors.fill: parent
-                    radius: Metrics.radiusInner
-                    color: Colors.lockField
-                    border.width: Metrics.borderWidth
-                    border.color: Colors.border
-                }
-                Row {
-                    anchors.centerIn: parent
-                    spacing: Metrics.spaceSm
-                    ShellIcon {
-                        anchors.verticalCenter: parent.verticalCenter
-                        glyph: Lock.icon(cell.modelData.type)
-                        size: Metrics.iconMd
-                        color: Colors.lockText
+                    transform: Rotation {
+                        origin.x: face.width / 2
+                        origin.y: face.height / 2
+                        angle: wiggle.angle
                     }
-                    ShellText {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: Lock.label(cell.modelData.type)
-                        color: Colors.lockText
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Metrics.radiusInner
+                        color: Colors.lockField
+                        border.width: Metrics.borderWidth
+                        border.color: Colors.border
+                    }
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: Metrics.spaceSm
+                        ShellIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            glyph: Lock.icon(cell.modelData.type)
+                            size: Metrics.iconMd
+                            color: Colors.lockText
+                        }
+                        ShellText {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: Lock.label(cell.modelData.type)
+                            color: Colors.lockText
+                        }
                     }
                 }
-                Wiggle { id: wiggle; index: 0; running: grid.editing }
+                // Editable, so it says so - each cell at its own point of the
+                // cycle, and still while it is under the hand.
+                Wiggle {
+                    id: wiggle
+                    index: cell.index
+                    running: grid.editing && !cell.dragging && !cell.sizing
+                }
                 ShellButton {
+                    focusOnTab: true
                     anchors.top: parent.top
                     anchors.left: parent.left
                     anchors.margins: Metrics.spaceXxs

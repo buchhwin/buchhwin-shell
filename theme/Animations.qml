@@ -18,27 +18,33 @@ Singleton {
     readonly property bool motionEnabled: mode === "full"
     readonly property bool enabled: factor > 0
 
-    // A motion that covers ground may not be scaled below ten frames. The rule
-    // and the reason are in AnimationLogic.js, which the compositor's table
-    // uses too - one rule, one place.
+    // A motion that covers ground may not be scaled below ten frames, and may
+    // not be scaled below four fifths of what it was designed to take. Both
+    // rules and the reason for the second are in AnimationLogic.js, which the
+    // compositor's table uses too - one rule, one place.
     //
-    // It applies to travel, not to every duration. A panel crossing 680 px and
+    // They apply to travel, not to every duration. A panel crossing 680 px and
     // a hover tint changing in place are not the same problem: the panel reads
     // as single pictures when it is rushed, the tint does not, and a floor on
     // the tint would only stop the speed setting from doing anything at all
     // above 1x. That is the same line `move()` already draws - ground covered
     // against no ground covered - so the two stay in agreement.
-    readonly property int travelFloor: Logic.FLOOR_MS
+    //
+    // The floor now depends on the base, so it is a function and not a number.
+    function travelFloor(base) {
+        return Math.max(Math.min(base, Logic.FLOOR_MS), Math.round(base * Logic.FLOOR_SHARE))
+    }
     function travel(base) { return Logic.travel(base, factor, motionEnabled) }
 
-    // **No travel here is below ten frames** - see `travel()` above, which is
-    // what enforces it now. At 60 Hz a 100 ms animation is six frames and a
-    // 60 ms one is four, and a four-frame fade does not read as a fade - it
-    // reads as the thing stepping, which is exactly what "all the animations
-    // look like five frames a second" describes. Measured first: the shell
-    // sits at 0 CPU jiffies when idle and spends 11 % of one core through a
-    // burst of panel opens, and the compositor 5 %, so nothing here was ever
-    // short of time to draw. It was short of *frames*.
+    // **No travel here is below ten frames, nor below four fifths of its own
+    // number** - see `travel()` above, which is what enforces both. At 60 Hz a
+    // 100 ms animation is six frames and a 60 ms one is four, and a four-frame
+    // fade does not read as a fade - it reads as the thing stepping, which is
+    // exactly what "all the animations look like five frames a second"
+    // describes. Measured first: the shell sits at 0 CPU jiffies when idle and
+    // spends 11 % of one core through a burst of panel opens, and the
+    // compositor 5 %, so nothing here was ever short of time to draw. It was
+    // short of *frames*.
     //
     // The numbers below are the durations at 1x. They are no longer the floor
     // themselves, because the speed setting divides them afterwards.

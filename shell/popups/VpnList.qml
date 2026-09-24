@@ -15,6 +15,7 @@ ScrollList {
     Repeater {
         model: NetworkService.vpns
         ListRow {
+            focusOnTab: true
             required property var modelData
             width: parent.width
             level: 1
@@ -23,7 +24,7 @@ ScrollList {
             subtitle: modelData.active ? "Connected" : "Off"
             active: modelData.active
             onClicked: NetworkService.setVpn(modelData.uuid, !modelData.active)
-            ShellToggle { checked: modelData.active; onToggled: value => NetworkService.setVpn(modelData.uuid, value) }
+            ShellToggle { focusOnTab: true; checked: modelData.active; onToggled: value => NetworkService.setVpn(modelData.uuid, value) }
         }
     }
 }

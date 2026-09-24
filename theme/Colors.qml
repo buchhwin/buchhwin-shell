@@ -218,6 +218,9 @@ Singleton {
     readonly property color notch: "#000000"
     readonly property color notchText: "#f5f5f7"
     readonly property color notchMutedText: Qt.rgba(1, 1, 1, 0.58)
+    // The groove behind a level the notch itself is showing. Not `track`: that
+    // one is made to sit on a panel, and on black it disappears.
+    readonly property color notchTrack: Qt.rgba(1, 1, 1, 0.22)
     readonly property color notchHover: Qt.rgba(1, 1, 1, 0.1)
     // The media and event fields inside the wide notch: each sits on its own
     // slightly raised surface so they read as two boxes, not two columns.

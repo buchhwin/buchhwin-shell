@@ -13,6 +13,13 @@ import "updates/UpdatesLogic.js" as Logic
 // session; nested sessions check on "Check now" from the dnf cache and never
 // notify. Last check times, the notified set and the last result are kept in
 // $XDG_STATE_HOME/buchhwin-shell/updates.json.
+//
+// And the shell itself, through scripts/shell-update.sh: the checkout the
+// session runs from against the git remote it follows. A clone from GitHub
+// follows origin/main and is fast-forwarded from here, on request or by the
+// automatic check when `updates.shellAuto` says so; the development machine's
+// stable worktree follows nothing and the page says so. The look at start and
+// in nested sessions is offline - local git only.
 Singleton {
     id: root
 
@@ -45,6 +52,56 @@ Singleton {
     // Expanded lists on the page (kept here so IPC can open them for screenshots).
     property bool packagesExpanded: false
     property bool flatpaksExpanded: false
+    property bool shellExpanded: false
+
+    // ---- the shell itself --------------------------------------------------------
+    property var shell: Logic.emptyShell()
+    readonly property bool shellChecking: shellProc.running
+    readonly property bool shellUpdating: shellUpdateProc.running
+    readonly property bool shellAuto: SettingsService.value("updates.shellAuto") === true
+    readonly property string shellSummary: Logic.shellSummary(shell)
+    readonly property string shellSubtitle: Logic.shellSubtitle(shell)
+    readonly property bool shellUpdatable: Logic.shellUpdatable(shell)
+
+    // offline: local git only, no fetch - what the start and a nested session
+    // may do. automatic: the timer's check, which may install (shellAuto).
+    function checkShell(offline, automatic) {
+        if (shellProc.running || preview) return
+        shellProc.automatic = !!automatic
+        shellProc.command = Logic.shellCheckCommand(Paths.script("shell-update.sh"), offline || !realSession)
+        shellProc.running = true
+    }
+
+    function finishShell(text) {
+        shell = Logic.parseShellReport(text)
+        saveState(Object.assign({}, state, { shell: shell }))
+        if (shellProc.automatic && shellAuto && realSession && shellUpdatable) updateShell()
+    }
+
+    function updateShell() {
+        if (!actionsAllowed) {
+            say(preview ? "Preview data: updates are disabled" : "Updating only runs in the buchhwin-shell session", true)
+            return
+        }
+        if (shellUpdateProc.running || !shellUpdatable) return
+        shellUpdateProc.command = Logic.shellUpdateCommand(Paths.script("shell-update.sh"))
+        shellUpdateProc.running = true
+        say("Updating the shell - it restarts in a moment …", false)
+    }
+
+    Process {
+        id: shellProc
+        property bool automatic: false
+        stderr: ErrorLog { label: "UpdatesService.shellProc" }
+        stdout: StdioCollector { onStreamFinished: root.finishShell(text) }
+    }
+    // Only the hand-over to systemd can fail here; the update itself reports
+    // through a notification once the shell is back.
+    Process {
+        id: shellUpdateProc
+        stderr: ErrorLog { label: "UpdatesService.shellUpdateProc" }
+        onExited: (code, status) => { if (code !== 0) root.say("The shell update could not be started (exit " + code + ")", true) }
+    }
 
     function packageSubtitle(item) { return Logic.packageSubtitle(item) }
     function flatpakSubtitle(item) { return Logic.flatpakSubtitle(item) }
@@ -69,6 +126,7 @@ Singleton {
         checking = true
         if (!automatic) say(cacheOnly ? "Checking with cached package data (test session) …" : "Checking for updates …", false)
         checkProc.running = true
+        checkShell(false, automatic)
     }
 
     function finish(text) {
@@ -197,9 +255,14 @@ Singleton {
         onLoaded: {
             root.state = Logic.parseState(text())
             if (!root.preview && !root.checking && root.state.result) root.result = root.state.result
+            if (root.state.shell) root.shell = root.state.shell
             root.stateLoaded = true
+            // What the last check said may be a shell restart old - the one an
+            // update ends in. Local git answers in a moment and without the
+            // network, so the page opens on the truth.
+            root.checkShell(true, false)
         }
-        onLoadFailed: root.stateLoaded = true
+        onLoadFailed: { root.stateLoaded = true; root.checkShell(true, false) }
     }
 
     function tick() {

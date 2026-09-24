@@ -32,7 +32,7 @@ ColumnLayout {
         .sort((a, b) => a.label.localeCompare(b.label))
     readonly property bool ready: captured !== null && (kind === "app" ? appId.length > 0 : commandField.text.trim().length > 0)
 
-    Component.onCompleted: ShortcutService.refresh()
+    PageActivity { onOpened: ShortcutService.refresh() }
 
     function startRecording() {
         recording = true
@@ -105,6 +105,7 @@ ColumnLayout {
                     KeyChips { keys: ShortcutService.keyParts(customRow.modelData) }
                     ShellIcon { visible: customRow.conflict; glyph: Icons.warning; size: Metrics.iconSm; color: Colors.warning }
                     ShellButton {
+                        focusOnTab: true
                         icon: Icons.remove; variant: "ghost"; compact: true; toolTip: "Remove"
                         onClicked: ShortcutService.remove(customRow.modelData)
                     }
@@ -134,6 +135,9 @@ ColumnLayout {
                 border.color: root.recording ? Colors.accent : Colors.border
                 activeFocusOnTab: true
                 onActiveFocusChanged: if (!activeFocus) root.recording = false
+                // The same ring every other control shows: the accent border
+                // only says "recording", so a tab that landed here was invisible.
+                FocusRing { active: captureArea.activeFocus && !root.recording; controlRadius: captureArea.radius }
 
                 Keys.onPressed: event => {
                     event.accepted = true
@@ -163,8 +167,9 @@ ColumnLayout {
                         color: root.recording ? Colors.accentForeground : Colors.subtleText
                     }
                     ShellButton {
+                        focusOnTab: true
                         visible: root.captured !== null && !root.recording
-                        icon: Icons.close; variant: "ghost"; compact: true
+                        icon: Icons.close; variant: "ghost"; compact: true; toolTip: "Clear"
                         onClicked: { root.captured = null; root.error = "" }
                     }
                 }
@@ -231,6 +236,7 @@ ColumnLayout {
             }
             Item { Layout.fillWidth: true; visible: !root.error.length && !ShortcutService.message.length }
             ShellButton {
+                focusOnTab: true
                 icon: Icons.add; text: "Add shortcut"; variant: "accent"
                 enabledState: root.ready && root.error.length === 0
                 onClicked: root.add()
@@ -246,13 +252,13 @@ ColumnLayout {
 
         Repeater {
             model: GestureService.rows
-            RowLayout {
+            SettingRow {
                 id: gestureRow
                 required property var modelData
                 Layout.fillWidth: true
                 Layout.minimumHeight: Metrics.controlHeight
-                spacing: Metrics.spaceMd
-                ShellText { Layout.fillWidth: true; text: gestureRow.modelData.action }
+                labelFills: true
+                label: gestureRow.modelData.action
                 ShellText { text: gestureRow.modelData.label; muted: true }
             }
         }
@@ -264,6 +270,7 @@ ColumnLayout {
         description: "Every key binding Hyprland currently knows, including your own."
 
         ShellTextField {
+            focusOnTab: true
             Layout.fillWidth: true
             icon: Icons.search
             placeholder: "Search shortcuts …"
@@ -349,6 +356,7 @@ ColumnLayout {
                             keys: root.rowMods.map(mod => mod.charAt(0) + mod.slice(1).toLowerCase())
                         }
                         ShellButton {
+                            focusOnTab: true
                             visible: bindRow.editing && bindRow.movedFrom.length > 0
                             text: "Reset"; variant: "ghost"; compact: true
                             onClicked: { ShortcutService.resetKey(bindRow.defaultCombo); root.editingCombo = "" }

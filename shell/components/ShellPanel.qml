@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Effects
 import qs.theme
 import qs.services
+import "../../services/arrange/ArrangeLogic.js" as Arrange
 
 // Full-screen overlay hosting one floating panel card. Handles focus, scrim,
 // Escape, click-outside and the open/close transition.
@@ -28,6 +29,38 @@ PanelWindow {
     // for it; fixing the rest is its own piece of work.
     readonly property real roomBelowTop: Math.max(0, height - topOffset - bottomOffset)
     property color scrimColor: Colors.scrim
+    // A panel the user may drag by the strip along the top of its card.
+    // `moveX`/`moveY` are an offset from where the panel would otherwise sit,
+    // not an absolute position: a different screen, a bar appearing or the
+    // window changing size then moves the panel with it instead of stranding
+    // it off the edge. They are clamped so the card cannot leave the screen,
+    // which also means a drag that runs into an edge does not build up a debt
+    // to undo on the way back.
+    // A panel the user may resize, by a grip on the bottom-left corner of its
+    // card. The panel says what it may be resized to (`sizeBounds`), when the
+    // grip is reachable (`gripShown`) and where the result is kept (`resized`);
+    // everything else is here, because the control center and the dashboard had
+    // a copy of it each and the two had already drifted apart in their
+    // comments.
+    //
+    // While the grip is pulled the card takes the size under the hand, so the
+    // panel resizes live; the release is only when it is written down.
+    property bool resizable: false
+    property bool gripShown: false
+    property var sizeBounds: ({})
+    property bool sizing: false
+    property real dragWidth: 0
+    property real dragHeight: 0
+    signal resized(real width, real height)
+
+    property bool movable: false
+    property real moveX: 0
+    property real moveY: 0
+    // Where a movable panel starts when it opens. A panel that remembers its
+    // place binds this to a setting and saves `moved`.
+    property real savedMoveX: 0
+    property real savedMoveY: 0
+    signal moved(real x, real y)
     property bool dismissOnOutsideClick: true
     property bool showCard: true
     // A panel casts a shadow so it reads as lifted off the desktop; one over a
@@ -128,7 +161,16 @@ PanelWindow {
     default property alias content: body.data
     readonly property alias card: card
     readonly property real cardTargetWidth: card.targetWidth
-    readonly property real cardTargetHeight: card.targetHeight
+    // The height the card was granted, for content that sizes itself to it
+    // (the control center's and the dashboard's lists). Worked out from the
+    // request and the room rather than read back from the card: reading
+    // `card.targetHeight` subscribed the content to the very property that
+    // measures the content, and when a panel switched from a stored height
+    // to measuring - the control center opening a page - the old
+    // subscription fired inside the measurement and Qt reported a binding
+    // loop on `targetHeight`. Without a stored height nothing is granted,
+    // and -1 says so; readers already ask `cardHeight > 0` first.
+    readonly property real cardTargetHeight: cardHeight > 0 ? Math.min(cardHeight, maxCardHeight) : -1
     readonly property bool wanted: PanelService.active === panelId
     property bool shown: false
     // An unclipped layer over the card, anchored to the window rather than to
@@ -173,6 +215,14 @@ PanelWindow {
             progress.armed = false
             progress.value = 0
             openArgs = PanelService.args
+            // The scrim is **not** drawn here: there is one for all panels, on
+            // its own surface below them (shell/components/ScrimLayer.qml),
+            // because two panels are on screen whenever one hands over to
+            // another and two scrims fading past each other is a visible
+            // flicker. Saying how deep this one wants it is all that is left.
+            PanelService.reportScrim(panelId, scrimColor)
+            // A panel that may be moved starts where it was left.
+            if (movable) { moveX = savedMoveX; moveY = savedMoveY }
             closeTimer.stop()
             shown = true
             progress.target = 1
@@ -266,12 +316,6 @@ PanelWindow {
             if (progress.target > 0 && Math.abs(progress.value - 1) < 0.02)
                 PanelService.reportOpenFrames(window.panelId, window.openFrames, window.openWorstMs)
         }
-    }
-
-    Rectangle {
-        anchors.fill: parent
-        color: window.scrimColor
-        opacity: progress.value
     }
 
     MouseArea {
@@ -375,10 +419,20 @@ PanelWindow {
         // "it starts on the left". `growing` is read instead of `width` so the
         // x binding does not depend on its own result.
         readonly property real growing: grow(window.fromWidth, targetWidth)
+        // Where it really sits: the place the panel would take, plus however
+        // far the user has dragged it, clamped into the screen.
+        readonly property real placedX: window.movable
+            ? Math.max(Metrics.screenMargin,
+                       Math.min(window.width - targetWidth - Metrics.screenMargin, targetX + window.moveX))
+            : targetX
+        readonly property real placedY: window.movable
+            ? Math.max(window.topOffset,
+                       Math.min(window.height - targetHeight - window.bottomOffset, targetY + window.moveY))
+            : targetY
         width: growing
         height: grow(window.fromHeight, targetHeight)
-        x: grow(window.fromX + window.fromWidth / 2, targetX + targetWidth / 2) - growing / 2
-        y: grow(window.fromY, targetY)
+        x: grow(window.fromX + window.fromWidth / 2, placedX + targetWidth / 2) - growing / 2
+        y: grow(window.fromY, placedY)
         radius: Metrics.radiusPanel
         // Escape from inside the panel: the card is an ancestor of the content,
         // so a key the content did not take arrives here.
@@ -416,6 +470,40 @@ PanelWindow {
 
         MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: event => event.accepted = false }
 
+        // Dragging a movable panel. The strip is below `body` (z 1), so
+        // anything the panel puts along its top keeps its own clicks; what is
+        // left up there is a title, which is text.
+        //
+        // The offset accumulates from the press point and is never re-based:
+        // the strip moves with the card, so once the card has followed the
+        // pointer the local position is back where the press was, and the next
+        // event's offset is again exactly what is still to move. Re-basing it
+        // on every event moves the card once and then stops.
+        MouseArea {
+            id: mover
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: Metrics.controlHeight
+            enabled: window.movable && window.showCard
+            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+            property real fromX: 0
+            property real fromY: 0
+            onPressed: mouse => { fromX = mouse.x; fromY = mouse.y }
+            onPositionChanged: mouse => {
+                if (!pressed) return
+                window.moveX = card.placedX - card.targetX + (mouse.x - fromX)
+                window.moveY = card.placedY - card.targetY + (mouse.y - fromY)
+            }
+            onReleased: window.moved(window.moveX, window.moveY)
+            // Back to where the panel places itself.
+            onDoubleClicked: {
+                window.moveX = 0
+                window.moveY = 0
+                window.moved(0, 0)
+            }
+        }
+
         Item {
             id: body
             // Above optional card backgrounds (PopupPanel backdrop).
@@ -426,7 +514,16 @@ PanelWindow {
             x: Metrics.panelPadding
             y: Metrics.panelPadding
             width: Math.max(0, card.targetWidth - Metrics.panelPadding * 2)
-            height: Math.max(0, card.targetHeight - Metrics.panelPadding * 2)
+            // With a stored height the content gets exactly that - the granted
+            // figure, never `card.targetHeight`, which is what measures the
+            // content when nothing is stored: a body that read it stayed
+            // subscribed across the switch, and a child that filled its parent
+            // then set the measurement that set its parent, which is the
+            // binding loop again. Without a stored height the content is
+            // given the room instead - the most the card can be - and the card
+            // clips to what it settles at.
+            height: Math.max(0, (window.cardHeight > 0 ? window.cardTargetHeight : window.maxCardHeight)
+                                - Metrics.panelPadding * 2)
         }
     }
 
@@ -437,6 +534,94 @@ PanelWindow {
         id: overlayLayer
         anchors.fill: parent
         z: 10
+
+        Rectangle {
+            id: gripDot
+            visible: window.resizable && window.gripShown && window.showCard
+            // Far enough in that a round grip clears a round corner. A circle
+            // of radius g sits inside a corner of radius r only while its
+            // centre is within r - g of the arc's centre, and the centre of a
+            // grip inset by `i` on both edges is at √2 (r - i - g) from it. At
+            // a flat 2 px the grip hung 2.1 px outside the card's bottom-left
+            // corner at the default 20 px rounding, which reads as a stray dot
+            // beside the panel rather than a handle on it.
+            //
+            // A corner smaller than the grip has no room to escape into, so
+            // the term goes negative there and the plain inset stands. The
+            // extra step is breathing room: the bare minimum has the grip
+            // *touching* the arc, which still reads as a dot on the edge
+            // rather than one inside the card.
+            readonly property int inset: Math.max(Metrics.spaceXxs,
+                Math.ceil((card.radius - width / 2) * (1 - Math.SQRT1_2)) + Metrics.spaceXxs)
+            x: card.x + inset
+            y: card.y + card.height - height - inset
+            width: Metrics.iconSm
+            height: width
+            radius: width / 2
+            // Accent and opaque, like the handle on every tile: at 11.5 % white
+            // it vanished on a light panel.
+            color: grip.pulling || grip.containsMouse ? Colors.accentHover : Colors.accent
+            border.width: Metrics.borderWidth
+            border.color: Colors.accent
+
+            MouseArea {
+                id: grip
+                anchors.fill: parent
+                anchors.margins: -Metrics.spaceXs
+                acceptedButtons: Qt.LeftButton
+                hoverEnabled: true
+                preventStealing: true
+                cursorShape: Qt.SizeBDiagCursor
+                readonly property bool pulling: window.sizing
+                // The corner the card is anchored by, taken once at the press.
+                // The live edge cannot be used: a panel anchored to the desktop
+                // clock has *both* edges move with the width, so the drag
+                // chased its own result - the gearing halved and it never
+                // landed where it was let go.
+                property real fromRight: 0
+                property real fromTop: 0
+                property real pressX: 0
+                property real pressY: 0
+                property bool moved: false
+                onPressed: mouse => {
+                    const point = mapToItem(overlayLayer, mouse.x, mouse.y)
+                    fromRight = card.x + card.width
+                    fromTop = card.y
+                    pressX = point.x
+                    pressY = point.y
+                    moved = false
+                    window.dragWidth = card.width
+                    window.dragHeight = card.height
+                    window.sizing = true
+                }
+                onPositionChanged: mouse => {
+                    if (!window.sizing) return
+                    const point = mapToItem(overlayLayer, mouse.x, mouse.y)
+                    if (!moved) {
+                        if (Math.abs(point.x - pressX) + Math.abs(point.y - pressY) < Metrics.dragThreshold) return
+                        moved = true
+                    }
+                    const wanted = Arrange.panelDragTo(point.x, point.y,
+                                                       { right: fromRight, top: fromTop }, window.sizeBounds)
+                    window.dragWidth = wanted.width
+                    window.dragHeight = wanted.height
+                }
+                onReleased: {
+                    if (!window.sizing) return
+                    window.sizing = false
+                    // A press that never moved is not a resize. It used to
+                    // write the size the card happened to be clamped to at that
+                    // moment, which on a narrower screen silently shrank the
+                    // stored one.
+                    if (moved) window.resized(window.dragWidth, window.dragHeight)
+                    moved = false
+                }
+                onCanceled: {
+                    window.sizing = false
+                    moved = false
+                }
+            }
+        }
 
         // Above the drag ghost: a tooltip explains a control, and a control is
         // never the thing being dragged.

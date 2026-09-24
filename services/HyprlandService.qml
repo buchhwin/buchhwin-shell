@@ -99,6 +99,16 @@ Singleton {
             for (let local = 1; local <= Workspaces.perMonitorBlock; ++local)
                 rules.push(HyprCompat.commands.workspaceRule(Workspaces.globalId(local, index), order[index]))
         HyprCompat.configure(HyprCompat.commands.combine(rules))
+        // A rule binds a workspace when it is *created*, and the compositor
+        // creates one per monitor before the shell is up - so after every
+        // reboot 3 sat on the second screen and 4 on the third, and the
+        // handout called it a transition that "resolves itself". It did not.
+        // The ones already in the wrong place are moved, windows and all;
+        // that is what the rule would have done a second earlier.
+        const placed = Hyprland.workspaces.values.map(workspace => ({
+            id: workspace.id, monitor: workspace.monitor ? workspace.monitor.name : "" }))
+        for (const move of Workspaces.misplaced(order, placed))
+            HyprCompat.dispatch(HyprCompat.commands.moveWorkspaceToMonitor(move.id, move.monitor))
     }
     onMonitorListChanged: ruleTimer.restart()
     onPerMonitorChanged: ruleTimer.restart()

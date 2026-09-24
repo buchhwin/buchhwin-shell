@@ -35,21 +35,32 @@ ColumnLayout {
 
     Repeater {
         model: [
-            { label: "Connected", list: BluetoothService.connected },
-            { label: "Paired", list: BluetoothService.paired },
-            { label: "Nearby", list: BluetoothService.nearby }
+            { label: "Connected", list: BluetoothService.connected, always: false },
+            { label: "Paired", list: BluetoothService.paired, always: false },
+            // Nearby stays while it is empty and says it is looking: with
+            // every section gone the page said nothing at all about a scan
+            // it had started.
+            { label: "Nearby", list: BluetoothService.nearby, always: true }
         ]
         ColumnLayout {
+            id: section
             required property var modelData
             Layout.fillWidth: true
-            visible: BluetoothService.enabled && modelData.list.length > 0
+            visible: BluetoothService.enabled && (modelData.list.length > 0 || modelData.always)
             spacing: Metrics.spaceXxs
             SectionLabel { text: modelData.label; Layout.leftMargin: Metrics.spaceSm }
             ScrollList {
                 Layout.fillWidth: true
                 maxHeight: 200
+                EmptyState {
+                    visible: section.modelData.list.length === 0
+                    width: parent.width
+                    row: true
+                    icon: BluetoothService.discovering ? Icons.busy : "󰂯"
+                    title: BluetoothService.discovering ? "Searching …" : "No devices found"
+                }
                 Repeater {
-                    model: modelData.list
+                    model: section.modelData.list
                     ListRow {
                         level: 1
                         required property var modelData

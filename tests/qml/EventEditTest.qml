@@ -137,6 +137,9 @@ ShellRoot {
              "dropping a moved occurrence removes the moved copy as well")
         T.eq(E.deleteRequest(E.refuse("notFound"), "single"), null, "an unresolved event cannot be deleted")
 
+        T.eq([E.wroteMessage("delete"), E.wroteMessage("modify")], ["Event deleted.", "Event updated."],
+             "what the panel says after a write")
+
         // ---- the panel copies its arguments ----------------------------------
         T.eq(E.sameEvent(event, Object.assign({}, event)), true, "a copy is the same event")
         T.eq(E.sameEvent(event, timed("Review \"Q1\", draft", 10, 14, 0, 16, 0)), false, "a different end is not")

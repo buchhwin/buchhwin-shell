@@ -47,7 +47,7 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: Metrics.spaceXs
         ShellButton {
-            icon: root.node.audio && root.node.audio.muted ? "󰝟" : "󰕾"
+            icon: AudioService.volumeIcon(root.node.audio ? root.node.audio.volume : 0, root.node.audio ? root.node.audio.muted : false)
             variant: "ghost"; compact: true
             toolTip: root.node.audio && root.node.audio.muted ? "Unmute" : "Mute"
             onClicked: AudioService.toggleMute(root.node)

@@ -104,6 +104,35 @@ ShellRoot {
         T.eq(U.errorText("flatpak", { code: 1 }, ""), "Flatpaks: check failed (exit 1)", "error without text")
         T.eq(U.parseReport("@dnf 0\nnot json\n@end 0").packageError, "System packages: unreadable dnf output", "unreadable output")
 
+        // The shell itself: scripts/shell-update.sh check
+        const shellOk = U.parseShellReport(["@repo 0", "ok", "/home/x/.local/share/buchhwin-shell", "main", "origin/main", "abc1234",
+            "@fetch 0", "", "@behind 0", "2", "@ahead 0", "0", "@dirty 0", "",
+            "@log 0", "def5678\tfeat: a shell change", "0123abc\tdocs: a line", "@end 0"].join("\n"))
+        T.eq([shellOk.known, shellOk.repo, shellOk.branch, shellOk.upstream, shellOk.head], [true, "ok", "main", "origin/main", "abc1234"], "shell report header")
+        T.eq([shellOk.behind, shellOk.ahead, shellOk.dirty, shellOk.fetched], [2, 0, false, true], "shell counts")
+        T.eq(shellOk.commits, [{ hash: "def5678", subject: "feat: a shell change" }, { hash: "0123abc", subject: "docs: a line" }], "shell commits")
+        T.eq(U.shellSummary(shellOk), "2 commits behind origin/main", "shell summary")
+        T.eq(U.shellSubtitle(shellOk), "main at abc1234", "shell subtitle")
+        T.ok(U.shellUpdatable(shellOk), "clean and behind is updatable")
+        const shellDirty = Object.assign({}, shellOk, { dirty: true, ahead: 1 })
+        T.ok(!U.shellUpdatable(shellDirty), "local changes or local commits are not")
+        T.eq(U.shellSubtitle(shellDirty), "main at abc1234 · 1 local commit · local changes", "the subtitle says why")
+        const shellOffline = U.parseShellReport("@repo 0\nok\n/x\nmain\norigin/main\nabc1234\n@fetch 128\nfatal: unable to access: Could not resolve host\n@behind 0\n1\n@ahead 0\n0\n@dirty 0\n\n@log 0\nabc\tx\n@end 0")
+        T.eq([shellOffline.error, shellOffline.fetched, shellOffline.behind], ["Offline: the shell's remote could not be reached", false, 1], "offline keeps what was fetched last")
+        const shellSkipped = U.parseShellReport("@repo 0\nok\n/x\nmain\norigin/main\nabc1234\n@fetch 0\nskipped\n@behind 0\n0\n@ahead 0\n0\n@dirty 0\n\n@log 0\n\n@end 0")
+        T.eq([shellSkipped.fetched, shellSkipped.error, U.shellSummary(shellSkipped)], [false, "", "Up to date"], "an offline check is not a fetch")
+        const shellLocal = U.parseShellReport("@repo 0\nlocal\n/x/stable\nstable\n\nabc1234\n@end 0")
+        T.eq([shellLocal.repo, U.shellSummary(shellLocal), U.shellUpdatable(shellLocal)], ["local", "Development checkout, follows no remote", false], "the development machine")
+        const shellNone = U.parseShellReport("@repo 0\nnone\n/x\n@end 0")
+        T.eq([shellNone.repo, U.shellSummary(shellNone), U.shellSubtitle(shellNone)], ["none", "Not a git checkout", "/x"], "no checkout")
+        T.eq([U.parseShellReport("").known, U.shellSummary(U.emptyShell())], [false, "Not checked yet"], "no report")
+        T.eq(U.shellCheckCommand("/s", true), ["/s", "check", "--offline"], "offline check command")
+        T.eq(U.shellUpdateCommand("/s").slice(-2), ["/s", "apply"], "the update runs the script's apply")
+        T.eq(U.shellUpdateCommand("/s")[0], "systemd-run", "through a transient unit")
+        const stateWithShell = U.parseState(U.serializeState(Object.assign(U.parseState(""), { shell: shellOk })))
+        T.eq([stateWithShell.shell.behind, stateWithShell.shell.commits.length], [2, 2], "the shell state survives the state file")
+        T.eq(U.parseState("").shell, null, "and is null before the first check")
+
         // Time labels (local time)
         const now = new Date(2026, 8, 17, 14, 30).getTime()
         T.eq(U.checkedText(0, now), "Never", "never checked")
@@ -114,6 +143,17 @@ ShellRoot {
         T.eq(U.checkedText(new Date(2026, 8, 16, 22, 40).getTime(), now), "Yesterday, 22:40", "yesterday")
         T.eq(U.checkedText(new Date(2026, 8, 12, 18, 0).getTime(), now), "Sep 12, 18:00", "older")
         T.eq(U.checkedText(new Date(2025, 11, 31, 8, 0).getTime(), now), "Dec 31 2025, 08:00", "other year")
+        // Calendar days, not 24-hour windows. On the night the clocks go back
+        // (25 hours long where this runs with DST) "yesterday" measured as
+        // dayStart - 24h started an hour into it; on the night they go
+        // forward it reached an hour into the day before.
+        const afterFallBack = new Date(2026, 9, 26, 0, 30).getTime()
+        T.eq(U.checkedText(new Date(2026, 9, 25, 0, 10).getTime(), afterFallBack), "Yesterday, 00:10",
+             "the first minutes of yesterday are yesterday on a 25-hour day")
+        const afterSpringForward = new Date(2026, 2, 30, 0, 30).getTime()
+        T.eq(U.checkedText(new Date(2026, 2, 28, 23, 30).getTime(), afterSpringForward), "Mar 28, 23:30",
+             "the day before yesterday is not yesterday on a 23-hour day")
+        T.eq(U.checkedText(new Date(2026, 8, 17, 23, 59).getTime(), now), "Today, 23:59", "a later time today is today")
 
         // Schedule
         T.ok(U.checkDue(now, { lastCheck: 0, lastAttempt: 0 }, 24), "never checked is due")
@@ -142,9 +182,9 @@ ShellRoot {
         T.eq([state.lastCheck, state.lastAttempt, state.lastRefresh, state.notified], [5, 6, 7, ["a"]], "state round trip")
         T.eq(state.result.packages.length, 7, "stored result")
         T.eq(U.parseState("{\"version\":2,\"lastCheck\":5}").lastCheck, 0, "unknown version")
-        T.eq(U.parseState("garbage"), { lastCheck: 0, lastAttempt: 0, lastRefresh: 0, notified: [], result: null }, "broken state")
+        T.eq(U.parseState("garbage"), { lastCheck: 0, lastAttempt: 0, lastRefresh: 0, notified: [], result: null, shell: null }, "broken state")
         T.eq(U.parseState("{\"version\":1,\"lastCheck\":-3,\"notified\":[1,\"x\"],\"result\":{\"packages\":1}}"),
-             { lastCheck: 0, lastAttempt: 0, lastRefresh: 0, notified: ["x"], result: null }, "invalid values dropped")
+             { lastCheck: 0, lastAttempt: 0, lastRefresh: 0, notified: ["x"], result: null, shell: null }, "invalid values dropped")
 
         // Commands
         T.eq(U.checkCommand("/s/updates-check.sh", false, false), ["/s/updates-check.sh"], "normal check")

@@ -70,7 +70,7 @@ EditorPanel {
                 }
             }
             ShellButton {
-                icon: "󰁔"; variant: "ghost"; compact: true; toolTip: "Move item right"
+                icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Move item right"
                 enabledState: panel.pill !== null && panel.editor.barItem < panel.pill.items.length - 1
                 onClicked: {
                     const index = panel.editor.barItem

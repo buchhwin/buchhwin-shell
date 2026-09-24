@@ -23,15 +23,18 @@ ColumnLayout {
                 : WeatherService.status === "error" ? "Weather service not reachable"
                 : WeatherService.status === "disabled" ? "Weather is turned off" : "Loading …"
             ShellButton {
+                focusOnTab: true
                 visible: WeatherService.hasLocation
                 icon: Icons.remove
                 variant: "ghost"
                 compact: true
+                toolTip: "Clear"
                 onClicked: WeatherService.clearLocation()
             }
         }
 
         ShellTextField {
+            focusOnTab: true
             id: searchField
             Layout.fillWidth: true
             icon: Icons.search
@@ -51,6 +54,7 @@ ColumnLayout {
         Repeater {
             model: searchField.text.trim().length >= 2 ? LocationService.results : []
             ListRow {
+                focusOnTab: true
                 required property var modelData
                 Layout.fillWidth: true
                 icon: "󰍎"
@@ -76,6 +80,7 @@ ColumnLayout {
             labelFills: true
             label: "Show weather"
             ShellToggle {
+                focusOnTab: true
                 checked: SettingsService.value("weather.enabled")
                 onToggled: value => SettingsService.set("weather.enabled", value)
             }
@@ -103,6 +108,7 @@ ColumnLayout {
         }
         RowLayout {
             ShellButton {
+                focusOnTab: true
                 icon: Icons.refresh
                 text: "Refresh now"
                 enabledState: WeatherService.hasLocation && WeatherService.enabled

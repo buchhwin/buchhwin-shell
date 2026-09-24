@@ -24,10 +24,12 @@ ColumnLayout {
     // that command was run. Reading it is the point of this page: a stale copy
     // is invisible, which is why a wallpaper that had been changed weeks ago
     // read as one that could not be changed at all. Read only while the page
-    // is open, the way the terminal page previews its prompt.
+    // is open, the way the terminal page previews its prompt - and read again
+    // on every open, since the panel keeps the page.
     property string installedAt: ""
+    PageActivity { id: activity }
     Process {
-        running: root.visible
+        running: activity.active
         command: ["sh", "-c",
                   "stat -c %y /usr/share/sddm/themes/buchhwin/background.* 2>/dev/null | head -1 | cut -c1-16"]
         stdout: StdioCollector { onStreamFinished: root.installedAt = text.trim() }
@@ -45,16 +47,15 @@ ColumnLayout {
         title: "Look"
         description: "The login screen follows the lock screen's design, and shows whichever wallpaper you choose below."
 
-        SettingRow {
+        // Said plainly rather than implied: this screen is a separate
+        // application that cannot load the shell's blocks, so it has the
+        // clock, the date and the keyboard layout and nothing else. A lock
+        // screen arranged with weather and a player shows neither here, and
+        // that is not a bug to go looking for.
+        ShellText {
             Layout.fillWidth: true
-            labelFills: true
-            label: "It follows what you arranged on the lock screen"
-            // Said plainly rather than implied: this screen is a separate
-            // application that cannot load the shell's blocks, so it has the
-            // clock, the date and the keyboard layout and nothing else. A
-            // lock screen arranged with weather and a player shows neither
-            // here, and that is not a bug to go looking for.
-            hint: "The clock, the date and the keyboard layout, in that order - the rest of the lock screen's blocks do not exist here"
+            text: "It follows what you arranged on the lock screen: the clock, the date and the keyboard layout, in that order. The rest of the lock screen's blocks do not exist here."
+            role: "small"; muted: true; wrapMode: Text.Wrap
         }
 
         SettingRow {
@@ -168,7 +169,7 @@ ColumnLayout {
             spacing: Metrics.spaceSm
             ShellButton {
                 focusOnTab: true
-                icon: "󰆏"
+                icon: Icons.copy
                 text: "Copy command"
                 onClicked: Quickshell.clipboardText = root.command
             }

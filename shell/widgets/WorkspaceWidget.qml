@@ -88,7 +88,7 @@ Grid {
                     // The number of *this monitor's* set, or a name the user
                     // chose. `id` is the compositor's and can be 23.
                     text: slot.modelData.label
-                    color: slot.current ? Colors.accentText : slot.modelData.occupied ? root.textColor : Colors.subtleText
+                    color: slot.current ? Colors.accentText : slot.modelData.occupied ? root.textColor : root.mutedTextColor
                     font.family: Typography.family
                     font.pixelSize: Typography.smallSize * root.scaleFactor
                     renderType: Typography.renderType

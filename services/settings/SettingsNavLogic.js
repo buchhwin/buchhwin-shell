@@ -12,7 +12,8 @@ const PAGES = [
     { id: "appearance", subtitle: "Customize the look and behavior of buchhwin-shell", title: "Appearance", icon: "󰏘", keywords: "theme light dark accent color font panel background opacity individual windows transparency blur corners border gaps animation cursor mouse darstellung hell dunkel akzent farbe schrift transparenz unschärfe ecken rahmen abstand mauszeiger apps kde gtk plasma color scheme programme" },
     { id: "wallpaper", subtitle: "Choose a wallpaper or set up a slideshow", title: "Wallpaper", icon: "󰸉", keywords: "wallpaper slideshow folder background hintergrundbild diashow ordner" },
     { id: "lockScreen", subtitle: "The lock screen's look, its extras and fingerprint unlock", title: "Lock Screen", icon: "󰌾", keywords: "lock screen password clock blur avatar media power buttons fingerprint fprintd reader enroll sperrbildschirm sperren passwort fingerabdruck" },
-    { id: "desktop", icon: "󱂵", subtitle: "Profile, clock, clipboard, screen recording and removable drives", title: "Desktop", keywords: "profile laptop docked clock hints indicators osd volume brightness clipboard history screen recording video removable drives usb stick sd card external disk profil uhr hinweise anzeige zwischenablage aufnahme laufwerke" },
+    { id: "profiles", icon: "󰒓", subtitle: "Profiles and the five modes each one has", title: "Profiles", keywords: "profile profiles mode modes minimal work gaming laptop docked switch automatic duplicate reset rename remove factory state profil profile modus modi wechseln automatisch duplizieren zurücksetzen umbenennen entfernen werkszustand" },
+    { id: "desktop", icon: "󱂵", subtitle: "Clock, clipboard, screen recording and removable drives", title: "Desktop Extras", keywords: "clock hints indicators osd volume brightness clipboard history screen recording video removable drives usb stick sd card external disk uhr hinweise anzeige zwischenablage aufnahme laufwerke" },
     { id: "widgets", subtitle: "Choose the desktop mode and arrange the widgets on your wallpaper", title: "Widgets", icon: "󰕰", keywords: "widgets desktop mode layout editor clock date weather calendar arrange move group style add remove edit modus oberfläche anordnen verschieben gruppieren stil hinzufügen entfernen bearbeiten" },
     { id: "bar", subtitle: "Choose the desktop mode, workspaces and build your own bar", title: "Bar & Notch", icon: "󰘔", keywords: "bar pills notch island desktop mode panel top leiste modus oben kerbe insel workspaces arbeitsflächen" },
     { id: "notifications", subtitle: "Popups, history and Do Not Disturb", title: "Notifications", icon: "󰂚", keywords: "dnd do not disturb popup benachrichtigungen nicht stören" },
@@ -38,13 +39,16 @@ const PAGES = [
 
 // Sidebar sections in display order; every page id belongs to exactly one.
 const GROUPS = [
-    { key: "personalization", title: "Personalization", pages: ["appearance", "wallpaper", "lockScreen"] },
-    { key: "desktop", title: "Desktop", pages: ["desktop", "widgets", "bar", "notifications", "launcher", "shortcuts"] },
+    // Lock Screen and Login Screen are the same kind of thing - how a screen
+    // looks before you are in - so they sit together rather than one here and
+    // one under System.
+    { key: "personalization", title: "Personalization", pages: ["appearance", "wallpaper", "lockScreen", "login"] },
+    { key: "desktop", title: "Desktop", pages: ["profiles", "widgets", "bar", "desktop", "notifications", "launcher", "shortcuts"] },
     { key: "dashboard", title: "Dashboard", pages: ["weather", "calendar"] },
     { key: "connectivity", title: "Connectivity", pages: ["network", "bluetooth", "kdeConnect"] },
     { key: "devices", title: "Devices", pages: ["displays", "audio", "input", "power"] },
     { key: "apps", title: "Apps", pages: ["terminal", "defaultApps", "autostart"] },
-    { key: "system", title: "System", pages: ["accounts", "login", "updates", "about"] }
+    { key: "system", title: "System", pages: ["accounts", "updates", "about"] }
 ]
 
 function pageById(id, pages) {

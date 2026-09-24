@@ -90,7 +90,20 @@ ShellRoot {
              "the first free slot wins, scanning top to bottom")
         T.eq(A.gridLayout([g("a", 9, 1)], 2, 210, 10, 40).cells[0].width, 210, "a cell never asks for more columns than there are")
         T.eq(A.gridLayout([g("a", 1, 0)], 2, 210, 10, 40).cells[0].height, 40, "nor for less than one row")
-        T.eq(A.gridLayout([], 4, 430, 10, 40), { cells: [], height: 0 }, "an empty grid")
+        T.eq(A.gridLayout([], 4, 430, 10, 40), { cells: [], height: 0, rows: 0 }, "an empty grid")
+        T.eq(sized.rows, 3, "and the placement says how many rows it took")
+
+        // The rows a layout takes, in steps and with no pixel involved: what
+        // the launcher divides its card by. Seven when the pinned row is off,
+        // eight with it - and an eighth of nothing under a seven-row layout
+        // was the band reported at the bottom of the launcher.
+        T.eq(A.gridRows([g("s", 3, 1), g("m", 1, 1), g("c", 1, 6), g("r", 3, 6)], 4), 7,
+             "the launcher without its pinned row is seven rows")
+        T.eq(A.gridRows([g("s", 3, 1), g("m", 1, 1), g("p", 4, 1), g("c", 1, 6), g("r", 3, 6)], 4), 8,
+             "and eight with it")
+        T.eq(A.gridRows([g("s", 2, 1), g("m", 2, 1), g("c", 1, 6), g("r", 3, 6)], 4), 7,
+             "the user's own layout - the field and the switch two columns each - is seven too")
+        T.eq(A.gridRows([], 4), 0, "no cells, no rows")
 
         // A placed cell carries the size it was really granted, so nothing has
         // to re-attach the stored one and reach past the edge the packer
@@ -114,6 +127,17 @@ ShellRoot {
              "a cell never reaches past the edge from the column it starts in")
         T.eq(A.sizeAt(100, 9999, origin, 4, 430, 10, 40, 6).h, 6, "nor past the rows the file allows")
         T.ok(A.sizeAt(100, 9999, origin, 4, 430, 10, 40).h > 6, "and no ceiling given is no ceiling")
+        // The floor is the item's own minimum, and it holds whether or not a
+        // ceiling was given: with none, the ceiling used to become the height
+        // the hand was at, so a two-row minimum lost to a drag to one row.
+        T.eq(A.sizeAt(100, 40, origin, 4, 430, 10, 40, 6, { w: 2, h: 2 }), { w: 2, h: 2 },
+             "a corner pulled under the item's minimum stops at the minimum")
+        T.eq(A.sizeAt(100, 40, origin, 4, 430, 10, 40, 0, { w: 2, h: 2 }), { w: 2, h: 2 },
+             "and so it does with no ceiling given")
+        T.eq(A.sizeAt(9999, 40, { x: 330, y: 0 }, 4, 430, 10, 40, 0, { w: 2, h: 1 }).w, 1,
+             "the floor never wins against the columns left to the cell")
+        T.eq(A.sizeAt(100, 9999, origin, 4, 430, 10, 40, 3, { w: 1, h: 5 }).h, 3,
+             "nor against the rows the file allows")
 
         // ---- insertIndexAt: rows first, then the centre line --------------
         // Four cells, two columns: t0 t1 / t2 t3, each 200 wide, 50 tall.

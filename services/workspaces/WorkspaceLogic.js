@@ -203,3 +203,27 @@ function monitorIndexOf(id) {
 function offsetFor(monitors, name) {
     return monitorIndex(monitors, name) * perMonitorBlock
 }
+
+// The workspaces that sit on a monitor other than the one their block names,
+// as `[{ id, monitor }]` moves - the rule only binds a workspace *when it is
+// created*, and Hyprland creates one per monitor before the shell has said a
+// word: after every reboot, 3 stood on the second screen and 4 on the third,
+// "the workspaces are jumbled again". A workspace beyond the blocks (a
+// monitor that is gone) and the special ones (id < 1) are left where they
+// are; the rest are moved once the rules are in.
+function misplaced(order, workspaces) {
+    const monitors = Array.isArray(order) ? order : []
+    const moves = []
+    for (const workspace of (Array.isArray(workspaces) ? workspaces : [])) {
+        if (!workspace) continue
+        const id = Math.round(Number(workspace.id))
+        if (!isFinite(id) || id < 1) continue
+        const index = monitorIndexOf(id)
+        if (index >= monitors.length) continue
+        const wanted = monitors[index]
+        if (typeof wanted !== "string" || !wanted.length) continue
+        if (String(workspace.monitor || "") === wanted) continue
+        moves.push({ id: id, monitor: wanted })
+    }
+    return moves.sort((a, b) => a.id - b.id)
+}

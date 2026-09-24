@@ -50,6 +50,34 @@ def config_home():
     return pathlib.Path(os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config"))
 
 
+def nested_environment():
+    """The rule of scripts/lib/nested-guard.sh, ported: a nested test session.
+
+    BUCHHWIN_NESTED=1 says so outright, and the session's files in
+    BUCHHWIN_NESTED_DIR (default $TMPDIR/buchhwin-nested) say so when they name
+    this process's WAYLAND_DISPLAY or HYPRLAND_INSTANCE_SIGNATURE. The second
+    half matters: the testing recipe exports the nested display and signature
+    and says nothing about the flag, and this script writes the host's
+    kdeglobals and GNOME settings.
+    """
+    if os.environ.get("BUCHHWIN_NESTED") == "1":
+        return True
+    base = pathlib.Path(os.environ.get("BUCHHWIN_NESTED_DIR")
+                        or os.path.join(os.environ.get("TMPDIR") or "/tmp", "buchhwin-nested"))
+    for name, variable in (("wayland-display", "WAYLAND_DISPLAY"), ("instance", "HYPRLAND_INSTANCE_SIGNATURE")):
+        value = os.environ.get(variable)
+        if not value:
+            continue
+        try:
+            stored = (base / name).read_text()
+        except OSError:
+            continue
+        # bash's $(<file) drops trailing newlines; the same comparison here.
+        if stored.rstrip("\n") == value:
+            return True
+    return False
+
+
 def state_path():
     base = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
     return pathlib.Path(base) / "buchhwin-shell" / "apptheme.json"
@@ -209,7 +237,7 @@ def main(argv=None):
         print(json.dumps(snapshot(), separators=(",", ":")))
         return 0
 
-    if os.environ.get("BUCHHWIN_NESTED") == "1" and not args.dry_run:
+    if not args.dry_run and nested_environment():
         print("apptheme-restore: skipped in a nested test session", file=sys.stderr)
         return 0
 

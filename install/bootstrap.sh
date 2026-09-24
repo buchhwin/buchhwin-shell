@@ -41,7 +41,10 @@ while (( $# )); do
   esac
 done
 
-if (( EUID == 0 )); then
+# `--list-packages` prints and exits, so it is the one thing here that is safe
+# as root - and a CI container is root. The check belongs to the run, not to
+# the reading of the list.
+if (( EUID == 0 )) && ! $list_packages; then
   printf 'Run this as yourself, not as root: the user step installs into $HOME.\n' >&2
   printf 'It calls sudo for the parts that need it.\n' >&2
   exit 2
@@ -52,9 +55,13 @@ fi
 # first command.
 bootstrap_packages=(dnf5-plugins)
 
-# Hyprland is not in Fedora's repositories; Quickshell is. Brave ships its own,
-# because the native build is wanted rather than the Flatpak.
-copr_repo="sachesi/hyprland"
+# Hyprland is not in Fedora's repositories; Quickshell is. Neither is Starship,
+# which is the prompt Settings > Terminal configures - it was in this list from
+# the start and only ever resolved because the machine it was written on had
+# the Copr enabled already. A run against a fresh Fedora found it, which is
+# what that check is for. Brave ships its own repository, because the native
+# build is wanted rather than the Flatpak.
+copr_repos=(sachesi/hyprland atim/starship)
 brave_repofile="https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo"
 
 core=(hyprland quickshell)
@@ -157,7 +164,9 @@ say '1. The dnf plugins the next step needs'
 run sudo dnf -y install "${bootstrap_packages[@]}"
 
 say '2. Repositories'
-run sudo dnf -y copr enable "$copr_repo"
+for repo in "${copr_repos[@]}"; do
+  run sudo dnf -y copr enable "$repo"
+done
 if $apps && ! $minimal; then
   if [[ -f /etc/yum.repos.d/brave-browser.repo ]]; then
     printf '  Brave: already configured\n'
@@ -179,7 +188,7 @@ elif $apply; then
   tmp=$(mktemp -d)
   trap 'rm -rf -- "$tmp"' EXIT
   printf '  + downloading %s\n' "$font_url"
-  curl -fsSL --retry 3 -o "$tmp/FiraCode.zip" "$font_url"
+  curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 -o "$tmp/FiraCode.zip" "$font_url"
   mkdir -p -- "$font_dir"
   # Only the proportional faces: the archive holds a few hundred files and the
   # shell asks for one family.

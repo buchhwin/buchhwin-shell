@@ -43,6 +43,13 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: NetworkService.wifiEnabled
         maxHeight: 300
+        EmptyState {
+            visible: NetworkService.networks.length === 0
+            width: parent.width
+            row: true
+            icon: Icons.busy
+            title: "Searching for networks …"
+        }
         Repeater {
             model: NetworkService.networks
             ListRow {

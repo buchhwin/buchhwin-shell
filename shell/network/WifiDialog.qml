@@ -57,6 +57,7 @@ ShellPanel {
             spacing: Metrics.spaceSm
 
             ShellTextField {
+                focusOnTab: true
                 id: nameField
                 Layout.fillWidth: true
                 visible: root.hotspot || root.hidden
@@ -69,6 +70,7 @@ ShellPanel {
                 Layout.fillWidth: true
                 spacing: Metrics.spaceSm
                 ShellTextField {
+                    focusOnTab: true
                     id: secretField
                     Layout.fillWidth: true
                     icon: "󰌾"
@@ -77,8 +79,10 @@ ShellPanel {
                     onAccepted: root.submit()
                 }
                 ShellButton {
-                    icon: root.showSecret ? "󰈉" : "󰈈"
+                    focusOnTab: true
+                    icon: root.showSecret ? Icons.conceal : Icons.reveal
                     variant: "ghost"
+                    toolTip: root.showSecret ? "Hide" : "Show"
                     onClicked: root.showSecret = !root.showSecret
                 }
             }
@@ -108,8 +112,9 @@ ShellPanel {
                 role: "small"; muted: true
             }
             Item { Layout.fillWidth: true }
-            ShellButton { text: "Cancel"; variant: "ghost"; onClicked: PanelService.close("wifiPassword") }
+            ShellButton { focusOnTab: true; text: "Cancel"; variant: "ghost"; onClicked: PanelService.close("wifiPassword") }
             ShellButton {
+                focusOnTab: true
                 text: root.hotspot ? "Start" : "Connect"
                 variant: "accent"
                 enabledState: !root.busy && secretField.text.length >= 8 && (!(root.hotspot || root.hidden) || nameField.text.trim().length > 0)

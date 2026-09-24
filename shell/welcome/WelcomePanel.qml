@@ -145,6 +145,7 @@ ShellPanel {
                 spacing: Metrics.spaceSm
                 KeyChips { keys: root.current.keys; accent: true }
                 ShellButton {
+                    focusOnTab: true
                     text: "Try it"
                     variant: "surface"
                     compact: true
@@ -173,6 +174,7 @@ ShellPanel {
             Item { Layout.fillWidth: true }
 
             ShellButton {
+                focusOnTab: true
                 text: "Skip"
                 variant: "ghost"
                 visible: !root.last

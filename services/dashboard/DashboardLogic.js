@@ -22,7 +22,6 @@ var catalogue = [
     { type: "clock", label: "Time", icon: "󰥔", w: 1, h: 2 },
     { type: "weather", label: "Weather", icon: "󰖐", w: 1, h: 4, minH: 2 },
     { type: "calendar", label: "Month", icon: "󰃭", w: 1, h: 5, minH: 4 },
-    { type: "agenda", label: "Week and day", icon: "󰸘", w: 1, h: 5, minH: 4 },
     { type: "events", label: "The day's events", icon: "󰃰", w: 1, h: 3, minH: 2 },
     // The two readouts the dashboard was planned with and never got. Their
     // start heights are *not* the control center's: a row there is 30 px and

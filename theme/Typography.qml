@@ -32,6 +32,12 @@ Singleton {
     // The initial in the lock screen avatar: a glyph, not a text role.
     readonly property int avatarInitialSize: size(34)
     readonly property int displaySize: size(56)
+    // The charge in the battery popup: bigger than a headline, smaller than
+    // the display size a clock takes.
+    readonly property int batteryPercentSize: size(33)
+    // The pairing code in the Bluetooth dialog, read across the room and
+    // compared digit by digit with the other device.
+    readonly property int pairingCodeSize: size(39)
     // One emoji in the picker's grid.
     readonly property int emojiSize: size(28)
     // Lock screen (macOS style: date above a very large, heavy clock).

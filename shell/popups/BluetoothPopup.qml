@@ -64,6 +64,7 @@ PopupPanel {
                 Repeater {
                     model: section.modelData.list
                     ListRow {
+                        focusOnTab: true
                         level: 1
                         required property var modelData
                         width: parent.width
@@ -73,6 +74,7 @@ PopupPanel {
                         active: modelData.connected
                         onClicked: BluetoothService.toggleConnection(modelData)
                         ShellButton {
+                            focusOnTab: true
                             compact: true
                             variant: modelData.connected ? "ghost" : "surface"
                             enabledState: !modelData.pairing
@@ -88,7 +90,7 @@ PopupPanel {
             Layout.fillWidth: true
             Layout.leftMargin: Metrics.spaceSm
             visible: BluetoothService.enabled && BluetoothService.agentAllowed && !BluetoothService.agentReady
-            text: "Pairing service is starting …"
+            text: "Pairing service is starting … Devices that need a confirmation code can be paired in a moment."
             role: "caption"
             wrapMode: Text.Wrap
         }

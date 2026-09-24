@@ -107,15 +107,26 @@ Singleton {
     }
     property var readyThumbs: ({})
 
-    // Recorders: one for text, one for images.
+    // Recorders: one for text, one for images. A running Process keeps the
+    // command it was started with, so a new limit has to stop them and start
+    // them again - through a flag and a timer, because assigning `running`
+    // would take the binding on `enabled` with it, and the old process needs
+    // a moment to be gone before the new one may start (the same shape as
+    // NightLightService's restart).
+    property bool recordersRestarting: false
+    onMaxItemsChanged: {
+        recordersRestarting = true
+        recorderRestart.restart()
+    }
+    Timer { id: recorderRestart; interval: 300; onTriggered: root.recordersRestarting = false }
     Process {
         stderr: ErrorLog { label: "ClipboardService.process" }
-        running: root.enabled
+        running: root.enabled && !root.recordersRestarting
         command: ["wl-paste", "--type", "text", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"]
     }
     Process {
         stderr: ErrorLog { label: "ClipboardService.process" }
-        running: root.enabled
+        running: root.enabled && !root.recordersRestarting
         command: ["wl-paste", "--type", "image", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"]
     }
 }

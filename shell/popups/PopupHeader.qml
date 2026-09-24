@@ -43,6 +43,7 @@ ColumnLayout {
         }
 
         ShellToggle {
+            focusOnTab: true
             visible: root.hasToggle
             checked: root.checked
             enabledState: root.toggleEnabled

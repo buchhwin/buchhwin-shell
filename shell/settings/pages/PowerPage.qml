@@ -18,7 +18,7 @@ ColumnLayout {
     function sourceValue(key) { return PowerService.sourceValue(source, key) }
     function setSourceValue(key, value) { PowerService.setSourceValue(source, key, value) }
     // The page opens on the active source again next time.
-    Component.onDestruction: PowerService.pageSource = ""
+    PageActivity { onClosed: PowerService.pageSource = "" }
 
     SettingsSection {
         Layout.fillWidth: true
@@ -53,6 +53,7 @@ ColumnLayout {
             labelFills: true
             label: "Low battery warnings"
             ShellToggle {
+                focusOnTab: true
                 checked: SettingsService.value("power.lowBatteryWarning")
                 onToggled: value => SettingsService.set("power.lowBatteryWarning", value)
             }
@@ -77,6 +78,7 @@ ColumnLayout {
         description: "Balance performance against battery life and fan noise"
 
         SegmentedControl {
+            focusOnTab: true
             Layout.fillWidth: true
             current: String(PowerService.profile)
             options: [
@@ -104,6 +106,7 @@ ColumnLayout {
             labelFills: true
             label: "Lock before sleep"
             ShellToggle {
+                focusOnTab: true
                 checked: SettingsService.value("power.lockBeforeSleep")
                 onToggled: value => SettingsService.set("power.lockBeforeSleep", value)
             }
@@ -117,6 +120,7 @@ ColumnLayout {
         description: "The settings below are kept separately for each; plugging in or unplugging switches between them right away."
 
         SegmentedControl {
+            focusOnTab: true
             Layout.fillWidth: true
             current: page.source
             options: [

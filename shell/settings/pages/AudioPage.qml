@@ -35,6 +35,7 @@ ColumnLayout {
         Repeater {
             model: AudioService.sinks
             ListRow {
+                focusOnTab: true
                 required property var modelData
                 Layout.fillWidth: true
                 icon: AudioService.deviceIcon(modelData, false)
@@ -73,6 +74,7 @@ ColumnLayout {
         Repeater {
             model: AudioService.sources
             ListRow {
+                focusOnTab: true
                 required property var modelData
                 Layout.fillWidth: true
                 icon: AudioService.deviceIcon(modelData, true)

@@ -107,7 +107,12 @@ autostart=$(line_of "systemctl --user start buchhwin-shell-autostart.target")
 check '[[ -n $import && -n $portal && -n $shell && $import -lt $shell && $shell -lt $portal ]]' "shell starts after the environment import and before the portal work"
 check '[[ -n $mask && -n $autostart && $shell -lt $mask && $mask -lt $autostart ]]' "skipped units masked before the autostart target"
 check '[[ $(grep -c "start-shell.sh" "$calls") -eq 1 ]]' "shell started once"
-check '[[ -s "$home/.local/state/buchhwin-shell/startup.log" ]] && grep -q "shell started" "$home/.local/state/buchhwin-shell/startup.log"' "startup timeline written"
+timeline="$home/.local/state/buchhwin-shell/startup.log"
+check '[[ -s $timeline ]] && grep -q "shell started" "$timeline"' "startup timeline written"
+# The cursor step has a mark of its own, ahead of the import: without it the
+# gap between "started" and "imported" is jq, hyprctl and systemctl in one
+# number, and the import gets blamed for all three.
+check '[[ $(grep -n "cursor set" "$timeline" | cut -d: -f1) -lt $(grep -n "environment imported" "$timeline" | cut -d: -f1) ]]' "cursor step marked before the import"
 printf '{ "autostart": { "system": false } }\n' > "$home/.config/buchhwin-shell/settings.json"
 init
 check '! grep -q "mask\|buchhwin-shell-autostart.target" "$calls"' "autostart off: no masks, no autostart target"

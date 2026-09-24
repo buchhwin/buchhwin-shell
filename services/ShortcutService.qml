@@ -109,6 +109,9 @@ Singleton {
     }
     function keyParts(entry) { return Logic.keyParts(Logic.modmask(entry.mods), entry.key) }
     function grouped(query) { return Logic.grouped(rows, query) }
+    // The sheet's columns, packed by weight rather than laid out in a grid -
+    // see `columnise` for why a grid leaves gaps.
+    function columnise(list, count) { return Logic.columnise(list, count) }
     function comboError(mods, key) { return Logic.comboError(mods, key) }
     function commandError(command) { return Logic.commandError(command) }
     function captureKey(key, modifiers, scanCode) { return Logic.captureKey(key, modifiers, scanCode) }

@@ -14,6 +14,7 @@ ShellRoot {
 
         T.eq(A.FLOOR_MS, 167, "ten frames at 60 Hz, in milliseconds")
         T.eq(A.FLOOR_SPEED, 1.67, "the same ten frames in Hyprland's deciseconds")
+        T.eq(A.FLOOR_SHARE, 0.8, "and four fifths of whatever the base is")
 
         // At the designed pace nothing moves: the table was already above the
         // floor, so the floor is invisible at 1x. This is what keeps the
@@ -24,16 +25,23 @@ ShellRoot {
         // Slower than designed is never touched - the floor is a minimum.
         T.eq(A.travel(340, 2, true), 680, "half speed doubles the duration")
 
-        // The regression, in numbers. 1.5x is what the user's session had.
-        T.eq(A.travel(340, 1 / 1.5, true), 227, "1.5x would rush a panel to 227 ms")
-        T.eq(A.travel(340, 1 / 1.5, true) >= A.FLOOR_MS, true, "but 227 is still above the floor")
-        T.eq(A.travel(210, 1 / 1.5, true), 167, "navigation is caught and held at ten frames")
-        T.eq(A.travel(200, 1 / 1.5, true), 167, "so is a workspace switch")
-        T.eq(A.travel(340, 1 / 3, true), 167, "and three times speed cannot go below it either")
+        // The regression the second floor exists for. Ten frames alone let a
+        // 1.5x session have the 227 ms panel that was measured as too fast and
+        // replaced by 340 in the first place; the share catches it.
+        T.eq(A.travel(340, 1 / 1.5, true), 272, "1.5x is held at four fifths of a panel")
+        T.eq(A.travel(340, 1 / 2, true), 272, "and so is 2x, which the ten-frame floor let through at 170")
+        T.eq(A.travel(340, 1 / 3, true), 272, "no speed reaches below the share")
+        T.eq(A.travel(240, 1 / 1.5, true), 192, "the close is held at its own four fifths, not at 167")
+
+        // Where the ten-frame floor is still the one that binds: a short
+        // travel loses less than a fifth before it hits ten frames.
+        T.eq(A.travel(210, 1 / 1.5, true), 168, "navigation is caught by the share at 168")
+        T.eq(A.travel(200, 1 / 1.5, true), 167, "a workspace switch by the ten frames, which bind first")
+        T.eq(A.travel(200, 1 / 3, true), 167, "and they keep binding however fast it is asked to be")
 
         // The cap at the base. Without it, asking for a 70 ms shake swing
         // would come back as 167 and the speed setting would stop reaching
-        // anything short at all.
+        // anything short at all. Both floors are capped the same way.
         T.eq(A.travel(70, 1, true), 70, "a duration below the floor is not lengthened by it")
         T.eq(A.travel(70, 1 / 3, true), 70, "and stays at its base however fast it is asked to be")
         T.eq(A.travel(120, 1 / 2, true), 120, "the cap is the base, not the floor")
@@ -45,9 +53,19 @@ ShellRoot {
         // ---- the compositor's half -------------------------------------
 
         T.eq(A.travelSpeed(2.0, 1, true), 2.0, "a leaf at the designed pace is untouched")
-        T.eq(A.travelSpeed(2.0, 1 / 1.5, true), 1.67, "and is held at ten frames when rushed")
+        T.eq(A.travelSpeed(2.0, 1 / 1.5, true), 1.67, "a 2.0 leaf is held at ten frames, which bind first")
+        T.eq(Math.round(A.travelSpeed(2.2, 1 / 1.5, true) * 100) / 100, 1.76,
+            "the slowest leaf is held at its own four fifths, which is above ten frames")
+        T.eq(A.travelSpeed(2.0, 1 / 3, true), 1.67, "a 2.0 leaf keeps the ten frames, which bind first for it")
         T.eq(A.travelSpeed(1, 1, true), 1, "a leaf whose base is already short keeps its base")
         T.eq(A.travelSpeed(2.0, 0.6, false), 1.2, "Reduced is exempt here too")
+
+        // The share is why this floor could not simply be raised to a panel's
+        // 227 ms: the slowest leaf in the table is 2.2 ds, so a floor of 2.27
+        // would have sat above every one of them and frozen the compositor at
+        // its designed pace whatever the speed setting said.
+        T.eq(A.travelSpeed(2.2, 1 / 3, true) < 2.2, true, "the speed setting still reaches the slowest leaf")
+        T.eq(A.travelSpeed(2.0, 1 / 3, true) < 2.0, true, "and every other one")
 
         // ---- and through the table it drives ---------------------------
 
@@ -61,7 +79,8 @@ ShellRoot {
 
         const rushed = H.entries("fast", 1.5)
         T.eq(rushed.filter(e => e.leaf === "windows")[0].speed, 1.67, "at 1.5x the window leaf stops at the floor")
-        T.eq(rushed.filter(e => e.leaf === "workspaces")[0].speed, 1.67, "and so does a workspace switch")
+        T.eq(rushed.filter(e => e.leaf === "workspaces")[0].speed, 1.76,
+            "and a workspace switch, the slowest leaf, stops at its own four fifths instead")
 
         // borderangle is off in every mode and its base is 1; the floor must
         // not quietly lengthen a leaf nobody sees.

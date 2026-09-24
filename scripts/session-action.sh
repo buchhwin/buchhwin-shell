@@ -2,8 +2,19 @@
 set -euo pipefail
 # shellcheck source=lib/hypr.sh
 source "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/lib/hypr.sh"
+# shellcheck source=lib/nested-guard.sh
+source "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/lib/nested-guard.sh"
 
-# A nested test session must never suspend, reboot or power off the host.
+# A nested test session must never suspend, reboot or power off the host. The
+# flag alone was the guard, and the flag is exactly what the testing recipe
+# does not export: it hands you the nested WAYLAND_DISPLAY, signature and XDG
+# dirs. `nested_environment` recognises that session by its files as well, and
+# once recognised the whole script behaves as nested - the lock unit and its
+# directory get the -nested names, the Plasma restore is skipped, and the
+# helpers this script starts (apptheme-restore.py, lock.qml) inherit the flag.
+if nested_environment; then
+  export BUCHHWIN_NESTED=1
+fi
 if [[ ${BUCHHWIN_NESTED:-0} == 1 && ${1:-} =~ ^(suspend|reboot|poweroff)$ ]]; then
   printf 'session-action: %s skipped in a nested test session\n' "$1" >&2
   exit 0

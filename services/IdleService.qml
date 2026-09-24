@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import "power/DimLogic.js" as DimLogic
+import "lock/LockLogic.js" as LockLogic
 
 // Idle and lid behaviour for the buchhwin-shell session: screen off, lock and
 // suspend after inactivity (Wayland idle-notify, respecting apps that inhibit
@@ -65,11 +66,44 @@ Singleton {
     }
 
     // Called by the Hyprland lid switch bindings (hypr/keybinds.conf).
+    //
+    // **All four actions are the shell's**, including suspend. It used to hand
+    // that one back to logind - the inhibitor below was taken only while the
+    // action was something else - and that left a hole nobody could close from
+    // here: logind re-reads the lid when a session appears, so logging in with
+    // the lid shut suspended the machine before this shell existed to inhibit
+    // anything. The journal of 2026-09-22 has it plainly: the session starts at
+    // 10:31:33 and `systemd-logind: Suspending...` at 10:31:47, with no lid
+    // event in between. The user's answer was to open and close the lid once,
+    // which is a real lid event and therefore reaches the shell.
     function lidClosed() {
-        if (lidAction === "lock") SessionService.run("lock")
+        if (lidAction === "suspend") SessionService.run("suspend")
+        else if (lidAction === "lock") SessionService.run("lock")
         else if (lidAction === "screenOff") DisplayService.setLidClosed(true)
     }
     function lidOpened() { DisplayService.setLidClosed(false) }
+
+    // What a lid switch never says: that it was already shut when the session
+    // started. Hyprland's `bindl` is an edge, so a session that begins with the
+    // lid closed believes it is open until somebody moves it.
+    //
+    // Only the **display** half is applied from this, never the action: a
+    // laptop that boots docked and shut would otherwise suspend or lock itself
+    // the moment it finished starting, which is the very complaint this is
+    // here to answer.
+    Process {
+        id: lidAtStart
+        stderr: ErrorLog { label: "IdleService.lidAtStart" }
+        running: root.realSession
+        command: ["busctl", "--system", "--timeout=2", "get-property", "org.freedesktop.UPower",
+                  "/org/freedesktop/UPower", "org.freedesktop.UPower", "LidIsClosed"]
+        property string output: ""
+        onStarted: output = ""
+        stdout: StdioCollector { onStreamFinished: lidAtStart.output = text }
+        onExited: code => {
+            if (LockLogic.parseLidClosed(lidAtStart.output, code)) DisplayService.setLidClosed(true)
+        }
+    }
 
     IdleMonitor {
         enabled: !root.stayAwake && root.screenOffMinutes > 0
@@ -139,10 +173,18 @@ Singleton {
         onTriggered: root.beforeSleepPaused = false
     }
 
-    // Keep logind from suspending on lid close while "lock" or "nothing" is set.
+    // Keep logind's hands off the lid **always**, because the shell handles
+    // every action itself now. It used to be conditional, which meant the
+    // machine was unprotected for exactly as long as the setting said
+    // "suspend" - and at session start, before UPower has said which power
+    // source this is, that is whatever the defaults say.
+    //
+    // This cannot cover the moment before the shell runs; only
+    // `/etc/systemd/logind.conf.d/50-buchhwin.conf` can, and
+    // `install/system-install.sh --lid` writes it (see docs/system.md).
     Process {
         stderr: ErrorLog { label: "IdleService.process" }
-        running: root.realSession && root.lidAction !== "suspend"
+        running: root.realSession
         command: ["systemd-inhibit", "--what=handle-lid-switch", "--who=buchhwin-shell",
                   "--why=Lid setting in buchhwin-shell", "--mode=block", "sleep", "infinity"]
     }

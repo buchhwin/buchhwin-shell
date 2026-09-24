@@ -101,6 +101,25 @@ PanelWindow {
         : Origin.under(notch, boxWidth,
                        targetScreen ? targetScreen.width : 0,
                        Metrics.screenMargin, Metrics.spaceSm)
+    // The notch can be the display itself, and then this surface stays away
+    // rather than drawing the same thing twice. There is no second timer: the
+    // notch mirrors `showing`, which this one already owns.
+    readonly property bool inNotch: showing && NotchService.takesDisplay("osd", screenName)
+    onInNotchChanged: publish()
+    onKindChanged: publish()
+    onLevelChanged: publish()
+    onMutedStateChanged: publish()
+    onShowingChanged: publish()
+    function publish() {
+        NotchService.setDisplay("osd", screenName, inNotch ? {
+            kind: "osd", icon: icon,
+            level: isMessage ? undefined : level,
+            segments: segments,
+            muted: mutedState,
+            value: isMessage ? message : valueText
+        } : null)
+    }
+
     readonly property var place: fromNotch !== null ? fromNotch
         : Origin.atBottom(boxWidth, boxHeight,
                           targetScreen ? targetScreen.width : 0,
@@ -111,7 +130,7 @@ PanelWindow {
     // Only once there is somewhere to be: a layer surface that is already
     // mapped does not reliably take a new anchor, so these two never change
     // for the life of the surface and only the margins move.
-    visible: place !== null && (showing || card.opacity > 0)
+    visible: !inNotch && place !== null && (showing || card.opacity > 0)
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     anchors { top: true; left: true }

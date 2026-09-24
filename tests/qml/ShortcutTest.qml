@@ -50,6 +50,28 @@ ShellRoot {
               S.describeExec("quickshell --path /opt/b ipc call recording toggle screen").title,
               S.describeExec("quickshell --path /opt/b ipc call recording toggle screen").group],
              ["Record a region", "Record the screen", "screenshots"], "recording binds")
+        // The legacy `.conf` dialect carries no descriptions, so every title
+        // has to be read back out of the command. Eighteen workspace binds and
+        // six more landed in Other as raw command lines until these; the
+        // titles are the ones `hyprland.lua` gives the same binds, so the two
+        // dialects say the same thing.
+        T.eq(S.describeExec("quickshell --path /opt/b ipc call workspaces switchTo 3 || hyprctl dispatch workspace 3"),
+            { title: "Go to workspace 3", group: "workspaces" }, "a workspace switch keeps its number")
+        T.eq(S.describeExec("quickshell --path /opt/b ipc call workspaces move 7 || hyprctl dispatch movetoworkspacesilent 7"),
+            { title: "Move window to workspace 7", group: "workspaces" }, "and so does moving a window there")
+        T.eq([S.describeExec("quickshell --path /opt/b ipc call shortcuts toggleSheet").title,
+              S.describeExec("quickshell --path /opt/b ipc call profile toggle").title,
+              S.describeExec("quickshell --path /opt/b ipc call wallpaperPicker toggle").title,
+              S.describeExec("quickshell --path /opt/b ipc call colorPicker pick").title,
+              S.describeExec("quickshell --path /opt/b ipc call desktop cycleMode").title,
+              S.describeExec("quickshell --path /opt/b ipc call mode cycle").title],
+            ["All keyboard shortcuts", "Profiles and modes", "Wallpaper picker",
+             "Pick a colour off the screen", "Desktop mode: widgets, bar, notch",
+             "Mode: minimal, work, gaming, laptop, docked"],
+            "and the six surfaces that had no pattern at all")
+        T.eq(S.describeExec("quickshell --path /opt/b ipc call shortcuts toggleSheet").group, "panels",
+            "the sheet is a panel, not Other")
+
         T.eq([S.describeExec("quickshell --path /opt/b ipc call kbdBacklight up").title,
               S.describeExec("quickshell --path /opt/b ipc call kbdBacklight down").title,
               S.describeExec("quickshell --path /opt/b ipc call kbdBacklight toggle").title],
@@ -144,6 +166,43 @@ ShellRoot {
         T.eq(S.captureKey(0x01000034, 0, 71), { mods: [], key: "F5" }, "function key")
         T.eq(S.captureKey(0x2c, 0x10000000, 59), { mods: ["SUPER"], key: "comma" }, "punctuation keysym")
         T.eq(S.captureKey(0x20ac, 0x10000000, 26), { unsupported: true, mods: ["SUPER"] }, "unknown key")
+
+        // Columns for the Super+F1 sheet. A grid put a three-row group beside
+        // an eleven-row one and left eight rows of nothing under the short
+        // one; these are packed by weight instead, rows plus one heading.
+        const sheet = [
+            { id: "apps", rows: [1, 2, 3] },
+            { id: "panels", rows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
+            { id: "windows", rows: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
+            { id: "system", rows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] }
+        ]
+        const two = S.columnise(sheet, 2)
+        T.eq(two.length, 2, "two columns asked for, two returned")
+        const weigh = column => column.reduce((total, group) => total + group.rows.length + 1, 0)
+        T.eq(two.map(weigh), [19, 22], "two columns come out level")
+        T.eq(two[0].map(group => group.id), ["apps", "system"], "and each one reads in the declared order")
+        T.eq(two[1].map(group => group.id), ["panels", "windows"], "not in the order they were placed")
+
+        // Reading order alone would have put apps and windows together and
+        // left panels with system: 14 rows against 27, which is the gap this
+        // replaces.
+        T.eq(Math.abs(weigh(two[0]) - weigh(two[1])) <= 3, true, "the two are within three rows of each other")
+
+        const three = S.columnise(sheet, 3)
+        T.eq(three.map(weigh), [15, 12, 14], "and three are level too")
+
+        // The length is a promise: a sheet three wide with one group in it is
+        // still three columns, so the caller can lay them out without
+        // checking.
+        T.eq(S.columnise([{ id: "apps", rows: [1] }], 3).map(column => column.length), [1, 0, 0], "empty columns are kept")
+        T.eq(S.columnise([], 2).length, 2, "and so are all of them")
+        T.eq(S.columnise(null, 2).length, 2, "nothing at all is not a crash")
+        T.eq(S.columnise(sheet, 0).length, 1, "asking for no columns gives one")
+
+        // A heading costs one row, which is what stops four groups of one
+        // landing in a single column beside one group of four.
+        const tiny = [{ rows: [1] }, { rows: [1] }, { rows: [1] }, { rows: [1] }]
+        T.eq(S.columnise(tiny, 2).map(column => column.length), [2, 2], "singles are spread, not stacked")
 
         T.finish("ShortcutTest")
     }

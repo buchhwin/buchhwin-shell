@@ -1,6 +1,7 @@
 import QtQuick
 import qs.theme
 import qs.services
+import qs.shell.components
 import qs.shell.desktop
 import "../../services/LayoutLogic.js" as Logic
 import "SnapEngine.js" as Snap
@@ -62,14 +63,13 @@ Item {
     }
 
     // Widgets without current content (e.g. no media player) stay editable.
-    Text {
+    ShellText {
         id: placeholder
         anchors.centerIn: parent
         visible: !frame.hasContent
         text: card.entry ? (WidgetRegistry.type(card.entry.type) || { label: card.entry.type }).label + " (empty)" : ""
-        color: Colors.mutedText
-        font.family: Typography.family
-        font.pixelSize: Typography.smallSize
+        role: "small"
+        muted: true
     }
 
     Rectangle {

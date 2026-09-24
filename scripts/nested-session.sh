@@ -13,9 +13,19 @@ set -euo pipefail
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
 base=${BUCHHWIN_NESTED_DIR:-"${TMPDIR:-/tmp}/buchhwin-nested"}
 
+# The only process this ever kills is a Hyprland that was started here: the pid
+# in the file may have been reused by anything since it was written, and the
+# nested compositor is the one process on the machine whose environment says
+# BUCHHWIN_NESTED=1 (the same check scripts/lib/nested-guard.sh makes).
 stop_nested() {
+  local pid
   if [[ -r "$base/hyprland.pid" ]]; then
-    kill "$(<"$base/hyprland.pid")" 2>/dev/null || true
+    pid=$(<"$base/hyprland.pid")
+    if [[ $pid =~ ^[0-9]+$ ]] && tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | grep -qx 'BUCHHWIN_NESTED=1'; then
+      kill "$pid" 2>/dev/null || true
+    elif [[ $pid =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+      printf 'nested-session: pid %s is not a nested Hyprland; not killed\n' "$pid" >&2
+    fi
     rm -f -- "$base/hyprland.pid"
   fi
   rm -f -- "$base/instance" "$base/wayland-display"
@@ -37,6 +47,7 @@ if [[ -z "${WAYLAND_DISPLAY:-}" ]]; then
   printf 'nested-session: a parent Wayland session is required\n' >&2
   exit 1
 fi
+runtime_dir=${XDG_RUNTIME_DIR:?nested-session: XDG_RUNTIME_DIR is not set}
 
 resolution=${2:-1920x1200}
 scale=${3:-1}
@@ -60,7 +71,6 @@ for file in "$project_dir"/hypr/*.conf; do
       "$file" > "$base/hypr/$(basename -- "$file")"
 done
 
-before=$(ls -1 "${XDG_RUNTIME_DIR}/hypr" 2>/dev/null || true)
 # BUCHHWIN_NESTED_LUA=1 runs hypr/hyprland.lua (the Hyprland 0.57+ format)
 # directly; it reads the nested settings from the environment.
 config_file="$base/hypr/hyprland.conf"
@@ -70,17 +80,24 @@ fi
 BUCHHWIN_NESTED=1 BUCHHWIN_NESTED_MODE="$resolution" BUCHHWIN_NESTED_SCALE="$scale" BUCHHWIN_SHELL_PATH="$project_dir" \
 XDG_CONFIG_HOME="$base/config" XDG_STATE_HOME="$base/state" XDG_CACHE_HOME="$base/cache" \
   Hyprland --config "$config_file" >"$base/hyprland.log" 2>&1 &
-printf '%s\n' "$!" > "$base/hyprland.pid"
+hyprland_pid=$!
+printf '%s\n' "$hyprland_pid" > "$base/hyprland.pid"
 
+# The instance is the one `hyprctl instances` lists with this pid. It used to
+# be the lexically last new directory under $XDG_RUNTIME_DIR/hypr, which is a
+# guess as soon as anything else starts a Hyprland in the same second - and a
+# wrong guess here means every later call goes to somebody else's compositor.
 signature=""
 for _ in {1..100}; do
-  signature=$(comm -13 <(printf '%s\n' "$before" | sort) \
-    <(ls -1 "${XDG_RUNTIME_DIR}/hypr" 2>/dev/null | sort) | tail -n1)
-  [[ -n "$signature" && -S "${XDG_RUNTIME_DIR}/hypr/$signature/.socket.sock" ]] && break
+  signature=$(hyprctl -j instances 2>/dev/null \
+    | jq -r --argjson p "$hyprland_pid" '[.[] | select(.pid == $p) | .instance][0] // empty' 2>/dev/null || true)
+  [[ -n "$signature" && -S "$runtime_dir/hypr/$signature/.socket.sock" ]] && break
+  signature=""
   sleep 0.1
 done
 if [[ -z "$signature" ]]; then
-  printf 'nested-session: Hyprland did not start; see %s\n' "$base/hyprland.log" >&2
+  printf 'nested-session: Hyprland (pid %s) did not come up; see %s\n' "$hyprland_pid" "$base/hyprland.log" >&2
+  stop_nested
   exit 1
 fi
 
@@ -91,6 +108,14 @@ for _ in {1..50}; do
   [[ -n "$display" ]] && break
   sleep 0.1
 done
+# An empty wayland-display file is worse than no session: nested_guard reads
+# it, and an empty display can never be the one a caller exported, so every
+# tool refuses - while the compositor keeps running with nobody able to reach it.
+if [[ -z "$display" ]]; then
+  printf 'nested-session: instance %s reports no Wayland socket; stopping it; see %s\n' "$signature" "$base/hyprland.log" >&2
+  stop_nested
+  exit 1
+fi
 
 # A headless output renders independently of the parent window, so
 # screenshots work even when the nested window is hidden. It also gives the

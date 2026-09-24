@@ -24,11 +24,22 @@ import qs.shell.overview
 import qs.shell.switcher
 import qs.shell.shortcuts
 import qs.shell.popups
+import qs.shell.components
 import qs.services
 import qs.theme
 import "services/profile/ProfileLogic.js" as Profile
 
 ShellRoot {
+    id: root
+    // No hot reload. Quickshell reloads the whole graph when a file under
+    // the shell directory changes, and a deploy changes many files one after
+    // another: the reload ran on a half-written tree and died in
+    // QWindow::setScreen five times on 2026-09-22, seconds after each
+    // fast-forward of the stable worktree. The deploy restarts the shell
+    // itself once the tree is complete, so the watcher has nothing to add
+    // and one crash per deploy to take away. docs/system.md > Dependencies.
+    settings.watchFiles: false
+
     // The notification server must exist from startup, not on first use.
     readonly property bool notificationsReady: NotificationService.server !== null
     readonly property bool appearanceReady: AppearanceService.cursorThemes !== null
@@ -39,7 +50,7 @@ ShellRoot {
     readonly property bool displaysReady: DisplayService.confirmSeconds > 0
     readonly property bool inputReady: InputService.current !== null
     readonly property bool clipboardReady: ClipboardService.dbPath.length > 0
-    readonly property bool adaptiveReady: AdaptiveService.suggestedProfile !== undefined
+    readonly property bool adaptiveReady: AdaptiveService.suggestedMode !== undefined
     readonly property bool nightLightReady: NightLightService.mode.length > 0
     readonly property bool autostartReady: AutostartService.marker.length > 0
     // Terminal config files follow the settings from startup.
@@ -59,6 +70,17 @@ ShellRoot {
     WidgetHost {}
     PillBar {}
     Notch {}
+    // Before every panel, so its layer surface is created first and therefore
+    // sits **below** them: within one Wayland layer the order is the order
+    // they were created in. Declared after this and the scrim covers the
+    // panel's own card - which is what the power menu looked like when this
+    // was three lines further down.
+    // A track change in the notch, for a few seconds. It has no surface of its
+    // own: with no notch, or with the switch off, nothing happens.
+    NotchTrackChange {}
+
+    ScrimLayer {}
+
     Launcher {}
     EmojiPanel {}
     WelcomePanel {}
@@ -73,14 +95,14 @@ ShellRoot {
         // The desktop mode had no key of its own: it could only be changed in
         // Settings or through three launcher commands.
         function cycleMode(): string {
-            const modes = LayoutService.modes
-            const next = modes[(modes.indexOf(LayoutService.mode) + 1) % modes.length]
-            if (!LayoutService.setMode(next)) return LayoutService.mode
-            osd.showMessage(LayoutService.modeLabel, LayoutService.notchShown ? "󱂩" : LayoutService.barShown ? "󰘔" : "󰕰")
+            const modes = LayoutService.desktopModes
+            const next = modes[(modes.indexOf(LayoutService.desktopMode) + 1) % modes.length]
+            if (!LayoutService.setDesktopMode(next)) return LayoutService.desktopMode
+            osd.showMessage(LayoutService.desktopModeLabel, LayoutService.notchShown ? "󱂩" : LayoutService.barShown ? "󰘔" : "󰕰")
             return next
         }
-        function setMode(name: string): bool { return LayoutService.setMode(name) }
-        function getMode(): string { return LayoutService.mode }
+        function setMode(name: string): bool { return LayoutService.setDesktopMode(name) }
+        function getMode(): string { return LayoutService.desktopMode }
     }
 
     IpcHandler {
@@ -146,6 +168,19 @@ ShellRoot {
         function toggle(): void { PanelService.toggle("launcher") }
         function open(): void { PanelService.open("launcher") }
         function close(): void { PanelService.close("launcher") }
+        // Arranging its blocks, the same as the pencil in its header. A nested
+        // session cannot click one, and a drag is over before a screenshot can
+        // catch it.
+        function arrange(on: bool): void { LayoutService.launcherEditing = on }
+        // The grid as the layout file holds it and where every block is
+        // resting, the way `controlCenter rects` and `dashboard rects` do it.
+        // A drag is over before a screenshot can catch it.
+        function blocks(): string {
+            return JSON.stringify({ editing: LayoutService.launcherEditing,
+                                    blocks: LayoutService.launcherItems,
+                                    cells: LayoutService.launcherCells,
+                                    choices: LayoutService.launcherChoices() })
+        }
     }
 
     IpcHandler {
@@ -224,7 +259,6 @@ ShellRoot {
         function open(): void { PanelService.open("dashboard") }
         function close(): void { PanelService.close("dashboard") }
         // Calendar view: month | week | day.
-        function setView(view: string): bool { return SettingsService.set("calendar.dashboardView", view) }
     }
 
     IpcHandler {
@@ -235,7 +269,7 @@ ShellRoot {
         // properties, and a list cannot cross IPC.
         function isPopup(name: string): bool {
             return ["network", "vpn", "bluetooth", "media", "volume", "battery",
-                    "weather", "events", "privacy", "system"].indexOf(name) >= 0
+                    "weather", "events", "privacy", "system", "profile"].indexOf(name) >= 0
         }
         function open(name: string, anchorX: real): bool {
             if (!isPopup(name)) return false
@@ -440,11 +474,14 @@ ShellRoot {
         // Synthetic updates for screenshots; actions stay disabled.
         function preview(): void { UpdatesService.showPreview() }
         function stopPreview(): void { UpdatesService.stopPreview() }
-        // Expands or collapses both lists on the page.
+        // Expands or collapses the lists on the page.
         function expand(expanded: bool): void {
             UpdatesService.packagesExpanded = expanded
             UpdatesService.flatpaksExpanded = expanded
+            UpdatesService.shellExpanded = expanded
         }
+        // The shell's own check, offline (local git only, no network).
+        function checkShell(): void { UpdatesService.checkShell(true, false) }
         // Counts only, no package names.
         function get(): string {
             return JSON.stringify({ checking: UpdatesService.checking, packagesKnown: UpdatesService.result.packagesKnown,
@@ -453,7 +490,11 @@ ShellRoot {
                                     lastCheck: UpdatesService.lastCheck, message: UpdatesService.message,
                                     offline: UpdatesService.result.offline, realSession: UpdatesService.realSession,
                                     preview: UpdatesService.preview, checkHours: UpdatesService.checkHours,
-                                    notify: UpdatesService.notifyEnabled })
+                                    notify: UpdatesService.notifyEnabled,
+                                    shell: { known: UpdatesService.shell.known, repo: UpdatesService.shell.repo,
+                                             behind: UpdatesService.shell.behind, ahead: UpdatesService.shell.ahead,
+                                             dirty: UpdatesService.shell.dirty, updatable: UpdatesService.shellUpdatable,
+                                             checking: UpdatesService.shellChecking, auto: UpdatesService.shellAuto } })
         }
     }
 
@@ -685,7 +726,7 @@ ShellRoot {
 
     IpcHandler {
         target: "bar"
-        function setMode(mode: string): bool { return LayoutService.setMode(mode) }
+        function setMode(mode: string): bool { return LayoutService.setDesktopMode(mode) }
         function addPill(zone: string, type: string): bool { return LayoutService.barAddPill(zone, type, "") }
         // Keys: reserve true|false, fullscreen hide|show, scale 0.9|1|1.15,
         // style pills|bar, position floating|attached, edge top|bottom|left|
@@ -706,7 +747,7 @@ ShellRoot {
         function get(): string {
             const bar = LayoutService.bar
             const describe = zone => bar[zone].map(pill => pill.items.map(item => item.type + (item.display === "icon" ? "*" : "")).join("+"))
-            return JSON.stringify({ mode: LayoutService.mode, reserve: bar.reserve, fullscreen: bar.fullscreen, scale: bar.scale,
+            return JSON.stringify({ mode: LayoutService.desktopMode, reserve: bar.reserve, fullscreen: bar.fullscreen, scale: bar.scale,
                                     style: bar.style, position: bar.position, edge: bar.edge,
                                     left: describe("left"), center: describe("center"), right: describe("right") })
         }
@@ -751,21 +792,58 @@ ShellRoot {
     }
 
     IpcHandler {
+        // The five: minimal, work, gaming, laptop and docked. This is what
+        // `profile` did before v3; `profile` is the level above now, and
+        // `profile cycle` stays as an alias so nothing that exists breaks.
+        target: "mode"
+        function set(name: string): bool { return LayoutService.setActiveMode(name) }
+        function get(): string { return LayoutService.activeMode }
+        function list(): string { return LayoutService.modeNames.join(" ") }
+        // There are five modes and, until this key, none at all: they could
+        // only be changed in Settings, in the editor or from the launcher.
+        // Cycling by hand also settles the automatic mode - see ProfileLogic,
+        // the rule is the user's.
+        function cycle(): string { return root.cycleMode() }
+    }
+
+    // Everything the mode key does, in one place: the IPC target above and the
+    // `profile cycle` alias below both call it, and `Super+Alt+P` goes through
+    // the alias.
+    function cycleMode(): string {
+        const step = Profile.cycleMode(LayoutService.activeMode, LayoutService.modeNames,
+                                       SettingsService.value("desktop.autoProfile"))
+        if (!step || !LayoutService.setActiveMode(step.mode)) return LayoutService.activeMode
+        if (step.autoChanged) SettingsService.set("desktop.autoProfile", step.auto)
+        osd.showMessage(Profile.osdText(Profile.label(step.mode, LayoutService.templates), step),
+                        Profile.icon(step.mode))
+        return step.mode
+    }
+
+    IpcHandler {
+        // The level above: a profile holds its own five modes. Adding,
+        // duplicating, renaming, removing and resetting are here too, because a
+        // profile is the one thing in the layout file with no fixed set of
+        // names - it is the user's list.
         target: "profile"
         function set(name: string): bool { return LayoutService.setActiveProfile(name) }
         function get(): string { return LayoutService.activeProfile }
-        // There are five profiles and, until now, no key at all: they could
-        // only be changed in Settings, in the editor or from the launcher.
-        // Cycling by hand also settles the automatic profile - see
-        // ProfileLogic, the rule is the user's.
-        function cycle(): string {
-            const step = Profile.cycle(LayoutService.activeProfile, LayoutService.profileNames,
-                                       SettingsService.value("desktop.autoProfile"))
-            if (!step || !LayoutService.setActiveProfile(step.profile)) return LayoutService.activeProfile
-            if (step.autoChanged) SettingsService.set("desktop.autoProfile", step.auto)
-            osd.showMessage(Profile.osdText(Profile.label(step.profile, LayoutService.templates), step),
-                            Profile.icon(step.profile))
-            return step.profile
+        function list(): string { return LayoutService.profileNames.join(" ") }
+        // `Super+P`. The two levels small enough to be a key.
+        function toggle(): void { PanelService.toggle("profilePopup") }
+        function add(label: string): string { return LayoutService.addProfile(label) }
+        function duplicate(name: string, label: string): string { return LayoutService.duplicateProfile(name, label) }
+        function rename(name: string, label: string): bool { return LayoutService.renameProfile(name, label) }
+        function remove(name: string): bool { return LayoutService.removeProfile(name) }
+        // With no mode named, all five of them.
+        function reset(name: string, mode: string): bool { return LayoutService.resetProfile(name, mode) }
+        // The alias. `Super+Alt+P` has always been the mode key and still is.
+        function cycle(): string { return root.cycleMode() }
+        function cycleProfile(): string {
+            const names = LayoutService.profileNames
+            const next = Profile.nextProfile(LayoutService.activeProfile, names)
+            if (!next.length || !LayoutService.setActiveProfile(next)) return LayoutService.activeProfile
+            osd.showMessage(LayoutService.activeProfileLabel, Profile.icon(LayoutService.activeMode))
+            return next
         }
     }
 
@@ -790,6 +868,7 @@ ShellRoot {
     EventsPopup {}
     PrivacyPopup {}
     SystemPopup {}
+    ProfilePopup {}
     ColorPickerPopup {}
     ColorPickerOverlay {}
     IdentifyOverlay {}

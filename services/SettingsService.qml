@@ -29,6 +29,10 @@ Singleton {
             "cursorSize": 24,
             "accentFromWallpaper": false,
             "panelOpacity": 0.74,
+            // Whether the rest of the screen dims while a panel is open. One
+            // scrim for all of them (shell/components/ScrimLayer.qml), so this
+            // is one switch rather than one per surface.
+            "panelScrim": true,
             "panelColor": "auto",
             "blurStrength": 0.5,
             // How fast every animation runs, the shell's and the
@@ -82,10 +86,28 @@ Singleton {
             // The dashboard keeps its own, the same way: 0 means "never
             // dragged", and the panel then follows the width its view asks for.
             "dashboardWidth": 0,
-            "dashboardHeight": 0
+            "dashboardHeight": 0,
+            // Where the Settings window was dragged to, as an offset from
+            // where it places itself. 0 is "never moved", and it is an offset
+            // rather than a position so a different screen or a bar appearing
+            // moves it along instead of leaving it off the edge.
+            "settingsMoveX": 0,
+            "settingsMoveY": 0,
+            // The launcher's own size, pulled from the grip on its corner.
+            // 0 means "never dragged" and it takes the width it is designed at.
+            "launcherWidth": 0,
+            "launcherHeight": 0
         },
         // Desktop mode "notch" (shell/notch): exclusive zone, fullscreen and hover.
         "notch": {
+            // The notch **becomes** the display instead of opening a surface
+            // below it. One switch per kind, because a volume bar in the notch
+            // with notifications still under it is an ordinary thing to want.
+            // A screen with no notch does what it always did, whatever these
+            // say (services/notch/NotchDisplay.js).
+            "displayOsd": true,
+            "displayNotifications": true,
+            "displayMedia": true,
             "reserve": true,
             "fullscreen": "hide",
             "expandOnHover": true,
@@ -152,10 +174,38 @@ Singleton {
         "onboarding": {
             "completed": false
         },
+        // X11 applications and how they are scaled: whether they draw in real
+        // pixels, and at what scale X11 is then told it runs - 0 follows the
+        // largest screen, anything else is the scale itself (1.25 to 2).
+        // Citrix at the screen's 1.5 was "still a little small", and X11 has
+        // one DPI, so the number is the user's (see Settings > Displays).
+        "display": {
+            "xwaylandSharp": false,
+            "x11Scale": 0
+        },
         "launcher": {
+            // Where the app categories go is a layout question now (the
+            // `launcher` surface in layout.json) and this key has no UI any
+            // more. It stays until the one-shot that reads it has certainly
+            // run everywhere: this file rebuilds stored objects from the keys
+            // below, so taking it out now would strip it on the first
+            // unrelated write and a session that had the sidebar off would
+            // never be adopted. Same reason the notch's four booleans outlived
+            // their own adoption.
+            "categories": true,
             "fileSearch": true,
             "searchEngine": "duckduckgo",
-            "searchUrl": ""
+            "searchUrl": "",
+            // The order of the mode switch, as a comma-string of mode ids -
+            // this file cannot store a list (see the note in LayoutLogic).
+            // Empty is the shell's own order; `ModeOrder` fills in whatever the
+            // string does not name, so a mode added later is never lost.
+            "modeOrder": "",
+            // The apps kept in front of the search field, as a comma-string of
+            // desktop entry ids (see services/launcher/Pinned.js, and the
+            // reason this is the only fixed thing on a search surface).
+            "pinned": "",
+            "showPinned": true
         },
         "autostart": {
             "apps": "",
@@ -292,14 +342,17 @@ Singleton {
             "eventHint": true,
             "hintMinutes": 15,
             "hiddenCalendars": "",
-            // Collection id last used for a new event; dashboard view month | week | day.
+            // Collection id last used for a new event.
             "newEventCalendar": "",
-            "eventColor": "accent",
-            "dashboardView": "month"
+            "eventColor": "accent"
         },
         "updates": {
             "checkHours": 24,
-            "notify": true
+            "notify": true,
+            // The shell's own update, installed by the automatic check when it
+            // finds the checkout behind its remote and clean. Off: an update
+            // restarts the shell, and that is not a thing to do unasked.
+            "shellAuto": false
         }
     })
 
@@ -311,6 +364,18 @@ Singleton {
     readonly property string fontFamily: value("appearance.fontFamily")
     readonly property string monoFontFamily: value("appearance.monoFontFamily")
     readonly property string animationMode: value("appearance.animationMode")
+    // Named here rather than read through `value()` at the point of use,
+    // because `AppearanceService` pushes Hyprland's options on the *signals*
+    // of these properties: a setting with no property of its own changes
+    // nothing until the next shell start, which is exactly how this one
+    // reached the compositor only at startup and looked like it did nothing.
+    readonly property bool xwaylandSharp: value("display.xwaylandSharp") === true
+    // 0 is "follow the largest screen"; anything else is clamped to what a
+    // screen can be scaled to, so a stray value cannot make X11 unusable.
+    readonly property real x11ScaleSetting: {
+        const wanted = Number(value("display.x11Scale")) || 0
+        return wanted > 0 ? Math.max(1, Math.min(3, wanted)) : 0
+    }
     readonly property string cursorTheme: value("appearance.cursorTheme")
     readonly property int cursorSize: value("appearance.cursorSize")
     readonly property real panelOpacity: Math.max(0.4, Math.min(1, value("appearance.panelOpacity")))
@@ -348,7 +413,6 @@ Singleton {
         "notch.fullscreen": ["hide", "show"],
         "workspaces.count": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         "weather.unit": ["celsius", "fahrenheit"],
-        "calendar.dashboardView": ["month", "week", "day"],
         "lock.fingerprint": ["auto", "on", "off"],
         "power.battery.lidAction": ["suspend", "lock", "screenOff", "nothing"],
         "power.ac.lidAction": ["suspend", "lock", "screenOff", "nothing"],
@@ -400,6 +464,18 @@ Singleton {
         return stored
     }
 
+    // A setting was written. There was no change signal at all before this, and
+    // LayoutService needs one: a setting a mode owns has to land in the mode
+    // that is active while it is changed, wherever in the shell that happens.
+    // It fires per key, after the write, for `setAll` too.
+    signal settingChanged(string path, var value)
+
+    // The value a setting starts at, which is also what a fresh profile's modes
+    // get: the factory state of a setting is its default.
+    function defaultOf(path) {
+        return lookup(defaults, path)
+    }
+
     function set(path, newValue) {
         const fallback = lookup(defaults, path)
         if (fallback === undefined || typeof newValue !== typeof fallback) {
@@ -414,16 +490,32 @@ Singleton {
         for (let i = 0; i < parts.length - 1; ++i) node = node[parts[i]]
         node[parts[parts.length - 1]] = newValue
         data = next
-        settingsFile.setText(JSON.stringify(next, null, 2) + "\n")
+        scheduleWrite(next)
+        settingChanged(path, newValue)
         return true
     }
 
-    // Several keys in one write. Two `set` calls in the same turn of the event
-    // loop each replace the file, and the first write is dropped in flight -
-    // Quickshell says so in the log, and the shell's own smoke test fails on
-    // it. Migrations that run together use this.
+    // One write per turn of the event loop, and never from inside the load
+    // that is finishing. Two `set` calls in the same turn used to each replace
+    // the file, and the first write was dropped in flight; and a `set` from a
+    // handler of `loaded` dropped the very read that was being finished -
+    // Quickshell logs both as "got operation finished from dropped operation"
+    // and the smoke test fails on it. The text is taken when the write is
+    // asked for, not when it runs, so a reload that lands in between cannot
+    // put older settings back on disk.
+    property string pendingText: ""
+    function scheduleWrite(next) {
+        pendingText = JSON.stringify(next, null, 2) + "\n"
+        writeTimer.restart()
+    }
+    Timer { id: writeTimer; interval: 0; onTriggered: settingsFile.setText(root.pendingText) }
+
+    // Several keys in one write - they used to be one write each, which is
+    // the race above; now it is one `settingChanged` per key and one write.
+    // Migrations that run together use this.
     function setAll(values) {
         const next = sanitized()
+        const written = []
         let changed = false
         for (const path of Object.keys(values || {})) {
             const newValue = values[path]
@@ -438,11 +530,13 @@ Singleton {
             let node = next
             for (let i = 0; i < parts.length - 1; ++i) node = node[parts[i]]
             node[parts[parts.length - 1]] = newValue
+            written.push(path)
             changed = true
         }
         if (!changed) return false
         data = next
-        settingsFile.setText(JSON.stringify(next, null, 2) + "\n")
+        scheduleWrite(next)
+        for (const path of written) settingChanged(path, lookup(next, path))
         return true
     }
 

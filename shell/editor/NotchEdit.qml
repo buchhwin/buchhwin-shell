@@ -94,71 +94,56 @@ Item {
         anchors.top: frame.bottom
         anchors.topMargin: Metrics.spaceMd
         width: root.cardWidth
-        height: Math.max(leftColumn.implicitHeight + Metrics.spaceLg * 2, options.implicitHeight)
+        height: Math.max(fields.implicitHeight, options.implicitHeight)
 
         readonly property real columnWidth: (width - Metrics.spaceMd) / 2
 
-        Rectangle {
+        EditorPanel {
             id: fields
             width: panels.columnWidth
             height: panels.height
-            radius: Metrics.radiusPanel
-            color: Colors.panelFor("editor")
-            border.width: Metrics.borderWidth
-            border.color: Colors.panelBorder
-            // Clicks stay on the card instead of reaching what is behind it.
-            MouseArea { anchors.fill: parent }
+            title: "What it carries"
 
-            ColumnLayout {
-                id: leftColumn
-                x: Metrics.spaceLg
-                y: Metrics.spaceLg
-                width: parent.width - Metrics.spaceLg * 2
-                spacing: Metrics.spaceMd
+            SegmentedControl {
+                id: zoneSwitch
+                Layout.fillWidth: true
+                current: LayoutService.notchEditZone
+                options: [{ value: "collapsed", label: "Strip" }, { value: "expanded", label: "On hover" }]
+                onSelected: value => LayoutService.notchEditZone = value
+            }
 
-                ShellText { Layout.fillWidth: true; text: "What it carries"; role: "title" }
+            Flow {
+                id: picker
+                Layout.fillWidth: true
+                spacing: Metrics.spaceXs
 
-                SegmentedControl {
-                    id: zoneSwitch
-                    Layout.fillWidth: true
-                    current: LayoutService.notchEditZone
-                    options: [{ value: "collapsed", label: "Strip" }, { value: "expanded", label: "On hover" }]
-                    onSelected: value => LayoutService.notchEditZone = value
+                Repeater {
+                    model: root.missing
+                    ShellButton {
+                        required property var modelData
+                        icon: modelData.icon
+                        variant: "surface"
+                        compact: true
+                        toolTip: "Add " + modelData.label
+                        onClicked: LayoutService.notchAdd(modelData.type, LayoutService.notchEditZone)
+                    }
                 }
-
-                Flow {
-                    id: picker
-                    Layout.fillWidth: true
-                    spacing: Metrics.spaceXs
-
-                    Repeater {
-                        model: root.missing
-                        ShellButton {
-                            required property var modelData
-                            icon: modelData.icon
-                            variant: "surface"
-                            compact: true
-                            toolTip: "Add " + modelData.label
-                            onClicked: LayoutService.notchAdd(modelData.type, LayoutService.notchEditZone)
-                        }
-                    }
-                    // Arranging pushes undo steps like every other editor
-                    // does, so it offers the way back like every other editor.
-                    ShellButton {
-                        icon: Icons.undo
-                        variant: "ghost"
-                        compact: true
-                        enabledState: LayoutService.undoStack.length > 0
-                        toolTip: "Undo"
-                        onClicked: LayoutService.undo()
-                    }
-                    ShellButton {
-                        icon: Icons.reset
-                        variant: "ghost"
-                        compact: true
-                        toolTip: "Back to the default notch"
-                        onClicked: LayoutService.notchResetLayout()
-                    }
+                // Arranging pushes undo steps like every other editor
+                // does, so it offers the way back like every other editor.
+                ShellButton {
+                    icon: Icons.undo
+                    variant: "ghost"
+                    compact: true
+                    enabledState: LayoutService.undoStack.length > 0
+                    toolTip: "Undo"
+                    onClicked: LayoutService.undo()
+                }
+                ShellButton {
+                    icon: Icons.reset
+                    variant: "ghost"
+                    compact: true
+                    toolTip: "Back to the default notch"
+                    onClicked: LayoutService.notchResetLayout()
                 }
             }
         }

@@ -12,8 +12,8 @@ ShellPanel {
     keyForward: search
     panelId: "shortcutSheet"
     placement: "center"
-    cardWidth: Metrics.settingsWidth
-    cardHeight: Metrics.launcherHeight
+    cardWidth: Metrics.shortcutSheetWidth
+    cardHeight: Metrics.shortcutSheetHeight
     scrimColor: Colors.scrimStrong
 
     property string query: ""
@@ -64,43 +64,64 @@ ShellPanel {
             clip: true
             boundsBehavior: Flickable.StopAtBounds
 
-            // Two columns while the card is wide enough: the list is long and a
-            // single column would make the sheet scroll for most of it.
-            GridLayout {
+            // As many columns as the card is wide enough for, and **not** a
+            // `GridLayout`. A grid makes every row as tall as its tallest cell,
+            // so Apps with three rows beside Shell panels with eleven left
+            // eight rows of nothing underneath it, over and over down the
+            // sheet. These are real columns, each packed tight from the top;
+            // `ShortcutService.columnise` decides which group goes where.
+            readonly property int columnCount:
+                Math.max(1, Math.min(3, Math.floor(width / Metrics.shortcutColumnWidth)))
+
+            RowLayout {
                 id: columns
                 width: sheet.width
-                columns: sheet.width >= Metrics.wideWidth - Metrics.panelPadding * 2 ? 2 : 1
-                columnSpacing: Metrics.spaceXl
-                rowSpacing: Metrics.spaceLg
+                spacing: Metrics.spaceXl
 
                 Repeater {
-                    model: root.groups
-                    CardSection {
-                        id: group
+                    model: ShortcutService.columnise(root.groups, sheet.columnCount)
+                    ColumnLayout {
+                        id: column
                         required property var modelData
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignTop
-                        padding: Metrics.spaceMd
-                        spacing: Metrics.spaceXxs
-                        title: modelData.title
+                        Layout.preferredWidth: 1
+                        spacing: Metrics.spaceLg
 
                         Repeater {
-                            model: group.modelData.rows
-                            RowLayout {
-                                id: bindRow
+                            model: column.modelData
+                            CardSection {
+                                id: group
                                 required property var modelData
                                 Layout.fillWidth: true
-                                Layout.minimumHeight: Metrics.controlHeight
-                                spacing: Metrics.spaceMd
-                                ShellText {
-                                    Layout.fillWidth: true
-                                    text: bindRow.modelData.title
-                                    font.family: bindRow.modelData.raw ? Typography.monoFamily : Typography.family
-                                    color: bindRow.modelData.raw ? Colors.mutedText : Colors.text
+                                padding: Metrics.spaceMd
+                                spacing: Metrics.spaceXxs
+                                title: modelData.title
+
+                                Repeater {
+                                    model: group.modelData.rows
+                                    RowLayout {
+                                        id: bindRow
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        Layout.minimumHeight: Metrics.controlHeight
+                                        spacing: Metrics.spaceMd
+                                        ShellText {
+                                            Layout.fillWidth: true
+                                            elide: Text.ElideRight
+                                            text: bindRow.modelData.title
+                                            font.family: bindRow.modelData.raw ? Typography.monoFamily : Typography.family
+                                            color: bindRow.modelData.raw ? Colors.mutedText : Colors.text
+                                        }
+                                        KeyChips { keys: bindRow.modelData.keys }
+                                    }
                                 }
-                                KeyChips { keys: bindRow.modelData.keys }
                             }
                         }
+
+                        // The columns are level, not equal; whatever is left
+                        // under the shortest one is this, not a stretched card.
+                        Item { Layout.fillHeight: true }
                     }
                 }
             }

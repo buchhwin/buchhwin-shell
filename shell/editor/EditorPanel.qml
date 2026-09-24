@@ -13,7 +13,10 @@ Rectangle {
     default property alias content: column.data
     property alias contentSpacing: column.spacing
 
-    implicitHeight: column.implicitHeight + Metrics.spaceLg * 2
+    // `radiusPanel` is `radiusCard` plus `panelPadding`, so the content sits
+    // `panelPadding` in: with a smaller inset the corner of a card inside
+    // did not run parallel to the panel's.
+    implicitHeight: column.implicitHeight + Metrics.panelPadding * 2
     radius: Metrics.radiusPanel
     color: Colors.panelFor("editor")
     border.width: Metrics.borderWidth
@@ -23,7 +26,7 @@ Rectangle {
 
     Flickable {
         anchors.fill: parent
-        anchors.margins: Metrics.spaceLg
+        anchors.margins: Metrics.panelPadding
         contentHeight: column.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds

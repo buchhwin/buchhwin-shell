@@ -1,6 +1,6 @@
 [Unit]
 Description=buchhwin-shell graphical session
-Documentation=file:///home/%u/.local/share/buchhwin-shell/README.md
+Documentation=file://%h/.local/share/buchhwin-shell/README.md
 Wants=graphical-session-pre.target
 Wants=graphical-session.target
 After=graphical-session-pre.target

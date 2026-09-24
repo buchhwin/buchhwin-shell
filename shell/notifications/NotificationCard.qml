@@ -15,17 +15,32 @@ ShellCard {
     readonly property var actions: notification ? notification.actions : []
     readonly property var defaultAction: actions.find(action => action.identifier === "default") || null
     readonly property var visibleActions: actions.filter(action => action.identifier !== "default").slice(0, 3)
-    readonly property bool hovered: hover.hovered
     signal closed()
 
-    color: popup ? Colors.panelFor("notificationPopups") : Colors.surface
+    // A card with a default action is a button-shaped card and takes the
+    // One UI feedback like the control center's tiles; one without still
+    // closes on a click, but keeps the hand cursor off and the dip too.
+    interactive: defaultAction !== null
+    hovered: hover.hovered
+    pressed: mouse.pressed && mouse.containsMouse
+
+    // A popup is a floating panel, a card in the notification centre is a
+    // card: the semantic radii, not sizes off the ladder, and the content
+    // sits the inset that radius was derived from.
+    readonly property int inset: popup ? Metrics.panelPadding : Metrics.spaceLg
+    // A popup is a floating panel and keeps the panel colour; in the centre
+    // the card steps like any other card.
+    color: popup ? Colors.panelFor("notificationPopups")
+        : interactive && pressed ? pressedColor
+        : interactive && hovered ? hoverColor : baseColor
     border.color: critical ? Colors.warning : popup ? Colors.panelBorder : Colors.border
-    radius: popup ? Metrics.radiusXl : Metrics.radiusLg
-    implicitHeight: content.implicitHeight + Metrics.spaceLg * 2
+    radius: popup ? Metrics.radiusPanel : Metrics.radiusCard
+    implicitHeight: content.implicitHeight + inset * 2
 
     HoverHandler { id: hover }
 
     MouseArea {
+        id: mouse
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         cursorShape: root.defaultAction ? Qt.PointingHandCursor : Qt.ArrowCursor
@@ -41,7 +56,7 @@ ShellCard {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: Metrics.spaceLg
+        anchors.margins: root.inset
         spacing: Metrics.spaceSm
 
         RowLayout {

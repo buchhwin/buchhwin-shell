@@ -142,7 +142,7 @@ Variants {
                 function onEditModeChanged() {
                     if (LayoutService.editMode) {
                         PanelService.close()
-                        PanelService.screen = PanelService.focusedScreen()
+                        PanelService.useFocusedScreen()
                         editorRoot.forceActiveFocus()
                     } else {
                         editorRoot.selection = []
@@ -243,7 +243,7 @@ Variants {
             // (Super+Alt+D), so the selection is cleared on the change itself.
             Connections {
                 target: LayoutService
-                function onModeChanged() {
+                function onDesktopModeChanged() {
                     editorRoot.selection = []
                     editorRoot.selectBar("", -1)
                 }
@@ -368,21 +368,21 @@ Variants {
                     }
                     SegmentedControl {
                         style: "pill"
-                        current: LayoutService.activeProfile
-                        options: LayoutService.profileNames.map(name => ({
+                        current: LayoutService.activeMode
+                        options: LayoutService.modeNames.map(name => ({
                             value: name,
                             label: Profile.label(name, LayoutService.templates)
                         }))
-                        onSelected: value => LayoutService.setActiveProfile(value)
+                        onSelected: value => LayoutService.setActiveMode(value)
                     }
                     // The desktop mode decides what this editor edits.
                     SegmentedControl {
                         style: "pill"
-                        current: LayoutService.mode
+                        current: LayoutService.desktopMode
                         options: [{ value: "widgets", label: "Widgets", icon: Icons.edit },
                                   { value: "pills", label: "Bar", icon: "󰘔" },
                                   { value: "notch", label: "Notch", icon: "󱂩" }]
-                        onSelected: value => { editorRoot.selection = []; editorRoot.selectBar("", -1); LayoutService.setMode(value) }
+                        onSelected: value => { editorRoot.selection = []; editorRoot.selectBar("", -1); LayoutService.setDesktopMode(value) }
                     }
                     ShellButton {
                         visible: !editorRoot.notchMode
@@ -392,13 +392,15 @@ Variants {
                     }
                     ShellButton {
                         visible: editorRoot.widgetsMode
-                        icon: Icons.edit
+                        icon: Icons.grid
                         variant: editorRoot.gridEnabled ? "accent" : "surface"
+                        toolTip: editorRoot.gridEnabled ? "Stop snapping to the grid" : "Snap to the grid"
                         onClicked: editorRoot.gridEnabled = !editorRoot.gridEnabled
                     }
                     ShellButton {
                         icon: Icons.undo
                         enabledState: LayoutService.undoStack.length > 0
+                        toolTip: "Undo"
                         onClicked: LayoutService.undo()
                     }
                     ShellButton { text: "Done"; variant: "accent"; onClicked: LayoutService.editMode = false }
@@ -411,7 +413,7 @@ Variants {
                 anchors.bottomMargin: Metrics.spaceSm
                 // One sentence for both surfaces: the bar leaves out what only
                 // free placement can do rather than saying it differently.
-                text: editorRoot.notchMode ? "Drag what the notch carries between its two rows · Ctrl+Z undoes · Switch the mode above · Enter done · Esc back"
+                text: editorRoot.notchMode ? "Drag to reorder what the notch carries · ↑ ↓ send an item to the other row · Ctrl+Z undoes · Switch the mode above · Enter done · Esc back"
                     : editorRoot.barMode ? "Drag or arrow keys · Tab selects · A adds · S changes the look · Del removes · Ctrl+Z undoes · Esc back"
                     : "Drag or arrow keys · Alt disables snapping · Shift+Click multi-selects · Tab selects · A adds · S changes the look · +/− resizes · G grid · Del removes · Ctrl+Z undoes · Esc back"
                 role: "small"

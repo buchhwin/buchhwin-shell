@@ -51,6 +51,21 @@ ShellRoot {
         T.eq(N.livePopups(["a"], []), [], "an empty server list clears the queue")
         T.eq(N.livePopups([], ["a"]), [], "an empty queue stays empty")
 
+        // What the notch shows for the newest popup, from the notification
+        // itself: the picture by the card's route, else a bell.
+        const icons = name => "/icons/" + name + ".png"
+        T.eq(N.notchContent({ image: "/tmp/shot.png", appIcon: "signal", summary: "Anna", appName: "Signal", body: "six" }, icons),
+             { kind: "notification", icon: "", iconSource: "/tmp/shot.png", title: "Anna", subtitle: "six" },
+             "the image the notification brought comes first")
+        T.eq(N.notchContent({ appIcon: "signal", summary: "Anna", appName: "Signal" }, icons).iconSource,
+             "/icons/signal.png", "else the app icon, resolved by the caller")
+        T.eq(N.notchContent({ appName: "Updates", body: "12 packages" }, icons),
+             { kind: "notification", icon: "󰂚", iconSource: "", title: "Updates", subtitle: "12 packages" },
+             "else a bell, and the app name stands in for a missing summary")
+        T.eq(N.notchContent({ appIcon: "nonsense" }, name => "").icon, "󰂚",
+             "an app icon that resolves to nothing is a bell too, like on the card")
+        T.eq(N.notchContent(null, icons).title, "Notification", "no notification at all does not throw")
+
         T.finish("NotificationPopupTest")
     }
 }

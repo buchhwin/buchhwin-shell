@@ -12,8 +12,10 @@ ColumnLayout {
     spacing: Metrics.spaceLg
 
     // Keeps the "last checked" text ticking while the page is open.
-    Component.onCompleted: UpdatesService.track()
-    Component.onDestruction: UpdatesService.untrack()
+    PageActivity {
+        onOpened: UpdatesService.track()
+        onClosed: UpdatesService.untrack()
+    }
 
     component UpdateRow: RowLayout {
         id: row
@@ -43,7 +45,7 @@ ColumnLayout {
             visible: row.security
             implicitWidth: badgeText.implicitWidth + Metrics.spaceSm * 2
             implicitHeight: badgeText.implicitHeight + Metrics.spaceXxs * 2
-            radius: Metrics.radiusPill
+            radius: Metrics.pillRadius(height)
             color: Colors.warningSoft
             ShellText {
                 id: badgeText
@@ -67,6 +69,7 @@ ColumnLayout {
             title: UpdatesService.summary
             subtitle: UpdatesService.checking ? "Checking …" : "Last checked: " + UpdatesService.checkedText
             ShellButton {
+                focusOnTab: true
                 icon: Icons.refresh
                 text: UpdatesService.checking ? "Checking …" : "Check now"
                 compact: true
@@ -93,10 +96,73 @@ ColumnLayout {
 
     SettingsSection {
         Layout.fillWidth: true
+        title: "The shell"
+        description: "buchhwin-shell itself, from the git remote its checkout follows. Updating fast-forwards the checkout, re-runs the installer and restarts the shell - open panels close for a moment."
+
+        ListRow {
+            focusOnTab: true
+            Layout.fillWidth: true
+            icon: "󰊢"
+            active: UpdatesService.shellUpdatable
+            title: UpdatesService.shellChecking ? "Checking …" : UpdatesService.shellSummary
+            subtitle: UpdatesService.shellSubtitle
+            onClicked: if (UpdatesService.shell.commits.length) UpdatesService.shellExpanded = !UpdatesService.shellExpanded
+            Row {
+                spacing: Metrics.spaceSm
+                ShellButton {
+                    focusOnTab: true
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: UpdatesService.shell.repo === "ok"
+                    icon: "󰚰"
+                    text: UpdatesService.shellUpdating ? "Updating …" : "Update the shell"
+                    compact: true
+                    variant: UpdatesService.shellUpdatable ? "accent" : "surface"
+                    enabledState: UpdatesService.actionsAllowed && UpdatesService.shellUpdatable && !UpdatesService.shellUpdating
+                    toolTip: !UpdatesService.actionsAllowed ? "Only available in the buchhwin-shell session"
+                        : UpdatesService.shell.dirty || UpdatesService.shell.ahead > 0 ? "Refused while the checkout has local changes or local commits" : ""
+                    onClicked: UpdatesService.updateShell()
+                }
+                ShellIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: UpdatesService.shell.commits.length > 0
+                    glyph: UpdatesService.shellExpanded ? Icons.collapse : Icons.forward
+                    size: Metrics.iconXs
+                    color: Colors.mutedText
+                }
+            }
+        }
+        Repeater {
+            model: UpdatesService.shellExpanded ? UpdatesService.shell.commits : []
+            UpdateRow {
+                required property var modelData
+                icon: "󰜘"
+                title: modelData.subject
+                subtitle: modelData.hash
+            }
+        }
+        ShellText {
+            Layout.fillWidth: true
+            visible: UpdatesService.shell.repo === "local"
+            text: "This checkout follows no remote: it is the development machine, where scripts/deploy.sh moves the session forward."
+            role: "caption"
+            wrapMode: Text.Wrap
+        }
+        ShellText {
+            Layout.fillWidth: true
+            visible: UpdatesService.shell.repo === "ok" && (UpdatesService.shell.dirty || UpdatesService.shell.ahead > 0)
+            text: "Updating is refused while the checkout has local changes or commits the remote does not have - nothing of yours is ever merged over. Commit or stash them, or push them, and check again."
+            role: "caption"
+            wrapMode: Text.Wrap
+        }
+    }
+
+    SettingsSection {
+        Layout.fillWidth: true
         title: "System packages"
         description: "Fedora packages from dnf. Discover asks for the administrator password before installing."
 
         ListRow {
+            focusOnTab: true
             Layout.fillWidth: true
             icon: "󰏗"
             active: UpdatesService.packages.length > 0
@@ -110,6 +176,7 @@ ColumnLayout {
             Row {
                 spacing: Metrics.spaceSm
                 ShellButton {
+                    focusOnTab: true
                     anchors.verticalCenter: parent.verticalCenter
                     icon: "󰏔"
                     text: "Install in Discover"
@@ -145,6 +212,7 @@ ColumnLayout {
         description: "Apps and runtimes of the system and your user installation."
 
         ListRow {
+            focusOnTab: true
             Layout.fillWidth: true
             icon: "󰏖"
             active: UpdatesService.flatpaks.length > 0
@@ -157,6 +225,7 @@ ColumnLayout {
             Row {
                 spacing: Metrics.spaceSm
                 ShellButton {
+                    focusOnTab: true
                     anchors.verticalCenter: parent.verticalCenter
                     visible: UpdatesService.userFlatpakCount > 0
                     icon: "󰆍"
@@ -198,7 +267,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Automatic check"
-        description: "Looks for updates in the background and never installs anything."
+        description: "Looks for updates in the background and installs nothing - unless the shell's own updates are handed to it below."
 
         SettingRow {
             label: "Check"
@@ -221,6 +290,18 @@ ColumnLayout {
                 checked: UpdatesService.notifyEnabled
                 enabledState: UpdatesService.checkHours > 0
                 onToggled: value => SettingsService.set("updates.notify", value)
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Install shell updates automatically"
+            hint: "When a check finds the checkout behind its remote and clean, it is fast-forwarded and the shell restarts itself. System packages and Flatpaks are never touched."
+            ShellToggle {
+                focusOnTab: true
+                checked: UpdatesService.shellAuto
+                enabledState: UpdatesService.checkHours > 0
+                onToggled: value => SettingsService.set("updates.shellAuto", value)
             }
         }
         ShellText {

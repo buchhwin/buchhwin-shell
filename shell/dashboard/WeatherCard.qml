@@ -36,11 +36,16 @@ ColumnLayout {
             Layout.fillWidth: true
             row: true
             icon: root.status === "error" ? "󰖪" : "󰖐"
-            title: "Weather"
-            description: root.status === "disabled" ? "Weather is turned off in Settings"
-                : root.status === "noLocation" ? "Set a location to see the weather"
-                : root.status === "error" ? "Weather service unavailable, retrying the next time you open this"
+            // The state is the title, as in every other empty state; the card's
+            // name is not news. The description is only where there is more to
+            // say than the button under it already does.
+            title: root.status === "disabled" ? "Weather is turned off"
+                : root.status === "noLocation" ? "No location set"
+                : root.status === "error" ? "Weather is unavailable"
                 : "Loading weather …"
+            description: root.status === "disabled" ? "Settings > Weather"
+                : root.status === "error" ? "Retrying the next time you open this"
+                : ""
 
             ShellButton {
                 visible: root.status === "noLocation" || root.status === "disabled"

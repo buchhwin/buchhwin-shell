@@ -16,8 +16,19 @@ ShellPanel {
     cardWidth: Metrics.settingsWidth
     cardHeight: Metrics.settingsHeight
     scrimColor: Colors.scrim
+    // Dragged by the strip along the top of the card - the "Settings" title on
+    // the left and the page title on the right, neither of which is a control.
+    // A double click on it puts the window back in the middle.
+    movable: true
+    savedMoveX: SettingsService.value("desktop.settingsMoveX")
+    savedMoveY: SettingsService.value("desktop.settingsMoveY")
+    onMoved: (x, y) => SettingsService.setAll({ "desktop.settingsMoveX": Math.round(x),
+                                                "desktop.settingsMoveY": Math.round(y) })
     property string page: "appearance"
     property string search: ""
+    // Once a page has been shown it stays: see the page Loader below.
+    property bool pageKept: false
+    onShownChanged: if (shown) pageKept = true
     // Sidebar rows (group headings and pages) filtered by the search.
     readonly property var rows: Nav.rows(search)
     readonly property var visiblePageIds: Nav.pageIds(rows)
@@ -30,6 +41,16 @@ ShellPanel {
     onPageChanged: {
         contentFlick.contentY = 0
         Qt.callLater(revealPage)
+    }
+
+    // The first page the search leaves visible becomes the page.
+    function selectFirstMatch() {
+        selectTimer.stop()
+        if (visiblePageIds.length) page = visiblePageIds[0]
+    }
+    // A selection the timer has not made yet, made now.
+    function settleSearch() {
+        if (selectTimer.running) selectFirstMatch()
     }
 
     // Scroll the sidebar so the selected page row is visible.
@@ -74,13 +95,22 @@ ShellPanel {
                 Layout.fillWidth: true
                 icon: Icons.search
                 placeholder: "Search settings …"
+                // The list filters on every keystroke; the page follows after
+                // a pause. Selecting on each character replaced the page each
+                // time, and a page is destroyed and built again when it is
+                // replaced - its radios flickered and its scans (Bluetooth,
+                // Wi-Fi) started over per letter typed.
                 onTextChanged: {
                     root.search = text
-                    if (root.visiblePageIds.length) root.page = root.visiblePageIds[0]
+                    selectTimer.restart()
                 }
-                // Up/Down walk the visible pages; headings are skipped.
-                Keys.onUpPressed: root.page = Nav.step(root.rows, root.page, -1) || root.page
-                Keys.onDownPressed: root.page = Nav.step(root.rows, root.page, 1) || root.page
+                onAccepted: root.selectFirstMatch()
+                // Up/Down walk the visible pages; headings are skipped. A
+                // selection still waiting on the timer lands first, so the
+                // step starts from the match and not from the page before.
+                Keys.onUpPressed: { root.settleSearch(); root.page = Nav.step(root.rows, root.page, -1) || root.page }
+                Keys.onDownPressed: { root.settleSearch(); root.page = Nav.step(root.rows, root.page, 1) || root.page }
+                Timer { id: selectTimer; interval: 200; onTriggered: root.selectFirstMatch() }
             }
 
             // The page list scrolls when it is taller than the panel (small or
@@ -177,12 +207,18 @@ ShellPanel {
                         subtitle: root.current.subtitle || ""
                     }
 
-                    // Panels hide instead of closing; unloading the page on close stops
-                    // what it started (scans, discovery, previews, refresh timers).
+                    // Panels hide instead of closing, and the page stays with the
+                    // panel: unloaded on every close, each open paid the first
+                    // layout and first render of a 400-600 item page again (a
+                    // 101 ms worst frame in the real session, against 17 ms for
+                    // the dashboard, which keeps its content). What a page
+                    // starts - scans, discovery, trackers, previews - it stops
+                    // through PageActivity, which follows the window rather
+                    // than the page's lifetime.
                     Loader {
                         id: pageLoader
                         Layout.fillWidth: true
-                        active: root.shown
+                        active: root.pageKept
                         source: "pages/" + root.page.charAt(0).toUpperCase() + root.page.slice(1) + "Page.qml"
                     }
                 }

@@ -13,8 +13,10 @@ ColumnLayout {
     readonly property var adapter: BluetoothService.adapter
     readonly property var known: BluetoothService.connected.concat(BluetoothService.paired)
 
-    Component.onCompleted: BluetoothService.setDiscovering(true)
-    Component.onDestruction: BluetoothService.setDiscovering(false)
+    PageActivity {
+        onOpened: BluetoothService.setDiscovering(true)
+        onClosed: BluetoothService.setDiscovering(false)
+    }
 
     SettingsSection {
         Layout.fillWidth: true
@@ -27,6 +29,7 @@ ColumnLayout {
             labelFills: true
             label: "Use Bluetooth"
             ShellToggle {
+                focusOnTab: true
                 checked: BluetoothService.enabled
                 enabledState: BluetoothService.available
                 onToggled: value => BluetoothService.setEnabled(value)
@@ -63,6 +66,7 @@ ColumnLayout {
         Repeater {
             model: root.known
             ListRow {
+                focusOnTab: true
                 required property var modelData
                 Layout.fillWidth: true
                 icon: BluetoothService.deviceIcon(modelData)
@@ -73,6 +77,7 @@ ColumnLayout {
                 Row {
                     spacing: Metrics.spaceSm
                     ShellButton {
+                        focusOnTab: true
                         icon: Icons.remove
                         compact: true
                         variant: "ghost"
@@ -84,6 +89,7 @@ ColumnLayout {
                         onClicked: BluetoothService.forget(modelData)
                     }
                     ShellButton {
+                        focusOnTab: true
                         text: modelData.connected ? "Disconnect" : "Connect"
                         compact: true
                         variant: modelData.connected ? "surface" : "accent"
@@ -110,6 +116,7 @@ ColumnLayout {
         Repeater {
             model: BluetoothService.nearby
             ListRow {
+                focusOnTab: true
                 required property var modelData
                 Layout.fillWidth: true
                 icon: BluetoothService.deviceIcon(modelData)
@@ -117,6 +124,7 @@ ColumnLayout {
                 subtitle: BluetoothService.deviceStatus(modelData) + " · " + modelData.address
                 onClicked: BluetoothService.toggleConnection(modelData)
                 ShellButton {
+                    focusOnTab: true
                     text: modelData.pairing ? "Pairing …" : "Pair"
                     compact: true
                     variant: "accent"
@@ -127,6 +135,7 @@ ColumnLayout {
         }
         RowLayout {
             ShellButton {
+                focusOnTab: true
                 icon: Icons.refresh
                 text: BluetoothService.discovering ? "Stop searching" : "Search again"
                 compact: true

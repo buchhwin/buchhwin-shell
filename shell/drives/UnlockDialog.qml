@@ -64,6 +64,7 @@ ShellPanel {
                 Layout.fillWidth: true
                 spacing: Metrics.spaceSm
                 ShellTextField {
+                    focusOnTab: true
                     id: secretField
                     Layout.fillWidth: true
                     icon: "󰌆"
@@ -73,8 +74,10 @@ ShellPanel {
                     onEscapePressed: if (!text.length) PanelService.close("driveUnlock")
                 }
                 ShellButton {
-                    icon: root.showSecret ? "󰈉" : "󰈈"
+                    focusOnTab: true
+                    icon: root.showSecret ? Icons.conceal : Icons.reveal
                     variant: "ghost"
+                    toolTip: root.showSecret ? "Hide" : "Show"
                     onClicked: root.showSecret = !root.showSecret
                 }
             }
@@ -84,7 +87,7 @@ ShellPanel {
                 labelFills: true
                 label: "Open after unlocking"
                 hint: "Mount the volume and show it in the file manager"
-                ShellToggle { checked: root.openAfter; onToggled: value => root.openAfter = value }
+                ShellToggle { focusOnTab: true; checked: root.openAfter; onToggled: value => root.openAfter = value }
             }
 
             ShellText {
@@ -107,8 +110,9 @@ ShellPanel {
             spacing: Metrics.spaceSm
             ShellText { visible: root.busy; text: "Unlocking …"; role: "small"; muted: true }
             Item { Layout.fillWidth: true }
-            ShellButton { text: "Cancel"; variant: "ghost"; onClicked: PanelService.close("driveUnlock") }
+            ShellButton { focusOnTab: true; text: "Cancel"; variant: "ghost"; onClicked: PanelService.close("driveUnlock") }
             ShellButton {
+                focusOnTab: true
                 text: "Unlock"
                 variant: "accent"
                 enabledState: !root.busy && secretField.text.length > 0 && root.volume !== null

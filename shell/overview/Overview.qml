@@ -40,11 +40,29 @@ ShellPanel {
     property int selected: 0
     readonly property var flat: Logic.flatWindows(workspaces, search.text)
     readonly property var selectedWindow: flat.length ? flat[Math.min(selected, flat.length - 1)] : null
-    readonly property int columns: Math.max(1, Math.min(4, workspaces.length + 1))
+    // **One row per monitor.** A monitor's "New workspace" card belongs beside
+    // its workspaces, not under them, so the widest row decides the column
+    // count and every row lines up with it. The count used to be the *session's*
+    // workspace total capped at four, which had nothing to do with how many
+    // cards any one monitor has: five workspaces and their new-workspace card
+    // came out as four and two.
+    //
+    // The cards shrink to fit rather than wrapping - down to
+    // `overviewCardMinWidth`, below which a preview shows nothing at all and
+    // wrapping is the lesser evil.
+    readonly property int widestRow: groups.reduce(
+        (most, group) => Math.max(most, group.workspaces.length + 1), 1)
+    // The room the rows really have, which is the flickable they sit in - not
+    // the screen less a guess at the margins. Taking the screen made the count
+    // one too high, and the card that did not fit wrapped to a line of its own,
+    // which is the thing this is here to stop.
+    readonly property real cardsRoom: Math.max(0, cardsFlick.width)
+    readonly property int columns: Math.max(1, Math.min(widestRow,
+        Math.floor((cardsRoom + Metrics.spaceXl) / (Metrics.overviewCardMinWidth + Metrics.spaceXl))))
     // Not `cardWidth`: that is the panel's own width. This is the width of one
     // workspace card inside it.
     readonly property real workspaceWidth: Math.min(Metrics.overviewCardWidth,
-        (width - Metrics.screenMargin * 4 - Metrics.spaceXl * (columns - 1)) / columns)
+        (cardsRoom - Metrics.spaceXl * (columns - 1)) / columns)
 
     function refresh() {
         Hyprland.refreshToplevels()
@@ -249,7 +267,7 @@ ShellPanel {
                                     radius: Metrics.radiusCard
                                     color: card.dropHover ? Colors.accentSoft : Colors.panelFor("overview")
                                     border.width: card.modelData.active || card.dropHover ? Metrics.focusBorderWidth : Metrics.borderWidth
-                                    border.color: card.modelData.active || card.dropHover ? Colors.accent : Colors.panelBorder
+                                    border.color: card.modelData.active || card.dropHover ? Colors.scrimAccent : Colors.panelBorder
                                     clip: true
 
                                     // The wallpaper of the monitor this workspace is
@@ -334,7 +352,7 @@ ShellPanel {
                                             radius: Metrics.radiusInner
                                             color: Colors.elevatedSurface
                                             border.width: isSelected || hover.hovered ? Metrics.focusBorderWidth : Metrics.borderWidth
-                                            border.color: isSelected ? Colors.accent : hover.hovered ? Colors.borderStrong : Colors.border
+                                            border.color: isSelected ? Colors.scrimAccent : hover.hovered ? Colors.borderStrong : Colors.border
                                             clip: true
                                             Drag.active: dragArea.drag.active
                                             Drag.keys: ["buchhwin-window"]
@@ -360,7 +378,7 @@ ShellPanel {
                                             ShellIcon {
                                                 anchors.centerIn: parent
                                                 visible: !preview.hasContent
-                                                glyph: "󰖯"
+                                                glyph: Icons.window
                                                 size: Metrics.iconLg
                                                 color: Colors.mutedText
                                             }
@@ -369,6 +387,15 @@ ShellPanel {
                                                 anchors.left: parent.left
                                                 anchors.right: parent.right
                                                 anchors.bottom: parent.bottom
+                                                // Inside the thumbnail's border, with its
+                                                // bottom corners rounded to match: a
+                                                // Rectangle does not clip its children to
+                                                // its radius (see the wallpaper above), so
+                                                // a square bar stuck out of the round
+                                                // corners.
+                                                anchors.margins: Metrics.borderWidth
+                                                bottomLeftRadius: Math.max(0, Metrics.radiusInner - Metrics.borderWidth)
+                                                bottomRightRadius: Math.max(0, Metrics.radiusInner - Metrics.borderWidth)
                                                 height: label.implicitHeight + Metrics.spaceXs * 2
                                                 visible: thumb.isSelected || hover.hovered
                                                 color: Colors.pill
@@ -410,7 +437,7 @@ ShellPanel {
 
         ShellText {
             Layout.alignment: Qt.AlignHCenter
-            text: "Enter focuses · Del closes · Drag moves · Middle-click closes · Esc"
+            text: "Enter focuses · Del closes · Drag moves · Middle-click closes · Esc closes"
             role: "caption"
             color: Colors.scrimMutedText
         }

@@ -9,7 +9,7 @@ work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 
 printf 'Looking up the latest %s release …\n' "$repo"
-url=$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" \
+url=$(curl -fsSL --connect-timeout 15 --max-time 300 "https://api.github.com/repos/$repo/releases/latest" \
   | grep -oE '"browser_download_url": *"[^"]*macOS\.tar\.xz"' \
   | sed -E 's/.*"(https[^"]+)"/\1/' | head -n1)
 if [[ -z $url ]]; then
@@ -18,7 +18,7 @@ if [[ -z $url ]]; then
 fi
 
 printf 'Downloading %s\n' "$url"
-curl -fL --progress-bar -o "$work/macOS.tar.xz" "$url"
+curl -fL --progress-bar --connect-timeout 15 --max-time 300 -o "$work/macOS.tar.xz" "$url"
 tar -xJf "$work/macOS.tar.xz" -C "$work"
 mkdir -p -- "$target"
 for theme in "$work"/macOS*; do

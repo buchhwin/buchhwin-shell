@@ -4,7 +4,6 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
-import "../../services/calendar/WeekLogic.js" as Week
 import "../../services/arrange/ArrangeLogic.js" as Arrange
 import "../../services/dashboard/DashboardLogic.js" as Dash
 import "../../services/arrange/FitLogic.js" as Fit
@@ -16,31 +15,25 @@ ShellPanel {
     id: root
     panelId: "dashboard"
     placement: "top-right"
-    // Month, week or day. Only the week view widens the card; the
-    // clock/weather column keeps its width.
-    readonly property string calendarView: SettingsService.value("calendar.dashboardView")
-    readonly property bool weekView: calendarView === "week"
-    readonly property bool dayView: calendarView === "day"
-    // Both time-grid views replace the month calendar.
-    readonly property bool gridView: weekView || dayView
     // The dashboard is a grid the user sizes, the way the control center and
     // the notch are. Its own size is dragged from the grip on its bottom left
-    // corner while the cards are being arranged; until it is, the width the
-    // chosen view asks for is the default - the week view needs more room than
-    // the month, and nobody should have to drag for that.
+    // corner while the cards are being arranged; until it is, the default is
+    // the width the month needs.
     readonly property real minPanelHeight: header.height + Metrics.dashboardGridUnit
         + Metrics.panelPadding * 2 + Metrics.spaceLg
-    readonly property var sizeBounds: ({ minWidth: Metrics.dashboardMinWidth,
+    sizeBounds: ({ minWidth: Metrics.dashboardMinWidth,
                                          maxWidth: Metrics.dashboardMaxWidth,
-                                         width: weekView ? Metrics.dashboardWeekWidth : Metrics.dashboardWidth,
+                                         width: Metrics.dashboardWidth,
                                          minHeight: minPanelHeight,
                                          room: roomBelowTop })
     readonly property var box: Arrange.panelBox(SettingsService.value("desktop.dashboardWidth"),
                                                 SettingsService.value("desktop.dashboardHeight"),
                                                 sizeBounds)
-    property bool sizing: false
-    property real dragWidth: 0
-    property real dragHeight: 0
+    // The grip and the drag live in ShellPanel; this says what it may be
+    // resized to, when the grip is reachable and where the result goes.
+    resizable: true
+    gripShown: root.editing
+    onResized: (width, height) => LayoutService.dashboardResize(width, height)
     cardWidth: sizing ? dragWidth : box.width
     cardHeight: sizing ? dragHeight : box.height
     readonly property bool editing: LayoutService.dashboardEditing
@@ -55,19 +48,14 @@ ShellPanel {
 
     SystemClock { id: clock; precision: SystemClock.Minutes }
 
-    // The month grid is one of the cards now: it can be hidden by the view, or
-    // taken off the dashboard altogether, so it is held by reference rather
-    // than by an id, and every path that used to reach for it copes without.
+    // The month grid is one of the cards: it can be taken off the dashboard
+    // altogether, so it is held by reference rather than by an id, and every
+    // path that used to reach for it copes without.
     property Item monthGrid: null
 
-    // The calendar service reads the six-week grid of one month: the shown
-    // month, in the week view the month of the week's Monday (its grid always
-    // contains the whole week), in the day view the month of the shown day.
+    // The calendar service reads the six-week grid of one month.
     function syncMonth() {
-        if (gridView) {
-            const first = Week.rangeStart(selectedDay, dayView ? 1 : 7, 1)
-            CalendarService.showMonth(first.getFullYear(), first.getMonth())
-        } else if (monthGrid) {
+        if (monthGrid) {
             CalendarService.showMonth(monthGrid.year, monthGrid.month)
         } else {
             // No month grid on the dashboard: the day's events still need the
@@ -83,12 +71,6 @@ ShellPanel {
         monthGrid.year = day.getFullYear()
         monthGrid.month = day.getMonth()
         monthGrid.selectedDate = day
-    }
-
-    onSelectedDayChanged: if (gridView) syncMonth()
-    onCalendarViewChanged: {
-        if (!gridView) showDay(selectedDay)
-        syncMonth()
     }
 
     onShownChanged: if (!shown) {
@@ -113,72 +95,6 @@ ShellPanel {
     // The grip that sizes the panel, on the corner that grows. On the overlay
     // rather than in the card, which clips. Only while the cards are being
     // arranged, the way the control center's is.
-    Rectangle {
-        parent: root.overlay
-        visible: root.editing
-        x: root.cardRect.x + Metrics.spaceXxs
-        y: root.cardRect.y + root.cardRect.height - height - Metrics.spaceXxs
-        width: Metrics.iconSm
-        height: width
-        radius: width / 2
-        color: grip.pulling || grip.containsMouse ? Colors.accentHover : Colors.accent
-        border.width: Metrics.borderWidth
-        border.color: Colors.accent
-
-        MouseArea {
-            id: grip
-            anchors.fill: parent
-            anchors.margins: -Metrics.spaceXs
-            acceptedButtons: Qt.LeftButton
-            hoverEnabled: true
-            preventStealing: true
-            cursorShape: Qt.SizeBDiagCursor
-            readonly property bool pulling: root.sizing
-            // The corner the card is anchored by, taken once at the press: the
-            // live edge moves with the width wherever the panel is anchored to
-            // something, and the drag would chase its own result.
-            property real fromRight: 0
-            property real fromTop: 0
-            property real pressX: 0
-            property real pressY: 0
-            property bool moved: false
-            onPressed: mouse => {
-                const point = mapToItem(root.overlay, mouse.x, mouse.y)
-                fromRight = root.cardRect.x + root.cardRect.width
-                fromTop = root.cardRect.y
-                pressX = point.x
-                pressY = point.y
-                moved = false
-                root.dragWidth = root.cardRect.width
-                root.dragHeight = root.cardRect.height
-                root.sizing = true
-            }
-            onPositionChanged: mouse => {
-                if (!root.sizing) return
-                const point = mapToItem(root.overlay, mouse.x, mouse.y)
-                if (!moved) {
-                    if (Math.abs(point.x - pressX) + Math.abs(point.y - pressY) < Metrics.dragThreshold) return
-                    moved = true
-                }
-                const wanted = Arrange.panelDragTo(point.x, point.y,
-                                                   { right: fromRight, top: fromTop }, root.sizeBounds)
-                root.dragWidth = wanted.width
-                root.dragHeight = wanted.height
-            }
-            onReleased: {
-                if (!root.sizing) return
-                root.sizing = false
-                // A press that never moved is not a resize.
-                if (moved) LayoutService.dashboardResize(root.dragWidth, root.dragHeight)
-                moved = false
-            }
-            onCanceled: {
-                root.sizing = false
-                moved = false
-            }
-        }
-    }
-
     ColumnLayout {
         width: parent.width
         spacing: Metrics.spaceLg
@@ -189,21 +105,6 @@ ShellPanel {
             ShellText { text: "buchhwin-shell"; role: "label"; color: Colors.text; font.capitalization: Font.MixedCase }
             Rectangle { Layout.preferredWidth: Metrics.spaceLg; height: Metrics.borderWidth; color: Colors.mutedText }
             Item { Layout.fillWidth: true }
-            // Taller than the header text: it overlaps the spacing instead of
-            // growing the header (the dashboard already fills 800 px screens).
-            Item {
-                Layout.preferredWidth: viewSwitch.implicitWidth
-                Layout.preferredHeight: shortcutLabel.implicitHeight
-                SegmentedControl {
-                    id: viewSwitch
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: implicitWidth
-                    height: Metrics.controlHeightSm
-                    options: [{ value: "month", label: "Month" }, { value: "week", label: "Week" }, { value: "day", label: "Day" }]
-                    current: root.calendarView
-                    onSelected: value => SettingsService.set("calendar.dashboardView", value)
-                }
-            }
             ShellButton {
                 Layout.leftMargin: Metrics.spaceMd
                 icon: Icons.edit
@@ -336,7 +237,6 @@ ShellPanel {
         case "clock": return clockCard
         case "weather": return weatherCard
         case "calendar": return calendarCard
-        case "agenda": return agendaCard
         case "events": return eventsCard
         case "media": return mediaCard
         case "system": return systemCard
@@ -414,9 +314,7 @@ ShellPanel {
     Component {
         id: calendarCard
         Item {
-            // The month grid and the week grid are two cards, and the view
-            // switch decides which of them has anything to show.
-            readonly property bool shown: !root.gridView
+            readonly property bool shown: true
             CardSection {
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -429,39 +327,13 @@ ShellPanel {
                     today: clock.date
                     selectable: true
                     eventDays: CalendarService.eventDays
-                    onYearChanged: if (!root.gridView) CalendarService.showMonth(year, month)
-                    onMonthChanged: if (!root.gridView) CalendarService.showMonth(year, month)
+                    onYearChanged: CalendarService.showMonth(year, month)
+                    onMonthChanged: CalendarService.showMonth(year, month)
                     onDaySelected: day => root.selectedDay = day
                     // The panel reaches for the grid rather than the other way
                     // round, because this card can be hidden or removed.
                     Component.onCompleted: root.monthGrid = grid
                     Component.onDestruction: if (root.monthGrid === grid) root.monthGrid = null
-                }
-            }
-        }
-    }
-
-    Component {
-        id: agendaCard
-        Item {
-            readonly property bool shown: root.gridView
-            CardSection {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                padding: Metrics.spaceMd
-
-                WeekView {
-                    Layout.fillWidth: true
-                    dayCount: root.dayView ? 1 : 7
-                    today: clock.date
-                    selectedDate: root.selectedDay
-                    onDaySelected: day => root.selectedDay = day
-                    onEventClicked: event => CalendarService.openEvent(event, root.returnArgs)
-                    onCreateRequested: day => {
-                        root.selectedDay = day
-                        CalendarService.openEditor(day, root.returnArgs)
-                    }
                 }
             }
         }

@@ -7,6 +7,8 @@ import "launcher/Calculator.js" as Calc
 import "launcher/Usage.js" as Usage
 import "launcher/IconLogic.js" as IconLogic
 import "launcher/WebSearch.js" as Web
+import "launcher/ModeOrder.js" as ModeOrder
+import "launcher/Pinned.js" as Pinned
 import "settings/SettingsNavLogic.js" as Nav
 
 // Launcher providers. Prefixes: none = apps (+ calculator, commands and, for
@@ -18,7 +20,8 @@ Singleton {
     // The file mode disappears with its setting rather than staying and
     // finding nothing: an option that changes nothing is worse than no option.
     readonly property bool fileSearch: SettingsService.value("launcher.fileSearch")
-    readonly property var modes: [
+    // The order they are declared in, before the user's own is applied.
+    readonly property var allModes: [
         { id: "apps", prefix: "", label: "Apps", icon: "󰀻" },
         { id: "commands", prefix: ">", label: "Commands", icon: "󰘳" },
         { id: "settings", prefix: "@", label: "Settings", icon: Icons.settings },
@@ -26,6 +29,24 @@ Singleton {
         { id: "web", prefix: "?", label: "Web", icon: "󰖟" },
         { id: "emoji", prefix: ":", label: "Emoji", icon: "󰞅" }
     ].concat(fileSearch ? [{ id: "files", prefix: "/", label: "Files", icon: Icons.folder }] : [])
+    // What the switch shows, in the order Settings > Launcher put them. The
+    // rules a stored order has to survive are in ModeOrder, with their test.
+    readonly property var modes: ModeOrder.apply(SettingsService.value("launcher.modeOrder"), allModes)
+    // Where the categories are is a layout question now, not a setting: the
+    // block sits in the sidebar, or in the column as a row of chips, or
+    // nowhere. `Launcher.qml` reads the zone; nothing outside it needs to.
+
+
+    // ---- pinned apps -------------------------------------------------------
+    // The one fixed thing in front of a search field that earns its place: what
+    // you want before you type. See services/launcher/Pinned.js.
+    readonly property string pinnedStored: SettingsService.value("launcher.pinned")
+    readonly property bool showPinned: SettingsService.value("launcher.showPinned")
+    readonly property var pinnedApps: Pinned.apps(pinnedStored, DesktopEntries.applications.values)
+    readonly property bool pinnedFull: Pinned.full(pinnedStored)
+    function isPinned(id) { return Pinned.has(pinnedStored, id) }
+    function togglePin(id) { return SettingsService.set("launcher.pinned", Pinned.toggle(pinnedStored, id)) }
+    function movePinned(id, delta) { return SettingsService.set("launcher.pinned", Pinned.move(pinnedStored, id, delta)) }
 
     readonly property var categories: [
         { name: "All", icon: "󰀻", keys: [] },
@@ -63,9 +84,9 @@ Singleton {
         { title: "Dashboard", keywords: "calendar clock weather time kalender uhr wetter", icon: "󰃭", run: () => PanelService.open("dashboard") },
         { title: "Refresh weather", keywords: "weather refresh open-meteo wetter aktualisieren", icon: "󰖐", run: () => { WeatherService.refresh(); PanelService.open("dashboard") } },
         { title: "Open calendar in Merkuro", keywords: "calendar events google akonadi kalender termine", icon: "󰸗", run: () => CalendarService.openManager() },
-        { title: "Desktop mode: Widgets", keywords: "mode widgets desktop modus", icon: Icons.edit, run: () => LayoutService.setMode("widgets") },
-        { title: "Desktop mode: Bar", keywords: "mode bar pills top panel modus leiste oben", icon: "󰘔", run: () => LayoutService.setMode("pills") },
-        { title: "Desktop mode: Notch", keywords: "mode notch island dynamic time modus kerbe insel uhr", icon: "󱂩", run: () => LayoutService.setMode("notch") },
+        { title: "Desktop mode: Widgets", keywords: "mode widgets desktop modus", icon: Icons.edit, run: () => LayoutService.setDesktopMode("widgets") },
+        { title: "Desktop mode: Bar", keywords: "mode bar pills top panel modus leiste oben", icon: "󰘔", run: () => LayoutService.setDesktopMode("pills") },
+        { title: "Desktop mode: Notch", keywords: "mode notch island dynamic time modus kerbe insel uhr", icon: "󱂩", run: () => LayoutService.setDesktopMode("notch") },
         { title: "Edit layout", keywords: "widgets pills bar notch editor arrange layout bearbeiten anordnen leiste", icon: Icons.edit, run: () => { PanelService.close(); LayoutService.editMode = true } },
         { title: "Settings", keywords: "settings appearance einstellungen darstellung", icon: Icons.settings, run: () => PanelService.open("settings") },
         { title: "Do Not Disturb: 1 hour", keywords: "dnd focus quiet nicht stören ruhe stunde", icon: Icons.busy, run: () => NotificationService.setDnd("1h") },
@@ -184,6 +205,9 @@ Singleton {
             .map(entry => ({
                 kind: "app", title: entry.app.name || entry.app.id, subtitle: entry.app.genericName || entry.app.comment || "",
                 iconSource: root.iconSource(entry.app.icon),
+                // The id so a row can be pinned; everything else about a result
+                // is what it shows, and this is the one thing about what it is.
+                appId: entry.app.id,
                 run: () => root.launchApp(entry.app)
             }))
     }

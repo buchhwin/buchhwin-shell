@@ -4,6 +4,7 @@ import QtQuick
 import qs.theme
 import "LayoutLogic.js" as Logic
 import "notch/NotchLogic.js" as NotchLogic
+import "notch/NotchDisplay.js" as NotchDisplay
 
 // Shared state of the notch (desktop mode "notch", shell/notch/Notch.qml):
 // its settings, the expansion requested over IPC (tests cannot hover) and a
@@ -74,6 +75,59 @@ Singleton {
     }
     readonly property int eventCount: Math.max(1, Math.min(4, SettingsService.value("notch.eventCount") || 2))
 
+    // ---- the notch as the display -----------------------------------------
+    // Volume, a notification, a track change: shown *in* the notch instead of
+    // in a surface below it. Who may, and who wins when two ask at once, is
+    // NotchDisplay; this is only the three slots and their order in time.
+    //
+    // There is no timer here. Each display already has one - the OSD hides
+    // after 1400 ms, a popup after the notification duration - so the notch
+    // mirrors what is on rather than keeping a second clock that can disagree
+    // with the first.
+    readonly property bool displayOsd: SettingsService.value("notch.displayOsd")
+    readonly property bool displayNotifications: SettingsService.value("notch.displayNotifications")
+    readonly property bool displayMedia: SettingsService.value("notch.displayMedia")
+    function displayEnabled(kind) {
+        return kind === "osd" ? displayOsd : kind === "notification" ? displayNotifications
+            : kind === "media" ? displayMedia : false
+    }
+
+    // kind -> { stamp, content } | null. `stamp` only goes up, so "the most
+    // recent wins" is a comparison rather than a history.
+    property var displaySlots: ({})
+    property int displayStamp: 0
+    // The screen the display belongs to: the focused one at the moment it was
+    // set. Only that notch takes it; the others stay as they are.
+    property string displayScreen: ""
+
+    function setDisplay(kind, screenName, content) {
+        const slots = Object.assign({}, displaySlots)
+        if (content) {
+            displayStamp += 1
+            slots[kind] = { stamp: displayStamp, content: content }
+            displayScreen = screenName
+        } else {
+            slots[kind] = null
+        }
+        displaySlots = slots
+    }
+
+    readonly property var display: NotchDisplay.current(displaySlots)
+    readonly property string displayKind: display ? display.kind : ""
+
+    // Whether the notch on this screen may take this kind right now. The
+    // caller knows whether it is the focused screen; everything else is here.
+    function takesDisplay(kind, screenName) {
+        const state = states[screenName] || null
+        return NotchDisplay.takes(kind, {
+            enabled: displayEnabled(kind),
+            notchShown: LayoutService.notchShown,
+            hasNotch: !!(state && state.shown) && LayoutService.notchRect(screenName) !== null,
+            overviewOpen: !!(state && state.expanded),
+            arranging: arranging
+        })
+    }
+
     // Screen name expanded over IPC or by a click ("" = none).
     property string forcedScreen: ""
     // Synthetic now-playing data (IPC `notch previewMedia`); controls stay disabled.
@@ -103,8 +157,9 @@ Singleton {
     function describe() {
         const covered = {}
         for (const screen of Quickshell.screens) covered[screen.name] = HyprlandService.fullscreenReport(screen)
-        return JSON.stringify({ mode: LayoutService.mode, reserve: reserve, fullscreen: fullscreen, expandOnHover: expandOnHover,
+        return JSON.stringify({ mode: LayoutService.desktopMode, reserve: reserve, fullscreen: fullscreen, expandOnHover: expandOnHover,
                                 forced: forcedScreen, mediaPreview: mediaPreview, weatherTrackers: WeatherService.trackers,
+                                display: displayKind, displayScreen: displayScreen,
                                 screens: states, coveredBy: covered })
     }
 }

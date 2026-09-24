@@ -20,9 +20,11 @@ GridLayout {
 
     // Transparency slider row of the Panels section (shown as transparency,
     // stored as opacity). `highlighted` marks an own value; reset returns to the default.
-    component OpacityRow: RowLayout {
+    // The same label column every other settings row has. `caption` is the
+    // row's state - "Own value" or "Default" - and sits after the value, where
+    // the accent can mark it; an explanation goes in `hint` like anywhere else.
+    component OpacityRow: SettingRow {
         id: opacityRow
-        property string label: ""
         property string caption: ""
         property bool highlighted: true
         property bool resettable: true
@@ -31,21 +33,9 @@ GridLayout {
         signal commit(real value)
         signal reset()
         Layout.fillWidth: true
-        spacing: Metrics.spaceMd
 
-        ColumnLayout {
-            Layout.preferredWidth: Metrics.settingsSidebarWidth
-            Layout.fillWidth: false
-            spacing: 0
-            ShellText { Layout.fillWidth: true; text: opacityRow.label }
-            ShellText {
-                Layout.fillWidth: true
-                text: opacityRow.caption
-                role: "caption"
-                color: opacityRow.highlighted && opacityRow.resettable ? Colors.accentForeground : Colors.mutedText
-            }
-        }
         ShellSlider {
+            focusOnTab: true
             Layout.fillWidth: true
             from: PanelStyleService.minOpacity; to: 1
             value: opacityRow.opacityValue
@@ -58,7 +48,15 @@ GridLayout {
             text: Math.round((1 - opacityRow.opacityValue) * 100) + "%"
             role: "small"; muted: !opacityRow.highlighted
         }
+        ShellText {
+            visible: opacityRow.caption.length > 0
+            Layout.minimumWidth: Metrics.formLabelWidth
+            text: opacityRow.caption
+            role: "caption"
+            color: opacityRow.highlighted && opacityRow.resettable ? Colors.accentForeground : Colors.mutedText
+        }
         ShellButton {
+            focusOnTab: true
             icon: Icons.reset; variant: "ghost"; compact: true
             toolTip: "Use default"
             opacity: opacityRow.resettable ? (opacityRow.highlighted ? 1 : Effects.disabledOpacity) : 0
@@ -74,6 +72,7 @@ GridLayout {
         description: "Light, dark or automatic (dark from 19:00 to 07:00)"
 
         SegmentedControl {
+            focusOnTab: true
             Layout.fillWidth: true
             current: SettingsService.theme
             options: [
@@ -91,6 +90,7 @@ GridLayout {
             label: "Apps follow theme"
             hint: "Also switches KDE and GTK apps. This changes the color scheme shared with Plasma."
             ShellToggle {
+                focusOnTab: true
                 checked: AppThemeService.enabled
                 onToggled: value => SettingsService.set("appearance.appsFollowTheme", value)
             }
@@ -101,6 +101,7 @@ GridLayout {
             label: "Use the shell accent in apps"
             hint: "KDE apps such as Dolphin use the accent for folder icons and selections. Plasma keeps its own colors: they are restored when you log out."
             ShellToggle {
+                focusOnTab: true
                 checked: AppThemeService.accentEnabled
                 onToggled: value => SettingsService.set("appearance.appsAccent", value)
             }
@@ -126,10 +127,13 @@ GridLayout {
             wrapMode: Text.Wrap
         }
 
-        RowLayout {
-            ShellText { Layout.fillWidth: true; text: "Accent color" }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Accent color"
             ShellText { text: "From wallpaper"; role: "small"; muted: true }
             ShellToggle {
+                focusOnTab: true
                 checked: SettingsService.value("appearance.accentFromWallpaper")
                 onToggled: value => SettingsService.set("appearance.accentFromWallpaper", value)
             }
@@ -146,10 +150,18 @@ GridLayout {
                     height: width
                     radius: width / 2
                     color: modelData
-                    border.width: active ? Metrics.focusBorderWidth + 1 : 0
-                    border.color: Colors.text
+                    border.width: active ? Metrics.focusBorderWidth + 1 : accentMouse.containsMouse ? Metrics.borderWidth : 0
+                    border.color: active ? Colors.text : Colors.borderStrong
+                    scale: accentMouse.pressed ? Effects.pressScale : 1
+                    Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
                     ShellIcon { anchors.centerIn: parent; visible: parent.active; glyph: Icons.check; size: Metrics.iconSm; color: Colors.textOn(parent.color) }
-                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { SettingsService.set("appearance.accentFromWallpaper", false); SettingsService.set("appearance.accent", parent.modelData) } }
+                    MouseArea {
+                        id: accentMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: { SettingsService.set("appearance.accentFromWallpaper", false); SettingsService.set("appearance.accent", parent.modelData) }
+                    }
                 }
             }
         }
@@ -161,6 +173,7 @@ GridLayout {
         description: "Warmer colors in the evening are easier on the eyes. " + NightLightService.summary
 
         SegmentedControl {
+            focusOnTab: true
             Layout.fillWidth: true
             current: SettingsService.value("nightLight.mode")
             options: [{ value: "off", label: "Off" }, { value: "manual", label: "Always" }, { value: "schedule", label: "Schedule" }, { value: "sun", label: "Sunset" }]
@@ -212,8 +225,10 @@ GridLayout {
         property bool individualOpen: ownCount > 0
         property string customError: ""
 
-        RowLayout {
-            ShellText { Layout.fillWidth: true; text: "Background color" }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Background color"
             ShellText {
                 text: PanelStyleService.color === "auto" ? "Theme colors"
                     : panelSection.choice ? panelSection.choice.label : "Custom " + PanelStyleService.color
@@ -233,8 +248,10 @@ GridLayout {
                     height: width
                     radius: width / 2
                     color: isAuto ? Colors.surface : modelData.value
-                    border.width: active ? Metrics.focusBorderWidth + 1 : Metrics.borderWidth
-                    border.color: active ? Colors.accent : Colors.borderStrong
+                    border.width: active ? Metrics.focusBorderWidth + 1 : panelMouse.containsMouse ? Metrics.focusBorderWidth : Metrics.borderWidth
+                    border.color: active ? Colors.accent : panelMouse.containsMouse ? Colors.text : Colors.borderStrong
+                    scale: panelMouse.pressed ? Effects.pressScale : 1
+                    Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
                     ShellIcon {
                         anchors.centerIn: parent
                         visible: parent.isAuto || parent.active
@@ -242,7 +259,13 @@ GridLayout {
                         size: Metrics.iconSm
                         color: parent.isAuto ? Colors.text : PanelStyleService.isLight(parent.modelData.value) ? Colors.onLightSwatch : Colors.onDarkSwatch
                     }
-                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: PanelStyleService.setColor(parent.modelData.value, Colors.dark) }
+                    MouseArea {
+                        id: panelMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: PanelStyleService.setColor(parent.modelData.value, Colors.dark)
+                    }
                 }
             }
         }
@@ -250,6 +273,7 @@ GridLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceSm
             ShellTextField {
+                focusOnTab: true
                 id: customColor
                 Layout.fillWidth: true
                 icon: "󰏘"
@@ -268,6 +292,7 @@ GridLayout {
                 border.color: Colors.borderStrong
             }
             ShellButton {
+                focusOnTab: true
                 text: "Apply"
                 enabledState: customColor.text.trim().length > 0
                 onClicked: panelSection.applyCustom()
@@ -298,6 +323,7 @@ GridLayout {
                 role: "small"; color: Colors.warning; wrapMode: Text.Wrap
             }
             ShellButton {
+                focusOnTab: true
                 text: PanelStyleService.lightColor ? "Use Light theme" : "Use Dark theme"
                 compact: true
                 onClicked: SettingsService.set("appearance.theme", PanelStyleService.lightColor ? "light" : "dark")
@@ -306,7 +332,7 @@ GridLayout {
 
         OpacityRow {
             label: "Transparency"
-            caption: "Default for all windows"
+            hint: "Default for all windows"
             opacityValue: PanelStyleService.defaultOpacity
             resettable: false
             onPreview: value => PanelStyleService.setPreview("default", value)
@@ -315,41 +341,33 @@ GridLayout {
 
         Rectangle { Layout.fillWidth: true; implicitHeight: Metrics.borderWidth; color: Colors.border }
 
-        RowLayout {
+        // The row that folds the per-window sliders away: a list row on the
+        // card, like the expandable rows on the Updates page.
+        ListRow {
             Layout.fillWidth: true
-            spacing: Metrics.spaceSm
-            Item {
-                Layout.fillWidth: true
-                implicitHeight: individualHeader.implicitHeight
-                RowLayout {
-                    id: individualHeader
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    spacing: Metrics.spaceSm
-                    ShellIcon { glyph: panelSection.individualOpen ? Icons.collapse : Icons.forward; size: Metrics.iconSm; color: Colors.mutedText }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 0
-                        ShellText { text: "Individual windows" }
-                        ShellText {
-                            Layout.fillWidth: true
-                            text: panelSection.ownCount === 0 ? "All windows use the default transparency"
-                                : panelSection.ownCount === 1 ? "1 window has its own transparency"
-                                : panelSection.ownCount + " windows have their own transparency"
-                            role: "caption"
-                        }
-                    }
+            level: 1
+            focusOnTab: true
+            icon: Icons.window
+            title: "Individual windows"
+            subtitle: panelSection.ownCount === 0 ? "All windows use the default transparency"
+                : panelSection.ownCount === 1 ? "1 window has its own transparency"
+                : panelSection.ownCount + " windows have their own transparency"
+            onClicked: panelSection.individualOpen = !panelSection.individualOpen
+            Row {
+                spacing: Metrics.spaceSm
+                ShellButton {
+                    anchors.verticalCenter: parent.verticalCenter
+                    focusOnTab: true
+                    visible: panelSection.ownCount > 0
+                    icon: Icons.reset; text: "Use default for all"; compact: true
+                    onClicked: PanelStyleService.resetAllOpacities()
                 }
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: panelSection.individualOpen = !panelSection.individualOpen
+                ShellIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    glyph: panelSection.individualOpen ? Icons.collapse : Icons.forward
+                    size: Metrics.iconXs
+                    color: Colors.mutedText
                 }
-            }
-            ShellButton {
-                visible: panelSection.ownCount > 0
-                icon: Icons.reset; text: "Use default for all"; compact: true
-                onClicked: PanelStyleService.resetAllOpacities()
             }
         }
 
@@ -386,6 +404,17 @@ GridLayout {
         title: "Windows & Effects"
         description: "Blur, corners, borders, gaps and animations"
 
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Dim behind panels"
+            hint: "The rest of the screen darkens a little while a panel is open. One setting for all of them: they share a single scrim."
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("appearance.panelScrim")
+                onToggled: value => SettingsService.set("appearance.panelScrim", value)
+            }
+        }
         SettingRow {
             label: "Blur"
             ShellSlider {
@@ -436,6 +465,7 @@ GridLayout {
             labelFills: true
             label: "Window borders"
             ShellToggle {
+                focusOnTab: true
                 checked: SettingsService.borderEnabled
                 onToggled: value => SettingsService.set("appearance.borderEnabled", value)
             }
@@ -597,6 +627,7 @@ GridLayout {
                 role: "small"; muted: true; wrapMode: Text.Wrap
             }
             ShellButton {
+                focusOnTab: true
                 text: "Install …"
                 compact: true
                 onClicked: {
@@ -604,7 +635,7 @@ GridLayout {
                     PanelService.close()
                 }
             }
-            ShellButton { icon: Icons.refresh; compact: true; variant: "ghost"; onClicked: AppearanceService.refreshCursorThemes() }
+            ShellButton { focusOnTab: true; icon: Icons.refresh; compact: true; variant: "ghost"; toolTip: "Refresh"; onClicked: AppearanceService.refreshCursorThemes() }
         }
     }
 }

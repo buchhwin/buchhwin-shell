@@ -32,7 +32,7 @@ PopupPanel {
                     text: PowerService.percent + "%"
                     color: Colors.text
                     font.family: Typography.family
-                    font.pixelSize: Typography.headlineSize * 1.5
+                    font.pixelSize: Typography.batteryPercentSize
                     font.weight: Typography.light
                     font.features: { "tnum": 1 }
                     renderType: Typography.renderType
@@ -86,12 +86,13 @@ PopupPanel {
 
         CardSection {
             Layout.fillWidth: true
-            title: "Power mode"
+            title: "Power profile"
             SegmentedControl {
+                focusOnTab: true
                 Layout.fillWidth: true
                 current: String(PowerService.profile)
                 options: [
-                    { value: String(PowerProfile.PowerSaver), label: "Saver", icon: "󰌪" },
+                    { value: String(PowerProfile.PowerSaver), label: "Power saver", icon: "󰌪" },
                     { value: String(PowerProfile.Balanced), label: "Balanced", icon: "󰾅" }
                 ].concat(PowerService.hasPerformance ? [{ value: String(PowerProfile.Performance), label: "Performance", icon: "󰓅" }] : [])
                 onSelected: value => PowerService.setProfile(parseInt(value))

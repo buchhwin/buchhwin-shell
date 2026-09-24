@@ -65,7 +65,7 @@ ShellPanel {
                 Layout.fillWidth: true
                 ShellText { text: root.pending ? root.pending.label + "?" : "Session"; role: "headline" }
                 Item { Layout.fillWidth: true }
-                SectionLabel { text: "SUPER + M"; visible: !root.pending }
+                SectionLabel { text: "Super + M"; visible: !root.pending }
             }
 
             RowLayout {
@@ -125,8 +125,9 @@ ShellPanel {
                 visible: root.pending !== null
                 spacing: Metrics.spaceSm
                 Item { Layout.fillWidth: true }
-                ShellButton { text: "Cancel"; onClicked: root.pendingAction = "" }
+                ShellButton { focusOnTab: true; text: "Cancel"; onClicked: root.pendingAction = "" }
                 ShellButton {
+                    focusOnTab: true
                     text: root.pending ? root.pending.label : ""
                     variant: "accent"
                     onClicked: root.run(root.pendingAction)

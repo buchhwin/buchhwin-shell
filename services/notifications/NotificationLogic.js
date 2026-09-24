@@ -6,6 +6,23 @@ function appKey(notification) {
     return name.length ? name.toLowerCase() : "__system"
 }
 
+// What the notch shows for the newest popup: the same picture the card uses,
+// by the same route - the image the notification brought, else its app icon
+// (resolved by `iconPath`, which is Quickshell's lookup), else a bell. Takes
+// the notification itself, so the caller reads its fields at one moment
+// rather than through a binding that may not have caught up. Unit tested.
+function notchContent(notification, iconPath) {
+    const it = notification || {}
+    const picture = it.image || (it.appIcon ? String(iconPath(it.appIcon) || "") : "")
+    return {
+        kind: "notification",
+        icon: picture ? "" : "󰂚",
+        iconSource: picture,
+        title: it.summary || it.appName || "Notification",
+        subtitle: it.body || ""
+    }
+}
+
 // Whether a notification matches a query: app name, summary or body. Unit
 // tested.
 function matches(notification, query) {

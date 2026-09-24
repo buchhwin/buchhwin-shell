@@ -37,9 +37,20 @@ Variants {
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
 
-        Keys.onEscapePressed: ColorPickerService.close()
-        Keys.onReturnPressed: ColorPickerService.pick()
-        Keys.onEnterPressed: ColorPickerService.pick()
+        // **`Keys` only attaches to an `Item`, and a `PanelWindow` is not
+        // one.** It used to sit on the window, where QML refused it and said
+        // so on every single open - `Could not attach Keys property to ... is
+        // not an Item` - so Escape and Enter never arrived and the only way
+        // out of the picker was to pick something. A focused item inside the
+        // window is where they belong; the surface already takes the keyboard
+        // exclusively, so nothing competes for them.
+        Item {
+            anchors.fill: parent
+            focus: true
+            Keys.onEscapePressed: ColorPickerService.close()
+            Keys.onReturnPressed: ColorPickerService.pick()
+            Keys.onEnterPressed: ColorPickerService.pick()
+        }
 
         Image {
             id: frozen
@@ -123,7 +134,12 @@ Variants {
                     height: width
                     color: "transparent"
                     border.width: Metrics.borderWidth
-                    border.color: Colors.overviewText
+                    // `Colors.overviewText` never existed - the token is
+                    // `scrimText` - so this was `undefined` and the log said
+                    // "Unable to assign [undefined] to QColor" on every open.
+                    // A loupe ring over a frozen screenshot is text on a
+                    // scrim as far as contrast goes.
+                    border.color: Colors.scrimText
                 }
             }
         }
@@ -161,7 +177,7 @@ Variants {
                 }
                 ShellText {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "· click or Enter copies · Escape cancels"
+                    text: "Click or Enter copies · Esc cancels"
                     role: "small"
                     muted: true
                 }

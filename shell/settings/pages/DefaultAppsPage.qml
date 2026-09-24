@@ -19,7 +19,7 @@ ColumnLayout {
         browser: "Links · Super+B", files: "Folders · Super+E", terminal: "Super+Enter"
     })
 
-    Component.onCompleted: DefaultAppsService.refresh()
+    PageActivity { onOpened: DefaultAppsService.refresh() }
 
     SettingsSection {
         Layout.fillWidth: true
@@ -34,10 +34,12 @@ ColumnLayout {
             color: Colors.warning
             wrapMode: Text.Wrap
         }
-        ShellText {
+        EmptyState {
+            Layout.fillWidth: true
             visible: DefaultAppsService.loading && !DefaultAppsService.categories.length
-            text: "Loading …"
-            muted: true
+            row: true
+            icon: Icons.busy
+            title: "Loading …"
         }
 
         Repeater {
@@ -49,34 +51,36 @@ ColumnLayout {
                 spacing: Metrics.spaceMd
 
                 ShellIcon { glyph: root.icons[appRow.modelData.id] || "󰀻"; size: Metrics.iconMd; color: Colors.accentForeground }
-                ColumnLayout {
-                    Layout.fillWidth: false
-                    Layout.preferredWidth: Metrics.settingsSidebarWidth
-                    Layout.maximumWidth: Metrics.settingsSidebarWidth
-                    spacing: 0
-                    ShellText { Layout.fillWidth: true; text: appRow.modelData.label }
-                    ShellText {
-                        Layout.fillWidth: true
-                        text: (root.hints[appRow.modelData.id] ? root.hints[appRow.modelData.id] + " · " : "")
-                            + (appRow.modelData.source === "session" ? "This session"
-                               : appRow.modelData.source === "plasma" ? "From Plasma" : "System default")
-                        role: "caption"
-                    }
-                }
-                ShellSelect {
+                // The same label column every other settings row has; the
+                // hotkey is the label's explanation, where the choice came
+                // from is state and stays on the row.
+                SettingRow {
                     Layout.fillWidth: true
-                    options: appRow.modelData.candidates.map(app => ({ value: app.id, label: app.name }))
-                    current: appRow.modelData.current
-                    placeholder: "Not set"
-                    onSelected: value => { if (value !== appRow.modelData.current) DefaultAppsService.setDefault(appRow.modelData.id, value) }
-                }
-                ShellButton {
-                    icon: Icons.reset
-                    compact: true
-                    variant: "ghost"
-                    toolTip: "Follow Plasma or the system again"
-                    enabledState: appRow.modelData.session
-                    onClicked: DefaultAppsService.reset(appRow.modelData.id)
+                    label: appRow.modelData.label
+                    hint: root.hints[appRow.modelData.id] || ""
+                    ShellSelect {
+                        focusOnTab: true
+                        Layout.fillWidth: true
+                        options: appRow.modelData.candidates.map(app => ({ value: app.id, label: app.name }))
+                        current: appRow.modelData.current
+                        placeholder: "Not set"
+                        onSelected: value => { if (value !== appRow.modelData.current) DefaultAppsService.setDefault(appRow.modelData.id, value) }
+                    }
+                    ShellText {
+                        text: appRow.modelData.source === "session" ? "This session"
+                            : appRow.modelData.source === "plasma" ? "From Plasma" : "System default"
+                        role: "small"
+                        muted: true
+                    }
+                    ShellButton {
+                        focusOnTab: true
+                        icon: Icons.reset
+                        compact: true
+                        variant: "ghost"
+                        toolTip: "Follow Plasma or the system again"
+                        enabledState: appRow.modelData.session
+                        onClicked: DefaultAppsService.reset(appRow.modelData.id)
+                    }
                 }
             }
         }

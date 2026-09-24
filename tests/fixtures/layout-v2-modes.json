@@ -1,0 +1,46 @@
+{
+  "configVersion": 2,
+  "activeProfile": "laptop",
+  "profiles": {
+    "laptop": {
+      "widgets": [
+        { "id": "clock-DP-1", "type": "clock", "screen": "DP-1", "anchorX": "right", "x": 0.975, "y": 0.025,
+          "scale": 1.2, "size": "medium", "style": "capsule", "visible": true, "group": "group-DP-1", "options": {} },
+        { "id": "battery-DP-1", "type": "battery", "screen": "DP-1", "anchorX": "right", "x": 0.9, "y": 0.025,
+          "scale": 1, "size": "small", "style": "minimal", "visible": true, "group": "group-DP-1", "options": {} }
+      ],
+      "groups": [
+        { "id": "group-DP-1", "screen": "DP-1", "anchorX": "right", "x": 0.975, "y": 0.025,
+          "scale": 1, "style": "capsule", "visible": true, "members": ["battery-DP-1", "clock-DP-1"] }
+      ],
+      "screens": ["DP-1"],
+      "mode": "notch",
+      "bar": {
+        "reserve": true, "fullscreen": "hide", "scale": 1, "style": "bar", "position": "attached",
+        "edge": "left", "panelSpot": "centre", "notificationSpot": "widget", "screens": ["DP-1"],
+        "left": [{ "id": "pill-1", "items": [{ "type": "nowPlaying", "display": "icon", "size": "small", "w": 1, "h": 1, "options": {} }] }],
+        "center": [{ "id": "pill-2", "items": [{ "type": "clock", "display": "full", "size": "medium", "w": 1, "h": 1, "options": {} }] }],
+        "right": []
+      },
+      "quick": { "quick": [{ "id": "quick-1", "items": [{ "type": "wifi", "display": "full", "size": "small", "w": 2, "h": 1, "options": {} }] }] },
+      "dashboard": { "dashboard": [{ "id": "dashboard-1", "items": [{ "type": "clock", "display": "full", "size": "small", "w": 2, "h": 2, "options": {} }] }] }
+    },
+    "gaming": {
+      "widgets": [],
+      "groups": [],
+      "screens": ["DP-1"],
+      "mode": "both",
+      "bar": { "reserve": false, "fullscreen": "show", "scale": 1, "style": "pills", "position": "floating",
+               "edge": "top", "panelSpot": "widget", "notificationSpot": "widget", "screens": [],
+               "left": [], "center": [], "right": [] },
+      "quick": { "quick": [{ "id": "quick-1", "items": [{ "type": "dnd", "display": "full", "size": "small", "w": 1, "h": 1, "options": {} }] }] },
+      "dashboard": { "dashboard": [{ "id": "dashboard-1", "items": [{ "type": "weather", "display": "full", "size": "small", "w": 2, "h": 2, "options": {} }] }] }
+    }
+  },
+  "notch": {
+    "collapsed": [{ "id": "notch-clock-1", "items": [{ "type": "clock", "display": "full", "size": "small", "w": 2, "h": 2, "options": {} }] }],
+    "expanded": [{ "id": "notch-media-1", "items": [{ "type": "media", "display": "full", "size": "small", "w": 2, "h": 2, "options": {} }] }]
+  },
+  "lock": { "lock": [{ "id": "lock-1", "items": [{ "type": "clock", "display": "full", "size": "small", "w": 2, "h": 2, "options": {} }] }] },
+  "adopted": ["quickSizes"]
+}

@@ -5,18 +5,25 @@ project_dir=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 apply=false
 [[ ${1:-} == "--apply" ]] && apply=true
 
+config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
+data_home=${XDG_DATA_HOME:-"$HOME/.local/share"}
+# What systemd, xdg-desktop-portal and the shell itself (services/Paths.qml)
+# read lives under XDG_CONFIG_HOME, and zsh's site-functions under
+# XDG_DATA_HOME, so the links go where those look. Two paths stay literal on
+# purpose: ~/.local/bin is where the session entry and PATH expect the
+# launchers, and ~/.local/share/buchhwin-shell is the name the session entry,
+# the systemd targets, hypr/ and every script use for the running copy.
 links=(
   "$project_dir:$HOME/.local/share/buchhwin-shell"
   "$project_dir/session/buchhwin-shell-session:$HOME/.local/bin/buchhwin-shell-session"
   "$project_dir/scripts/buchhwin:$HOME/.local/bin/buchhwin"
-  "$project_dir/shell-completion/_buchhwin:$HOME/.local/share/zsh/site-functions/_buchhwin"
-  "$project_dir/zsh/buchhwin.zsh:$HOME/.config/buchhwin-shell/shell.zsh"
-  "$project_dir/systemd/buchhwin-shell-session.target:$HOME/.config/systemd/user/buchhwin-shell-session.target"
-  "$project_dir/systemd/buchhwin-shell-autostart.target:$HOME/.config/systemd/user/buchhwin-shell-autostart.target"
-  "$project_dir/session/xdg-desktop-portal/buchhwin-shell-portals.conf:$HOME/.config/xdg-desktop-portal/buchhwin-shell-portals.conf"
+  "$project_dir/shell-completion/_buchhwin:$data_home/zsh/site-functions/_buchhwin"
+  "$project_dir/zsh/buchhwin.zsh:$config_home/buchhwin-shell/shell.zsh"
+  "$project_dir/systemd/buchhwin-shell-session.target:$config_home/systemd/user/buchhwin-shell-session.target"
+  "$project_dir/systemd/buchhwin-shell-autostart.target:$config_home/systemd/user/buchhwin-shell-autostart.target"
+  "$project_dir/session/xdg-desktop-portal/buchhwin-shell-portals.conf:$config_home/xdg-desktop-portal/buchhwin-shell-portals.conf"
 )
 
-config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
 fastfetch_source="$config_home/buchhwin-dwl/fastfetch.jsonc"
 fastfetch_target="$config_home/buchhwin-shell/fastfetch.jsonc"
 # What a machine without a dwl configuration gets. Shipped rather than copied,
@@ -75,20 +82,21 @@ systemctl --user daemon-reload
 # instead of editing the user's .zshrc.
 # The wrappers reach a personal .zshrc only when it sources the fragment.
 if [[ -r "$HOME/.zshrc" ]] && ! grep -q 'buchhwin-shell/shell.zsh' "$HOME/.zshrc"; then
-  printf 'For fastfetch, cmatrix and cava in the shell accent, add this line to ~/.zshrc:\n  source ~/.config/buchhwin-shell/shell.zsh\n'
+  printf 'For fastfetch, cmatrix and cava in the shell accent, add this line to ~/.zshrc:\n  source %s\n' \
+    "$config_home/buchhwin-shell/shell.zsh"
 fi
 
-completion_dir="$HOME/.local/share/zsh/site-functions"
+completion_dir="$data_home/zsh/site-functions"
 if ! zsh -c "print -l \$fpath" 2>/dev/null | grep -qx -- "$completion_dir"; then
   printf 'For "buchhwin" completion, add this line to ~/.zshrc before compinit:\n  fpath=(%s $fpath)\n' \
     "$completion_dir"
 fi
 
-mkdir -p -- "$HOME/.config/buchhwin-shell"
-if [[ ! -e "$HOME/.config/buchhwin-shell/layout.json" ]]; then
+mkdir -p -- "$config_home/buchhwin-shell"
+if [[ ! -e "$config_home/buchhwin-shell/layout.json" ]]; then
   printf '{\n  "configVersion": 1,\n  "monitors": {}\n}\n' \
-    > "$HOME/.config/buchhwin-shell/layout.json"
-  printf 'Created %s\n' "$HOME/.config/buchhwin-shell/layout.json"
+    > "$config_home/buchhwin-shell/layout.json"
+  printf 'Created %s\n' "$config_home/buchhwin-shell/layout.json"
 fi
 
 # Reuse the Fedora dwl session's Fastfetch look as an independent copy. The

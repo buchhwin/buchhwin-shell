@@ -27,6 +27,7 @@ PopupPanel {
                 Layout.fillWidth: true
                 spacing: Metrics.spaceSm
                 ShellButton {
+                    focusOnTab: true
                     icon: AudioService.volumeIcon(AudioService.volume, AudioService.muted)
                     iconSize: Metrics.iconMd
                     variant: "ghost"; compact: true
@@ -35,6 +36,7 @@ PopupPanel {
                     onClicked: AudioService.toggleMute(AudioService.sink)
                 }
                 ShellSlider {
+                    focusOnTab: true
                     Layout.fillWidth: true
                     value: AudioService.volume
                     enabledState: AudioService.sink !== null
@@ -57,6 +59,7 @@ PopupPanel {
             Repeater {
                 model: AudioService.sinks
                 ListRow {
+                    focusOnTab: true
                     level: 1
                     required property var modelData
                     width: parent.width
@@ -91,6 +94,7 @@ PopupPanel {
             Layout.fillWidth: true
             padding: Metrics.spaceSm
             ListRow {
+                focusOnTab: true
                 Layout.fillWidth: true
                 level: 1
                 icon: AudioService.micMuted ? "󰍭" : "󰍬"
@@ -100,6 +104,7 @@ PopupPanel {
                     : AudioService.label(AudioService.source)
                 onClicked: AudioService.toggleMute(AudioService.source)
                 ShellToggle {
+                    focusOnTab: true
                     checked: !AudioService.micMuted
                     enabledState: AudioService.source !== null
                     onToggled: AudioService.toggleMute(AudioService.source)

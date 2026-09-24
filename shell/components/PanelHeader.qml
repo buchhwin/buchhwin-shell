@@ -9,6 +9,9 @@ import qs.theme
 RowLayout {
     id: root
     property string icon: ""
+    // The accent as ink by default; a dialog about a thing that has a colour
+    // of its own (an event's calendar) hands that colour in.
+    property color iconColor: Colors.accentForeground
     property string title: ""
     property string subtitle: ""
     // "pageTitle" for a panel with its own page area (settings), "headline" for
@@ -25,7 +28,7 @@ RowLayout {
         visible: root.icon.length > 0
         glyph: root.icon
         size: Metrics.iconLg
-        color: Colors.accentForeground
+        color: root.iconColor
     }
     ShellButton {
         visible: root.showBack
@@ -38,9 +41,12 @@ RowLayout {
         Layout.fillWidth: true
         spacing: Metrics.spaceXxs
         ShellText {
+            // Wrap: a dialog's title can be an event's, which is as long
+            // as its author made it.
             Layout.fillWidth: true
             text: root.title
             role: root.role
+            wrapMode: Text.Wrap
         }
         ShellText {
             // Wrap: with a wide interface font the longest subtitles run past

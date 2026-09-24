@@ -4,6 +4,7 @@ import Quickshell.Io
 import QtQuick
 import "hypr/HyprCommands.js" as Commands
 import "hypr/HyprAnimations.js" as Anim
+import "display/DisplayLogic.js" as DisplayLogic
 
 // Applies appearance settings that live outside QML: Hyprland blur, window
 // rounding, borders and gaps, and the cursor theme. Session environment
@@ -41,7 +42,14 @@ Singleton {
             // Decided by how many screens there are, not by taste - see
             // AnimationLogic.frameScheduling. The configuration files ship the
             // safe value; this is what turns it on again on a single screen.
-            "render:new_render_scheduling": Anim.frameScheduling(Quickshell.screens.length)
+            "render:new_render_scheduling": Anim.frameScheduling(Quickshell.screens.length),
+            // Settings > Displays > "Sharp X11 applications". Off by default
+            // and it changes nothing at all while every screen is at scale 1,
+            // where logical and physical are the same size; it only means
+            // something with fractional scaling, and there it is a trade
+            // rather than a fix. The files ship `false` so a fresh install
+            // behaves as it always did.
+            "xwayland:force_zero_scaling": SettingsService.xwaylandSharp
         })
         applyAnimations()
     }
@@ -57,11 +65,42 @@ Singleton {
                                                    Anim.pointerAnimated(mode)))
     }
 
+    // Settings > Displays > "Sharp X11 applications" makes XWayland draw in
+    // real pixels, and X11 then believes its screen is 96 DPI: every X11
+    // window a third smaller on a screen at 1.5. `Xft.dpi` is the one scale
+    // X11 clients read and Wayland clients never see, so it carries the
+    // largest scale any screen runs at (DisplayLogic.x11Scale) - 144 for 1.5.
+    // Off, the key goes and X11 is back at 96 with XWayland stretching it, as
+    // before. A dock or undock can change the largest scale, which is why this
+    // follows the monitors and not only the switch. Like the compositor
+    // option, only applications started afterwards read it.
+    // The user may name the scale instead (Settings > Displays > X11 scale):
+    // Citrix at the screen's own 1.5 was still a little small to read, and
+    // a session that is mostly one remote desktop may well want 1.75 on a
+    // 4K screen. 0 is "the largest screen".
+    readonly property real x11Scale: !SettingsService.xwaylandSharp ? 1
+        : SettingsService.x11ScaleSetting > 0 ? SettingsService.x11ScaleSetting
+        : DisplayLogic.x11Scale(DisplayService.monitors)
+
+    function applyX11Scale() {
+        if (!realSession) return
+        // Before the monitors are known the largest scale reads as 1, and a
+        // reset written then is a wrong answer for a moment - and a moment is
+        // enough for an application starting at login to read it.
+        if (SettingsService.xwaylandSharp && SettingsService.x11ScaleSetting === 0 && !DisplayService.monitors.length) return
+        const dpi = x11Scale > 1 ? String(Math.round(96 * x11Scale)) : "reset"
+        Quickshell.execDetached([Paths.script("apply-x11-dpi.sh"), dpi])
+    }
+
     function applyCursor() {
         const theme = SettingsService.cursorTheme
         const size = String(SettingsService.cursorSize)
         Quickshell.execDetached(["hyprctl", "setcursor", theme, size])
-        if (realSession) Quickshell.execDetached([Paths.script("apply-cursor-env.sh"), theme, size])
+        // XWayland draws its own cursor from the X resource, in real pixels
+        // when X11 is sharp - so that one gets the scaled size, or the pointer
+        // shrinks by a third the moment it crosses into an X11 window.
+        const x11Size = String(Math.round(SettingsService.cursorSize * x11Scale))
+        if (realSession) Quickshell.execDetached([Paths.script("apply-cursor-env.sh"), theme, size, x11Size])
     }
 
     function refreshCursorThemes() { cursorScan.running = true }
@@ -76,18 +115,34 @@ Singleton {
         function onGapsOutChanged() { debounce.restart() }
         function onAnimationModeChanged() { debounce.restart() }
         function onAnimationSpeedChanged() { debounce.restart() }
+        function onXwaylandSharpChanged() { debounce.restart() }
         function onCursorThemeChanged() { root.applyCursor() }
         function onCursorSizeChanged() { root.applyCursor() }
-        function onLoadedChanged() { if (SettingsService.loaded) { root.applyHyprland(); root.applyCursor() } }
+        function onLoadedChanged() { if (SettingsService.loaded) { root.applyHyprland(); root.applyX11Scale(); root.applyCursor() } }
     }
+
+    // The scale and the cursor's X11 size both move with it, so one change
+    // writes both resources - the cursor last, as it is at start.
+    onX11ScaleChanged: { if (SettingsService.loaded) { applyX11Scale(); applyCursor() } }
 
     Connections {
         target: HyprlandService
         function onConfigReloaded() {
             if (!SettingsService.loaded) return
             root.applyHyprland()
+            root.applyX11Scale()
             root.applyCursor()
         }
+    }
+
+    // `render:new_render_scheduling` follows the screen count (above), so a
+    // dock or an undock has to apply it again. Nothing did: the count was read
+    // in `applyHyprland` but no change of it ran `applyHyprland`, and the
+    // option stayed as the last settings change had left it - on, with three
+    // monitors - until the next one.
+    Connections {
+        target: Quickshell
+        function onScreensChanged() { if (SettingsService.loaded) debounce.restart() }
     }
 
     Timer { id: debounce; interval: 150; onTriggered: root.applyHyprland() }

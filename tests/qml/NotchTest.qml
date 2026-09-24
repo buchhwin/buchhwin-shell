@@ -180,6 +180,13 @@ ShellRoot {
         T.eq(L.notchMinSize("media"), { w: 2, h: 2 }, "and says so")
         T.eq(L.notchMinSize("clock"), { w: 1, h: 1 }, "a type with no floor goes down to one step")
         T.eq(L.notchMinSize("nothing at all"), { w: 1, h: 1 }, "and so does an unknown one")
+        // The same floor applies to what the file says, not only to a drag:
+        // a media block written one cell wide loads two cells wide.
+        const squashedFile = L.sanitizeNotch({ collapsed: [{ id: "c", items: [{ type: "clock" }] }],
+                                               expanded: [{ id: "m", items: [{ type: "media", w: 1, h: 1 }] },
+                                                          { id: "e", items: [{ type: "events", w: 1, h: 1 }] }] })
+        T.eq(L.notchItems(squashedFile, "expanded").map(item => [item.w, item.h]), [[2, 2], [1, 2]],
+             "a file below the floor is raised to it on load")
 
         // Reading a file back.
         T.eq(types(L.sanitizeNotch(null), "expanded"), types(fresh, "expanded"), "no notch at all falls back")
@@ -221,10 +228,10 @@ ShellRoot {
         T.eq(types(L.removeNotchItem(three, "nope"), "expanded"), ["weather", "media"], "an unknown one is not")
 
         // The whole layout carries it, without a version bump.
-        const config = L.sanitize({ configVersion: 2, profiles: {} })
-        T.eq(config.configVersion, 2, "adding the notch does not move the layout version")
+        const config = L.sanitize({ configVersion: 3, profiles: {} })
+        T.eq(config.configVersion, 3, "adding the notch does not move the layout version")
         T.eq(types(config.notch, "collapsed"), ["clock"], "a file without a notch gets the default")
-        const stored = L.sanitize({ configVersion: 2, profiles: {},
+        const stored = L.sanitize({ configVersion: 3, profiles: {},
                                     notch: { collapsed: [{ id: "x", items: [{ type: "date" }] }], expanded: [] } })
         T.eq(types(stored.notch, "collapsed"), ["date"], "a file with one keeps it")
 

@@ -4,44 +4,9 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
-import "../../../services/profile/ProfileLogic.js" as Profile
 
 ColumnLayout {
     spacing: Metrics.spaceLg
-
-    SettingsSection {
-        Layout.fillWidth: true
-        title: "Profile"
-        description: "Each profile has its own desktop mode, widget layout per display and bar"
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: Metrics.spaceSm
-            ShellText { Layout.fillWidth: true; text: "Desktop mode: " + LayoutService.modeLabel; muted: true; wrapMode: Text.Wrap }
-            ShellButton { icon: Icons.edit; text: "Widgets"; compact: true; onClicked: PanelService.open("settings", { page: "widgets" }) }
-            ShellButton { icon: "󰘔"; text: "Bar & Notch"; compact: true; onClicked: PanelService.open("settings", { page: "bar" }) }
-        }
-        SettingRow {
-            Layout.fillWidth: true
-            labelFills: true
-            visible: AdaptiveService.hasInternal
-            label: "Choose automatically"
-            hint: "Laptop without, Docked with an external display"
-            ShellToggle { focusOnTab: true; checked: SettingsService.value("desktop.autoProfile"); onToggled: value => SettingsService.set("desktop.autoProfile", value) }
-        }
-        Repeater {
-            model: LayoutService.profileNames
-            ListRow {
-                required property string modelData
-                readonly property var template: LayoutService.templates[modelData] || {}
-                Layout.fillWidth: true
-                icon: Profile.icon(modelData)
-                title: Profile.label(modelData, LayoutService.templates)
-                subtitle: template.description || ""
-                selected: LayoutService.activeProfile === modelData
-                onClicked: LayoutService.setActiveProfile(modelData)
-            }
-        }
-    }
 
     SettingsSection {
         Layout.fillWidth: true
@@ -51,6 +16,7 @@ ColumnLayout {
             label: "Time format"
             hint: "Automatic follows the interface language. Applies to the clock, the notch, the dashboard, the lock screen and the weather."
             SegmentedControl {
+                focusOnTab: true
                 Layout.fillWidth: true
                 current: SettingsService.value("appearance.clockFormat")
                 options: [{ value: "locale", label: "Automatic" },
@@ -91,12 +57,13 @@ ColumnLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Save history"
-            ShellToggle { checked: SettingsService.value("clipboard.history"); onToggled: value => SettingsService.set("clipboard.history", value) }
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("clipboard.history"); onToggled: value => SettingsService.set("clipboard.history", value) }
         }
         RowLayout {
             spacing: Metrics.spaceSm
-            ShellButton { icon: Icons.copy; text: "Open history"; onClicked: PanelService.open("clipboard") }
+            ShellButton { focusOnTab: true; icon: Icons.copy; text: "Open history"; onClicked: PanelService.open("clipboard") }
             ShellButton {
+                focusOnTab: true
                 icon: Icons.remove
                 text: "Clear history"
                 variant: "ghost"
@@ -111,7 +78,7 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "Screen recording"
         description: "Super + Shift + R records a region, Super + Ctrl + Shift + R the screen. Press it again or click the red indicator to stop."
-        Component.onCompleted: RecordingService.refreshBackends()
+        PageActivity { onOpened: RecordingService.refreshBackends() }
         ShellText {
             Layout.fillWidth: true
             visible: RecordingService.backendsKnown
@@ -180,6 +147,7 @@ ColumnLayout {
             ShellToggle { focusOnTab: true; checked: SettingsService.value("drives.autoOpen"); onToggled: value => SettingsService.set("drives.autoOpen", value) }
         }
         ShellButton {
+            focusOnTab: true
             visible: DrivesService.drives.length > 0 || DrivesService.phones.length > 0
             icon: "󰋊"; text: "Show drives"
             onClicked: PanelService.open("controlCenter", { page: "drives" })

@@ -3,6 +3,7 @@ import qs.theme
 import qs.services
 import qs.shell.components
 import "../../services/arrange/ArrangeLogic.js" as Arrange
+import "../../services/LayoutLogic.js" as Logic
 
 // Notch arranging inside the layout editor (desktop mode "Notch").
 //
@@ -197,6 +198,13 @@ Item {
         return found ? { w: found.w, h: found.h } : { w: 1, h: 1 }
     }
 
+    // The floor the write applies (LayoutLogic.setNotchItemSize clamps to
+    // it), so the preview cannot show a cell the release then undoes.
+    function leastOf(id) {
+        const found = NotchService.expandedItems.find(item => item.id === id)
+        return found ? Logic.notchMinSize(found.type) : { w: 1, h: 1 }
+    }
+
     function beginSize(id) {
         const size = sizeOf(id)
         overlay.sizeId = id
@@ -211,13 +219,14 @@ Item {
         if (!zone || !rect) return
         // Measured inside the zone, not on the screen: the clamp asks which
         // column the block starts in, and a screen x is not that. The row
-        // ceiling is the one the layout file is sanitized against, so nothing
-        // is previewed that the write would take back.
+        // ceiling is the one the layout file is sanitized against and the
+        // floor is the item's own minimum, so nothing is previewed that the
+        // write would take back.
         const wanted = Arrange.sizeAt(x - zone.x, y - zone.y,
                                       { x: rect.x - zone.x, y: rect.y - zone.y },
                                       NotchService.columns, zone.width,
                                       Metrics.notchColumnGap, Metrics.notchGridUnit,
-                                      LayoutService.gridMaxRows)
+                                      LayoutService.gridMaxRows, leastOf(overlay.sizeId))
         overlay.sizeW = wanted.w
         overlay.sizeH = wanted.h
     }
@@ -395,7 +404,9 @@ Item {
                     anchors.centerIn: parent
                     glyph: Icons.close
                     size: Metrics.iconXs
-                    color: dropMouse.containsMouse ? Colors.accentText : Colors.danger
+                    // Ink on the danger fill, not on the accent's: a light
+                    // accent picks dark ink, and the fill under it is red.
+                    color: dropMouse.containsMouse ? Colors.textOn(Colors.danger) : Colors.danger
                 }
                 MouseArea {
                     id: dropMouse

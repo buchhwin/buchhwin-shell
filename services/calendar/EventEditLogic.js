@@ -238,7 +238,6 @@ function deleteRequest(identity, scope) {
 }
 
 // What the panel says after a write, so the wording is in one place.
-function wroteMessage(kind, scope, single) {
-    if (kind === "delete") return scope === "single" && !single ? "Event deleted." : "Event deleted."
-    return "Event updated."
+function wroteMessage(kind) {
+    return kind === "delete" ? "Event deleted." : "Event updated."
 }

@@ -29,7 +29,7 @@ ColumnLayout {
                 icon: app ? "" : "󰀻"
                 title: app ? app.name : modelData
                 subtitle: app ? (app.genericName || app.comment || "") : "No longer installed"
-                ShellButton { icon: Icons.remove; variant: "ghost"; compact: true; onClicked: AutostartService.remove(modelData) }
+                ShellButton { focusOnTab: true; icon: Icons.remove; variant: "ghost"; compact: true; toolTip: "Remove"; onClicked: AutostartService.remove(modelData) }
             }
         }
         EmptyState {
@@ -42,6 +42,7 @@ ColumnLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceSm
             ShellSelect {
+                focusOnTab: true
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignTop
                 options: appOptions
@@ -51,6 +52,7 @@ ColumnLayout {
                 onSelected: value => addId = value
             }
             ShellButton {
+                focusOnTab: true
                 Layout.alignment: Qt.AlignTop
                 icon: Icons.add; text: "Add"
                 enabledState: addId.length > 0
@@ -68,6 +70,7 @@ ColumnLayout {
             labelFills: true
             label: "Run standard autostart"
             ShellToggle {
+                focusOnTab: true
                 checked: SettingsService.value("autostart.system")
                 onToggled: value => SettingsService.set("autostart.system", value)
             }

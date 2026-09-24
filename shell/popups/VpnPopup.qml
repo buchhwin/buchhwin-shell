@@ -34,8 +34,9 @@ PopupPanel {
         }
 
         ShellButton {
+            focusOnTab: true
             icon: Icons.settings; compact: true; variant: "ghost"
-            text: NetworkService.vpns.length ? "Edit VPN connections" : "Set up VPN"
+            text: "Edit VPN and connections"
             onClicked: NetworkService.openSystemDialog()
         }
     }

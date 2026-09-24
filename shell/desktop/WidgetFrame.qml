@@ -59,8 +59,11 @@ Item {
 
         Rectangle {
             anchors.fill: parent
-            radius: root.styleName === "capsule" ? height / 2 : Metrics.radiusLg
-            color: root.styleName === "minimal" ? Colors.surface : Colors.panelFor("widgets")
+            // The capsule stays round like the bar's pills; the card takes
+            // the card radius so it follows the shell corner setting with
+            // every other card.
+            radius: root.styleName === "capsule" ? height / 2 : Metrics.radiusCard
+            color: root.styleName === "minimal" ? Colors.surface1 : Colors.panelFor("widgets")
             border.width: root.styleName === "card" || (root.styleName === "minimal" && root.hovered) ? Metrics.borderWidth : 0
             border.color: Colors.panelBorder
             opacity: root.styleName === "minimal" ? (root.hovered ? 1 : 0) : 1

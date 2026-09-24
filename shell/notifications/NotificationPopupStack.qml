@@ -6,6 +6,7 @@ import Quickshell.Services.Notifications
 import qs.theme
 import qs.services
 import "../../services/origin/OriginLogic.js" as Origin
+import "../../services/notifications/NotificationLogic.js" as Logic
 
 // Up to three popups directly below the clock on the focused monitor - or out
 // of the notch, when there is one: a notification belongs to the notch, and
@@ -64,10 +65,36 @@ PanelWindow {
         : Origin.atTopRight(Metrics.notificationWidth, targetScreen ? targetScreen.width : 0,
                             cornerTop, Metrics.screenMargin)
 
+    // The notch can be the display itself, and then the newest popup appears
+    // *in* it and this stack stays away. Only the newest: the notch is a strip
+    // and a stack of three in it would be the overview with notifications in
+    // it, which is the thing this replaces.
+    readonly property var newest: NotificationService.popups.length
+        ? NotificationService.popups[0] : null
+    readonly property bool inNotch: newest !== null
+        && !PanelService.isOpen("notifications")
+        && NotchService.takesDisplay("notification", screenName)
+    onInNotchChanged: publish()
+    onNewestChanged: publish()
+    // Worked out from what `newest` is *now*, not from `inNotch`: this runs
+    // from `onNewestChanged`, and `inNotch` is a binding on `newest` that has
+    // not been re-evaluated yet when the handler fires - so the popup that
+    // had just left the notch still read as in it, and `newest.image` threw
+    // on null on the way out. `onInNotchChanged` publishes again once the
+    // binding has caught up, and both arrive at the same answer.
+    function publish() {
+        const notification = newest
+        const shown = notification !== null && notification !== undefined
+            && !PanelService.isOpen("notifications")
+            && NotchService.takesDisplay("notification", screenName)
+        NotchService.setDisplay("notification", screenName,
+            shown ? Logic.notchContent(notification, name => Quickshell.iconPath(name, true)) : null)
+    }
+
     screen: targetScreen
     // Nothing until there is somewhere to be: a place worked out from a screen
     // whose width is not known yet is the left-hand margin.
-    visible: place !== null && NotificationService.popups.length > 0 && !PanelService.isOpen("notifications")
+    visible: !inNotch && place !== null && NotificationService.popups.length > 0 && !PanelService.isOpen("notifications")
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     // One pair of anchors for the surface's whole life; only the margins move.

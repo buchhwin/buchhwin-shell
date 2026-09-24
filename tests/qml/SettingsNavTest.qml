@@ -5,7 +5,7 @@ import "../../services/settings/SettingsNavLogic.js" as N
 
 ShellRoot {
     Component.onCompleted: {
-        T.eq(N.PAGES.length, 25, "all pages listed")
+        T.eq(N.PAGES.length, 26, "all pages listed")
         T.ok(N.PAGES.every(page => typeof page.subtitle === "string" && page.subtitle.length > 0), "every page carries its own subtitle")
         T.ok(N.PAGES.every(page => !/\.$/.test(page.subtitle)), "a subtitle is a label, not a sentence")
         T.eq(N.ungroupedPages(), [], "every page is in exactly one group")
@@ -38,10 +38,12 @@ ShellRoot {
         T.eq(N.ungroupedPages(groups, pages), ["y"], "ungrouped page is reported")
 
         T.eq(N.step(all, "appearance", 1), "wallpaper", "down to the next page")
-        T.eq(N.step(all, "lockScreen", 1), "desktop", "down skips the heading")
-        T.eq(N.step(all, "desktop", 1), "widgets", "Widgets is its own page next to Desktop")
+        T.eq(N.step(all, "login", 1), "profiles", "down skips the heading")
+        T.eq(N.step(all, "lockScreen", 1), "login",
+             "the lock screen and the login screen are the same kind of thing and sit together")
+        T.eq(N.step(all, "profiles", 1), "widgets", "Widgets is its own page next to Profiles")
         T.eq(N.pageIds(N.rows("widgets")), ["widgets"], "searching for widgets finds the widget page")
-        T.eq(N.step(all, "desktop", -1), "lockScreen", "up skips the heading")
+        T.eq(N.step(all, "profiles", -1), "login", "up skips the heading")
         T.eq(N.step(all, "appearance", -1), "appearance", "up stops at the first page")
         T.eq(N.step(all, "about", 1), "about", "down stops at the last page")
         T.eq([N.step(wifi, "appearance", 1), N.step(wifi, "appearance", -1)], ["network", "network"], "hidden current page jumps into the list")

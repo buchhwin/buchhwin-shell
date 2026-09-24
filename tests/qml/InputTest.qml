@@ -27,6 +27,13 @@ ShellRoot {
         T.eq(I.values(scrolled)["touchpad:scroll_factor"], 1.35, "scroll factor kept")
         T.eq(I.values(path => path === "input.touchpadScrollFactor" ? 9 : settings[path])["touchpad:scroll_factor"], 2, "scroll factor clamped")
         T.eq(I.values(path => path === "input.kbLayout" ? "de; exec rm" : settings[path]).kb_layout, "de", "layout injection rejected")
+        // A setting that is not there is its default, not NaN: NaN is what
+        // HyprCommands.luaValue refuses, and one refused option took every
+        // input option down with it.
+        const bare = I.values(path => undefined)
+        T.eq([bare.repeat_rate, bare.repeat_delay, bare.sensitivity], [25, 600, 0], "missing numbers fall back to the defaults")
+        T.eq([bare.kb_layout, bare.kb_variant], ["de", ""], "and a missing layout is not the word 'undefined'")
+        T.eq(I.values(path => path === "input.repeatRate" ? "fast" : settings[path]).repeat_rate, 25, "so does a number that is not one")
         const options = I.optionMap(values)
         T.eq([options["input:kb_variant"], options["input:touchpad:tap-to-click"]], ["", false], "option map keeps types")
         T.eq(Object.keys(options).length, 11, "one option per setting")

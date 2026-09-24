@@ -26,6 +26,7 @@ PopupPanel {
         spacing: Metrics.spaceMd
 
         ShellButton {
+            focusOnTab: true
             Layout.fillWidth: true
             icon: "󰈊"
             text: "Pick a color"

@@ -65,6 +65,14 @@ fi
 [[ $XCURSOR_SIZE =~ ^[0-9]+$ ]] || XCURSOR_SIZE=24
 export XCURSOR_THEME XCURSOR_SIZE
 hyprctl setcursor "$XCURSOR_THEME" "$XCURSOR_SIZE" >/dev/null 2>&1 || true
+# Marked on its own. The first two timelines put 1.1-2.2 s between "session-init
+# started" and "environment imported", and that gap holds three things: jq,
+# this hyprctl call - answered from Hyprland's main loop, which at this point
+# is still modesetting the outputs - and the systemd import below. The user
+# manager was idle through both logins (its startup had finished 2.3 s before
+# session-init began), so the import is not the obvious suspect it looked like;
+# this mark is what tells the three apart at the next login.
+mark "cursor set"
 
 session_variables=(
   DISPLAY WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE

@@ -16,28 +16,13 @@ PopupPanel {
     backdropSource: MprisService.artUrl
     cardWidth: Metrics.popupMediaWidth
 
-    component ControlButton: Rectangle {
-        id: control
-        property string glyph: ""
-        property int glyphSize: Metrics.iconMd
+    // A transport control is the shell's ghost button; one that is switched
+    // on (shuffle, loop) is the accent one, the way every other toggled
+    // button in the shell says so.
+    component ControlButton: ShellButton {
         property bool lit: false
-        property bool available: true
-        signal clicked()
-        implicitWidth: Metrics.controlHeight
-        implicitHeight: Metrics.controlHeight
-        radius: width / 2
-        color: controlMouse.containsMouse && available ? Colors.hover : "transparent"
-        opacity: available ? 1 : Effects.disabledOpacity
-        Behavior on color { ColorAnimation { duration: Animations.hover } }
-        ShellIcon { anchors.centerIn: parent; glyph: control.glyph; size: control.glyphSize; color: control.lit ? Colors.accentForeground : Colors.text }
-        MouseArea {
-            id: controlMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            enabled: control.available
-            cursorShape: Qt.PointingHandCursor
-            onClicked: control.clicked()
-        }
+        focusOnTab: true
+        variant: lit ? "accent" : "ghost"
     }
 
     body: ColumnLayout {
@@ -123,6 +108,7 @@ PopupPanel {
                         font.features: { "tnum": 1 }
                     }
                     ShellSlider {
+                        focusOnTab: true
                         id: seek
                         Layout.fillWidth: true
                         enabledState: media.player !== null && media.player.canSeek
@@ -142,60 +128,56 @@ PopupPanel {
                     opacity: MprisService.hasPlayer ? 1 : Effects.disabledOpacity
 
                     ControlButton {
-                        glyph: media.player && media.player.shuffle ? "󰒟" : "󰒞"
+                        icon: media.player && media.player.shuffle ? "󰒟" : "󰒞"
                         lit: media.player !== null && media.player.shuffle
-                        available: MprisService.canShuffle
+                        enabledState: MprisService.canShuffle
                         visible: MprisService.canShuffle
+                        toolTip: "Shuffle"
                         onClicked: MprisService.toggleShuffle()
                     }
                     ControlButton {
-                        glyph: Icons.previous; glyphSize: Metrics.iconLg
-                        available: media.player !== null && media.player.canGoPrevious
+                        icon: Icons.previous; iconSize: Metrics.iconLg
+                        enabledState: media.player !== null && media.player.canGoPrevious
+                        toolTip: "Previous"
                         onClicked: MprisService.previous()
                     }
-                    Rectangle {
-                        Layout.preferredWidth: Metrics.popupPlayButton
-                        Layout.preferredHeight: Metrics.popupPlayButton
-                        radius: width / 2
-                        color: playMouse.containsMouse ? Qt.lighter(Colors.accent, 1.08) : Colors.accent
-                        Behavior on color { ColorAnimation { duration: Animations.hover } }
-                        ShellIcon {
-                            anchors.centerIn: parent
-                            glyph: MprisService.playing ? Icons.pause : Icons.play
-                            size: Metrics.iconLg
-                            color: Colors.accentText
-                        }
-                        MouseArea {
-                            id: playMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: MprisService.togglePlaying()
-                        }
+                    ShellButton {
+                        focusOnTab: true
+                        implicitWidth: Metrics.popupPlayButton
+                        implicitHeight: Metrics.popupPlayButton
+                        variant: "accent"
+                        icon: MprisService.playing ? Icons.pause : Icons.play
+                        iconSize: Metrics.iconLg
+                        toolTip: MprisService.playing ? "Pause" : "Play"
+                        onClicked: MprisService.togglePlaying()
                     }
                     ControlButton {
-                        glyph: Icons.next; glyphSize: Metrics.iconLg
-                        available: media.player !== null && media.player.canGoNext
+                        icon: Icons.next; iconSize: Metrics.iconLg
+                        enabledState: media.player !== null && media.player.canGoNext
+                        toolTip: "Next"
                         onClicked: MprisService.next()
                     }
                     ControlButton {
                         // MprisLoopState: 0 none, 1 track, 2 playlist
-                        glyph: media.player && media.player.loopState === 1 ? "󰑘" : media.player && media.player.loopState === 2 ? "󰑖" : "󰑗"
+                        icon: media.player && media.player.loopState === 1 ? "󰑘" : media.player && media.player.loopState === 2 ? "󰑖" : "󰑗"
                         lit: media.player !== null && media.player.loopState !== 0
-                        available: MprisService.canLoop
+                        enabledState: MprisService.canLoop
                         visible: MprisService.canLoop
+                        toolTip: "Repeat"
                         onClicked: MprisService.cycleLoop()
                     }
                     Item { Layout.fillWidth: true }
                     // The player's own volume, compact at the end of the row.
                     ControlButton {
                         visible: MprisService.hasVolume
-                        glyph: AudioService.volumeIcon(MprisService.volume, MprisService.muted)
-                        glyphSize: Metrics.iconSm
-                        available: MprisService.stream !== null
+                        icon: AudioService.volumeIcon(MprisService.volume, MprisService.muted)
+                        iconSize: Metrics.iconSm
+                        enabledState: MprisService.stream !== null
+                        toolTip: MprisService.muted ? "Unmute" : "Mute"
                         onClicked: MprisService.toggleMute()
                     }
                     ShellSlider {
+                        focusOnTab: true
                         visible: MprisService.hasVolume
                         Layout.preferredWidth: Metrics.popupMediaVolume
                         value: MprisService.volume
@@ -212,6 +194,7 @@ PopupPanel {
             Repeater {
                 model: MprisService.players
                 ShellButton {
+                    focusOnTab: true
                     required property var modelData
                     compact: true
                     icon: modelData.isPlaying ? "󰎈" : ""

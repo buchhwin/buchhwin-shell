@@ -59,8 +59,10 @@ def main():
         libpam = ctypes.CDLL(name)
         start = libpam.pam_start_confdir
     except (OSError, AttributeError):
+        # 77 is the skip status (the autotools convention); scripts/test.sh
+        # names it in its summary instead of counting it as a pass.
         print("skipped pam_lid_test (libpam with pam_start_confdir not available)")
-        return 0
+        return 77
     start.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.POINTER(PamConv), ctypes.c_char_p,
                       ctypes.POINTER(ctypes.c_void_p)]
     libpam.pam_authenticate.argtypes = [ctypes.c_void_p, ctypes.c_int]

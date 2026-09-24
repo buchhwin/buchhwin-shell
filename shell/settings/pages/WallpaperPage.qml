@@ -18,7 +18,7 @@ ColumnLayout {
 
     GridLayout {
         Layout.fillWidth: true
-        columns: width >= 620 ? 2 : 1
+        columns: width >= Metrics.wideWidth - Metrics.settingsSidebarWidth ? 2 : 1
         columnSpacing: Metrics.spaceLg
         rowSpacing: Metrics.spaceLg
 
@@ -28,6 +28,7 @@ ColumnLayout {
             title: "Current wallpaper"
 
             SegmentedControl {
+                focusOnTab: true
                 Layout.fillWidth: true
                 visible: Quickshell.screens.length > 1
                 current: root.target
@@ -71,14 +72,16 @@ ColumnLayout {
             Flow {
                 Layout.fillWidth: true
                 spacing: Metrics.spaceSm
-                ShellButton { icon: Icons.previous; text: "Previous"; compact: true; onClicked: WallpaperService.next(-1) }
-                ShellButton { icon: Icons.next; text: "Next"; compact: true; onClicked: WallpaperService.next(1) }
+                ShellButton { focusOnTab: true; icon: Icons.previous; text: "Previous"; compact: true; onClicked: WallpaperService.next(-1) }
+                ShellButton { focusOnTab: true; icon: Icons.next; text: "Next"; compact: true; onClicked: WallpaperService.next(1) }
                 ShellButton {
+                    focusOnTab: true
                     visible: root.target.length > 0 && WallpaperService.hasOwn(root.target)
                     icon: Icons.reset; text: "Same as all"; compact: true
                     onClicked: WallpaperService.resetScreen(root.target)
                 }
                 ShellButton {
+                    focusOnTab: true
                     icon: Icons.folder; text: "Open folder"; compact: true
                     onClicked: { Quickshell.execDetached(["xdg-open", WallpaperService.folder]); PanelService.close() }
                 }
@@ -91,14 +94,14 @@ ColumnLayout {
             title: "Slideshow"
             description: "Change the wallpaper automatically"
 
-            RowLayout {
+            SettingRow {
                 Layout.fillWidth: true
-                ShellText { Layout.fillWidth: true; text: "Slideshow" }
-                ShellToggle { checked: WallpaperService.slideshow; onToggled: value => SettingsService.set("wallpaper.slideshow", value) }
+                labelFills: true
+                label: "Slideshow"
+                ShellToggle { focusOnTab: true; checked: WallpaperService.slideshow; onToggled: value => SettingsService.set("wallpaper.slideshow", value) }
             }
             SettingRow {
                 label: "Interval"
-                labelWidth: 90
                 SegmentedControl {
                     focusOnTab: true
                     Layout.fillWidth: true
@@ -109,7 +112,6 @@ ColumnLayout {
             }
             SettingRow {
                 label: "Order"
-                labelWidth: 90
                 SegmentedControl {
                     focusOnTab: true
                     Layout.fillWidth: true
@@ -120,7 +122,6 @@ ColumnLayout {
             }
             SettingRow {
                 label: "Uses"
-                labelWidth: 90
                 SegmentedControl {
                     focusOnTab: true
                     Layout.fillWidth: true
@@ -136,7 +137,6 @@ ColumnLayout {
             SettingRow {
                 visible: WallpaperService.slideshowSource === "folder"
                 label: "Folder"
-                labelWidth: 90
                 hint: "The subfolders of the wallpaper folder. Make a folder, put wallpapers in it, and the rotation can stay inside it."
                 ShellSelect {
                     focusOnTab: true
@@ -192,7 +192,7 @@ ColumnLayout {
             + (root.target.length ? " · Selection applies to " + root.target : "")
 
         RowLayout {
-            ShellButton { icon: Icons.add; text: "Add images …"; compact: true; onClicked: WallpaperService.importImages() }
+            ShellButton { focusOnTab: true; icon: Icons.add; text: "Add images …"; compact: true; onClicked: WallpaperService.importImages() }
         }
 
         // The picker has had a keyboard since it was built - arrows to move,
@@ -210,7 +210,7 @@ ColumnLayout {
         GridLayout {
             id: grid
             Layout.fillWidth: true
-            columns: Math.max(2, Math.floor(width / 170))
+            columns: Math.max(2, Math.floor(width / Metrics.wallpaperGridCell))
             columnSpacing: Metrics.spaceSm
             rowSpacing: Metrics.spaceSm
 

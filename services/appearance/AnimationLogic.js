@@ -24,10 +24,27 @@ var FLOOR_MS = 167
 // Hyprland counts its `speed` in deciseconds, so the same ten frames are 1.67.
 var FLOOR_SPEED = 1.67
 
+// And a second floor, because the first one turned out not to be the rule it
+// was written to be. Ten frames is a floor on *visibility*: below it a motion
+// stops being one picture after another. It is not a floor on the ground a
+// motion covers, and the comment above says so itself - 227 ms was measured as
+// too fast for a panel and replaced by 340, and a floor at 167 lets exactly
+// that case through. At 1.5x the panel was back at 227 and nothing caught it.
+//
+// So: no travel is scaled below four fifths of what it was designed to take.
+// The speed setting keeps working everywhere - it can still take a fifth off
+// any motion in the session - but it can no longer undo the choice the
+// duration table made. One rule, and both floors apply at once: whichever
+// binds first, binds.
+//
+// Four fifths and not a half: a fifth is the most that came out of stretching
+// panel durations by hand without the result reading as a different animation.
+var FLOOR_SHARE = 0.8
+
 // A duration, scaled and then floored. `base` is the designed duration at 1x.
 //
-// The floor is capped at the base, so a motion that was always shorter than
-// ten frames is not *lengthened* by this: the floor only ever refuses to make
+// Both floors are capped at the base, so a motion that was always shorter than
+// ten frames is not *lengthened* by this: a floor only ever refuses to make
 // something shorter. Without the cap, asking for a 70 ms shake would return
 // 167 and the speed setting would stop reaching it entirely.
 //
@@ -36,24 +53,21 @@ var FLOOR_SPEED = 1.67
 function travel(base, factor, moving) {
     const scaled = Math.round(base * factor)
     if (!moving) return scaled
-    return Math.max(scaled, Math.min(base, FLOOR_MS))
+    return Math.max(scaled, Math.min(base, FLOOR_MS), Math.round(base * FLOOR_SHARE))
 }
 
-// The same, for a compositor speed. Larger is slower here, so the floor is a
-// minimum in the same direction: a leaf may not be scaled below FLOOR_SPEED,
-// and again only down to its own base, never above it.
+// The same, for a compositor speed. Larger is slower here, so the floors are
+// minima in the same direction: a leaf may not be scaled below FLOOR_SPEED nor
+// below its own share, and again only down to its own base, never above it.
+//
+// The share is what keeps this table honest. Its slowest leaf is 2.2 ds, so a
+// ten-frame floor raised to a panel's 227 ms would have sat above *every* leaf
+// and frozen the compositor at its designed pace whatever the speed setting
+// said. A share cannot do that: it scales with each leaf.
 function travelSpeed(base, factor, moving) {
     const scaled = base * factor
     if (!moving) return scaled
-    return Math.max(scaled, Math.min(base, FLOOR_SPEED))
-}
-
-// What the speed setting can still do before the floor starts swallowing it,
-// for the fastest travel in the table. Settings shows this so the slider says
-// what it does instead of silently clamping.
-function speedCeiling(base) {
-    const wanted = Math.max(1, Number(base) || 1)
-    return Math.round(wanted / FLOOR_MS * 100) / 100
+    return Math.max(scaled, Math.min(base, FLOOR_SPEED), base * FLOOR_SHARE)
 }
 
 // ---- the modes, and the one that stopped meaning anything -----------------

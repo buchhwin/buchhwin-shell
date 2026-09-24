@@ -32,6 +32,7 @@ git -C "$dev" config user.name test
 # The clone's own copy of the script under test (with the working tree version).
 cp "$project_dir/scripts/deploy.sh" "$project_dir/scripts/reload-shell.sh" \
   "$project_dir/scripts/stop-shell.sh" "$dev/scripts/"
+mkdir -p "$dev/scripts/lib" && cp "$project_dir/scripts/lib/reload.sh" "$dev/scripts/lib/"
 git -C "$dev" add -A && git -C "$dev" commit --quiet -m "test: current scripts" || true
 export BUCHHWIN_STABLE_DIR="$work/home/.local/share/buchhwin-shell-stable"
 deploy() { "$dev/scripts/deploy.sh" "$@"; }

@@ -6,7 +6,10 @@ set -euo pipefail
 #   scripts/smoke-session.sh --nested   use a disposable nested Hyprland
 #   BUCHHWIN_SMOKE_KEEP=1               keep the nested session running
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
-expected_targets=(editor launcher controlCenter notifications powerMenu settings dashboard weather calendar bar notch network bluetooth displays power clipboard overview gestures focus nightLight profile)
+# Every IpcHandler target shell.qml declares, in its order; only `show` is
+# read, nothing is called. tests/python/smoke_targets_test.py holds this list
+# to shell.qml in both directions.
+expected_targets=(desktop editor welcome emoji launcher controlCenter notifications powerMenu settings appTheme dashboard popup weather calendar network bluetooth kdeConnect fingerprint drives accounts updates recording shortcuts nightLight focus overview gestures colorPicker wallpaperPicker switcher clipboard brightness workspaces kbdBacklight power displays bar notch audio mode profile)
 [[ -n ${BUCHHWIN_EXPECTED_TARGETS:-} ]] && read -r -a expected_targets <<<"$BUCHHWIN_EXPECTED_TARGETS"
 
 # Warnings from the environment or Quickshell itself rather than from this shell:
@@ -18,13 +21,15 @@ expected_targets=(editor launcher controlCenter notifications powerMenu settings
 known_warnings='quickshell\.desktopentry|Could not register notification server|Registration will be attempted again|channelVolumes and channelMap are not the same size|QSettings::value: Empty key passed|playerctld|qt\.qml\.propertyCache\.append'
 
 if [[ ${1:-} == --nested ]]; then
+  # The trap comes first: a start that fails half-way (set -e ends this script
+  # at once) has already written hyprland.pid, and `stop` reads that file.
+  [[ ${BUCHHWIN_SMOKE_KEEP:-0} == 1 ]] || trap '"$project_dir/scripts/nested-session.sh" stop' EXIT
   env_lines=$("$project_dir/scripts/nested-session.sh" start "${BUCHHWIN_SMOKE_SIZE:-1920x1200}" "${BUCHHWIN_SMOKE_SCALE:-1}")
   base=$(sed -n 's/^NESTED_DIR=//p' <<<"$env_lines")
   export HYPRLAND_INSTANCE_SIGNATURE=$(sed -n 's/^HYPRLAND_INSTANCE_SIGNATURE=//p' <<<"$env_lines")
   export WAYLAND_DISPLAY=$(sed -n 's/^NESTED_WAYLAND_DISPLAY=//p' <<<"$env_lines")
   export XDG_CONFIG_HOME="$base/config" XDG_STATE_HOME="$base/state" XDG_CACHE_HOME="$base/cache"
   config_path=$project_dir
-  [[ ${BUCHHWIN_SMOKE_KEEP:-0} == 1 ]] || trap '"$project_dir/scripts/nested-session.sh" stop' EXIT
 else
   "$project_dir/scripts/reload-shell.sh"
   config_path="$HOME/.local/share/buchhwin-shell"
@@ -45,6 +50,10 @@ sleep "${BUCHHWIN_SMOKE_SETTLE:-1}"
 log=$(quickshell log --path "$config_path" 2>/dev/null | sed -E 's/\x1b\[[0-9;]*m//g' || true)
 
 status=0
+# A step this machine cannot run (the pointer tool without its build tools)
+# is a skip, not a pass: the script exits 77 for it when nothing failed, and
+# scripts/test.sh names it in its summary.
+skipped=0
 targets=$(quickshell ipc --path "$config_path" show)
 for target in "${expected_targets[@]}"; do
   if grep -q "^target $target\$" <<<"$targets"; then
@@ -55,16 +64,10 @@ for target in "${expected_targets[@]}"; do
   fi
 done
 
-# Dashboard calendar views (nested only: setView writes the settings file, and
-# in the real session that is the user's). Every view must be accepted, an
-# unknown one refused, and the dashboard must open in the day view (the log
-# check below catches errors in its time grid).
+# The dashboard opens (nested only). It used to switch between three calendar
+# views here; it always shows the month now, so what is left to check is that it
+# opens at all - the log check below catches errors in its month grid.
 if [[ ${1:-} == --nested ]]; then
-  set_view() { quickshell ipc --path "$config_path" call dashboard setView "$1"; }
-  views=""
-  for view in month week day; do views+=$(set_view "$view"); done
-  unknown=$(set_view hour)
-  set_view day >/dev/null
   quickshell ipc --path "$config_path" call dashboard open >/dev/null
   opened=""
   for _ in {1..20}; do
@@ -73,11 +76,10 @@ if [[ ${1:-} == --nested ]]; then
     sleep 0.1
   done
   quickshell ipc --path "$config_path" call dashboard close >/dev/null
-  set_view month >/dev/null
-  if [[ $views == truetruetrue && $unknown == false && $opened == dashboard ]]; then
-    printf 'ok       dashboard month/week/day views\n'
+  if [[ $opened == dashboard ]]; then
+    printf 'ok       the dashboard opens\n'
   else
-    printf 'failed   dashboard views (accepted: %s, unknown: %s, day view open: %s)\n' "$views" "$unknown" "$opened"
+    printf 'failed   the dashboard did not open (popup get: %s)\n' "$opened"
     status=1
   fi
 fi
@@ -88,6 +90,7 @@ fi
 if [[ ${1:-} == --nested && ${BUCHHWIN_SMOKE_POINTER:-1} == 1 ]]; then
   if ! "$project_dir/scripts/nested-pointer" --build 2>/dev/null; then
     printf 'skip     pointer (tool cannot build)\n'
+    skipped=1
   else
     export BUCHHWIN_NESTED_DIR=$base
     monitor=$(hyprctl -j monitors | jq -c '.[] | select(.name == "BUCHTEST")')
@@ -177,4 +180,5 @@ if [[ -n $problems ]]; then
 else
   printf 'ok       log has no shell warnings\n'
 fi
+[[ $status -eq 0 && $skipped -eq 1 ]] && exit 77
 exit "$status"

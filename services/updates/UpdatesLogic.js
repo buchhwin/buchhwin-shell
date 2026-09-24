@@ -314,9 +314,13 @@ function checkedText(time, now) {
     const date = new Date(time)
     const today = new Date(now)
     const clock = pad(date.getHours()) + ":" + pad(date.getMinutes())
-    const dayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
-    if (time >= dayStart && time < dayStart + 24 * HOUR) return "Today, " + clock
-    if (time >= dayStart - 24 * HOUR && time < dayStart) return "Yesterday, " + clock
+    // Calendar days, not 24-hour windows: on the night the clocks change a
+    // day is 23 or 25 hours long, and "yesterday" measured as `dayStart -
+    // 24h` then started an hour into it or an hour before it.
+    const dayOf = value => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime()
+    const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1)
+    if (dayOf(date) === dayOf(today)) return "Today, " + clock
+    if (dayOf(date) === dayOf(yesterday)) return "Yesterday, " + clock
     return MONTHS[date.getMonth()] + " " + date.getDate() + (date.getFullYear() !== today.getFullYear() ? " " + date.getFullYear() : "") + ", " + clock
 }
 
@@ -357,7 +361,7 @@ function parseState(text) {
     let data = null
     try { data = JSON.parse(String(text || "")) } catch (error) { data = null }
     const number = value => typeof value === "number" && isFinite(value) && value > 0 ? value : 0
-    const state = { lastCheck: 0, lastAttempt: 0, lastRefresh: 0, notified: [], result: null }
+    const state = { lastCheck: 0, lastAttempt: 0, lastRefresh: 0, notified: [], result: null, shell: null }
     if (!data || typeof data !== "object" || data.version !== 1) return state
     state.lastCheck = number(data.lastCheck)
     state.lastAttempt = number(data.lastAttempt)
@@ -365,12 +369,91 @@ function parseState(text) {
     state.notified = Array.isArray(data.notified) ? data.notified.filter(key => typeof key === "string").slice(0, 2000) : []
     if (data.result && Array.isArray(data.result.packages) && Array.isArray(data.result.flatpaks))
         state.result = Object.assign(emptyResult(), data.result)
+    if (data.shell && typeof data.shell === "object" && Array.isArray(data.shell.commits))
+        state.shell = Object.assign(emptyShell(), data.shell)
     return state
 }
 
 function serializeState(state) {
     return JSON.stringify({ version: 1, lastCheck: state.lastCheck, lastAttempt: state.lastAttempt,
-                            lastRefresh: state.lastRefresh, notified: state.notified, result: state.result }, null, 2) + "\n"
+                            lastRefresh: state.lastRefresh, notified: state.notified, result: state.result,
+                            shell: state.shell }, null, 2) + "\n"
+}
+
+// ---- the shell itself -----------------------------------------------------------
+// scripts/shell-update.sh check: the checkout the session runs from against
+// the remote it follows. `repo` is "ok" (follows a remote), "local" (follows
+// none - the development machine's stable worktree) or "none" (not a git
+// checkout at all).
+
+function emptyShell() {
+    return { known: false, repo: "", dir: "", branch: "", upstream: "", head: "",
+             behind: 0, ahead: 0, dirty: false, commits: [], fetched: false, error: "" }
+}
+
+function parseShellReport(text) {
+    const sections = parseSections(text)
+    const shell = emptyShell()
+    const repo = sections["repo"]
+    if (!repo) { shell.error = "The shell check produced no report"; return shell }
+    const lines = repo.text.split("\n")
+    shell.known = true
+    shell.repo = ["ok", "local", "none"].indexOf(lines[0]) >= 0 ? lines[0] : "none"
+    shell.dir = lines[1] || ""
+    shell.branch = lines[2] || ""
+    shell.upstream = lines[3] || ""
+    shell.head = lines[4] || ""
+    if (shell.repo !== "ok") return shell
+    const fetch = sections["fetch"]
+    if (fetch && fetch.code !== 0) {
+        const reason = fetch.text.split("\n")[0]
+        shell.error = /Could not resolve|Could not connect|Connection timed out|Network is unreachable/i.test(fetch.text)
+            ? "Offline: the shell's remote could not be reached"
+            : "The shell's remote could not be fetched" + (reason.length ? " (" + reason + ")" : "")
+    }
+    shell.fetched = !!fetch && fetch.code === 0 && fetch.text !== "skipped"
+    const count = name => sections[name] ? Math.max(0, parseInt(sections[name].text) || 0) : 0
+    shell.behind = count("behind")
+    shell.ahead = count("ahead")
+    shell.dirty = !!sections["dirty"] && sections["dirty"].text.length > 0
+    shell.commits = (sections["log"] ? sections["log"].text.split("\n") : []).filter(line => line.length).map(line => {
+        const tab = line.indexOf("\t")
+        return tab < 0 ? { hash: "", subject: line } : { hash: line.slice(0, tab), subject: line.slice(tab + 1) }
+    })
+    return shell
+}
+
+function shellSummary(shell) {
+    if (!shell || !shell.known) return "Not checked yet"
+    if (shell.repo === "none") return "Not a git checkout"
+    if (shell.repo === "local") return "Development checkout, follows no remote"
+    if (shell.behind > 0) return shell.behind + (shell.behind === 1 ? " commit" : " commits") + " behind " + shell.upstream
+    return "Up to date"
+}
+
+function shellSubtitle(shell) {
+    if (!shell || !shell.known || shell.repo === "none") return shell && shell.dir ? shell.dir : ""
+    const parts = [shell.branch + " at " + shell.head]
+    if (shell.ahead > 0) parts.push(shell.ahead + " local " + (shell.ahead === 1 ? "commit" : "commits"))
+    if (shell.dirty) parts.push("local changes")
+    if (shell.error.length) parts.push(shell.error)
+    return parts.join(" · ")
+}
+
+// Fast-forward only, so nothing of the user's is ever merged over.
+function shellUpdatable(shell) {
+    return !!shell && shell.known && shell.repo === "ok" && shell.behind > 0 && shell.ahead === 0 && !shell.dirty
+}
+
+function shellCheckCommand(script, offline) {
+    return offline ? [script, "check", "--offline"] : [script, "check"]
+}
+
+// Through a transient unit: the update ends in a shell restart, which would
+// kill a child of the shell halfway through.
+function shellUpdateCommand(script) {
+    return ["systemd-run", "--user", "--quiet", "--collect", "--unit=buchhwin-shell-update",
+            "--description=buchhwin-shell update", script, "apply"]
 }
 
 // ---- commands -----------------------------------------------------------------

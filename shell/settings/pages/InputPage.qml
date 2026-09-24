@@ -7,8 +7,14 @@ import qs.shell.components
 ColumnLayout {
     spacing: Metrics.spaceLg
 
-    // A touchpad may have been connected since the last check.
-    Component.onCompleted: GestureService.refreshDevices()
+    // A touchpad may have been connected since the page was last on screen,
+    // and VS Code's own scroll setting may have changed.
+    PageActivity {
+        onOpened: {
+            GestureService.refreshDevices()
+            InputService.refreshAppScroll()
+        }
+    }
 
     SettingsSection {
         Layout.fillWidth: true
@@ -60,6 +66,7 @@ ColumnLayout {
             }
         }
         ShellTextField {
+            focusOnTab: true
             Layout.fillWidth: true
             icon: "󰌌"
             placeholder: "Type here to test layout and repeat"
@@ -72,13 +79,20 @@ ColumnLayout {
 
         SettingRow {
             label: "Speed"
+            // Written on release like the Appearance sliders - every tick of a
+            // drag used to be a settings write and a Hyprland option apply.
+            // The number beside the slider follows the handle meanwhile.
             ShellSlider {
+                id: speedSlider
                 focusOnTab: true
                 Layout.fillWidth: true
                 value: (SettingsService.value("input.sensitivity") + 1) / 2
-                onMoved: value => SettingsService.set("input.sensitivity", Math.round((value * 2 - 1) * 20) / 20)
+                onReleased: value => SettingsService.set("input.sensitivity", Math.round((value * 2 - 1) * 20) / 20)
             }
-            ShellText { text: Math.round(SettingsService.value("input.sensitivity") * 100) + "%"; muted: true }
+            ShellText {
+                text: Math.round((speedSlider.pressed ? speedSlider.liveValue * 2 - 1 : SettingsService.value("input.sensitivity")) * 100) + "%"
+                role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl
+            }
         }
         SettingRow {
             label: "Acceleration"
@@ -94,7 +108,7 @@ ColumnLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Natural scrolling (mouse)"
-            ShellToggle { checked: SettingsService.value("input.mouseNaturalScroll"); onToggled: value => SettingsService.set("input.mouseNaturalScroll", value) }
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("input.mouseNaturalScroll"); onToggled: value => SettingsService.set("input.mouseNaturalScroll", value) }
         }
     }
 
@@ -106,64 +120,65 @@ ColumnLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Natural scrolling"
-            ShellToggle { checked: SettingsService.value("input.touchpadNaturalScroll"); onToggled: value => SettingsService.set("input.touchpadNaturalScroll", value) }
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("input.touchpadNaturalScroll"); onToggled: value => SettingsService.set("input.touchpadNaturalScroll", value) }
         }
         SettingRow {
             label: "Scroll speed"
             hint: "How far two fingers scroll. Apps with their own scrolling, such as browsers, still differ."
             ShellSlider {
+                id: scrollSlider
                 focusOnTab: true
                 Layout.fillWidth: true
                 from: 0.2
                 to: 2
                 value: SettingsService.value("input.touchpadScrollFactor")
-                onMoved: value => SettingsService.set("input.touchpadScrollFactor", Math.round(value * 20) / 20)
+                onReleased: value => SettingsService.set("input.touchpadScrollFactor", Math.round(value * 20) / 20)
             }
-            ShellText { text: Math.round(SettingsService.value("input.touchpadScrollFactor") * 100) + "%"; muted: true }
+            ShellText {
+                text: Math.round((scrollSlider.pressed ? scrollSlider.liveValue : SettingsService.value("input.touchpadScrollFactor")) * 100) + "%"
+                role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl
+            }
         }
         ColumnLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceXs
             // VS Code scrolls much further per step than other apps; its own
             // setting can be matched to the speed above.
-            Component.onCompleted: InputService.refreshAppScroll()
-            RowLayout {
+            SettingRow {
                 Layout.fillWidth: true
-                spacing: Metrics.spaceMd
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 0
-                    ShellText { Layout.fillWidth: true; text: "Match VS Code" }
-                    ShellText {
-                        Layout.fillWidth: true
-                        text: InputService.appScrollError.length > 0 ? InputService.appScrollError
-                            : InputService.appScrollMatched ? "VS Code uses the speed above. Restart it to pick the change up."
-                            : "VS Code scrolls with its own sensitivity. This writes it into its settings (a backup is kept)."
-                        role: "caption"
-                        muted: InputService.appScrollError.length === 0
-                        color: InputService.appScrollError.length > 0 ? Colors.danger : Colors.mutedText
-                        wrapMode: Text.Wrap
-                    }
-                }
+                labelFills: true
+                label: "Match VS Code"
+                hint: "VS Code scrolls with its own sensitivity. This writes it into its settings (a backup is kept)."
                 ShellButton {
+                    focusOnTab: true
                     text: InputService.appScrollMatched ? "Undo" : "Match"
                     compact: true
-                    enabled: !InputService.appScrollBusy && InputService.appScrollError.length === 0
+                    enabledState: !InputService.appScrollBusy && InputService.appScrollError.length === 0
                     onClicked: InputService.appScrollRun(InputService.appScrollMatched ? "reset" : "apply")
                 }
+            }
+            // What happened, not what the button is for: that is the hint.
+            ShellText {
+                Layout.fillWidth: true
+                visible: InputService.appScrollError.length > 0 || InputService.appScrollMatched
+                text: InputService.appScrollError.length > 0 ? InputService.appScrollError
+                    : "VS Code uses the speed above. Restart it to pick the change up."
+                role: "caption"
+                color: InputService.appScrollError.length > 0 ? Colors.danger : Colors.mutedText
+                wrapMode: Text.Wrap
             }
         }
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
             label: "Tap to click"
-            ShellToggle { checked: SettingsService.value("input.tapToClick"); onToggled: value => SettingsService.set("input.tapToClick", value) }
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("input.tapToClick"); onToggled: value => SettingsService.set("input.tapToClick", value) }
         }
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
             label: "Disable while typing"
-            ShellToggle { checked: SettingsService.value("input.disableWhileTyping"); onToggled: value => SettingsService.set("input.disableWhileTyping", value) }
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("input.disableWhileTyping"); onToggled: value => SettingsService.set("input.disableWhileTyping", value) }
         }
     }
 
@@ -179,7 +194,7 @@ ColumnLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Use gestures"
-            ShellToggle { checked: gestureSection.gesturesOn; onToggled: value => SettingsService.set("gestures.enabled", value) }
+            ShellToggle { focusOnTab: true; checked: gestureSection.gesturesOn; onToggled: value => SettingsService.set("gestures.enabled", value) }
         }
 
         Repeater {

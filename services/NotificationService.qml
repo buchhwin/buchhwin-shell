@@ -79,8 +79,14 @@ Singleton {
         }
     }
 
+    // Which boot wrote this. A shell restart must not clear a manual Do Not
+    // Disturb - reloading the shell is not answering the question - but a
+    // reboot should, and the two are otherwise indistinguishable from in here.
+    readonly property string bootId: bootFile.text().trim()
+
     function saveState() {
-        stateFile.setText(JSON.stringify({ dnd: { mode: dndMode, until: dndUntil }, appRules: appRules }, null, 2) + "\n")
+        stateFile.setText(JSON.stringify({ dnd: { mode: dndMode, until: dndUntil, boot: bootId },
+                                           appRules: appRules }, null, 2) + "\n")
     }
 
     // "default" removes the rule again.
@@ -102,6 +108,14 @@ Singleton {
             const dnd = parsed.dnd || {}
             dndMode = ["off", "1h", "tomorrow", "manual"].indexOf(dnd.mode) >= 0 ? dnd.mode : "off"
             dndUntil = Number(dnd.until) || 0
+            // **A reboot turns a manual Do Not Disturb off.** "Until turned
+            // off" is a promise about this session, and starting the machine
+            // again is as clear an answer as reaching for the switch would be;
+            // it was reported as Do Not Disturb having switched itself back on
+            // after a restart. A *timed* one is a promise about the clock
+            // instead - "until six tomorrow" means six tomorrow whether or not
+            // the machine slept in between - so those two are left alone.
+            if (dndMode === "manual" && String(dnd.boot || "") !== bootId) dndMode = "off"
             const rules = parsed.appRules || {}
             const clean = {}
             for (const key in rules) if (rules[key] === "mute" || rules[key] === "critical") clean[key] = rules[key]
@@ -125,6 +139,15 @@ Singleton {
                 root.scheduleExpiry()
             }
         }
+    }
+
+    // The kernel's own boot marker, read once and blocking: it is 37 bytes and
+    // `loadState` needs it in the same turn it reads the stored state.
+    FileView {
+        id: bootFile
+        path: "/proc/sys/kernel/random/boot_id"
+        blockLoading: true
+        printErrors: false
     }
 
     FileView {

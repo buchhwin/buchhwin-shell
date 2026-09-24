@@ -143,12 +143,16 @@ function groups(entries, monitors) {
     const orphans = list.filter(entry => order.indexOf(entry.monitor) < 0)
     if (orphans.length)
         result.push({ monitor: "", number: 0, focused: false, base: 0, aspect: 0.5625, workspaces: orphans })
-    // The focused row moves to the front by hand rather than by sorting: a
-    // sort with a two-valued comparator is only stable if the engine says so,
-    // and this one is not - it put the homeless row in the middle and a real
-    // monitor at the end.
-    const at = result.findIndex(row => row.focused)
-    if (at > 0) result.unshift(result.splice(at, 1)[0])
+    // **The rows stay in the monitors' own order**, left to right, and the
+    // focused one is marked rather than moved. It used to be pulled to the
+    // front, which made sense while there was a row per *workspace*; with a
+    // row per monitor it throws the one thing this layout is for away. The
+    // rows then stood in a different order every time depending on which
+    // screen the overview was opened from - left, middle, right becomes
+    // middle, left, right - and the user reported it as the workspaces being
+    // jumbled again. A row already says "Monitor 2 - DP-10" and draws that in
+    // the accent colour when it is the focused one; that is enough to find it,
+    // and it costs nothing to look for.
     return result
 }
 

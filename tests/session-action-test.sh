@@ -89,10 +89,19 @@ lock() {
   : > "$count"
   rm -rf -- "$run"
   mkdir -p "$run"
-  env -u BUCHHWIN_NESTED CALLS="$calls" STUB_COUNT="$count" XDG_RUNTIME_DIR="$run" "$@" \
-    bash "$project_dir/scripts/session-action.sh" lock >"$sandbox/out.log" 2>&1
+  env -u BUCHHWIN_NESTED BUCHHWIN_NESTED_DIR="$sandbox/no-nested" CALLS="$calls" STUB_COUNT="$count" \
+    XDG_RUNTIME_DIR="$run" "$@" bash "$project_dir/scripts/session-action.sh" lock >"$sandbox/out.log" 2>&1
+}
+# The same for the power actions, which go to (the stub) systemctl.
+action() {
+  : > "$calls"
+  : > "$count"
+  local name=$1; shift
+  env -u BUCHHWIN_NESTED BUCHHWIN_NESTED_DIR="$sandbox/no-nested" CALLS="$calls" STUB_COUNT="$count" \
+    XDG_RUNTIME_DIR="$run" "$@" bash "$project_dir/scripts/session-action.sh" "$name" >"$sandbox/out.log" 2>&1
 }
 said() { grep -q "$1" "$calls"; }
+mkdir -p "$sandbox/no-nested"
 
 # A unit that is still coming up belongs to another locker. The old guard read
 # `is-active`, which is false for `activating`, and the run that followed was
@@ -137,6 +146,29 @@ check '! said "^swaylock"' 'no fallback while another lock screen is coming up'
 lock STUB_STATES=inactive STUB_RUN_FAILS=1
 check 'said "stop"' 'a failed start is cleaned up'
 check 'said "^swaylock"' 'a failed start falls back to swaylock'
+
+# The host is never suspended, rebooted or powered off from a nested session -
+# and a nested session is recognised by its files, not only by BUCHHWIN_NESTED.
+# The testing recipe exports the nested WAYLAND_DISPLAY and signature and says
+# nothing about the flag, and with the flag as the only guard `suspend` from
+# there reached the real systemctl.
+nested="$sandbox/nested"
+mkdir -p "$nested"
+printf 'wayland-9\n' > "$nested/wayland-display"
+printf 'sig-9\n' > "$nested/instance"
+action suspend
+check 'said "^systemctl suspend"' 'outside a nested session suspend reaches systemctl (the stub)'
+action suspend BUCHHWIN_NESTED=1
+check '[[ $? == 0 ]] && ! said "suspend"' 'BUCHHWIN_NESTED=1 skips suspend'
+action poweroff BUCHHWIN_NESTED_DIR="$nested" WAYLAND_DISPLAY=wayland-9
+check '! said "poweroff"' 'the nested display (files, no flag) skips poweroff'
+action reboot BUCHHWIN_NESTED_DIR="$nested" HYPRLAND_INSTANCE_SIGNATURE=sig-9
+check '! said "reboot"' 'the nested signature (files, no flag) skips reboot'
+action reboot BUCHHWIN_NESTED_DIR="$nested" WAYLAND_DISPLAY=wayland-1 HYPRLAND_INSTANCE_SIGNATURE=sig-1
+check 'said "^systemctl reboot"' 'a display and signature that are not the nested ones still act'
+# Recognised by its files, the lock uses the nested unit and directory too.
+lock STUB_STATES=inactive BUCHHWIN_NESTED_DIR="$nested" WAYLAND_DISPLAY=wayland-9
+check 'said "unit=buchhwin-shell-lock-nested"' 'the lock from a nested environment takes the nested unit name'
 
 if (( failures )); then
   printf 'session-action: %d check(s) failed\n' "$failures" >&2

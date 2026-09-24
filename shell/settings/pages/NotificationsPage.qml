@@ -12,6 +12,7 @@ ColumnLayout {
         title: "Do Not Disturb"
         description: NotificationService.dndActive ? NotificationService.dndLabel : "Off"
         SegmentedControl {
+            focusOnTab: true
             Layout.fillWidth: true
             current: NotificationService.dndActive ? NotificationService.dndMode : "off"
             options: [{ value: "off", label: "Off" }, { value: "1h", label: "1 hour" }, { value: "tomorrow", label: "Until tomorrow" }, { value: "manual", label: "Indefinitely" }]
@@ -21,13 +22,13 @@ ColumnLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Mute automatically in fullscreen"
-            ShellToggle { checked: SettingsService.value("notifications.suppressFullscreen"); onToggled: value => SettingsService.set("notifications.suppressFullscreen", value) }
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("notifications.suppressFullscreen"); onToggled: value => SettingsService.set("notifications.suppressFullscreen", value) }
         }
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
             label: "Mute automatically while gaming"
-            ShellToggle { checked: SettingsService.value("notifications.suppressGames"); onToggled: value => SettingsService.set("notifications.suppressGames", value) }
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("notifications.suppressGames"); onToggled: value => SettingsService.set("notifications.suppressGames", value) }
         }
     }
 
