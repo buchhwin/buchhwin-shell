@@ -12,10 +12,12 @@ var MODES = ["open", "gapless", "fixed"]
 // How a workspace is drawn.
 //   numbers    every one shows its number, as it always did
 //   dots       none of them do; the row becomes a row of pips
+//   pills      none of them do either, drawn as narrow standing capsules with
+//              the active one wider - the island's strip
 //   activeDot  the active one is a dot and the rest keep their numbers, so
 //              where you are reads at a glance and where you could go is still
 //              named
-var STYLES = ["numbers", "dots", "activeDot"]
+var STYLES = ["numbers", "dots", "pills", "activeDot"]
 
 function normalizeStyle(style) {
     return STYLES.indexOf(style) >= 0 ? style : "numbers"
@@ -31,6 +33,7 @@ function showsLabel(style, entry) {
     if (named) return true
     switch (normalizeStyle(style)) {
     case "dots": return false
+    case "pills": return false
     case "activeDot": return !item.active
     default: return true
     }

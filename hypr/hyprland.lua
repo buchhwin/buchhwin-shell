@@ -60,6 +60,11 @@ hl.config({
     -- playing. See hyprland.conf for the long version.
     render = {
         new_render_scheduling = false,
+        -- Colour management is a shader pass per surface, on every output,
+        -- and nothing on this desk is HDR or wide gamut (two SDR 4K panels
+        -- and a Full HD one). Off since 2026-10-13; takes effect at the next
+        -- compositor start.
+        cm_enabled = false,
     },
     general = {
         gaps_in = 6,
@@ -77,7 +82,12 @@ hl.config({
         rounding = 16,
         rounding_power = 2,
         active_opacity = 1.0,
-        inactive_opacity = 0.96,
+        -- Opaque, since 2026-10-13. At 0.96 every unfocused window was
+        -- translucent, so the compositor blended it and (blur ignores
+        -- opacity) blurred behind it, and with follow_mouse every hover
+        -- across windows animated `fade` over two windows at 4K. The focus
+        -- still shows in the border.
+        inactive_opacity = 1.0,
         shadow = {
             enabled = true,
             range = 18,
@@ -150,20 +160,33 @@ hl.config({
     },
 })
 
--- The compositor moves in the same One UI rhythm as the shell (theme/
--- Animations.qml): fast off the mark, long soft landing (buchhwinFast, the
--- curve behind Easing.OutQuint), a hint of push for windows appearing
--- (buchhwinSpring) and no looping border animation.
+-- The compositor moves in the same rhythm as the shell (theme/Animations.qml):
+-- springs for everything that travels, so a window lands where it is sent and
+-- can be interrupted without a jump, and a timed curve for layers fading in
+-- and out. Material 3 in spirit - a spatial family with a little overshoot,
+-- an effects family that is critically damped - with values of this session's
+-- own. services/hypr/HyprAnimations.js re-emits the same table, scaled, when
+-- the animation speed changes (a spring ignores `speed`); checks.py holds the
+-- three copies together. hyprland.conf has no springs and uses the beziers.
+hl.curve("buchhwinSpatialFast", { type = "spring", mass = 1, stiffness = 700, dampening = 50 })
+hl.curve("buchhwinSpatial", { type = "spring", mass = 1, stiffness = 380, dampening = 34 })
+hl.curve("buchhwinSpatialSlow", { type = "spring", mass = 1, stiffness = 200, dampening = 26 })
+hl.curve("buchhwinEffectsFast", { type = "spring", mass = 1, stiffness = 3200, dampening = 113 })
+hl.curve("buchhwinEffects", { type = "spring", mass = 1, stiffness = 1400, dampening = 75 })
+hl.curve("buchhwinEffectsSlow", { type = "spring", mass = 1, stiffness = 700, dampening = 53 })
 hl.curve("buchhwinFast", { type = "bezier", points = { {0.22, 1.0}, {0.36, 1.0} } })
 hl.curve("buchhwinSpring", { type = "bezier", points = { {0.2, 1.12}, {0.32, 1.0} } })
-hl.animation({ leaf = "windows", enabled = true, speed = 2.0, bezier = "buchhwinSpring", style = "popin 87%" })
-hl.animation({ leaf = "windowsOut", enabled = true, speed = 1.7, bezier = "buchhwinFast", style = "popin 87%" })
-hl.animation({ leaf = "windowsMove", enabled = true, speed = 2.0, bezier = "buchhwinFast" })
-hl.animation({ leaf = "fade", enabled = true, speed = 1.7, bezier = "buchhwinFast" })
-hl.animation({ leaf = "layers", enabled = true, speed = 1.7, bezier = "buchhwinFast", style = "fade" })
-hl.animation({ leaf = "workspaces", enabled = true, speed = 2.2, bezier = "buchhwinFast", style = "slidefade 10%" })
-hl.animation({ leaf = "specialWorkspace", enabled = true, speed = 2.0, bezier = "buchhwinFast", style = "slidefadevert 15%" })
-hl.animation({ leaf = "border", enabled = true, speed = 2.0, bezier = "buchhwinFast" })
+hl.curve("buchhwinStandard", { type = "bezier", points = { {0.2, 0.0}, {0.0, 1.0} } })
+hl.curve("buchhwinAccel", { type = "bezier", points = { {0.3, 0.0}, {0.8, 0.15} } })
+hl.animation({ leaf = "windows", enabled = true, speed = 2.0, spring = "buchhwinSpatial", style = "popin 87%" })
+hl.animation({ leaf = "windowsOut", enabled = true, speed = 1.7, spring = "buchhwinSpatialFast", style = "popin 87%" })
+hl.animation({ leaf = "windowsMove", enabled = true, speed = 2.0, spring = "buchhwinSpatial" })
+hl.animation({ leaf = "fade", enabled = true, speed = 1.7, spring = "buchhwinEffects" })
+hl.animation({ leaf = "layers", enabled = true, speed = 1.7, bezier = "buchhwinStandard", style = "fade" })
+hl.animation({ leaf = "layersOut", enabled = true, speed = 1.5, bezier = "buchhwinAccel", style = "fade" })
+hl.animation({ leaf = "workspaces", enabled = true, speed = 2.2, spring = "buchhwinSpatial", style = "slidefade 10%" })
+hl.animation({ leaf = "specialWorkspace", enabled = true, speed = 2.0, spring = "buchhwinSpatialSlow", style = "slidefadevert 15%" })
+hl.animation({ leaf = "border", enabled = true, speed = 2.0, spring = "buchhwinEffectsSlow" })
 hl.animation({ leaf = "borderangle", enabled = false, speed = 1, bezier = "buchhwinFast" })
 
 -- Keybindings ---------------------------------------------------------------
@@ -352,6 +375,18 @@ hl.layer_rule({ name = "buchhwin-wallpaper", match = { namespace = "^(buchhwin-w
 hl.layer_rule({ name = "buchhwin-notch-noblur", match = { namespace = "^(buchhwin-notch)$" }, blur = false })
 hl.layer_rule({ name = "buchhwin-corners-noblur", match = { namespace = "^(buchhwin-screencorners)$" }, blur = false })
 hl.layer_rule({ name = "buchhwin-scrim-noblur", match = { namespace = "^(buchhwin-scrim)$" }, blur = false })
+-- Surfaces that animate themselves: every ShellPanel and PopupPanel (the
+-- card fades and morphs, and the surface stays mapped until that close has
+-- finished - `closeTimer` in shell/components/ShellPanel.qml), the switcher
+-- and the OSD, which unmap the same way. The compositor's `layers` fade on
+-- top of that multiplied the card's own fade for the first frames of every
+-- open, and after every close faded an already empty screen-sized buffer
+-- out for another hundred milliseconds. Not here: the notification popups,
+-- which rely on the compositor's fade-out, and the colour picker, whose
+-- namespace is shared with the full-screen picking overlay that does not
+-- animate itself. One regex without a comma: the conf parser in
+-- scripts/lib/checks.py splits a layerrule at its first comma.
+hl.layer_rule({ name = "buchhwin-self-animated", match = { namespace = "^(buchhwin-(batteryPopup|bluetoothPopup|clipboard|controlCenter|dashboard|driveUnlock|emoji|eventEditor|eventsPopup|launcher|mediaPopup|networkPopup|notifications|overview|pairing|powerMenu|privacyPopup|profilePopup|settings|shortcutSheet|systemPopup|volumePopup|vpnPopup|wallpaperPicker|weatherPopup|welcome|wifiPassword|switcher|osd))$" }, no_anim = true })
 -- Helper windows that must keep running but never show (list shared with the
 -- shell in services/hypr/HiddenWindows.js). xwaylandvideobridge (KDE autostart)
 -- otherwise opens a black, uncloseable window on workspace 1.

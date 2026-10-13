@@ -11,6 +11,8 @@ set -euo pipefail
 #   scripts/nested-session.sh stop
 
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+# shellcheck source=lib/hyprland-prefix.sh
+if [[ -r "$project_dir/scripts/lib/hyprland-prefix.sh" ]]; then source "$project_dir/scripts/lib/hyprland-prefix.sh"; fi
 base=${BUCHHWIN_NESTED_DIR:-"${TMPDIR:-/tmp}/buchhwin-nested"}
 
 # The only process this ever kills is a Hyprland that was started here: the pid

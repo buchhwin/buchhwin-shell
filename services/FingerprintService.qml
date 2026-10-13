@@ -55,19 +55,23 @@ Singleton {
     }
 
     // Whether PAM offers the reader to the *whole system* (authselect's
-    // `with-fingerprint`): null while unknown. With the shell's own mode off
+    // `with-fingerprint` on Fedora, pam-config's pam_fprintd line in
+    // common-auth on openSUSE): null while unknown. With the shell's own mode off
     // but this true, the login screen, sudo and polkit still ask for a finger,
     // which is exactly the "the off button does not work" the user reported -
     // the button works, it just governs the lock screen.
     property var systemEnabled: null
     readonly property bool systemOnly: systemEnabled === true && mode === "off"
 
+    // Waits for DistroService: the question is asked differently per
+    // distribution, and asking Fedora's tool on openSUSE only fails.
+    readonly property var systemCommand: Logic.systemFingerprintCommand(DistroService.family)
     Process {
-        stderr: ErrorLog { label: "FingerprintService.authselect" }
-        running: root.realSession && !root.preview
-        command: ["authselect", "current"]
+        stderr: ErrorLog { label: "FingerprintService.systemPam" }
+        running: root.realSession && !root.preview && root.systemCommand.length > 0
+        command: root.systemCommand
         stdout: StdioCollector {
-            onStreamFinished: root.systemEnabled = Logic.systemFingerprint(text, 0)
+            onStreamFinished: root.systemEnabled = Logic.parseSystemFingerprint(DistroService.family, text, 0)
         }
         onExited: code => { if (code !== 0) root.systemEnabled = null }
     }

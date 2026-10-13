@@ -83,7 +83,7 @@ Item {
         const centre = shapeRect.x + shapeRect.width / 2
         overlay.shapeWidth = Math.max(Metrics.notchMinWidth, Math.round((x - centre) * 2))
         if (overlay.zone === "expanded")
-            overlay.shapeHeight = Math.max(Metrics.notchHeight, Math.round(y - shapeRect.y))
+            overlay.shapeHeight = Math.max(NotchService.bodyHeight, Math.round(y - shapeRect.y))
     }
 
     function endShape() {

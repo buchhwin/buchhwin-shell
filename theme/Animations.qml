@@ -14,14 +14,14 @@ Singleton {
     // *duration* multiplier, so a faster speed divides it: at 2x an animation
     // takes half as long.
     readonly property real modeFactor: mode === "off" ? 0 : mode === "reduced" ? 0.6 : 1
-    readonly property real factor: modeFactor / Math.max(0.25, SettingsService.animationSpeed)
+    readonly property real speed: Logic.speed(SettingsService.animationSpeed)
+    readonly property real factor: modeFactor / speed
     readonly property bool motionEnabled: mode === "full"
     readonly property bool enabled: factor > 0
 
-    // A motion that covers ground may not be scaled below ten frames, and may
-    // not be scaled below four fifths of what it was designed to take. Both
-    // rules and the reason for the second are in AnimationLogic.js, which the
-    // compositor's table uses too - one rule, one place.
+    // A motion that covers ground may not be scaled below six frames. The
+    // rule is in AnimationLogic.js, which the compositor's table uses too -
+    // one rule, one place.
     //
     // They apply to travel, not to every duration. A panel crossing 680 px and
     // a hover tint changing in place are not the same problem: the panel reads
@@ -31,13 +31,21 @@ Singleton {
     // against no ground covered - so the two stay in agreement.
     //
     // The floor now depends on the base, so it is a function and not a number.
-    function travelFloor(base) {
-        return Math.max(Math.min(base, Logic.FLOOR_MS), Math.round(base * Logic.FLOOR_SHARE))
-    }
     function travel(base) { return Logic.travel(base, factor, motionEnabled) }
 
-    // **No travel here is below ten frames, nor below four fifths of its own
-    // number** - see `travel()` above, which is what enforces both. At 60 Hz a
+    // ---- springs -----------------------------------------------------------
+    // Anything that *follows* a value - a knob, an indicator, a tile gliding to
+    // its new place, the notch's shape - moves on a spring: it lands where it
+    // is sent and can be redirected half-way without a jump, which a fixed
+    // duration cannot. Three of them (AnimationLogic.SPRINGS), scaled by the
+    // speed setting; shell/components/SpringMotion.qml is the animation that
+    // uses them. Only in Full: Reduced and Off jump to the new place.
+    readonly property var springFast: Logic.spring("fast", speed)
+    readonly property var springStandard: Logic.spring("standard", speed)
+    readonly property var springSlow: Logic.spring("slow", speed)
+    function spring(kind) { return kind === "fast" ? springFast : kind === "slow" ? springSlow : springStandard }
+
+    // **No travel here is below six frames** - see `travel()` above. At 60 Hz a
     // 100 ms animation is six frames and a 60 ms one is four, and a four-frame
     // fade does not read as a fade - it reads as the thing stepping, which is
     // exactly what "all the animations look like five frames a second"
@@ -93,6 +101,10 @@ Singleton {
     readonly property int vinylTurn: 5000
     // Fingerprint glyph: ripple while scanning, fill per enrollment stage.
     readonly property int fingerprintRipple: 1800
+    // How often the ripples run per scan before they rest (a new attempt
+    // starts them again): fprintd can wait for minutes, and each cycle
+    // redraws every lock surface, blur included, on every frame.
+    readonly property int fingerprintRippleCycles: 5
     readonly property int fingerprintFill: travel(420)
 
     // A rejected password shakes the field: three fast swings at full
@@ -101,9 +113,11 @@ Singleton {
     readonly property int shakeSwing: Math.round(110 * factor)
     readonly property int easingShake: Easing.OutQuad
 
-    // Notch: hover delays (not scaled), content fade after the shape and the
-    // morph. Fast/Normal use a spring (spring/damping), Reduced a plain ease,
-    // Off jumps.
+    // Notch: content fade after the shape and the morph. Full uses a spring
+    // (spring/damping, scaled by the speed setting like every spring here),
+    // Reduced a plain ease, Off jumps. How long the pointer has to rest on it
+    // is the user's (notch.openDelay/closeDelay); notchHoverDelay is only the
+    // pause before a remapped notch shows again and the pill bar's own hover.
     // Editing: a tile wiggles so you can see it can be picked up. Each one
     // starts at a slightly different point of the cycle - all in step looks
     // mechanical - and a tile that moves to a new place glides there.
@@ -133,18 +147,17 @@ Singleton {
     // click. Not scaled by the animation mode: it is a grace period, not a
     // transition.
     readonly property int confirmTimeout: 4000
-    readonly property int notchLeaveDelay: 400
     readonly property int notchContentDelay: Math.round(110 * factor)
     readonly property int notchContentFade: Math.round(190 * factor)
     readonly property int notchMorph: travel(260)
-    // 5 was Fast's and 4 was Normal's, and Normal is gone. 5 - the tighter of
-    // the two - is what the default mode always used.
-    readonly property real notchSpring: 5
+    // 5 at the designed pace, scaled like the other springs.
+    readonly property var notchSpringParams: Logic.spring("notch", speed)
+    readonly property real notchSpring: notchSpringParams.spring
     // 0.3 rang the shape for a quarter of a second after it had arrived; the
     // notch is the most expensive thing the shell draws, so every extra
     // wobble frame rebuilt its outline and its input region. 0.5 keeps the
     // Dynamic-Island push without the ring-out.
-    readonly property real notchDamping: 0.5
+    readonly property real notchDamping: notchSpringParams.damping
     readonly property real notchMass: 1
     // Stop the spring once it is within a quarter pixel instead of chasing
     // sub-pixel differences for another few frames.
@@ -162,4 +175,8 @@ Singleton {
     readonly property real overshoot: 1.2
     // A large surface needs less of it than a small control.
     readonly property real overshootSoft: 0.8
+    // A pop that is meant to be seen (the fingerprint glyph finishing).
+    readonly property real overshootStrong: 2
+    // Something breathing in place, back and forth (the lock screen's pulse).
+    readonly property int easingBreathe: Easing.InOutSine
 }

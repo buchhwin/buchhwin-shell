@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -u
 
+project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=install/lib/distro.sh
+. "$project_dir/install/lib/distro.sh"
+distro=$(distro_detect 2>/dev/null) || distro=fedora
+package_tool=dnf5
+[[ $distro == opensuse-leap ]] && package_tool=zypper
+# shellcheck source=lib/hyprland-prefix.sh
+if [[ -r "$project_dir/scripts/lib/hyprland-prefix.sh" ]]; then . "$project_dir/scripts/lib/hyprland-prefix.sh"; fi
 status=0
 for command_name in Hyprland hyprctl quickshell kitty zsh brave-browser dolphin; do
   if command -v "$command_name" >/dev/null 2>&1; then
@@ -32,7 +40,7 @@ for config_path in \
 done
 
 printf '\nShell backends\n'
-for command_name in brightnessctl wpctl pw-metadata pw-record playerctl nmcli udevadm plocate jq swaylock curl gammastep dnf5 flatpak plasma-discover; do
+for command_name in brightnessctl wpctl pw-metadata pw-record playerctl nmcli udevadm plocate jq swaylock curl gammastep "$package_tool" flatpak plasma-discover; do
   if command -v "$command_name" >/dev/null 2>&1; then
     printf 'ok       %s\n' "$command_name"
   else
@@ -43,7 +51,7 @@ done
 if command -v hyprland-dialog >/dev/null 2>&1; then
   printf 'ok       hyprland-guiutils\n'
 else
-  printf 'missing  hyprland-guiutils (Hyprland dialogs and startup notice; sudo dnf install hyprland-guiutils)\n'
+  printf 'missing  hyprland-guiutils (Hyprland dialogs and startup notice; %s)\n' "$(distro_install_hint "$distro" hyprland-guiutils)"
 fi
 if [[ -r /usr/lib64/qt6/plugins/plasmacalendarplugins/pimevents.so && -d /usr/lib64/qt6/qml/org/kde/plasma/PimCalendars ]]; then
   printf 'ok       KDE calendar plugin (pimevents)\n'
@@ -53,7 +61,7 @@ fi
 if python3 -c 'import AkonadiCore' >/dev/null 2>&1 && [[ -d /usr/lib64/qt6/qml/org/kde/akonadi ]]; then
   printf 'ok       Akonadi Python bindings and QML (calendar events)\n'
 else
-  printf 'missing  python3-kf6-kcoreaddons, python3-kf6-kcalendarcore or Akonadi QML (writing events unavailable)\n'
+  printf 'missing  Akonadi Python bindings or Akonadi QML (writing events unavailable; Fedora: python3-kf6-kcoreaddons python3-kf6-kcalendarcore)\n'
 fi
 if busctl --system status net.hadess.PowerProfiles >/dev/null 2>&1; then
   printf 'ok       power profiles D-Bus service\n'
@@ -68,14 +76,16 @@ if [[ -r "$portal_conf" ]] && grep -q 'Secret=kwallet' "$portal_conf"; then
 else
   printf 'missing  portal routing: %s (run install/install.sh --apply)\n' "$portal_conf"
 fi
-if [[ -r /usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.kwallet.service ]]; then
+# Fedora activates it through a D-Bus service file; openSUSE's kwalletd6
+# registers the name itself and ships only the portal file.
+if [[ -r /usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.kwallet.service \
+      || -r /usr/share/xdg-desktop-portal/portals/kwallet.portal ]]; then
   printf 'ok       KWallet secret portal backend\n'
 else
   printf 'missing  KWallet secret portal backend (kf6-kwallet)\n'
 fi
 
 printf '\nSession terminal\n'
-project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
 fastfetch_config="$config_home/buchhwin-shell/fastfetch.jsonc"
 if command -v fastfetch >/dev/null 2>&1; then
@@ -84,12 +94,12 @@ else
   printf 'missing  fastfetch (optional)\n'
 fi
 # Terminal extras that follow the shell accent (Settings > Terminal writes
-# their configuration): both come from Fedora's repositories.
+# their configuration): both from Fedora's repositories, only cava from Leap's.
 for extra in cmatrix cava; do
   if command -v "$extra" >/dev/null 2>&1; then
     printf 'ok       %s: %s\n' "$extra" "$(command -v "$extra")"
   else
-    printf 'missing  %s (optional; sudo dnf install %s)\n' "$extra" "$extra"
+    printf 'missing  %s (optional; %s)\n' "$extra" "$(distro_install_hint "$distro" "$extra")"
   fi
 done
 if [[ -r "$project_dir/zsh/.zshrc" ]]; then

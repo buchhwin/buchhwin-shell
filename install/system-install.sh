@@ -9,6 +9,7 @@ project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 #   --root DIR            install below DIR without root rights (tests)
 # Optional, system-wide fingerprint rule (install/fingerprint-lid.sh), run on
 # its own: sudo, polkit and logins skip pam_fprintd while the lid is closed.
+# Fedora only: it is built on authselect, which openSUSE does not have.
 #   --fingerprint-lid         adds the authselect profile custom/buchhwin-lid
 #   --fingerprint-lid-remove  selects the previous profile again
 #   (install/fingerprint-lid.sh status works without root)
@@ -64,6 +65,17 @@ if [[ -n $bluetooth_action && ( -n $sddm_action || ${#sddm_args[@]} -gt 0 || -n 
   exit 2
 fi
 
+# The PAM files differ (Fedora: system-auth/password-auth, openSUSE:
+# common-auth); BUCHHWIN_DISTRO decides for tests below --root. Anything
+# unknown gets Fedora's, as before there was a choice.
+# shellcheck source=install/lib/distro.sh
+. "$project_dir/install/lib/distro.sh"
+distro=$(distro_detect 2>/dev/null) || distro=fedora
+if [[ -n $lid_action && $distro != fedora ]]; then
+  printf '%s needs authselect, which %s does not have. Nothing changed.\n' "--fingerprint-lid" "$distro" >&2
+  exit 1
+fi
+
 if [[ -n $root ]]; then
   root=$(realpath -m -- "$root")
   sddm_args+=(--root "$root")
@@ -100,9 +112,18 @@ sed 's|@SESSION_EXEC@|/usr/local/bin/buchhwin-shell-session|' \
 chmod 0644 "$root/usr/share/wayland-sessions/buchhwin-shell.desktop"
 # PAM services of the lock screen (with fingerprint and password only); existing
 # files are left alone.
+# By the file the PAM stack actually has, not only by the distribution's
+# name: an openSUSE this script does not know (Tumbleweed) has no system-auth
+# either, and Fedora's files would leave a lock screen that never unlocks.
+pam_suffix=""
+if [[ -e $root/etc/pam.d/common-auth || -e $root/usr/lib/pam.d/common-auth ]]; then
+  pam_suffix=.suse
+elif [[ ! -e $root/etc/pam.d/system-auth && $distro == opensuse-leap ]]; then
+  pam_suffix=.suse
+fi
 for service in buchhwin-lock buchhwin-lock-password; do
   if [[ ! -e $root/etc/pam.d/$service ]]; then
-    install -Dm0644 "$project_dir/session/pam/$service" "$root/etc/pam.d/$service"
+    install -Dm0644 "$project_dir/session/pam/$service$pam_suffix" "$root/etc/pam.d/$service"
   fi
 done
 

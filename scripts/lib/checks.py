@@ -11,6 +11,7 @@
   checks.py ipc               a property declared inside an IpcHandler, which cannot
                               cross IPC (Quickshell logs "Type QVariant cannot be used")
   checks.py hypr              hyprland.conf, hyprland.lua and HyprAnimations.js drifting apart
+  checks.py reserved          names Qt 6.9's QML parser refuses (openSUSE Leap 16)
 """
 import json
 import re
@@ -821,14 +822,23 @@ def _hypr_lua(source):
         leaf = fields.get("leaf", "").strip('"')
         if not leaf:
             continue
+        # A leaf animates with a spring or a bezier; the Lua dialect may use
+        # either, the legacy one only beziers - hypr_drift leaves the curve
+        # out of the comparison and animation_drift holds each to the table.
+        curve = fields.get("spring", fields.get("bezier", "")).strip('"')
         parts = ["1" if fields.get("enabled") == "true" else "0",
-                 _fmt(fields.get("speed", "0")), fields.get("bezier", "").strip('"')]
+                 _fmt(fields.get("speed", "0")), curve]
         style = fields.get("style", "").strip('"')
         if style:
             parts.append(style)
         values["animation:" + leaf] = ",".join(parts)
     for match in re.finditer(r"hl\.curve\(\s*\"([^\"]+)\"\s*,\s*\{(.*?)\}\s*\)\s*$",
                              text, re.M | re.S):
+        if re.search(r"type\s*=\s*\"spring\"", match.group(2)):
+            fields = _lua_fields(match.group(2))
+            values["spring:" + match.group(1)] = ",".join(
+                _fmt(fields.get(name, "0")) for name in ("mass", "stiffness", "dampening"))
+            continue
         numbers = re.findall(r"-?\d+(?:\.\d+)?", match.group(2))
         values["bezier:" + match.group(1)] = ",".join(_fmt(number) for number in numbers)
     # The table is taken by brace count, not by a pattern that runs to the
@@ -955,7 +965,7 @@ def check_hypr():
     # animation mode changes. A leaf that drifts here is a mode switch that
     # silently changes the look.
     source = (ROOT / "services" / "hypr" / "HyprAnimations.js").read_text()
-    problems += animation_drift(conf, source)
+    problems += animation_drift(conf, source, lua)
 
     # The shell's own copy of the compositor's outer gap. A surface that wants
     # room under itself reserves that much less, because Hyprland already
@@ -976,11 +986,26 @@ def check_hypr():
     return bool(problems)
 
 
+def _without_curve(value):
+    """An animation value without its curve: on, speed and style."""
+    parts = str(value).split(",")
+    return ",".join(parts[:2] + parts[3:])
+
+
 def hypr_drift(conf, lua):
-    """Keys the two parsed dialects disagree on, as messages."""
+    """Keys the two parsed dialects disagree on, as messages.
+
+    Springs exist in the Lua dialect only, and a leaf's curve is the one
+    place the two are meant to differ (a spring there, its bezier stand-in
+    here); animation_drift holds each dialect's curve to the shared table.
+    """
     problems = []
     for key in sorted(set(conf) | set(lua)):
-        if key in HYPR_ALLOWED:
+        if key in HYPR_ALLOWED or key.startswith("spring:"):
+            continue
+        if key.startswith("animation:") and key in conf and key in lua:
+            if _without_curve(conf[key]) != _without_curve(lua[key]):
+                problems.append(f"{key}: conf {conf[key]!r} vs lua {lua[key]!r}")
             continue
         if key not in lua:
             problems.append(f"{key}: only in hyprland.conf ({conf[key]})")
@@ -1013,8 +1038,8 @@ def animation_table(source):
         if not fields.get("leaf"):
             continue
         entries.append({"leaf": fields["leaf"], "speed": fields.get("speed", "0"),
-                        "bezier": fields.get("bezier", ""), "style": fields.get("style", ""),
-                        "off": fields.get("off") == "true"})
+                        "bezier": fields.get("bezier", ""), "spring": fields.get("spring", ""),
+                        "style": fields.get("style", ""), "off": fields.get("off") == "true"})
     leaves = len(re.findall(r"\bleaf\s*:", text))
     if leaves != len(entries):
         raise ValueError(f"HyprAnimations.js names {leaves} leaves but {len(entries)} entries were read")
@@ -1056,7 +1081,23 @@ def strip_comments_only(text):
     return "".join(out)
 
 
-def animation_drift(conf, source):
+def spring_table(source):
+    """{name: "mass,stiffness,dampening"} from HyprAnimations.js's SPRINGS."""
+    stripped = strip_comments_only(source)
+    springs = re.search(r"\bSPRINGS\s*=\s*\[", stripped)
+    if not springs:
+        return {}
+    text = _bracket_block(stripped, springs.end() - 1)
+    table = {}
+    for match in re.finditer(r"\{([^{}]*)\}", text):
+        fields = dict((field.group(1), field.group(2).strip('"'))
+                      for field in re.finditer(r"(\w+)\s*:\s*(\"[^\"]*\"|[-\w.]+)", match.group(1)))
+        if fields.get("name"):
+            table[fields["name"]] = ",".join(_fmt(fields.get(name, "0")) for name in ("mass", "stiffness", "dampening"))
+    return table
+
+
+def animation_drift(conf, source, lua=None):
     """The animation leaves the conf and HyprAnimations.js disagree on.
 
     Both directions: a leaf the table has and the conf lacks, and a leaf the
@@ -1083,7 +1124,74 @@ def animation_drift(conf, source):
             problems.append(f"{key}: in hyprland.conf but not in HyprAnimations.js")
         elif conf[key] != table[key]:
             problems.append(f"{key}: HyprAnimations.js {table[key]!r} vs hyprland.conf {conf[key]!r}")
+    if lua is None:
+        return problems
+    # The Lua dialect: each leaf's curve is its spring where it has one, and
+    # the springs it defines are the table's, number for number.
+    for entry in entries:
+        key = "animation:" + entry["leaf"]
+        if key not in lua:
+            continue
+        wanted = entry["spring"] or entry["bezier"]
+        curve = str(lua[key]).split(",")[2] if len(str(lua[key]).split(",")) > 2 else ""
+        if curve != wanted:
+            problems.append(f"{key}: hyprland.lua animates with {curve!r}, HyprAnimations.js says {wanted!r}")
+    springs = spring_table(source)
+    lua_springs = {key[len("spring:"):]: value for key, value in lua.items() if key.startswith("spring:")}
+    for name in sorted(set(springs) | set(lua_springs)):
+        if name not in lua_springs:
+            problems.append(f"spring:{name}: in HyprAnimations.js but not in hyprland.lua")
+        elif name not in springs:
+            problems.append(f"spring:{name}: in hyprland.lua but not in HyprAnimations.js")
+        elif springs[name] != lua_springs[name]:
+            problems.append(f"spring:{name}: HyprAnimations.js {springs[name]!r} vs hyprland.lua {lua_springs[name]!r}")
     return problems
+
+
+# ---- Names an older QML parser refuses ------------------------------------
+# Qt 6.9 (openSUSE Leap 16) still treats ES3's "future reserved words" as
+# reserved in QML files: `const short = ...`, a parameter called `char` or a
+# `property bool short` fail the whole file with "Expected token
+# `identifier'", and a service that fails to load takes the shell with it.
+# Newer Qt (Fedora 44) accepts them, so nothing on Fedora would ever say so.
+# Reading them is fine - `item.short` is a member access - only naming
+# something with them is not. .js libraries are parsed differently and accept
+# them on both, so only .qml files are checked.
+RESERVED = ("abstract", "boolean", "byte", "char", "double", "final", "float", "goto", "int", "long",
+            "native", "short", "synchronized", "throws", "transient", "volatile")
+_WORDS = "|".join(RESERVED)
+RESERVED_NAMES = [
+    re.compile(rf"\b(?:const|let|var|function)\s+({_WORDS})\b"),
+    re.compile(rf"\bproperty\s+[\w.<>]+\s+({_WORDS})\b"),
+    re.compile(rf"\bid\s*:\s*({_WORDS})\b"),
+    # A parameter: after "(" or ",", followed by ",", ")", "=" or "=>". A
+    # type annotation (`index: int)`) follows a colon and is not matched,
+    # and neither is a signal's `(int index)`.
+    re.compile(rf"[(,]\s*({_WORDS})\s*(?=[,)=])"),
+]
+
+
+def reserved_names(text):
+    """[(line, word)] for every reserved word used as a name."""
+    code = strip_code(text)
+    found = []
+    for pattern in RESERVED_NAMES:
+        for match in pattern.finditer(code):
+            found.append((code.count("\n", 0, match.start(1)) + 1, match.group(1)))
+    return sorted(set(found))
+
+
+def check_reserved():
+    folders = ("shell", "services", "theme", "tests/qml", "session/sddm")
+    files = sorted(path for folder in folders for path in (ROOT / folder).rglob("*.qml"))
+    files += sorted(ROOT.glob("*.qml"))
+    failed = 0
+    for path in files:
+        for line, word in reserved_names(path.read_text()):
+            print(f"{path.relative_to(ROOT)}:{line}: '{word}' as a name fails to parse on Qt 6.9 (openSUSE Leap); rename it")
+            failed += 1
+    print(f"checked {len(files)} QML files for names Qt 6.9 refuses")
+    return failed
 
 
 def main(argv):
@@ -1105,6 +1213,8 @@ def main(argv):
         return 1 if check_ipc() else 0
     if command == "hypr":
         return 1 if check_hypr() else 0
+    if command == "reserved":
+        return 1 if check_reserved() else 0
     print(__doc__)
     return 2
 

@@ -7,6 +7,9 @@ set -uo pipefail
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
 # shellcheck source=lib/hypr.sh
 source "$project_dir/scripts/lib/hypr.sh"
+# shellcheck source=../install/lib/distro.sh
+source "$project_dir/install/lib/distro.sh"
+distro=$(distro_detect 2>/dev/null) || distro=fedora
 config_home=${XDG_CONFIG_HOME:-$HOME/.config}
 settings="$config_home/buchhwin-shell/settings.json"
 shell_path=${BUCHHWIN_SHELL_PATH:-$HOME/.local/share/buchhwin-shell}
@@ -38,7 +41,7 @@ elif [[ ${BUCHHWIN_HYPR_CONFIG_FALLBACK:-0} == 1 ]]; then
 else
   ok "configuration: hyprland.conf"
 fi
-command -v hyprland-dialog >/dev/null 2>&1 && ok "hyprland-guiutils installed" || warn "hyprland-guiutils is missing (Hyprland dialogs; sudo dnf install hyprland-guiutils)"
+command -v hyprland-dialog >/dev/null 2>&1 && ok "hyprland-guiutils installed" || warn "hyprland-guiutils is missing (Hyprland dialogs; $(distro_install_hint "$distro" hyprland-guiutils))"
 errors=$(hyprctl configerrors 2>/dev/null | grep -v '^$' || true)
 [[ -z $errors ]] && ok "no Hyprland configuration errors" || fail "Hyprland reports: $errors"
 
@@ -131,41 +134,42 @@ section "Keyring and portals"
 # introspect *starts* the portal on a session where it is down. The same guard
 # accounts-status.sh and kdeconnect-status.sh already use.
 if busctl --user --timeout=3 --auto-start=no introspect org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop 2>/dev/null | grep -q 'org.freedesktop.portal.Secret'; then ok "Secret portal available (Brave sync through KWallet)"; else fail "Secret portal is missing or not running"; fi
-# ksecretd is the one PAM unlocks; kwalletd6 is the legacy daemon nothing
-# unlocks, so anything that woke it will be asking for a password by hand.
-#
-# Whether it is *unlocked* is asked, not assumed. This line used to say
-# "unlocked by PAM at login" on the strength of the process being alive, which
-# is a different fact - and a check that claims more than it measures is worse
-# than no check, because the next person believes it.
-if running ksecretd; then
-  wallet_locked=$(busctl --user --timeout=3 get-property org.freedesktop.secrets \
-    /org/freedesktop/secrets/collection/kdewallet \
-    org.freedesktop.Secret.Collection Locked 2>/dev/null | awk '{print $2}')
-  case "$wallet_locked" in
-    false) ok "the secret service is unlocked (PAM handed it the login password)" ;;
-    true)  warn "the secret service is running but locked: the next app that wants a secret will ask for a password" ;;
-    *)     warn "the secret service is running; its lock state could not be read" ;;
-  esac
+# ksecretd, started by pam_kwallet5 at login, is the secret service *and* the
+# Secret portal's backend; kwalletd6 is a shim over it (KF 6.16), not a second
+# wallet. Whether the wallet is *open* is asked, not assumed from the process
+# being alive (scripts/wallet-unlock.sh, `--auto-start=no` throughout: a check
+# that starts a second ksecretd would be worse than no check).
+wallet_state=$("$project_dir/scripts/wallet-unlock.sh" status 2>/dev/null)
+case "$wallet_state" in
+  open)       ok "the KDE wallet is open (ksecretd, org.freedesktop.secrets)" ;;
+  locked)     warn "the KDE wallet is locked: applications that store secrets will ask for the password, and Brave, Chrome and Chromium refuse to start until it is open (scripts/launch-chromium.sh)" ;;
+  "no service") warn "no secret service on the bus: the login did not hand ksecretd the password (startup.log says what happened)" ;;
+  *)          warn "the secret service is running; its lock state could not be read" ;;
+esac
+portal_backend=$(busctl --user --no-pager list 2>/dev/null | awk '$1 == "org.freedesktop.impl.portal.desktop.kwallet" { print $3 }')
+case "$portal_backend" in
+  ksecretd) ok "the Secret portal backend is ksecretd (the same wallet as in Plasma)" ;;
+  ""|-)     warn "the Secret portal backend (org.freedesktop.impl.portal.desktop.kwallet) is not on the bus: portal-keyed secrets (Spotify, Flatpaks) are unavailable" ;;
+  *)        warn "the Secret portal backend is owned by '$portal_backend', not ksecretd" ;;
+esac
+# Brave, Chrome and Chromium must use Plasma's password store: Chromium
+# encrypts with the backend the desktop name selects (KDE -> kwallet6,
+# anything else -> libsecret), and a different backend is a different key - a
+# logout from everything. One guard (scripts/launch-chromium.sh) passes the
+# flag; the per-browser wrappers only hold a desktop id and a command, so a
+# wrapper that stopped going through the guard would lose the flag unnoticed.
+if grep -q -- '--password-store=kwallet6' "$project_dir/scripts/launch-chromium.sh" 2>/dev/null; then
+  ok "Chromium browsers start with --password-store=kwallet6 (the key Plasma's copies use)"
 else
-  warn "the secret service is not running yet (starts on first access)"
+  fail "scripts/launch-chromium.sh does not pass --password-store=kwallet6: Brave, Chrome and Chromium would encrypt with a key of their own"
 fi
-# kwalletd6 is the other wallet, D-Bus activated by whoever asks for
-# `org.kde.kwalletd6` - here Brave, by name, on purpose (docs/system.md >
-# Host changes). Whether its own wallet is open is what decides whether the
-# user is asked for a password, so that is read rather than assumed from the
-# daemon being alive: it has been open since the login PAM opened, and a
-# warning that says nobody unlocks it sends the next person after a problem
-# that is not there.
-if running kwalletd6; then
-  wallet_open=$(busctl --user --timeout=3 --auto-start=no call org.kde.kwalletd6 \
-    /modules/kwalletd6 org.kde.KWallet isOpen s kdewallet 2>/dev/null | awk '{print $2}')
-  case "$wallet_open" in
-    true)  ok "kwalletd6 is open too (Brave stores its passwords there)" ;;
-    false) warn "kwalletd6 is running for Brave and its wallet is locked: it will ask for a password" ;;
-    *)     warn "kwalletd6 is running; whether its wallet is open could not be read" ;;
-  esac
-fi
+for wrapper in launch-brave launch-chrome launch-chromium-browser; do
+  if grep -qE '^exec .*launch-chromium\.sh' "$project_dir/scripts/$wrapper.sh" 2>/dev/null; then
+    ok "scripts/$wrapper.sh goes through launch-chromium.sh"
+  else
+    fail "scripts/$wrapper.sh does not exec launch-chromium.sh: no wallet guard, no password store"
+  fi
+done
 # Process names are cut to 15 characters (polkit-kde-authentication-agent-1).
 running polkit-kde-auth && ok "PolicyKit agent is running" || fail "PolicyKit agent is missing"
 
@@ -173,7 +177,19 @@ section "Power and hardware"
 if [[ $(setting '.power.lockBeforeSleep') != false ]]; then
   running swayidle 'before-sleep' && ok "lock before sleep is active" || fail "swayidle (lock before sleep) is not running"
 fi
-[[ -r /etc/pam.d/buchhwin-lock ]] && ok "lock screen PAM service installed" || fail "/etc/pam.d/buchhwin-lock is missing (sudo install/system-install.sh)"
+# Installed is not enough: the file includes the distribution's stack
+# (system-auth on Fedora, common-auth on openSUSE), and an include that names
+# a stack this system does not have is a lock screen that never unlocks.
+if [[ ! -r /etc/pam.d/buchhwin-lock ]]; then
+  fail "/etc/pam.d/buchhwin-lock is missing (sudo install/system-install.sh)"
+else
+  pam_include=$(awk '$1 == "auth" && $2 == "include" { print $3; exit }' /etc/pam.d/buchhwin-lock)
+  if [[ -z $pam_include || -e /etc/pam.d/$pam_include || -e /usr/lib/pam.d/$pam_include ]]; then
+    ok "lock screen PAM service installed${pam_include:+ (uses $pam_include)}"
+  else
+    fail "/etc/pam.d/buchhwin-lock includes $pam_include, which this system does not have; remove the file and run sudo install/system-install.sh again"
+  fi
+fi
 # 0.55 answers "bool: true", 0.56 "int: 1".
 lock_restore=$(hyprctl getoption misc:allow_session_lock_restore 2>/dev/null | head -1)
 [[ $lock_restore == *1 || $lock_restore == *true ]] && ok "a crashed lock screen can be restarted" || warn "misc:allow_session_lock_restore is off"
@@ -225,7 +241,7 @@ elif command -v gpu-screen-recorder >/dev/null 2>&1; then
 elif flatpak info com.dec05eba.gpu_screen_recorder >/dev/null 2>&1; then
   ok "screen recorder: gpu-screen-recorder (Flatpak)"
 else
-  warn "no screen recorder (sudo dnf install wf-recorder)"
+  warn "no screen recorder ($(distro_install_hint "$distro" wf-recorder))"
 fi
 
 printf '\n'

@@ -185,6 +185,10 @@ Singleton {
     readonly property int launcherMinHeight: 320
     readonly property int launcherSidebarWidth: 190
     readonly property int launcherHeight: 600
+    // The height a launcher that was never resized opens at (2026-10-13:
+    // compact by default - one row for the search, the rest for results).
+    // `launcherHeight` stays as the clipboard panel's measure.
+    readonly property int launcherFactoryHeight: 520
     // The wallpaper picker (Super+Shift+W): a grid of 16:9 thumbnails, with
     // room around it so the wall it is choosing stays visible at the edges.
     readonly property int wallpaperPickerWidth: 920
@@ -308,9 +312,12 @@ Singleton {
     // Notch (desktop mode "notch"): collapsed like a MacBook notch, expanded
     // on hover into a small overview. The surface is sized for the expanded
     // shape; input only reaches the shape.
-    readonly property int notchHeight: 32
+    // Measured against the reference island (docs/system.md, Notch): the
+    // body is about three clock heights tall, its bottom corners round at
+    // two fifths of that, and the strip keeps a clear margin at both ends.
+    readonly property int notchHeight: 40
     readonly property int notchMinWidth: 164
-    readonly property int notchPadding: 16
+    readonly property int notchPadding: 22
     // The notch while it *is* the display: how wide a level track is, and how
     // much room a title gets before it elides. Both are what keeps the shape a
     // strip rather than letting a long notification stretch it across the
@@ -322,7 +329,22 @@ Singleton {
     // which you may have to read.
     readonly property int notchTrackTimeout: 3200
     readonly property int notchEar: 7
-    readonly property int notchRadius: 11
+    readonly property int notchRadius: 16
+    // Workspace style "pills": narrow standing capsules, the active one
+    // wider, in a slot narrower than a dot's so five of them stay a short
+    // row (a pitch of slot + spaceXs). The island's strip.
+    readonly property int workspacePillWidth: 5
+    readonly property int workspacePillActiveWidth: 10
+    readonly property int workspacePillHeight: 14
+    readonly property int workspacePillSlot: 12
+    // The island's drawn glyphs (WidgetBase.glyph): four rising signal bars,
+    // and a battery lying down with its nub. Sized to the notch's clock.
+    readonly property int signalBarWidth: 3
+    readonly property int signalBarMin: 4
+    readonly property int signalBarStep: 2
+    readonly property int batteryGlyphWidth: 20
+    readonly property int batteryGlyphHeight: 11
+    readonly property int batteryGlyphNub: 2
     // The two widths the notch used to be able to be. They are the default and
     // the ceiling now: the size itself is dragged, not picked.
     readonly property int notchExpandedWidth: 384

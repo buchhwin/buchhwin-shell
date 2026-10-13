@@ -135,6 +135,32 @@ function stripItems(items, recording) {
     return list
 }
 
+// The strip around its clock. The notch's shape is centred on the screen, so
+// the clock sits in the middle of the screen only if the strip is as wide on
+// its lighter side as on its heavier one: five workspace dots on the left and
+// two glyphs on the right would otherwise push the time to the right. The
+// strip is therefore clock + 2 x the wider side, and the lighter side is
+// padded to the heavier one's width (`leftPad`, `rightPad`; one of them is 0).
+//
+// The padding is split in two, half at the outer edge and half between the
+// group and the clock, so the lighter group stands in the middle of its half
+// rather than pressed against the clock with all the air outside it (two
+// glyphs right of the time, and the room to the right of them, was the
+// complaint). `offset` is the row's shift inside the strip, the outer half of
+// the left pad; the strip puts the inner halves beside the clock. Without a
+// clock the row stands as measured.
+function stripSymmetry(rowWidth, clockX, clockWidth) {
+    const row = Math.max(0, Number(rowWidth) || 0)
+    if (!(clockWidth > 0) || !(clockX >= 0) || clockX + clockWidth > row + 0.5)
+        return { width: row, offset: 0, leftPad: 0, rightPad: 0 }
+    const left = clockX
+    const right = Math.max(0, row - clockX - clockWidth)
+    const side = Math.max(left, right)
+    const leftPad = side - left
+    const rightPad = side - right
+    return { width: 2 * side + clockWidth, offset: leftPad / 2, leftPad: leftPad, rightPad: rightPad }
+}
+
 // Corner sizes that fit a body of width x height: the ears at most half the
 // height, the bottom radius at most half the width and the height left below
 // the ears.
@@ -197,4 +223,73 @@ function pillRadius(height, collapsedRadius, expandedRadius, expanded) {
 // Interpolated shape between collapsed (0) and expanded (1) sizes.
 function mix(from, to, progress) {
     return from + (to - from) * progress
+}
+
+// ---- how the notch opens -----------------------------------------------------
+// hover: resting the pointer on it opens the overview, a click opens the
+//        dashboard (or the overview, with clickAction "expand")
+// click: only a click opens the overview
+// off:   the overview never opens; a click opens the dashboard
+var HOVER_MODES = ["hover", "click", "off"]
+var CLICK_ACTIONS = ["dashboard", "expand"]
+var OPEN_DELAY = { min: 0, max: 1000, fallback: 150 }
+var CLOSE_DELAY = { min: 0, max: 2000, fallback: 400 }
+
+function hoverMode(value) {
+    return HOVER_MODES.indexOf(value) >= 0 ? value : "hover"
+}
+
+function hoverOpens(mode) {
+    return hoverMode(mode) === "hover"
+}
+
+// What a click on the *collapsed* notch does: "expand", "dashboard" or "".
+function clickResult(mode, action) {
+    const which = hoverMode(mode)
+    if (which === "click") return "expand"
+    if (which === "off") return "dashboard"
+    return CLICK_ACTIONS.indexOf(action) >= 0 ? action : "dashboard"
+}
+
+function delay(value, range) {
+    const number = Number(value)
+    if (!isFinite(number)) return range.fallback
+    return Math.round(Math.max(range.min, Math.min(range.max, number)))
+}
+
+// ---- the collapsed body ------------------------------------------------------
+// How tall the collapsed shape is, how round its bottom corners are and how
+// much air the strip keeps at both ends (notch.bodyHeight / bodyRadius /
+// bodyPadding). The theme's tokens are the defaults; a preset carries all
+// three, which is how Classic gets back the 32 / 11 / 16 body the notch had
+// before Island without the tokens changing. `BODY_RANGES` names them by their
+// setting, for the IPC and the preset files' checks.
+var BODY_HEIGHT = { min: 24, max: 64 }
+var BODY_RADIUS = { min: 0, max: 32 }
+var BODY_PADDING = { min: 0, max: 48 }
+var BODY_RANGES = { bodyHeight: BODY_HEIGHT, bodyRadius: BODY_RADIUS, bodyPadding: BODY_PADDING }
+
+// Like `delay`, but the fallback is the caller's: the theme's token, which
+// this file cannot see, so a value that is not a number leaves the body as
+// the theme draws it.
+function bodySize(value, range, fallback) {
+    const number = Number(value)
+    if (!isFinite(number)) return fallback
+    return Math.round(Math.max(range.min, Math.min(range.max, number)))
+}
+
+// settings.json from before hoverMode: expandOnHover false meant "a click
+// opens it". The old key is dropped either way; SettingsService would drop it
+// as unknown anyway, and this keeps what it meant.
+function migrate(document) {
+    if (!document || typeof document !== "object") return document
+    const notch = document.notch
+    if (!notch || typeof notch !== "object" || notch.expandOnHover === undefined) return document
+    const next = {}
+    for (const key of Object.keys(notch))
+        if (key !== "expandOnHover") next[key] = notch[key]
+    if (next.hoverMode === undefined) next.hoverMode = notch.expandOnHover === false ? "click" : "hover"
+    const result = Object.assign({}, document)
+    result.notch = next
+    return result
 }

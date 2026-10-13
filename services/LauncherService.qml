@@ -75,6 +75,9 @@ Singleton {
     readonly property var appOverrides: ({
         "brave-browser": "launch-brave.sh",
         "com.brave.Browser": "launch-brave.sh",
+        "google-chrome": "launch-chrome.sh",
+        "com.google.Chrome": "launch-chrome.sh",
+        "chromium-browser": "launch-chromium-browser.sh",
         "kitty": "launch-kitty.sh"
     })
 
@@ -87,6 +90,8 @@ Singleton {
         { title: "Desktop mode: Widgets", keywords: "mode widgets desktop modus", icon: Icons.edit, run: () => LayoutService.setDesktopMode("widgets") },
         { title: "Desktop mode: Bar", keywords: "mode bar pills top panel modus leiste oben", icon: "󰘔", run: () => LayoutService.setDesktopMode("pills") },
         { title: "Desktop mode: Notch", keywords: "mode notch island dynamic time modus kerbe insel uhr", icon: "󱂩", run: () => LayoutService.setDesktopMode("notch") },
+        { title: "Notch: Island", keywords: "notch preset island pills workspaces status kerbe insel vorlage arbeitsflächen", icon: "󱂩", preset: "island", run: () => LayoutService.applyNotchPreset("island") },
+        { title: "Notch: Classic", keywords: "notch preset classic time clock only kerbe klassisch vorlage uhr zeit", icon: "󱂩", preset: "classic", run: () => LayoutService.applyNotchPreset("classic") },
         { title: "Edit layout", keywords: "widgets pills bar notch editor arrange layout bearbeiten anordnen leiste", icon: Icons.edit, run: () => { PanelService.close(); LayoutService.editMode = true } },
         { title: "Settings", keywords: "settings appearance einstellungen darstellung", icon: Icons.settings, run: () => PanelService.open("settings") },
         { title: "Do Not Disturb: 1 hour", keywords: "dnd focus quiet nicht stören ruhe stunde", icon: Icons.busy, run: () => NotificationService.setDnd("1h") },
@@ -122,7 +127,10 @@ Singleton {
         { title: "Log out …", keywords: "logout log out abmelden", icon: "󰍃", run: () => PanelService.open("powerMenu", { confirm: "logout" }) },
         { title: "Restart …", keywords: "reboot restart neustarten neu starten", icon: "󰜉", run: () => PanelService.open("powerMenu", { confirm: "reboot" }) },
         { title: "Shut down …", keywords: "shutdown shut down poweroff ausschalten herunterfahren", icon: "󰐥", run: () => PanelService.open("powerMenu", { confirm: "poweroff" }) }
-    ]
+    // A notch preset is a command only once its file has read (LayoutService
+    // loads the built-in ones asynchronously); before that, or with the file
+    // missing, it would be a command that does nothing.
+    ].filter(command => !command.preset || LayoutService.notchPreset(command.preset) !== null)
 
     // Derived from the settings navigation, not kept by hand: the copy that
     // used to live here missed the two newest pages, so `@widgets` and
@@ -165,7 +173,13 @@ Singleton {
     // recordUse: false for launches the user did not pick (autostart).
     function launchApp(app, recordUse) {
         const script = appOverrides[app.id]
+        // In a unit of its own, named after the entry (scripts/launch-app.sh):
+        // the portals know the application by that name, Plasma starts it the
+        // same way, and the Secret portal keys on it. Terminal entries and
+        // entries without a parsed command keep Quickshell's own launch.
+        const argv = app.command && app.command.length ? Array.prototype.slice.call(app.command) : null
         if (script) Quickshell.execDetached([Paths.script(script)])
+        else if (argv && !app.runInTerminal) Quickshell.execDetached([Paths.script("launch-app.sh"), app.id].concat(argv))
         else app.execute()
         if (recordUse !== false && app.id) {
             usage = Usage.record(usage, app.id, Date.now())

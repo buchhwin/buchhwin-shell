@@ -110,11 +110,18 @@ ShellPanel {
             onStreamFinished: {
                 try {
                     const data = JSON.parse(text)
-                    window.monitors = data.monitors || []
-                    window.workspaces = Logic.build(data.clients, data.monitors, data.workspaces,
+                    const monitors = data.monitors || []
+                    const workspaces = Logic.build(data.clients, data.monitors, data.workspaces,
                                                    SettingsService.value("workspaces.mode"),
                                                    SettingsService.value("workspaces.count"),
                                                    HyprlandService.perMonitor)
+                    // Only when something changed: the Repeaters below hold
+                    // plain arrays, and a plain array assigned again rebuilds
+                    // every card and every preview in it, whether or not a
+                    // single window moved. Every workspace or window event
+                    // comes through here, so most answers are the same answer.
+                    if (JSON.stringify(monitors) !== JSON.stringify(window.monitors)) window.monitors = monitors
+                    if (JSON.stringify(workspaces) !== JSON.stringify(window.workspaces)) window.workspaces = workspaces
                 } catch (error) {
                     window.monitors = []
                     window.workspaces = []
@@ -334,11 +341,21 @@ ShellPanel {
                                     }
 
                                     Repeater {
-                                        model: card.modelData.windows.filter(entry => Logic.matches(entry, search.text))
+                                        // Every window, with the ones the search
+                                        // rules out hidden rather than filtered
+                                        // away: a filtered array is a new model
+                                        // on every keystroke, and that threw the
+                                        // previews away and captured them again
+                                        // for each letter typed. A hidden thumb
+                                        // keeps its place - it is positioned
+                                        // from its own window's geometry, not
+                                        // from its neighbours.
+                                        model: card.modelData.windows
 
                                         Rectangle {
                                             id: thumb
                                             required property var modelData
+                                            visible: Logic.matches(modelData, search.text)
                                             readonly property string address: modelData.address
                                             readonly property bool isSelected: window.selectedWindow !== null && window.selectedWindow.address === modelData.address
                                             readonly property var toplevel: window.wanted ? window.toplevelFor(modelData.address) : null

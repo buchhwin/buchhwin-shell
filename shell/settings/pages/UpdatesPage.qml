@@ -159,7 +159,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "System packages"
-        description: "Fedora packages from dnf. Discover asks for the administrator password before installing."
+        description: DistroService.packagesDescription
 
         ListRow {
             focusOnTab: true

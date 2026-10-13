@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# xdg-open for the buchhwin-shell session: the system's xdg-open, run inside a
+# systemd scope named after the handler's desktop entry (scripts/launch-app.sh),
+# so the handler is an application with a name towards the portals rather than
+# a process in the caller's cgroup (the generic xdg-open starts it right
+# there; Plasma's kde-open goes through KIO and systemd units). First on PATH
+# through session/buchhwin-shell-session.
+#
+# A web link for Brave, Chrome or Chromium goes through its session launcher
+# instead (scripts/launch-brave.sh, launch-chrome.sh, launch-chromium-
+# browser.sh, all of them scripts/launch-chromium.sh): a Chromium browser has
+# to start with Plasma's password store and only with the wallet open, or it
+# makes itself a new key and logs out of everything (see that script). A
+# running browser takes the link over its own socket either way.
+set -euo pipefail
+here=$(readlink -f -- "${BASH_SOURCE[0]}")
+project_dir=$(cd -- "$(dirname -- "$here")/../.." && pwd)
+real=""
+IFS=: read -r -a dirs <<<"${PATH:-/usr/bin}"
+for dir in "${dirs[@]}" /usr/bin; do
+  [[ -n $dir && -x $dir/xdg-open ]] || continue
+  [[ $(readlink -f -- "$dir/xdg-open") == "$here" ]] && continue
+  real=$dir/xdg-open
+  break
+done
+[[ -n $real ]] || { printf 'xdg-open: the system xdg-open is missing\n' >&2; exit 3; }
+target=${1:-}
+handler=""
+# A file first (a path may contain a colon), then the web, then any other
+# scheme - mailto: and friends have no "//".
+if [[ -n $target && -e $target ]]; then
+  type=$(xdg-mime query filetype "$target" 2>/dev/null || true)
+  [[ -n $type ]] && handler=$(xdg-mime query default "$type" 2>/dev/null || true)
+elif [[ $target == http://* || $target == https://* ]]; then
+  handler=$(xdg-settings get default-web-browser 2>/dev/null || true)
+elif [[ $target =~ ^[[:alpha:]][[:alnum:]+.-]*: ]]; then
+  handler=$(xdg-mime query default "x-scheme-handler/${target%%:*}" 2>/dev/null || true)
+fi
+case ${handler%.desktop} in
+  brave-browser|com.brave.Browser) exec "$project_dir/scripts/launch-brave.sh" "$@" ;;
+  google-chrome|com.google.Chrome) exec "$project_dir/scripts/launch-chrome.sh" "$@" ;;
+  chromium-browser) exec "$project_dir/scripts/launch-chromium-browser.sh" "$@" ;;
+esac
+if [[ -n $handler ]]; then
+  exec "$project_dir/scripts/launch-app.sh" "$handler" "$real" "$@"
+fi
+exec "$real" "$@"

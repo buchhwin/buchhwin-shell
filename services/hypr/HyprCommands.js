@@ -79,24 +79,41 @@ function animation(entry) {
     if (/[;\n"]/.test(style)) throw new Error("invalid animation style")
     const on = entry.enabled ? "1" : "0"
     const tail = style.length ? "," + style : ""
+    // The Lua dialect animates with the leaf's spring where it has one; the
+    // legacy one has no springs and uses the bezier.
+    const spring = entry.spring ? checkWord(entry.spring) : ""
     return {
         legacy: "keyword animation " + leaf + "," + on + "," + speed + "," + bezier + tail,
         legacyEmpty: [],
         lua: "hl.animation({ leaf = " + luaString(leaf) + ", enabled = " + (entry.enabled ? "true" : "false")
-            + ", speed = " + speed + ", bezier = " + luaString(bezier)
+            + ", speed = " + speed + (spring.length ? ", spring = " + luaString(spring) : ", bezier = " + luaString(bezier))
             + (style.length ? ", style = " + luaString(style) : "") + " })"
+    }
+}
+
+// One spring curve. Lua only: the legacy dialect has no springs, and its
+// leaves name beziers instead.
+function springCurve(curve) {
+    const name = checkWord(curve.name)
+    const numbers = [curve.mass, curve.stiffness, curve.dampening].map(Number)
+    if (numbers.some(value => !isFinite(value) || value < 0.5)) throw new Error("invalid spring")
+    return {
+        legacy: "",
+        legacyEmpty: [],
+        lua: "hl.curve(" + luaString(name) + ", { type = \"spring\", mass = " + numbers[0]
+            + ", stiffness = " + numbers[1] + ", dampening = " + numbers[2] + " })"
     }
 }
 
 // Everything the animation mode changes on the compositor: whether animations
 // run at all, how long each leaf takes, and whether a window dragged or
 // resized with the pointer interpolates toward it.
-function animationMode(entries, on, pointer) {
+function animationMode(entries, on, pointer, springs) {
     return combine([options({
         "animations:enabled": on,
         "misc:animate_mouse_windowdragging": pointer,
         "misc:animate_manual_resizes": pointer
-    })].concat(on ? entries.map(animation) : []))
+    })].concat(on ? (springs || []).map(springCurve).concat(entries.map(animation)) : []))
 }
 
 function env(name, value) {

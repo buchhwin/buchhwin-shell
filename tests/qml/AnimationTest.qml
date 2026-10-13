@@ -10,98 +10,72 @@ import "../../services/hypr/HyprAnimations.js" as H
 // speed setting arrived and divided what they had already chosen.
 ShellRoot {
     Component.onCompleted: {
-        // ---- the floor itself ------------------------------------------
+        // ---- the pace ---------------------------------------------------
 
-        T.eq(A.FLOOR_MS, 167, "ten frames at 60 Hz, in milliseconds")
-        T.eq(A.FLOOR_SPEED, 1.67, "the same ten frames in Hyprland's deciseconds")
-        T.eq(A.FLOOR_SHARE, 0.8, "and four fifths of whatever the base is")
+        T.eq([A.SPEED_MIN, A.SPEED_MAX], [0.5, 2], "the slider runs from half speed to double")
+        T.eq([A.speed(1), A.speed(0.1), A.speed(9), A.speed("x"), A.speed(0)], [1, 0.5, 2, 1, 1],
+             "a stored speed is clamped to the slider, nonsense is the designed pace")
 
-        // At the designed pace nothing moves: the table was already above the
-        // floor, so the floor is invisible at 1x. This is what keeps the
-        // checked-in Hyprland configuration valid.
+        // ---- the floor ---------------------------------------------------
+
+        T.eq(A.FLOOR_MS, 100, "six frames at 60 Hz, in milliseconds")
+        T.eq(A.FLOOR_SPEED, 1, "the same six frames in Hyprland's deciseconds")
         T.eq(A.travel(340, 1, true), 340, "1x leaves a panel alone")
-        T.eq(A.travel(240, 1, true), 240, "and the close too")
-
-        // Slower than designed is never touched - the floor is a minimum.
         T.eq(A.travel(340, 2, true), 680, "half speed doubles the duration")
-
-        // The regression the second floor exists for. Ten frames alone let a
-        // 1.5x session have the 227 ms panel that was measured as too fast and
-        // replaced by 340 in the first place; the share catches it.
-        T.eq(A.travel(340, 1 / 1.5, true), 272, "1.5x is held at four fifths of a panel")
-        T.eq(A.travel(340, 1 / 2, true), 272, "and so is 2x, which the ten-frame floor let through at 170")
-        T.eq(A.travel(340, 1 / 3, true), 272, "no speed reaches below the share")
-        T.eq(A.travel(240, 1 / 1.5, true), 192, "the close is held at its own four fifths, not at 167")
-
-        // Where the ten-frame floor is still the one that binds: a short
-        // travel loses less than a fifth before it hits ten frames.
-        T.eq(A.travel(210, 1 / 1.5, true), 168, "navigation is caught by the share at 168")
-        T.eq(A.travel(200, 1 / 1.5, true), 167, "a workspace switch by the ten frames, which bind first")
-        T.eq(A.travel(200, 1 / 3, true), 167, "and they keep binding however fast it is asked to be")
-
-        // The cap at the base. Without it, asking for a 70 ms shake swing
-        // would come back as 167 and the speed setting would stop reaching
-        // anything short at all. Both floors are capped the same way.
-        T.eq(A.travel(70, 1, true), 70, "a duration below the floor is not lengthened by it")
-        T.eq(A.travel(70, 1 / 3, true), 70, "and stays at its base however fast it is asked to be")
-        T.eq(A.travel(120, 1 / 2, true), 120, "the cap is the base, not the floor")
-
-        // Reduced and Off are exempt: there the shortness is the point.
+        // The regression the old four-fifths floor caused: from 1.25x up every
+        // travelling motion stayed where it was, so the slider's top half only
+        // reached hover tints. Now 2x is twice as fast.
+        T.eq(A.travel(340, 1 / 2, true), 170, "2x halves a panel")
+        T.eq(A.travel(200, 1 / 2, true), 100, "and a workspace switch, down to the six frames")
+        T.eq(A.travel(150, 1 / 2, true), 100, "which hold below that")
+        T.eq(A.travel(70, 1 / 2, true), 70, "a motion shorter than the floor is not lengthened by it")
         T.eq(A.travel(340, 0.6, false), 204, "Reduced keeps its short duration")
         T.eq(A.travel(340, 0, false), 0, "and Off is nothing at all")
-
-        // ---- the compositor's half -------------------------------------
-
-        T.eq(A.travelSpeed(2.0, 1, true), 2.0, "a leaf at the designed pace is untouched")
-        T.eq(A.travelSpeed(2.0, 1 / 1.5, true), 1.67, "a 2.0 leaf is held at ten frames, which bind first")
-        T.eq(Math.round(A.travelSpeed(2.2, 1 / 1.5, true) * 100) / 100, 1.76,
-            "the slowest leaf is held at its own four fifths, which is above ten frames")
-        T.eq(A.travelSpeed(2.0, 1 / 3, true), 1.67, "a 2.0 leaf keeps the ten frames, which bind first for it")
-        T.eq(A.travelSpeed(1, 1, true), 1, "a leaf whose base is already short keeps its base")
+        T.eq(A.travelSpeed(2.0, 1 / 2, true), 1, "a 2.0 leaf at 2x")
+        T.eq(A.travelSpeed(1.5, 1 / 2, true), 1, "held at six frames")
+        T.eq(A.travelSpeed(0.8, 1 / 2, true), 0.8, "a leaf already shorter keeps its base")
         T.eq(A.travelSpeed(2.0, 0.6, false), 1.2, "Reduced is exempt here too")
 
-        // The share is why this floor could not simply be raised to a panel's
-        // 227 ms: the slowest leaf in the table is 2.2 ds, so a floor of 2.27
-        // would have sat above every one of them and frozen the compositor at
-        // its designed pace whatever the speed setting said.
-        T.eq(A.travelSpeed(2.2, 1 / 3, true) < 2.2, true, "the speed setting still reaches the slowest leaf")
-        T.eq(A.travelSpeed(2.0, 1 / 3, true) < 2.0, true, "and every other one")
+        // ---- springs -----------------------------------------------------
 
-        // ---- and through the table it drives ---------------------------
+        // The speed setting scales a spring itself: stiffness by s², damping
+        // by s, so the same motion plays s times as fast with the same
+        // overshoot.
+        const at1 = A.spring("standard", 1)
+        const at2 = A.spring("standard", 2)
+        T.eq([at1.spring, at1.damping, at1.mass], [4.5, 0.42, 1], "the standard spring at 1x")
+        T.eq([at2.spring, at2.damping], [18, 0.84], "at 2x: four times as stiff, twice the damping")
+        T.eq(A.spring("standard", 0.5).spring, 1.13, "at half speed a quarter as stiff")
+        T.eq(A.spring("nonsense", 1), at1, "an unknown spring is the standard one")
+        T.ok(A.spring("fast", 1).spring > at1.spring && A.spring("slow", 1).spring < at1.spring, "fast is stiffer, slow softer")
+        T.ok(A.spring("slow", 2).damping <= 1, "damping never goes past critical")
+        const scaled = A.scaleSpring({ name: "s", mass: 1, stiffness: 380, dampening: 34 }, 2)
+        T.eq([scaled.stiffness, scaled.dampening], [1520, 68], "a Hyprland spring scaled the same way")
+        // The damping ratio d / (2·√(k·m)) is what makes it the same motion.
+        const ratio = curve => curve.dampening / (2 * Math.sqrt(curve.stiffness * curve.mass))
+        T.ok(Math.abs(ratio(scaled) - ratio({ stiffness: 380, dampening: 34, mass: 1 })) < 0.001, "and keeps its damping ratio")
 
-        // The checked-in configuration is `entries(mode)` with one argument,
-        // and scripts/lib/checks.py compares it against hypr/. If the floor
-        // changed anything at 1x, that check would start failing.
-        const plain = H.entries("fast")
-        const atOne = H.entries("fast", 1)
-        T.eq(JSON.stringify(plain), JSON.stringify(atOne), "one argument and 1x are the same table")
-        T.eq(plain.filter(e => e.leaf === "windows")[0].speed, 2.0, "the window leaf is the table as written")
+        // ---- and through the compositor's table ---------------------------
 
-        const rushed = H.entries("fast", 1.5)
-        T.eq(rushed.filter(e => e.leaf === "windows")[0].speed, 1.67, "at 1.5x the window leaf stops at the floor")
-        T.eq(rushed.filter(e => e.leaf === "workspaces")[0].speed, 1.76,
-            "and a workspace switch, the slowest leaf, stops at its own four fifths instead")
-
-        // borderangle is off in every mode and its base is 1; the floor must
-        // not quietly lengthen a leaf nobody sees.
-        T.eq(rushed.filter(e => e.leaf === "borderangle")[0].speed, 1, "borderangle keeps its base")
-        T.eq(rushed.filter(e => e.leaf === "borderangle")[0].enabled, false, "and stays off")
-
-        // Off still clears the lot, floor or no floor.
-        T.eq(H.entries("off", 3).every(e => e.enabled === false), true, "Off enables nothing")
-
-        // The table itself has to obey the rule, not just the scaling of it.
-        // Three leaves did not - windowsOut at 1.4 was 8.4 frames, fade and
-        // layers at 1.6 were 9.6 - and no floor behind the division could
-        // rescue them, because that floor is capped at the base. This is the
-        // assertion that stops the next edit putting one back.
-        const short = H.entries("fast").filter(e => e.enabled && e.speed < A.FLOOR_SPEED)
-        T.eq(short.map(e => e.leaf), [], "no leaf that animates is under ten frames at the designed pace")
-
-        // And the travel: `popin 96%` is 4 % of movement, which is nothing to
-        // look at however many frames it gets. Hyprland's own table uses 87 %.
-        T.eq(H.entries("fast").filter(e => e.leaf === "windows")[0].style, "popin 87%", "a window grows far enough to be seen")
-        T.eq(H.entries("fast").filter(e => e.leaf === "windowsOut")[0].style, "popin 87%", "and shrinks the same way")
+        const plain = H.entries("full")
+        T.eq(JSON.stringify(plain), JSON.stringify(H.entries("full", 1)), "one argument and 1x are the same table")
+        T.eq(plain.filter(e => e.leaf === "windows")[0].spring, "buchhwinSpatial", "windows move on a spatial spring")
+        T.eq(plain.filter(e => e.leaf === "layers")[0].spring, "", "layers keep a timed curve")
+        T.ok(plain.every(e => e.spring === "" || H.SPRINGS.some(c => c.name === e.spring)), "every spring a leaf names exists")
+        T.eq(H.curves("full", 1).filter(c => c.name === "buchhwinSpatial")[0], { name: "buchhwinSpatial", mass: 1, stiffness: 380, dampening: 34 },
+             "the springs at 1x are the configuration as written")
+        T.eq(H.curves("full", 2).filter(c => c.name === "buchhwinSpatial")[0].stiffness, 1520, "at 2x they are stiffer")
+        T.ok(H.curves("reduced", 1)[0].stiffness > H.curves("full", 1)[0].stiffness, "Reduced is quicker, springs too")
+        T.ok(H.SPRINGS.every(c => c.dampening / (2 * Math.sqrt(c.stiffness * c.mass)) >= 0.85),
+             "no spring rings: every damping ratio is 0.85 or more")
+        T.eq(H.entries("full", 2).filter(e => e.leaf === "windows")[0].speed, 1, "the bezier stand-in at 2x")
+        T.eq(H.entries("off", 2).every(e => e.enabled === false), true, "Off enables nothing")
+        const borderangle = H.entries("full", 2).filter(e => e.leaf === "borderangle")[0]
+        T.eq([borderangle.speed, borderangle.enabled], [1, false], "borderangle keeps its base and stays off")
+        const tooShort = H.entries("full").filter(e => e.enabled && e.speed < A.FLOOR_SPEED)
+        T.eq(tooShort.map(e => e.leaf), [], "no leaf that animates is under six frames at the designed pace")
+        T.eq(H.entries("full").filter(e => e.leaf === "windows")[0].style, "popin 87%", "a window grows far enough to be seen")
+        T.eq(H.entries("full").filter(e => e.leaf === "windowsOut")[0].style, "popin 87%", "and shrinks the same way")
 
         // ---- three modes, and what happens to the sessions that had four --
 
@@ -122,8 +96,8 @@ ShellRoot {
         T.eq(A.speedFor("fast", 1.5), 1.5, "whatever it was")
         T.eq(A.speedFor("normal", 1), 0.8, "Normal at 1x was Full at 0.8x")
         T.eq(A.speedFor("normal", 1.25), 1, "and Normal at 1.25x was the designed pace exactly")
-        T.eq(A.speedFor("normal", 0.25), 0.25, "clamped to the bottom of the slider")
-        T.eq(A.speedFor("full", 3), 3, "and the top of it")
+        T.eq(A.speedFor("normal", 0.25), 0.5, "clamped to the bottom of the slider")
+        T.eq(A.speedFor("full", 3), 2, "and the top of it")
         T.eq(A.speedFor("fast", 0), 1, "a stored nothing is the designed pace")
         T.eq(A.speedFor("fast", "x"), 1, "and so is a stored nonsense")
 

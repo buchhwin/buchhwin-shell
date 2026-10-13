@@ -36,6 +36,19 @@ Variants {
 
         Component.onCompleted: first.source = targetPath.length ? "file://" + targetPath : ""
 
+        // After a cross-fade the hidden image is let go: an Image keeps its
+        // decoded texture as long as it has a source, which on a 4K screen is
+        // 33 MB per image and per screen, held for a picture nobody sees.
+        // `apply()` compares sources, so the next change loads it again,
+        // asynchronously, and the fade still starts on Ready. Only once the
+        // fade has ended and the opacity really is 0: a fade that is reversed
+        // half-way (two changes in quick succession) restarts the Behavior
+        // without reporting a stop, and the opacity check keeps a visible
+        // image whole should it ever stop early.
+        function release(image) {
+            if (image.opacity === 0 && image.source.toString().length) image.source = ""
+        }
+
         Image {
             id: first
             anchors.fill: parent
@@ -45,7 +58,14 @@ Variants {
             asynchronous: true
             cache: false
             opacity: window.showFirst ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: Animations.enabled ? Animations.workspace * 3 : 0; easing.type: Animations.easing } }
+            Behavior on opacity {
+                NumberAnimation {
+                    id: firstFade
+                    duration: Animations.enabled ? Animations.workspace * 3 : 0
+                    easing.type: Animations.easing
+                    onRunningChanged: if (!running) window.release(first)
+                }
+            }
             onStatusChanged: if (status === Image.Ready && !window.showFirst) window.showFirst = true
         }
 
@@ -58,7 +78,14 @@ Variants {
             asynchronous: true
             cache: false
             opacity: window.showFirst ? 0 : 1
-            Behavior on opacity { NumberAnimation { duration: Animations.enabled ? Animations.workspace * 3 : 0; easing.type: Animations.easing } }
+            Behavior on opacity {
+                NumberAnimation {
+                    id: secondFade
+                    duration: Animations.enabled ? Animations.workspace * 3 : 0
+                    easing.type: Animations.easing
+                    onRunningChanged: if (!running) window.release(second)
+                }
+            }
             onStatusChanged: if (status === Image.Ready && window.showFirst) window.showFirst = false
         }
     }

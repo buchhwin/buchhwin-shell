@@ -44,6 +44,11 @@ GridLayout {
     property color mutedTextColor: Colors.mutedText
     property string icon: ""
     property color iconColor: textColor
+    // A widget may draw its glyph instead of naming one - a signal strength
+    // as rising bars, a battery lying down - when the item it is placed as
+    // asks for it (`options.glyph`, read by the widget itself). It takes the
+    // icon's place; the icon's colour is the widget's to use inside it.
+    property Component glyph: null
     property string label: ""
     property int maxLabelWidth: 220
     // What the widget is called, shown from `medium` up. Not the value.
@@ -69,8 +74,14 @@ GridLayout {
     // and the row's own spacing between them reads as two.
     rowSpacing: Metrics.spaceXxs * scaleFactor
 
+    Loader {
+        visible: root.glyph !== null
+        active: root.glyph !== null
+        Layout.alignment: root.vertical ? Qt.AlignHCenter : Qt.AlignVCenter
+        sourceComponent: root.glyph
+    }
     Text {
-        visible: root.icon.length > 0
+        visible: root.icon.length > 0 && root.glyph === null
         Layout.alignment: root.vertical ? Qt.AlignHCenter : Qt.AlignVCenter
         text: root.icon
         color: root.iconColor

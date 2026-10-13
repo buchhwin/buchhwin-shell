@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import qs.theme
 import qs.services
+import qs.shell.components
 // Registers the widget module so pill items can share WidgetBase.
 import qs.shell.widgets
 import qs.shell.editor
@@ -178,13 +179,16 @@ Rectangle {
     border.color: Colors.pillBorder
     visible: hasContent
     Behavior on color { ColorAnimation { duration: Animations.hover } }
+    // A spring rather than a duration: a pill whose text changes again
+    // half-way (a clock, a title) is redirected from where it is instead of
+    // restarting a fixed-length glide from there.
     Behavior on implicitWidth {
         enabled: Animations.motionEnabled && !root.vertical
-        NumberAnimation { duration: Animations.navigation; easing.type: Animations.easing }
+        SpringMotion {}
     }
     Behavior on implicitHeight {
         enabled: Animations.motionEnabled && root.vertical
-        NumberAnimation { duration: Animations.navigation; easing.type: Animations.easing }
+        SpringMotion {}
     }
 
     HoverHandler { id: hover }

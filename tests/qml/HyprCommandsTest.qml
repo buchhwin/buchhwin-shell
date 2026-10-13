@@ -89,10 +89,27 @@ ShellRoot {
         // than reaching 1. The floor itself is AnimationTest's subject.
         const windowsOf = speed => A.entries("full", speed).find(entry => entry.leaf === "windows").speed
         T.eq(windowsOf(undefined), 2, "no speed given is the designed pace")
-        T.eq(windowsOf(2), 1.67, "twice as fast is held at ten frames, not halved")
+        T.eq(windowsOf(2), 1, "twice as fast is half the time")
         T.eq(windowsOf(0.5), 4, "half as fast is twice as long - the floor is only a minimum")
         T.eq(windowsOf(0), 2, "a speed of nothing is not a speed")
-        T.ok(A.entries("full", 3).every(entry => entry.speed > 0), "even at the top of the slider nothing reaches zero")
+        T.ok(A.entries("full", 3).every(entry => entry.speed > 0), "even past the top of the slider nothing reaches zero")
+
+        // Springs: the Lua dialect animates with a leaf's spring, the legacy
+        // one has none and keeps the bezier.
+        const sprung = H.animation({ leaf: "windows", enabled: true, speed: 2, spring: "buchhwinSpatial", bezier: "buchhwinSpring", style: "popin 87%" })
+        T.eq(sprung.lua, "hl.animation({ leaf = \"windows\", enabled = true, speed = 2, spring = \"buchhwinSpatial\", style = \"popin 87%\" })",
+             "a sprung leaf in Lua")
+        T.eq(sprung.legacy, "keyword animation windows,1,2,buchhwinSpring,popin 87%", "and its bezier in the legacy dialect")
+        const curve = H.springCurve({ name: "buchhwinSpatial", mass: 1, stiffness: 380, dampening: 34 })
+        T.eq(curve.lua, "hl.curve(\"buchhwinSpatial\", { type = \"spring\", mass = 1, stiffness = 380, dampening = 34 })", "a spring curve in Lua")
+        T.eq(curve.legacy, "", "and nothing in the legacy dialect, which has no springs")
+        T.throwsError(() => H.springCurve({ name: "x", mass: 1, stiffness: 0.1, dampening: 1 }), "a spring Hyprland would refuse is refused here")
+        T.throwsError(() => H.springCurve({ name: "x;y", mass: 1, stiffness: 100, dampening: 10 }), "and so is a name that is not one")
+        const withSprings = H.animationMode(A.entries("full", 2), true, true, A.curves("full", 2))
+        T.ok(withSprings.lua.indexOf("hl.curve(\"buchhwinSpatial\", { type = \"spring\", mass = 1, stiffness = 1520, dampening = 68 })") >= 0,
+             "the slider reaches the springs: 2x is four times as stiff")
+        T.ok(withSprings.lua.indexOf("hl.curve(") < withSprings.lua.indexOf("hl.animation("), "the curves come before the leaves that use them")
+        T.ok(withSprings.legacy.indexOf("spring") < 0, "the legacy dialect gets no spring at all")
 
         const off = H.animationMode(A.entries("off"), A.enabled("off"), A.pointerAnimated("off"))
         T.ok(off.legacy.indexOf("animations:enabled false") >= 0, "off says so")

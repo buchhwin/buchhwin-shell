@@ -20,6 +20,15 @@ Item {
     signal released(real value)
 
     readonly property real ratio: to > from ? Math.max(0, Math.min(1, ((pressed ? liveValue : value) - from) / (to - from))) : 0
+    // What is drawn. The *value* springs, not the pixels: animating the fill's
+    // width and the knob's x also animated every resize of the slider, so a
+    // page that relaid itself left knobs gliding after the track. Under the
+    // finger it follows directly, or the spring would fight the hand.
+    property real shownRatio: ratio
+    Behavior on shownRatio {
+        enabled: Animations.motionEnabled && !root.pressed
+        SpringMotion { kind: "fast"; precision: 0.001 }
+    }
 
     activeFocusOnTab: focusOnTab && enabledState
     Keys.onLeftPressed: if (enabledState) root.released(Math.max(from, value - (to - from) / 20))
@@ -39,16 +48,10 @@ Item {
 
         Rectangle {
             id: fill
-            width: parent.width * root.ratio
+            width: parent.width * root.shownRatio
             height: parent.height
             radius: parent.radius
             color: Colors.accent
-            // The fill follows outside changes (keys, services) smoothly, but
-            // stays glued to the finger while dragging.
-            Behavior on width {
-                enabled: !root.pressed
-                NumberAnimation { duration: Animations.move(Animations.control); easing.type: Animations.easing }
-            }
         }
     }
 
@@ -58,15 +61,11 @@ Item {
         height: Metrics.sliderHandle
         radius: width / 2
         anchors.verticalCenter: parent.verticalCenter
-        x: track.width * root.ratio
+        x: track.width * root.shownRatio
         color: Colors.knob
         border.width: Metrics.borderWidth
         border.color: Colors.knobBorder
         scale: root.pressed ? Effects.knobPressScale : 1
-        Behavior on x {
-            enabled: !root.pressed
-            NumberAnimation { duration: Animations.move(Animations.control); easing.type: Animations.easing }
-        }
         Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
 
         // The handle carries the focus ring: it marks the slider the wheel

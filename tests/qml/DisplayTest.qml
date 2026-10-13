@@ -25,6 +25,19 @@ ShellRoot {
         T.eq(D.logicalSize(edp), { width: 1920, height: 1200 }, "logical size uses scale")
         T.eq(D.logicalSize(Object.assign({}, dp, { transform: 1 })), { width: 1440, height: 2560 }, "rotation swaps size")
 
+        // Hyprland corrects a scale that does not divide the mode into whole
+        // logical pixels (nearest 1/120, then the first clean multiple up or
+        // down), and the geometry has to agree with it: 1.67 on a 4K screen is
+        // 200/120 and 2304 wide, not 2299.
+        T.eq(D.effectiveScale(1.67, 3840, 2160), 200 / 120, "1.67 on 4K is Hyprland's 200/120")
+        T.eq(D.effectiveScale(1.5, 2880, 1800), 1.5, "a clean scale is kept")
+        T.eq(D.effectiveScale(1.75, 3840, 2160), 200 / 120, "1.75 on 4K has no clean multiple above it within reach, so it is 200/120 too")
+        T.eq(D.effectiveScale(1.6, 3840, 2160), 1.6, "1.6 is 192/120 and clean")
+        T.eq(D.effectiveScale(1.33, 1920, 1080), 160 / 120, "1.33 on full HD is 160/120")
+        const uhd = { name: "DP-8", width: 3840, height: 2160, scale: 1.67, transform: 0, x: 0, y: 315, disabled: false }
+        T.eq(D.logicalSize(uhd), { width: 2304, height: 1296 }, "the logical size follows the effective scale")
+        T.eq(D.logicalSize({ width: 1920, height: 1080, scale: 1, transform: 3 }), { width: 1080, height: 1920 }, "270 degrees swaps the size")
+
         // The one scale X11 gets: the largest any enabled screen runs at.
         T.eq(D.x11Scale(monitors), 1.5, "x11 scale is the largest screen's")
         T.eq(D.x11Scale([dp]), 1, "nothing scaled, nothing to tell")
@@ -59,6 +72,37 @@ ShellRoot {
         T.eq(D.nudge(apart, "sideways", 1, 0, 10, 10), null, "a monitor nobody knows is refused, not answered")
         T.eq(D.nudge(apart, "DP-1", 1, 0, 0, 0).x, 2001, "a step of zero is still one pixel, never a freeze")
         T.ok(D.overlapping(D.update(monitors, "DP-1", { x: 100 })) && !D.overlapping(monitors), "overlap detection")
+
+        // The layout this shell wrote on 2026-10-09: positions summed from
+        // 2299-px widths, five pixels short of Hyprland's 2304 - two overlaps
+        // that the old width never showed.
+        const desk = [
+            uhd,
+            Object.assign({}, uhd, { name: "DP-10", x: 2299 }),
+            { name: "DP-13", width: 1920, height: 1080, scale: 1, transform: 3, x: 4598, y: 0, disabled: false }
+        ]
+        T.ok(D.overlapping(desk), "the 9.10. layout overlaps once the widths are right")
+        T.eq(D.spread(desk).map(m => m.x), [0, 2304, 4608], "spread pushes each monitor out of its left neighbour")
+        T.ok(!D.overlapping(D.spread(desk)), "and nothing overlaps afterwards")
+        T.eq(D.spread(D.spread(desk)).map(m => m.x), [0, 2304, 4608], "spreading a clean layout changes nothing")
+        T.eq(D.spread(D.update(desk, "DP-10", { disabled: true })).map(m => m.x), [0, 2299, 4598], "a disabled monitor is neither moved nor in the way")
+        // Dropping a monitor onto another pops it out along the axis that
+        // needs the smaller move, on the side its centre is.
+        T.eq(D.snap(monitors, "DP-1", 1500, 100, 40), { x: 1920, y: 100 }, "dropped half onto the neighbour: out to its right edge")
+        T.eq(D.snap(monitors, "DP-1", -2500, 0, 40), { x: -2560, y: 0 }, "dropped onto it from the left: out to its left edge")
+        T.eq(D.snap(monitors, "DP-1", 0, 1100, 40), { x: 0, y: 1200 }, "dropped onto its lower part: below it")
+        T.eq(D.snap(monitors, "DP-1", 100, 0, 40), { x: 100, y: 1200 }, "dropped squarely onto it: below, the nearer way out")
+        T.eq(D.nudge(monitors, "DP-1", -1, 0, 10, 10), { x: 1920, y: 0 }, "a nudge into the neighbour stays on its edge")
+        T.ok(!D.overlapping(D.applySaved(monitors, D.toSaved(D.update(monitors, "DP-1", { x: 100 })))), "a saved layout that overlaps loads spread apart")
+        // The file is then corrected once: only the positions that moved, and
+        // entries of monitors that are not connected stay as they were.
+        const overlapFile = D.toSaved(D.update(monitors, "DP-1", { x: 100 }))
+        overlapFile.monitors["HDMI-A-9"] = { description: "elsewhere", width: 1920, height: 1080, refresh: 60, x: 7000, y: 0, scale: 1, transform: 0, vrr: 0, disabled: false }
+        const corrected = D.repairSaved(overlapFile, D.applySaved(monitors, overlapFile))
+        T.ok(corrected !== null && corrected.monitors["DP-1"].x === 100 && corrected.monitors["DP-1"].y === 1200, "the corrected file carries the spread position")
+        T.eq(corrected.monitors["HDMI-A-9"].x, 7000, "an entry for a monitor that is not connected is kept")
+        T.eq(D.repairSaved(corrected, D.applySaved(monitors, corrected)), null, "a corrected file needs no second correction")
+        T.eq(D.repairSaved(D.toSaved(monitors), D.applySaved(monitors, D.toSaved(monitors))), null, "a clean file is left alone")
         T.eq(D.normalize(D.update(D.update(monitors, "eDP-1", { x: -1920 }), "DP-1", { x: 0, y: -200 })).map(m => [m.x, m.y]),
              [[0, 200], [1920, 0]], "layout normalised to 0,0")
         T.eq(D.enabledCount(D.update(monitors, "DP-1", { disabled: true })), 1, "enabled count")

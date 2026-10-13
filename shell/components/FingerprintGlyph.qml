@@ -23,9 +23,16 @@ Item {
     readonly property color activeColor: mode === "failed" ? errorColor : mode === "done" ? successColor : color
     property real shown: 0
     Binding on shown { value: root.mode === "done" ? 1 : Math.max(0, Math.min(1, root.progress)) }
-    Behavior on shown { NumberAnimation { duration: Animations.fingerprintFill; easing.type: Easing.OutCubic } }
+    Behavior on shown { NumberAnimation { duration: Animations.fingerprintFill; easing.type: Animations.easingEnter } }
 
     onRetriesChanged: if (retries > 0 && Animations.motionEnabled) shake.restart()
+
+    // How many times the ripples run while scanning; 0 means for as long as
+    // the scan lasts. The lock passes a count: fprintd can wait for a long
+    // time, and two endless animations on three full-screen surfaces redraw
+    // the whole lock, blur included, on every frame of that wait. A new
+    // attempt (a retry) starts them again.
+    property int rippleCycles: 0
 
     // Ripples while scanning.
     Repeater {
@@ -43,13 +50,18 @@ Item {
             opacity: 0
             scale: 0.8
             visible: root.mode === "scanning" && Animations.motionEnabled
+            Connections {
+                target: root
+                function onRetriesChanged() { if (ripple.visible) rippleRun.restart() }
+            }
             SequentialAnimation {
+                id: rippleRun
                 running: ripple.visible
-                loops: Animation.Infinite
+                loops: root.rippleCycles > 0 ? root.rippleCycles : Animation.Infinite
                 PauseAnimation { duration: ripple.index * Animations.fingerprintRipple / 2 }
                 ParallelAnimation {
-                    NumberAnimation { target: ripple; property: "scale"; from: 0.8; to: 1.45; duration: Animations.fingerprintRipple; easing.type: Easing.OutCubic }
-                    NumberAnimation { target: ripple; property: "opacity"; from: 0.45; to: 0; duration: Animations.fingerprintRipple; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: ripple; property: "scale"; from: 0.8; to: 1.45; duration: Animations.fingerprintRipple; easing.type: Animations.easingEnter }
+                    NumberAnimation { target: ripple; property: "opacity"; from: 0.45; to: 0; duration: Animations.fingerprintRipple; easing.type: Animations.easingEnter }
                 }
                 onRunningChanged: if (!running) { ripple.opacity = 0; ripple.scale = 0.8 }
             }
@@ -102,7 +114,7 @@ Item {
         color: root.activeColor
         visible: scale > 0
         scale: root.mode === "done" || root.mode === "failed" ? 1 : 0
-        Behavior on scale { NumberAnimation { duration: Animations.lockPop * 2; easing.type: Easing.OutBack; easing.overshoot: 2 } }
+        Behavior on scale { NumberAnimation { duration: Animations.lockPop * 2; easing.type: Animations.easingControl; easing.overshoot: Animations.overshootStrong } }
         ShellIcon {
             anchors.centerIn: parent
             glyph: root.mode === "failed" ? Icons.close : Icons.check

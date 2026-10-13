@@ -13,6 +13,9 @@
 # export the nested WAYLAND_DISPLAY, HYPRLAND_INSTANCE_SIGNATURE and XDG dirs
 # and says nothing about BUCHHWIN_SHELL_PATH - and reload-shell.sh then falls
 # back to the installed copy and restarts the shell on the user's own screen.
+# Hyprland built into the home directory (openSUSE Leap) on PATH, as in the session.
+# shellcheck source=hyprland-prefix.sh
+if [[ -r "$(dirname -- "${BASH_SOURCE[0]}")/hyprland-prefix.sh" ]]; then source "$(dirname -- "${BASH_SOURCE[0]}")/hyprland-prefix.sh"; fi
 nested_environment() {
   local base=${BUCHHWIN_NESTED_DIR:-"${TMPDIR:-/tmp}/buchhwin-nested"}
   if [[ ${BUCHHWIN_NESTED:-0} == 1 ]]; then

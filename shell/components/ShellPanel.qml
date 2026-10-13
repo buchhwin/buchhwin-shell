@@ -66,6 +66,12 @@ PanelWindow {
     // A panel casts a shadow so it reads as lifted off the desktop; one over a
     // strong scrim (session menu, dialogs) needs a deeper one to stay separate.
     property bool shadow: true
+    // Cast from the geometry the card settles at and transformed onto the
+    // card while it morphs, instead of blurred again on every frame of the
+    // morph; the caster below has the whole of it. `false` is the way back to
+    // the per-frame shadow. Only a panel that grows out of an origin morphs.
+    property bool staticShadow: true
+    readonly property bool shadowFromTarget: staticShadow && hasOrigin
     readonly property bool overScrim: scrimColor === Colors.scrimStrong
     readonly property int elevationMax: overScrim ? Effects.elevation3Max : Effects.elevation2Max
     readonly property real elevationBlur: overScrim ? Effects.elevation3Blur : Effects.elevation2Blur
@@ -339,19 +345,35 @@ PanelWindow {
     // card itself behind a MultiEffect: a lone rounded rectangle is a trivial
     // texture that is only redrawn when the geometry changes, while the card
     // would be re-rendered on every hover inside it.
+    //
+    // While the card grows out of what opened it the geometry changes on
+    // every frame, and "redrawn when the geometry changes" then means the
+    // caster's layer and the whole blur chain behind it (up to 72 px of it),
+    // once per frame, for every one of the 14 to 20 frames of the morph.
+    // With `staticShadow` the twin takes the size and the place the card
+    // *settles* at, so it is drawn once, and the effect is scaled and moved
+    // onto the card as it grows - the shadow still follows the card, from a
+    // cached picture. A scaled blur is a little tighter than a re-blurred one
+    // while the card is small, which is not visible at a tenth of a second
+    // under a fading opacity. At rest the scale is 1 and the offset 0, so the
+    // picture is the one drawn before. A panel without an origin never
+    // morphs and keeps the live bindings.
     Rectangle {
         id: shadowCaster
         visible: false
-        x: card.x
-        y: card.y
-        width: card.width
-        height: card.height
+        x: window.shadowFromTarget ? card.placedX : card.x
+        y: window.shadowFromTarget ? card.placedY : card.y
+        width: window.shadowFromTarget ? card.targetWidth : card.width
+        height: window.shadowFromTarget ? card.targetHeight : card.height
         radius: card.radius
         color: Colors.shadow
         layer.enabled: true
     }
     MultiEffect {
         source: shadowCaster
+        // The caster's size, whatever the card's: the effect's own textures
+        // are allocated for this size and must not be resized per frame
+        // either. Following the card is the transform's job.
         anchors.fill: shadowCaster
         visible: window.showCard && window.shadow
         opacity: progress.value
@@ -369,6 +391,26 @@ PanelWindow {
         maskEnabled: true
         maskSource: shadowCaster
         maskInverted: true
+        // A Scale about the top-left corner and then a Translate, not the
+        // `scale` property: that one works from the centre, and with the
+        // padding the shadow spreads into, the item's centre is not the
+        // card's. Scaled from the corner, the caster's picture lands exactly
+        // on the card's rect: the caster is `targetWidth` wide and the card
+        // `width`, so the ratio maps one onto the other, and the offset is
+        // where the card is relative to where the caster is. The mask scales
+        // with it, so the cut-out stays under the card.
+        transform: [
+            Scale {
+                origin.x: 0
+                origin.y: 0
+                xScale: window.shadowFromTarget ? card.width / Math.max(1, card.targetWidth) : 1
+                yScale: window.shadowFromTarget ? card.height / Math.max(1, card.targetHeight) : 1
+            },
+            Translate {
+                x: window.shadowFromTarget ? card.x - shadowCaster.x : 0
+                y: window.shadowFromTarget ? card.y - shadowCaster.y : 0
+            }
+        ]
     }
 
     Rectangle {
@@ -577,16 +619,19 @@ PanelWindow {
                 // The live edge cannot be used: a panel anchored to the desktop
                 // clock has *both* edges move with the width, so the drag
                 // chased its own result - the gearing halved and it never
-                // landed where it was let go.
-                property real fromRight: 0
-                property real fromTop: 0
+                // landed where it was let go. A centred placement moves both
+                // edges by design, so for that axis the origin is the centre
+                // and the size is measured from it (ArrangeLogic.panelDragTo).
+                property var origin: ({})
                 property real pressX: 0
                 property real pressY: 0
                 property bool moved: false
                 onPressed: mouse => {
                     const point = mapToItem(overlayLayer, mouse.x, mouse.y)
-                    fromRight = card.x + card.width
-                    fromTop = card.y
+                    const from = { right: card.x + card.width, top: card.y }
+                    if (window.placement === "center" || window.placement === "top-center") from.centreX = card.x + card.width / 2
+                    if (window.placement === "center") from.centreY = card.y + card.height / 2
+                    origin = from
                     pressX = point.x
                     pressY = point.y
                     moved = false
@@ -601,8 +646,7 @@ PanelWindow {
                         if (Math.abs(point.x - pressX) + Math.abs(point.y - pressY) < Metrics.dragThreshold) return
                         moved = true
                     }
-                    const wanted = Arrange.panelDragTo(point.x, point.y,
-                                                       { right: fromRight, top: fromTop }, window.sizeBounds)
+                    const wanted = Arrange.panelDragTo(point.x, point.y, grip.origin, window.sizeBounds)
                     window.dragWidth = wanted.width
                     window.dragHeight = wanted.height
                 }

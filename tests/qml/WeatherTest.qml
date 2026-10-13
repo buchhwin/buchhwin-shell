@@ -75,6 +75,16 @@ ShellRoot {
         T.eq(W.formatTemperature(-0.4), "0°", "no negative zero")
         T.eq(W.formatTemperature(17.6), "18°", "rounded temperature")
         T.eq(W.formatTemperature(null), "–", "missing temperature")
+        // Location by IP (ipinfo.io), with a made-up place: city, region and the
+        // coordinates rounded like a searched place.
+        T.eq(W.parseIpLocation('{"ip":"192.0.2.1","city":"Sampletown","region":"Exampleland","country":"XX","loc":"48.10,11.50"}'),
+             { name: "Sampletown", region: "Exampleland, XX", lat: 48.1, lon: 11.5 }, "ipinfo answer read")
+        T.eq(W.parseIpLocation({ region: "Exampleland", country: "XX", loc: "48.10,11.50" }).name, "Exampleland",
+             "the region stands in for a missing city")
+        T.eq([W.parseIpLocation("{nope"), W.parseIpLocation({ city: "A" }), W.parseIpLocation({ city: "A", loc: "1,2,3" }),
+              W.parseIpLocation({ city: "A", loc: "120,10" }), W.parseIpLocation({ loc: "10,10" }), W.parseIpLocation(null)],
+             [null, null, null, null, null, null], "no place, broken or impossible answers are no answer")
+        T.ok(W.IP_LOCATION_URL.indexOf("https://") === 0, "asked over HTTPS")
         T.finish("WeatherTest")
     }
 }

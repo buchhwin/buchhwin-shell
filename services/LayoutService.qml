@@ -154,6 +154,60 @@ Singleton {
     function notchAdd(type, zone) { return changeNotchLayout(Logic.addNotchItem, type, zone) }
     function notchResetLayout() { return changeNotchLayout(() => Logic.defaultNotch()) }
 
+    // ---- notch presets ----------------------------------------------------
+    // A whole notch at once: both lists and the options that shape it. The
+    // built-in ones are files in config/notch-presets/, the user's own live in
+    // the layout file next to the notch. Applying one is a single undo step,
+    // the layout and the settings together.
+    // In the picker's order. Classic is the notch as it was before Island:
+    // the time alone, the overview of five on hover.
+    readonly property var builtinNotchPresetNames: ["island", "classic"]
+    property var builtinNotchPresets: []
+    readonly property var notchPresets: builtinNotchPresets.concat(config.notchPresets || [])
+    function notchPreset(id) {
+        for (const preset of notchPresets) if (preset.id === id) return preset
+        return null
+    }
+    function applyNotchPreset(id) {
+        const preset = notchPreset(id)
+        if (!preset || readOnly) return false
+        beginChange()
+        mutate((mode, next) => { next.notch = Logic.copyNotch(preset.layout) })
+        const values = {}
+        for (const key of Object.keys(preset.options)) values["notch." + key] = preset.options[key]
+        if (Object.keys(values).length) SettingsService.setAll(values)
+        save()
+        return true
+    }
+    // The notch as it is now, under a name of the user's choosing.
+    function saveNotchPreset(label) {
+        if (readOnly) return ""
+        const options = {}
+        for (const key of Logic.NOTCH_PRESET_OPTIONS) options[key] = SettingsService.value("notch." + key)
+        const result = Logic.addNotchPreset(config, label, notchLayout, options,
+                                            builtinNotchPresets.map(preset => preset.id))
+        if (!result.id.length) return ""
+        config = Logic.sanitize(result.config)
+        revision++
+        changed()
+        save()
+        return result.id
+    }
+    function renameNotchPreset(id, label) {
+        if (readOnly) return false
+        config = Logic.sanitize(Logic.renameNotchPreset(config, id, label))
+        revision++
+        changed()
+        return save()
+    }
+    function removeNotchPreset(id) {
+        if (readOnly) return false
+        config = Logic.sanitize(Logic.removeNotchPreset(config, id))
+        revision++
+        changed()
+        return save()
+    }
+
     // The lock screen's grid. Outside `profiles` like the notch: there is one
     // lock screen whatever the desktop mode says about monitors. The lock
     // screen itself is another process and only ever reads this file; it is
@@ -729,9 +783,11 @@ Singleton {
     // The notch is not in the layout file - it is the same everywhere, so
     // it lives in settings.json. Its options are still edited in the editor,
     // and Ctrl+Z there has to reach them, so an undo step carries them along.
-    readonly property var notchKeys: ["notch.eventCount", "notch.expandOnHover", "notch.reserve",
+    readonly property var notchKeys: ["notch.eventCount", "notch.hoverMode", "notch.openDelay", "notch.closeDelay",
+                                      "notch.clickAction", "notch.reserve",
                                       "notch.fullscreen", "notch.shape", "notch.collapsedWidth",
-                                      "notch.expandedWidth", "notch.expandedHeight"]
+                                      "notch.expandedWidth", "notch.expandedHeight",
+                                      "notch.bodyHeight", "notch.bodyRadius", "notch.bodyPadding"]
     // Every setting an undo step carries along. The notch's options are edited
     // in the layout editor and the control center's size on the panel itself;
     // both have an undo within reach and both have to reach these.
@@ -765,6 +821,10 @@ Singleton {
         if (!undoStack.length || readOnly) return
         const next = undoStack.slice()
         const step = JSON.parse(next.pop())
+        // Saved notch presets are not part of an edit: saving, renaming or
+        // deleting one takes no undo step, so undoing the drag before it must
+        // not take the preset with it (or bring a deleted one back).
+        step.config.notchPresets = config.notchPresets || []
         config = Logic.sanitize(step.config)
         const restored = {}
         for (const key of undoKeys)
@@ -1074,9 +1134,19 @@ Singleton {
         })
     }
 
+    // A widget window reports on every change of its position or size, and
+    // most of those are the same rectangle again (its position is rebound
+    // when the screen's size changes, its implicit size whenever a child's
+    // does). Everything that reads `placementRects` rebuilds on the signal,
+    // so a report that changes nothing stays out of it - the way the cell
+    // reports below do.
     function reportRect(screenName, id, rect) {
+        const key = screenName + "/" + id
+        const current = placementRects[key]
+        if (current && rect && current.x === rect.x && current.y === rect.y
+                && current.width === rect.width && current.height === rect.height) return
         const next = Object.assign({}, placementRects)
-        next[screenName + "/" + id] = rect
+        next[key] = rect
         placementRects = next
     }
 
@@ -1179,6 +1249,28 @@ Singleton {
         id: backupFile
         path: Paths.configDir + "/layout.v" + Math.max(1, root.backupVersion) + ".backup.json"
         printErrors: false
+    }
+
+    // The built-in notch presets, read like the mode templates.
+    Instantiator {
+        model: root.builtinNotchPresetNames
+        delegate: FileView {
+            required property string modelData
+            path: Quickshell.shellPath("config/notch-presets/" + modelData + ".json")
+            printErrors: false
+            onLoaded: {
+                try {
+                    const preset = Logic.sanitizeNotchPreset(JSON.parse(text()), true)
+                    if (!preset) return
+                    preset.id = modelData
+                    const order = root.builtinNotchPresetNames
+                    root.builtinNotchPresets = root.builtinNotchPresets.filter(item => item.id !== modelData)
+                        .concat([preset]).sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
+                } catch (error) {
+                    console.warn("buchhwin-shell: notch preset unreadable:", modelData, error)
+                }
+            }
+        }
     }
 
     // The factory state: one file per mode. A new profile is built from these,

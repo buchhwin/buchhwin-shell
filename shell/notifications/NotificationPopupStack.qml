@@ -116,7 +116,12 @@ PanelWindow {
         spacing: Metrics.spaceSm
 
         Repeater {
-            model: NotificationService.popups
+            // A ScriptModel, not the array itself: a Repeater on a plain array
+            // throws every delegate away and builds them again whenever the
+            // array is assigned, so closing the middle one of three made the
+            // other two fade in from nothing a second time. The model diffs by
+            // identity and keeps the cards that are still there.
+            model: ScriptModel { values: NotificationService.popups }
             NotificationCard {
                 id: card
                 required property var modelData

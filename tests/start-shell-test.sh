@@ -9,17 +9,35 @@
 # this, the desktop simply had no shell afterwards.
 set -uo pipefail
 cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." || exit 1
-SB=$(mktemp -d); trap 'rm -rf -- "$SB"' EXIT
+# Resolved, so the helper patterns below carry one spelling of the path.
+SB=$(readlink -f -- "$(mktemp -d)"); trap 'rm -rf -- "$SB"' EXIT
 mkdir -p "$SB/bin" "$SB/cfg" "$SB/state/buchhwin-shell"
 touch "$SB/cfg/shell.qml"
 # `list` says the instance is still there for $LINGER more calls (the lag
-# after a crash before quickshell drops the dead instance), then not.
+# after a crash before quickshell drops the dead instance), then not. It says
+# so at length - far more than a pipe holds - because the real answer is long
+# too, and a `| grep -q` on the other end quits at the first match and leaves
+# the writer with SIGPIPE, which pipefail then reads as "no instance".
+# `hold` is a shell that stays alive holding a helper (its child), for the
+# check that a living shell's helpers are left alone.
 cat > "$SB/bin/quickshell" <<'Q'
 #!/usr/bin/env bash
 if [[ ${1:-} == list ]]; then
   l=$(cat "$LINGER" 2>/dev/null || echo 0)
   (( l > 0 )) || exit 1
-  echo $((l-1)) > "$LINGER"; echo '[{"id":"stale"}]'; exit 0
+  echo $((l-1)) > "$LINGER"
+  echo '[{"id":"stale"}]'; head -c 200000 /dev/zero | tr '\0' ' '; echo
+  exit 0
+fi
+if [[ ${1:-} == hold ]]; then
+  # The supervisor tells a shell by its process name; a script run through
+  # `env bash` is named bash, the real binary quickshell.
+  printf quickshell > /proc/$$/comm
+  sleep 120 & helper=$!
+  trap 'kill "$helper" 2>/dev/null' TERM EXIT
+  echo "$helper" > "$HELD"
+  wait "$helper"
+  exit 0
 fi
 n=$(cat "$COUNT" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$COUNT"
 echo "run $n"
@@ -27,8 +45,26 @@ if (( n <= ${CRASHES:-0} )); then kill -SEGV $$; fi
 exit ${FINAL_EXIT:-0}
 Q
 chmod +x "$SB/bin/quickshell"
-export PATH="$SB/bin:$PATH" XDG_STATE_HOME="$SB/state" COUNT="$SB/count" LINGER="$SB/linger"
-echo 0 > "$LINGER"
+# The supervisor ends the helpers a crashed shell left behind through pgrep
+# and pkill. Both are stand-ins for the whole run, whatever the scenario: the
+# real ones would find the real session's leftovers on the machine running
+# this test and end them. pgrep answers with the pids in $ORPHANS (none, unless
+# a scenario sets it) whatever the pattern; pkill only records its arguments
+# and the run the shell was at.
+cat > "$SB/bin/pgrep" <<'Q'
+#!/usr/bin/env bash
+[[ -s ${ORPHANS:-} ]] || exit 1
+cat "$ORPHANS"
+Q
+cat > "$SB/bin/pkill" <<'Q'
+#!/usr/bin/env bash
+printf 'run=%s %s\n' "$(cat "$COUNT" 2>/dev/null || echo 0)" "$*" >> "$PKILLS"
+Q
+chmod +x "$SB/bin/pgrep" "$SB/bin/pkill"
+real_pkill=$(command -v pkill)
+export PATH="$SB/bin:$PATH" XDG_STATE_HOME="$SB/state" COUNT="$SB/count" LINGER="$SB/linger" \
+  HELD="$SB/held" PKILLS="$SB/pkills"
+echo 0 > "$LINGER"; : > "$PKILLS"
 fail=0
 check() { if eval "$1"; then :; else printf 'FAIL: %s\n' "$2"; fail=1; fi; }
 
@@ -44,6 +80,53 @@ echo 0 > "$COUNT"; echo 6 > "$LINGER"; CRASHES=1 FINAL_EXIT=0 bash ./scripts/sta
 check '[[ $(cat "$COUNT") == 2 ]]' "the restart still happens (got $(cat "$COUNT") runs, wanted 2)"
 check '[[ $(cat "$LINGER") == 0 ]]' "and only after the lingering instance was gone ($(cat "$LINGER") list answers unused)"
 echo 0 > "$LINGER"
+check '[[ ! -s $PKILLS ]]' "nothing to reap, nothing killed ($(wc -l < "$PKILLS") pkill calls)"
+
+# the helpers a crashed shell left behind are ended before the replacement
+# starts: by their exact command lines, this user only, by the parent that
+# was checked - and never one that a living quickshell still owns, which is
+# what a nested test session's helpers are to the real session and the other
+# way round
+sleep 120 & orphan=$!                 # its parent is this test, not a shell
+"$SB/bin/quickshell" hold & held_shell=$!
+for _ in {1..50}; do [[ -s $HELD ]] && break; sleep 0.1; done
+held=$(cat "$HELD")
+printf '%s\n%s\n' "$orphan" "$held" > "$SB/orphans"
+uid=$(id -u)
+cfg_pattern=$(printf '%s' "$SB/cfg" | sed 's,[][\.*^$+?(){}|\\],\\&,g')
+expect_nmcli="-u $uid -P $$ -f ^(\\S*/)?nmcli monitor\$"
+expect_drives="-u $uid -P $$ -f ^(\\S+ )?$cfg_pattern/scripts/drives\\.py monitor\$"
+expect_agent="-u $uid -P $$ -f ^(\\S+ )?$cfg_pattern/scripts/bluetooth-agent\\.py\$"
+expect_paste="-u $uid -P $$ -f ^(\\S*/)?wl-paste --type (text|image) --watch cliphist -db-path \\S*/buchhwin-shell/cliphist\\.db -max-items [0-9]+ store\$"
+expect_udev="-u $uid -P $$ -f ^(\\S*/)?udevadm monitor --udev --subsystem-match=backlight\$"
+expect_inhibit="-u $uid -P $$ -f ^(\\S*/)?systemd-inhibit --what=handle-lid-switch --who=buchhwin-shell .* sleep infinity\$"
+: > "$PKILLS"
+echo 0 > "$COUNT"; echo 3 > "$LINGER"; ORPHANS="$SB/orphans" CRASHES=1 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
+check '[[ $(cat "$COUNT") == 2 ]]' "the restart still happens (got $(cat "$COUNT") runs, wanted 2)"
+check '[[ $(grep -c . "$PKILLS") == 6 ]]' "one pkill per helper ($(grep -c . "$PKILLS") calls, wanted 6)"
+check '[[ $(grep -c "^run=1 " "$PKILLS") == 6 ]]' "all of them after the crash and before the replacement"
+for expected in "$expect_nmcli" "$expect_drives" "$expect_agent" "$expect_paste" "$expect_udev" "$expect_inhibit"; do
+  check 'grep -qF -- "$expected" "$PKILLS"' "this user, the orphan's parent, the exact command line: $expected"
+done
+check '! grep -qw -- "$held_shell" "$PKILLS"' "a helper whose parent is a living quickshell is left alone"
+check 'grep -q "ended 6 helper(s) left behind" "$SB/state/buchhwin-shell/quickshell.log"' 'and the log says what was ended'
+
+# the session launcher asks for the same at logout, with --reap: no shell is
+# started, the log is not rotated, and the helpers go only once the instance
+# is gone
+: > "$PKILLS"; echo marker-before-reap >> "$SB/state/buchhwin-shell/quickshell.log"
+echo 0 > "$COUNT"; echo 3 > "$LINGER"; ORPHANS="$SB/orphans" bash ./scripts/start-shell.sh --reap "$SB/cfg" >/dev/null 2>&1
+check '[[ $(cat "$COUNT") == 0 ]]' "--reap starts no shell (got $(cat "$COUNT") runs)"
+check '[[ $(cat "$LINGER") == 0 ]]' "and waits for the lingering instance first ($(cat "$LINGER") list answers unused)"
+check 'grep -q marker-before-reap "$SB/state/buchhwin-shell/quickshell.log"' "and does not rotate the log"
+check '[[ $(grep -c . "$PKILLS") == 6 ]] && grep -qF -- "$expect_inhibit" "$PKILLS"' "and ends the helpers ($(grep -c . "$PKILLS") pkill calls)"
+# an instance that never goes keeps its helpers
+: > "$PKILLS"; echo 500 > "$LINGER"
+ORPHANS="$SB/orphans" timeout 30 bash ./scripts/start-shell.sh --reap "$SB/cfg" >/dev/null 2>&1
+check '[[ ! -s $PKILLS ]]' "an instance still listed after the wait keeps its helpers ($(grep -c . "$PKILLS") pkill calls)"
+check 'grep -q "still listed - leaving its helpers alone" "$SB/state/buchhwin-shell/quickshell.log"' 'and the log says so'
+echo 0 > "$LINGER"
+kill "$orphan" "$held_shell" 2>/dev/null; wait "$orphan" "$held_shell" 2>/dev/null
 
 # a clean exit is not restarted
 echo 0 > "$COUNT"; CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
@@ -118,7 +201,7 @@ for _ in {1..50}; do kill -0 "$sup" 2>/dev/null || break; sleep 0.1; done
 check '! kill -0 "$sup" 2>/dev/null' 'the supervisor ends on SIGTERM'
 check '[[ $(cat "$COUNT") == 1 ]]' "and does not restart the shell it was told to stop (got $(cat "$COUNT"))"
 check 'grep -q "asked to stop" "$SB/state/buchhwin-shell/quickshell.log"' 'and the log says it was asked'
-pkill -f "$SB/bin/quickshell" 2>/dev/null || true
+"$real_pkill" -f "$SB/bin/quickshell" 2>/dev/null || true
 
 (( fail )) && exit 1
 echo "TESTS PASSED start-shell supervision"

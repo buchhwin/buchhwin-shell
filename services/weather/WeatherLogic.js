@@ -184,6 +184,31 @@ function parseGeocode(json) {
         }))
 }
 
+// The approximate place for an IP address (ipinfo.io, no account): city and
+// coordinates, rounded like a searched place before anything stores them.
+var IP_LOCATION_URL = "https://ipinfo.io/json"
+
+// {"city":"…","region":"…","country":"DE","loc":"lat,lon"} → { name, region,
+// lat, lon }, or null when it does not say where.
+function parseIpLocation(json) {
+    let data = json
+    if (typeof json === "string") {
+        try { data = JSON.parse(json) } catch (error) { return null }
+    }
+    if (!data || typeof data !== "object" || typeof data.loc !== "string") return null
+    const parts = data.loc.split(",").map(Number)
+    if (parts.length !== 2 || !validCoordinates(parts[0], parts[1])) return null
+    const text = value => typeof value === "string" ? value.trim() : ""
+    const name = text(data.city) || text(data.region)
+    if (!name.length) return null
+    return {
+        name: name,
+        region: [text(data.region), text(data.country)].filter(part => part.length && part !== name).join(", "),
+        lat: roundCoordinate(parts[0]),
+        lon: roundCoordinate(parts[1])
+    }
+}
+
 function formatTemperature(value) {
     if (typeof value !== "number" || !isFinite(value)) return "–"
     const rounded = Math.round(value)

@@ -44,10 +44,15 @@ ShellCard {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         cursorShape: root.defaultAction ? Qt.PointingHandCursor : Qt.ArrowCursor
+        // Invoking an action can retire the notification, and this card with
+        // it, before the next statement runs ("ReferenceError: root is not
+        // defined"): what is needed afterwards is taken first.
         onClicked: event => {
-            if (event.button === Qt.RightButton) { root.notification.dismiss(); root.closed(); return }
-            if (root.defaultAction) root.defaultAction.invoke()
-            root.closed()
+            if (event.button === Qt.RightButton) { const card = root; card.notification.dismiss(); if (card) card.closed(); return }
+            const card = root
+            const action = root.defaultAction
+            if (action) action.invoke()
+            if (card) card.closed()
         }
     }
 
@@ -89,7 +94,7 @@ ShellCard {
                     ShellButton {
                         icon: Icons.close; variant: "ghost"; compact: true
                         implicitHeight: Metrics.controlHeightSm - Metrics.spaceXs
-                        onClicked: { root.notification.dismiss(); root.closed() }
+                        onClicked: { const card = root; card.notification.dismiss(); if (card) card.closed() }
                     }
                 }
                 ShellText { Layout.fillWidth: true; text: root.notification.summary; role: "bodyLarge"; visible: text.length > 0 }
@@ -115,7 +120,12 @@ ShellCard {
                     Layout.fillWidth: true
                     compact: true
                     text: modelData.text
-                    onClicked: { modelData.invoke(); root.closed() }
+                    // See the card's MouseArea: invoke() can take the card away.
+                    onClicked: {
+                        const card = root
+                        modelData.invoke()
+                        if (card) card.closed()
+                    }
                 }
             }
         }

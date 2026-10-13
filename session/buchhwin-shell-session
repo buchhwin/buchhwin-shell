@@ -7,8 +7,21 @@ set -euo pipefail
 # no sudo.
 project_dir=${BUCHHWIN_SHELL_PATH:-"$HOME/.local/share/buchhwin-shell"}
 export BUCHHWIN_SHELL_PATH="$project_dir"
+# The session's own commands: an xdg-open that starts handlers in a unit of
+# their own (session/bin/xdg-open, see scripts/launch-app.sh). The home-built
+# Hyprland below still goes in front of it.
+export PATH="$project_dir/session/bin:$PATH"
 
 log() { printf 'buchhwin-shell: %s\n' "$*" >&2; }
+
+# Hyprland built from source (openSUSE Leap: install/build-hyprland-leap.sh)
+# lives in the home directory; when it is there it comes first, for the
+# compositor and for everything the session starts from it. Absent on Fedora,
+# where Hyprland is a package.
+hyprland_prefix=${BUCHHWIN_HYPRLAND_PREFIX:-"$HOME/.local/opt/buchhwin-hyprland"}
+if [[ -x $hyprland_prefix/bin/start-hyprland ]]; then
+  export PATH="$hyprland_prefix/bin:$PATH"
+fi
 
 # Configuration format: hyprland.lua (Hyprland 0.56+, the only format from
 # 0.57 on) whenever it exists, hyprland.conf otherwise. Overrides, e.g. to
@@ -68,6 +81,15 @@ if [[ $config_format == lua && $session_status -ne 0 && $session_seconds -lt $lu
   # scripts/session-check.sh reports the fallback.
   export BUCHHWIN_HYPR_CONFIG_FALLBACK=1
   run_hyprland "$conf_config"
+fi
+
+# The shell goes down with the compositor; the helpers it started (`nmcli
+# monitor`, the lid inhibitor, `udevadm monitor`, …) do not, and three of them
+# from the previous login were still running on 2026-10-13. start-shell.sh
+# knows them by their command lines and ends them once the shell's instance
+# is gone.
+if [[ -x $project_dir/scripts/start-shell.sh ]]; then
+  "$project_dir/scripts/start-shell.sh" --reap "$project_dir" 2>/dev/null || true
 fi
 
 # Autostart entries masked for this session by scripts/session-init.sh.

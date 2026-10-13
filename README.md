@@ -1,6 +1,6 @@
 # buchhwin-shell
 
-A minimal desktop shell for Fedora, Hyprland and Quickshell.
+A minimal desktop shell for Fedora and openSUSE Leap, Hyprland and Quickshell.
 
 The desktop shows only a clock until you need something. Panels open instantly,
 follow one central theme (dark, light or automatic) and talk to the Linux and
@@ -27,7 +27,7 @@ The interface is in English.
 
 - **Fedora 44**, **Hyprland 0.56** (the session uses the Lua config;
   `hyprland.conf` stays as a fallback) and **Quickshell 0.2**
-- Fonts: Inter Variable, JetBrains Mono and a Nerd Font (FiraCode Nerd Font)
+- Fonts: Inter Variable, JetBrains Mono, and the Nerd Fonts FiraCode (interface glyphs) and JetBrainsMono (terminal); `bootstrap.sh` fetches both
 
 Quickshell is in Fedora's own repositories. Hyprland is not, and on this
 machine it comes from a Copr:
@@ -36,6 +36,18 @@ machine it comes from a Copr:
 sudo dnf copr enable sachesi/hyprland
 sudo dnf install hyprland quickshell
 ```
+
+**openSUSE Leap 16** works too; `bootstrap.sh` detects it from
+`/etc/os-release` and uses zypper. Quickshell comes from the Open Build Service
+(`home:AvengeMedia:danklinux`), added below repo-oss's priority so it never
+replaces a package of the running system. Leap has no usable Hyprland package,
+so `install/build-hyprland-leap.sh` builds Hyprland 0.56, its portal and its
+dialogs (hyprland-guiutils) from pinned sources into
+`~/.local/opt/buchhwin-hyprland` - nothing outside the home directory except
+the build dependencies from repo-oss, and
+`install/build-hyprland-leap.sh --remove --apply` takes it out again. Not
+available on Leap: cmatrix and writing calendar events (no Akonadi Python
+bindings).
 
 ## Installation
 

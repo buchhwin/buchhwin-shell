@@ -1,6 +1,7 @@
 import QtQuick
 import qs.theme
 import qs.services
+import qs.shell.components
 import "../../../services/bar/BarLogic.js" as BarLogic
 
 // Small live sketch of the bar in Settings > Bar & Notch: the screen edge the
@@ -51,14 +52,14 @@ Rectangle {
                 : root.atBottom ? Metrics.spaceXs : reserved + Metrics.spaceXs
             width: root.vertical ? screen.width - reserved - Metrics.spaceXs : screen.width - Metrics.spaceLg * 2
             height: root.vertical ? screen.height - Metrics.spaceLg * 2 : screen.height - reserved - Metrics.spaceXs
-            Behavior on x { NumberAnimation { duration: Animations.navigation; easing.type: Animations.easing } }
-            Behavior on width { NumberAnimation { duration: Animations.navigation; easing.type: Animations.easing } }
+            Behavior on x { enabled: Animations.motionEnabled; SpringMotion {} }
+            Behavior on width { enabled: Animations.motionEnabled; SpringMotion {} }
             radius: Metrics.radiusInner
             color: Colors.elevatedSurface
             border.width: Metrics.borderWidth
             border.color: Colors.border
-            Behavior on y { NumberAnimation { duration: Animations.navigation; easing.type: Animations.easing } }
-            Behavior on height { NumberAnimation { duration: Animations.navigation; easing.type: Animations.easing } }
+            Behavior on y { enabled: Animations.motionEnabled; SpringMotion {} }
+            Behavior on height { enabled: Animations.motionEnabled; SpringMotion {} }
         }
 
         // The bar's own surface, on whichever edge it is. Everything inside is
@@ -70,8 +71,8 @@ Rectangle {
             height: root.vertical ? screen.height : root.geometry.thickness
             x: root.vertical && root.atFar ? screen.width - width : 0
             y: !root.vertical && root.atBottom ? screen.height - height : 0
-            Behavior on x { NumberAnimation { duration: Animations.navigation; easing.type: Animations.easing } }
-            Behavior on y { NumberAnimation { duration: Animations.navigation; easing.type: Animations.easing } }
+            Behavior on x { enabled: Animations.motionEnabled; SpringMotion {} }
+            Behavior on y { enabled: Animations.motionEnabled; SpringMotion {} }
 
         Rectangle {
             visible: root.flat

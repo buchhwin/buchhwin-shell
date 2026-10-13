@@ -248,11 +248,18 @@ function panelBox(wantedWidth, wantedHeight, bounds) {
 // anchors the control center to the desktop clock whenever that clock sits in
 // the left two thirds, and then both edges move with the width, so the gearing
 // halved, the drag lagged a frame and it never landed where it was let go.
+//
+// A card that is *centred* on an axis moves both of its edges with its size,
+// so a corner measured from the far edge travels half the pointer's way and
+// the grip slides out from under the hand (the launcher, Super+D: "it halves
+// instead of getting narrower"). For such an axis the origin names the centre
+// (`centreX`, `centreY`) and the size is twice the pointer's distance from it,
+// which keeps the corner under the pointer.
 function panelDragTo(x, y, origin, bounds) {
     const o = origin || {}
-    return panelBox(Math.max(1, Math.round(Number(o.right) - Number(x))),
-                    Math.max(1, Math.round(Number(y) - Number(o.top))),
-                    bounds)
+    const width = o.centreX !== undefined ? 2 * (Number(o.centreX) - Number(x)) : Number(o.right) - Number(x)
+    const height = o.centreY !== undefined ? 2 * (Number(y) - Number(o.centreY)) : Number(y) - Number(o.top)
+    return panelBox(Math.max(1, Math.round(width)), Math.max(1, Math.round(height)), bounds)
 }
 
 // How many grid columns a panel of that width is worth. Floored, not rounded:

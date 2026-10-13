@@ -15,7 +15,23 @@ Singleton {
 
     readonly property bool reserve: SettingsService.value("notch.reserve")
     readonly property string fullscreen: SettingsService.value("notch.fullscreen")
-    readonly property bool expandOnHover: SettingsService.value("notch.expandOnHover")
+    // How it opens (services/notch/NotchLogic.js): on hover, on a click, never.
+    readonly property string hoverMode: NotchLogic.hoverMode(SettingsService.value("notch.hoverMode"))
+    readonly property bool expandOnHover: NotchLogic.hoverOpens(hoverMode)
+    readonly property int openDelay: NotchLogic.delay(SettingsService.value("notch.openDelay"), NotchLogic.OPEN_DELAY)
+    readonly property int closeDelay: NotchLogic.delay(SettingsService.value("notch.closeDelay"), NotchLogic.CLOSE_DELAY)
+    readonly property string clickAction: SettingsService.value("notch.clickAction")
+    // What a click on the collapsed notch does: "expand" or "dashboard".
+    readonly property string clickResult: NotchLogic.clickResult(hoverMode, clickAction)
+    // ---- the collapsed body -----------------------------------------------
+    // How tall it is, how round its bottom corners are and how much air the
+    // strip keeps at both ends. The theme's tokens are the defaults and the
+    // fallback; a preset carries all three, which is how Classic gets the
+    // 32 / 11 / 16 body the notch had before Island. The expanded shape keeps
+    // the theme's own sizes.
+    readonly property int bodyHeight: NotchLogic.bodySize(SettingsService.value("notch.bodyHeight"), NotchLogic.BODY_HEIGHT, Metrics.notchHeight)
+    readonly property int bodyRadius: NotchLogic.bodySize(SettingsService.value("notch.bodyRadius"), NotchLogic.BODY_RADIUS, Metrics.notchRadius)
+    readonly property int bodyPadding: NotchLogic.bodySize(SettingsService.value("notch.bodyPadding"), NotchLogic.BODY_PADDING, Metrics.notchPadding)
     // ---- the size of the two shapes ---------------------------------------
     // Both are dragged in the layout editor: the strip only horizontally - its
     // height is the notch's own - and the overview freely. Neither is a
@@ -128,8 +144,12 @@ Singleton {
         })
     }
 
-    // Screen name expanded over IPC or by a click ("" = none).
-    property string forcedScreen: ""
+    // Screens held expanded over IPC, by a click or by the layout editor.
+    // A list, not one name: the editor sits on every monitor at once, and
+    // each of its notches has to be the expanded one it arranges - with a
+    // single name the last editor to ask won, and the others arranged a
+    // collapsed notch under an expanded outline (2026-10-09, three monitors).
+    property var forcedScreens: []
     // Synthetic now-playing data (IPC `notch previewMedia`); controls stay disabled.
     property bool mediaPreview: false
     readonly property var previewTrack: ({ title: "Sample track", artist: "Sample artist", playing: true })
@@ -137,8 +157,13 @@ Singleton {
     // screen name -> { shown, expanded, rows, width, height }
     property var states: ({})
 
-    function expand(screenName) { forcedScreen = screenName }
-    function collapse() { forcedScreen = "" }
+    function expand(screenName) {
+        if (forcedScreens.indexOf(screenName) < 0) forcedScreens = forcedScreens.concat([screenName])
+    }
+    // One screen, or every one when none is named (the IPC `collapse`).
+    function collapse(screenName) {
+        forcedScreens = screenName ? forcedScreens.filter(name => name !== screenName) : []
+    }
 
     function report(screenName, state) {
         if (JSON.stringify(states[screenName]) === JSON.stringify(state)) return
@@ -157,8 +182,11 @@ Singleton {
     function describe() {
         const covered = {}
         for (const screen of Quickshell.screens) covered[screen.name] = HyprlandService.fullscreenReport(screen)
-        return JSON.stringify({ mode: LayoutService.desktopMode, reserve: reserve, fullscreen: fullscreen, expandOnHover: expandOnHover,
-                                forced: forcedScreen, mediaPreview: mediaPreview, weatherTrackers: WeatherService.trackers,
+        return JSON.stringify({ mode: LayoutService.desktopMode, reserve: reserve, fullscreen: fullscreen, hoverMode: hoverMode,
+                                clickAction: clickAction, openDelay: openDelay, closeDelay: closeDelay,
+                                bodyHeight: bodyHeight, bodyRadius: bodyRadius, bodyPadding: bodyPadding,
+                                presets: LayoutService.notchPresets.length,
+                                forced: forcedScreens.join(","), mediaPreview: mediaPreview, weatherTrackers: WeatherService.trackers,
                                 display: displayKind, displayScreen: displayScreen,
                                 screens: states, coveredBy: covered })
     }

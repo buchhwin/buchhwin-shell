@@ -84,6 +84,17 @@ ShellRoot {
         T.eq(cells(L.setLauncherBlockSize(fresh, idOf("results"), 0, 0))[4], "results 1x2",
             "nor below what the block needs - a result list of one row is not a shorter list, it is none")
 
+        // A block may name a ceiling of its own under the grid's (`maxW`/
+        // `maxH`); none does at the moment - the search field's one-row
+        // ceiling lasted a day and went on the user's word - so every block
+        // stops at the grid, and the search block is as tall as it is dragged.
+        T.eq(C.maxSize("search"), { w: 4, h: 8 }, "the search field stops at the grid like the rest")
+        T.eq([C.maxSize("results"), C.maxSize("categories")], [{ w: 4, h: 8 }, { w: 4, h: 8 }],
+            "and so do the others")
+        T.eq(cells(L.setLauncherBlockSize(fresh, idOf("search"), 4, 3))[0], "search 4x3",
+            "the field can be made wide and tall")
+        T.eq(C.maxSize("nothing"), { w: 4, h: 8 }, "an unknown type stops at the grid")
+
         // ---- the picker --------------------------------------------------
 
         T.eq(C.missing(L.launcherTypes(fresh)), [], "nothing to add while every block is there")
@@ -127,6 +138,14 @@ ShellRoot {
             { id: "r", items: [{ type: "results", w: 2, h: 1 }] }] })
         T.eq(L.launcherItems(shallow).map(item => [item.w, item.h]), [[3, 1], [2, 2]],
              "a result list written one row tall loads at its two")
+        // A file keeps what the user dragged: search 4x2 over results 4x6 (the
+        // user's minimal mode) loads as written. The lowering to a ceiling is
+        // still in `sanitizeTiles` for a block that names one.
+        const tall2 = L.sanitizeLauncher({ launcher: [
+            { id: "a", items: [{ type: "search", w: 4, h: 2 }] },
+            { id: "r", items: [{ type: "results", w: 4, h: 6 }] }] })
+        T.eq(L.launcherItems(tall2).map(item => [item.type, item.w, item.h]), [["search", 4, 2], ["results", 4, 6]],
+             "a search field written two rows tall loads at two")
         T.eq(L.launcherTypes(L.emptyMode().launcher), ["search", "modes", "pinned", "categories", "results"],
              "a mode nobody has touched carries the default launcher, like its other surfaces")
 

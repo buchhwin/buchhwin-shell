@@ -51,6 +51,23 @@ ShellRoot {
         T.eq(N.livePopups(["a"], []), [], "an empty server list clears the queue")
         T.eq(N.livePopups([], ["a"]), [], "an empty queue stays empty")
 
+        // The same queue is not assigned again: the popup stack keeps its
+        // cards by identity, and the notification objects are the server's
+        // own, so identity is the comparison.
+        const anna = { id: 1 }
+        const bob = { id: 2 }
+        T.eq(N.sameSequence([anna, bob], [anna, bob]), true, "the same notifications in the same order are the same queue")
+        T.eq(N.sameSequence([anna, bob], [bob, anna]), false, "the same notifications in another order are not")
+        T.eq(N.sameSequence([anna, bob], [anna]), false, "nor is a queue with one fewer")
+        T.eq(N.sameSequence([anna], [anna, bob]), false, "nor one with one more")
+        T.eq(N.sameSequence([anna], [{ id: 1 }]), false, "a look-alike is another notification")
+        T.eq(N.sameSequence([], []), true, "two empty queues are the same")
+        T.eq(N.sameSequence(null, []), true, "and so is no queue at all")
+        T.eq(N.sameSequence([anna, bob], N.livePopups([anna, bob], [bob, anna])), true,
+             "what livePopups keeps whole is the same queue")
+        T.eq(N.sameSequence([anna, bob], N.livePopups([anna, bob], [bob])), false,
+             "and what it shortens is not")
+
         // What the notch shows for the newest popup, from the notification
         // itself: the picture by the card's route, else a bell.
         const icons = name => "/icons/" + name + ".png"

@@ -166,7 +166,8 @@ ColumnLayout {
             }
             // "Off" here and still being asked for a finger is not a broken
             // button: the login screen, sudo and every polkit dialog go
-            // through PAM's system-auth, where authselect puts the reader.
+            // through the system-wide PAM stack, where authselect (Fedora) or
+            // pam-config (openSUSE) puts the reader.
             // Turning that off is one host command and the user's to run.
             ShellCard {
                 Layout.fillWidth: true
@@ -192,7 +193,7 @@ ColumnLayout {
                     }
                     ShellText {
                         Layout.fillWidth: true
-                        text: "sudo authselect disable-feature with-fingerprint"
+                        text: DistroService.fingerprintOffCommand
                         font.family: Typography.monoFamily
                         wrapMode: Text.Wrap
                     }
@@ -200,7 +201,7 @@ ColumnLayout {
                         focusOnTab: true
                         icon: Icons.copy
                         text: "Copy command"
-                        onClicked: Quickshell.clipboardText = "sudo authselect disable-feature with-fingerprint"
+                        onClicked: Quickshell.clipboardText = DistroService.fingerprintOffCommand
                     }
                 }
             }

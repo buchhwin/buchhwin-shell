@@ -83,7 +83,7 @@ ColumnLayout {
             Layout.fillWidth: true
             visible: RecordingService.backendsKnown
             text: RecordingService.available ? "Recorder: " + RecordingService.backendLabel
-                : "No recorder installed. Install with: sudo dnf install wf-recorder"
+                : "No recorder installed. " + DistroService.installHint("wf-recorder")
             role: "small"
             color: RecordingService.available ? Colors.mutedText : Colors.warning
             wrapMode: Text.Wrap

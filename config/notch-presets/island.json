@@ -1,0 +1,87 @@
+{
+  "configVersion": 1,
+  "id": "island",
+  "label": "Island",
+  "description": "A small pill with the workspaces, the time and the status; on hover an island with the time and date, the app, music, notifications and status.",
+  "collapsed": [
+    {
+      "type": "workspace",
+      "options": {
+        "style": "dots",
+        "mode": "open"
+      }
+    },
+    "clock",
+    {
+      "type": "network",
+      "display": "icon"
+    },
+    {
+      "type": "battery",
+      "display": "icon"
+    }
+  ],
+  "expanded": [
+    {
+      "type": "clock",
+      "w": 4,
+      "h": 1,
+      "options": {
+        "plain": true
+      }
+    },
+    {
+      "type": "activeWindow",
+      "w": 1,
+      "h": 1,
+      "options": {
+        "plain": true,
+        "show": "app"
+      }
+    },
+    {
+      "type": "media",
+      "w": 2,
+      "h": 2
+    },
+    {
+      "type": "notificationIndicator",
+      "w": 1,
+      "h": 1,
+      "options": {
+        "plain": true
+      }
+    },
+    {
+      "type": "workspace",
+      "w": 1,
+      "h": 1,
+      "options": {
+        "style": "pills",
+        "mode": "fixed",
+        "plain": true
+      }
+    },
+    {
+      "type": "status",
+      "w": 1,
+      "h": 1,
+      "options": {
+        "plain": true
+      }
+    }
+  ],
+  "options": {
+    "shape": "notch",
+    "collapsedWidth": 0,
+    "expandedWidth": 700,
+    "expandedHeight": 0,
+    "hoverMode": "hover",
+    "openDelay": 120,
+    "closeDelay": 350,
+    "clickAction": "dashboard",
+    "bodyHeight": 40,
+    "bodyRadius": 16,
+    "bodyPadding": 22
+  }
+}

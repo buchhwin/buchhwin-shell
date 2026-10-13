@@ -21,9 +21,21 @@ Singleton {
     readonly property int tone: Math.max(0, Math.min(5, SettingsService.value("emoji.tone")))
     readonly property var toneLabels: Logic.TONE_LABELS
 
+    // One read, on the first ask. Before `preload: false` the FileView read
+    // the file when the service was created, which is at start - the picker's
+    // panel exists from the first frame - so every session parsed 172 KB into
+    // a few MB of objects whether or not the picker was ever opened. Turning
+    // `preload` on is what reads it: `reload()` reads a file *again* and does
+    // nothing for one that was never read (Quickshell 0.3.2, tried). A read
+    // that failed is not tried again, which is what one read at start did.
+    //
+    // The ask comes from a binding (the picker's `results` calls `search`),
+    // so nothing here may write a property that it has just read: a
+    // `requested` flag set in the same evaluation was a binding loop. The
+    // FileView's own `preload` is the flag, and it is switched a turn later.
     function load() {
-        if (loaded) return
-        listFile.reload()
+        if (loaded || listFile.preload) return
+        Qt.callLater(() => { listFile.preload = true })
     }
 
     function search(query, group) {
@@ -54,6 +66,7 @@ Singleton {
     FileView {
         id: listFile
         path: Paths.shellFile("config/emoji.json")
+        preload: false
         onLoaded: {
             let data = null
             try {

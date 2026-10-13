@@ -173,7 +173,7 @@ ColumnLayout {
         ShellText {
             Layout.fillWidth: true
             visible: DisplayService.overlapping
-            text: "Displays overlap. Hyprland moves them itself when you apply."
+            text: "Displays overlap: Hyprland would keep them there and warn, and the pointer would land on the wrong screen. Drag them apart before applying."
             role: "small"; color: Colors.warning; wrapMode: Text.Wrap
         }
     }

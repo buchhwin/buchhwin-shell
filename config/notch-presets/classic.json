@@ -1,0 +1,30 @@
+{
+  "configVersion": 1,
+  "id": "classic",
+  "label": "Classic",
+  "description": "Only the time; on hover the overview with weather, music, events and status.",
+  "collapsed": [
+    "clock"
+  ],
+  "expanded": [
+    "clock",
+    "weather",
+    "media",
+    "events",
+    "status"
+  ],
+  "options": {
+    "shape": "notch",
+    "collapsedWidth": 0,
+    "expandedWidth": 0,
+    "expandedHeight": 0,
+    "hoverMode": "hover",
+    "openDelay": 150,
+    "closeDelay": 400,
+    "clickAction": "dashboard",
+    "eventCount": 2,
+    "bodyHeight": 32,
+    "bodyRadius": 11,
+    "bodyPadding": 16
+  }
+}

@@ -74,44 +74,111 @@ hyprctl setcursor "$XCURSOR_THEME" "$XCURSOR_SIZE" >/dev/null 2>&1 || true
 # this mark is what tells the three apart at the next login.
 mark "cursor set"
 
+# PAM_KWALLET5_LOGIN is what pam_kwallet_init (plasma-kwallet-pam.service, below)
+# reads to hand the session environment to the ksecretd that pam_kwallet5
+# started with the login password; without it in the user manager's
+# environment the unit does nothing and the wallet never comes up.
+#
+# XDG_SESSION_TYPE and QT_QPA_PLATFORM go with them because pam_kwallet_init
+# hands ksecretd *this* environment (`env | socat`), and ksecretd is a Qt
+# program: Plasma's user manager has both, this session's did not, and the
+# ksecretd of a buchhwin-shell login stayed alive but never reached the bus -
+# so kwalletd6 asked for the password later. The launcher exports
+# QT_QPA_PLATFORM; the session type is a Wayland one whatever SDDM said.
+export XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-wayland}
 session_variables=(
   DISPLAY WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE
-  XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION
-  QT_QPA_PLATFORMTHEME XCURSOR_THEME XCURSOR_SIZE
+  XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION XDG_SESSION_TYPE
+  QT_QPA_PLATFORM QT_QPA_PLATFORMTHEME XCURSOR_THEME XCURSOR_SIZE
+  PAM_KWALLET5_LOGIN
 )
 step "environment imported" systemctl --user import-environment "${session_variables[@]}"
 step "D-Bus activation environment" dbus-update-activation-environment --systemd "${session_variables[@]}"
 
 step "session target" systemctl --user start buchhwin-shell-session.target
 
-# KWallet. pam_kwallet5 in /etc/pam.d/sddm already put the login password into
-# /run/user/$UID/kwallet5.socket, but the thing that *collects* it is
-# /usr/libexec/pam_kwallet_init, and Plasma starts that from
+# KWallet. pam_kwallet5 (in common-auth and common-session on openSUSE, which
+# /etc/pam.d/sddm includes) started `ksecretd --pam-login` with the hashed
+# login password at the SDDM login; that ksecretd waits on
+# /run/user/$UID/kwallet5.socket for the session's environment, and the thing
+# that hands it over is /usr/libexec/pam_kwallet_init, which Plasma runs from
 # plasma-kwallet-pam.service. The unit is `static` and only PartOf
 # graphical-session.target, so nothing pulls it in outside a Plasma session.
-# Started here, before the portal, because the Secret portal routes to the
-# wallet. Skipped without the unit or the socket.
+# Started here, right after the environment import, because the ksecretd it
+# wakes is both the secret service and the Secret portal's backend.
+# Skipped without the unit or the socket.
 #
-# What this unlocks is **ksecretd**, which owns `org.freedesktop.secrets`:
-# pam-kwallet on this Fedora execs /usr/bin/ksecretd and nothing else. It does
-# *not* unlock `kwalletd6`, which is a separate daemon with its own lock, woken
-# by whoever asks for `org.kde.kwalletd6`. Anything that wants its secrets
-# without a prompt has to ask the Secret Service - which is why
-# scripts/launch-brave.sh passes `--password-store=gnome-libsecret` rather than
-# `kwallet6`.
-if [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/kwallet5.socket" ]] \
-   && systemctl --user cat plasma-kwallet-pam.service >/dev/null 2>&1; then
-  step "kwallet unlocked" systemctl --user start plasma-kwallet-pam.service
+# One daemon, one wallet: ksecretd owns org.freedesktop.secrets and
+# org.freedesktop.impl.portal.desktop.kwallet. kwalletd6 is a compatibility
+# shim over that same service (KF 6.16), not a second wallet with its own
+# lock - whatever asks org.kde.kwalletd6 ends up here.
+pam_wallet() {
+  [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/kwallet5.socket" ]] \
+    && systemctl --user cat plasma-kwallet-pam.service >/dev/null 2>&1
+}
+if pam_wallet; then
+  step "kwallet handed the login" systemctl --user start plasma-kwallet-pam.service
 fi
 # The shell starts before the portal work: it only needs the environment above,
 # and waiting for portal units (which can take a long time on a cold boot) used
 # to leave the screen black until they were done.
 start_shell
+
+# The portal restart below must find the Secret backend on the bus: the
+# backend's name has no D-Bus service file, so a portal that starts before
+# ksecretd has registered has no Secret portal for the whole session. Up to
+# three seconds, and the mark says how many it took. `busctl list` reads the
+# bus and starts nothing; `status`, or any plain call to an activatable name,
+# would start a second ksecretd without the password
+# (org.kde.secretservicecompat has a service file).
+name_owned() {
+  busctl --user list --no-pager 2>/dev/null \
+    | awk -v name="$1" '$1 == name && $2 != "-" { found = 1 } END { exit !found }'
+}
+wait_for_secrets() {
+  pam_wallet || return 0
+  local waited=0
+  while (( waited < 3000 )); do
+    name_owned org.freedesktop.secrets && name_owned org.freedesktop.impl.portal.desktop.kwallet && break
+    sleep 0.1
+    waited=$(( waited + 100 ))
+  done
+  if name_owned org.freedesktop.impl.portal.desktop.kwallet; then
+    mark "secret service and its portal backend on the bus (${waited} ms)"
+  else
+    mark "secret service NOT on the bus after 3 s ($(pgrep -c -x ksecretd 2>/dev/null || echo 0) ksecretd running)"
+  fi
+}
+wait_for_secrets
 step "portal (Hyprland)" timeout 20 systemctl --user start xdg-desktop-portal-hyprland.service
 # A portal left over from an earlier session (or activated before the
 # environment import above) keeps its old desktop routing; restart it so Secret
 # requests reach KWallet like in Plasma.
 step "portal restarted" timeout 20 systemctl --user restart xdg-desktop-portal.service
+
+# The wallet itself, after the shell is up and before anything that stores
+# secrets can start: the autostart entries below, and Brave through
+# scripts/launch-brave.sh. Handed the login password, ksecretd opens the
+# wallet by itself; when it has not, scripts/wallet-unlock.sh asks it to and
+# follows the prompt, so the one password dialog of this login appears now,
+# on a desktop, rather than later under whichever application asked first.
+# Chromium treats a wallet it cannot open as gone for good and encrypts with a
+# fallback key - a logout from everything on the next session switch - which
+# is why this waits, and why launch-brave.sh refuses a shut wallet.
+wallet_step() {
+  pam_wallet || return 0
+  local tool="$project_dir/scripts/wallet-unlock.sh" result status
+  [[ -x $tool ]] || { mark "kwallet: scripts/wallet-unlock.sh missing, wallet state unknown"; return 0; }
+  result=$("$tool" ensure --prompt --wait 3 --timeout 90 2>/dev/null)
+  status=$?
+  case $status in
+    0) mark "kwallet unlocked: $result" ;;
+    1) mark "kwallet LOCKED: $result - applications that store secrets will ask for the password; Brave refuses to start" ;;
+    2) mark "kwallet NOT available: $result" ;;
+    *) mark "kwallet: $result" ;;
+  esac
+}
+wallet_step
 
 # Standard XDG autostart (entries matching XDG_CURRENT_DESKTOP, e.g. KDE
 # Connect, calendar reminders) unless turned off in Settings > Autostart.

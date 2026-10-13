@@ -41,7 +41,7 @@ ShellPanel {
     onResized: (width, height) => SettingsService.setAll({ "desktop.launcherWidth": Math.round(width),
                                                            "desktop.launcherHeight": Math.round(height) })
     cardWidth: sizing ? dragWidth : box.width
-    cardHeight: sizing ? dragHeight : (box.height > 0 ? box.height : Metrics.launcherHeight)
+    cardHeight: sizing ? dragHeight : (box.height > 0 ? box.height : Metrics.launcherFactoryHeight)
     scrimColor: Colors.scrim
 
     property string query: ""
@@ -74,6 +74,10 @@ ShellPanel {
             query = ""
             category = "All"
             selectedIndex = 0
+            // The emoji list is read on first use rather than at start; the
+            // first use is now, while the panel is still opening, so a ":"
+            // search answers on its first keystroke.
+            EmojiService.load()
         }
     }
     onResultsChanged: selectedIndex = Math.min(selectedIndex, Math.max(0, results.length - 1))
@@ -291,14 +295,21 @@ ShellPanel {
         // switch used to sit inside the field, so the focus ring drew a box
         // around both and the field stopped looking like a field.
         RowLayout {
-            spacing: Metrics.spaceMd
+            spacing: Metrics.spaceSm
 
+            // The plain field, not the hero one: `large` was a 56-px box in
+            // the title size with a border, in a row the user's layout gives
+            // 77 px, on a surface opened forty times a day. The capsule every
+            // other panel searches in is the field; the emoji picker keeps
+            // the large one.
             ShellTextField {
                 id: search
                 Component.onCompleted: root.searchField = search
                 Component.onDestruction: if (root.searchField === search) root.searchField = null
                 Layout.fillWidth: true
-                large: true
+                // The field holds the focus for as long as the launcher is
+                // open; an accent outline that is always there is no marker.
+                focusOutline: false
                 icon: root.mode.id === "apps" ? Icons.search : root.mode.icon
                 placeholder: root.mode.id === "apps" ? "Search …" : root.mode.label + " …"
                 onTextChanged: { root.query = text; root.selectedIndex = 0 }
@@ -556,10 +567,20 @@ ShellPanel {
 
                 ListView {
                     id: list
-                    anchors.fill: parent
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
                     anchors.margins: Metrics.spaceSm
                     clip: true
                     spacing: Metrics.spaceXxs
+                    // Whole rows only. The cell's height is a share of the
+                    // grid and no multiple of a row, so the list used to end
+                    // on a row cut in half, which read as a bug. The last row
+                    // is now complete and the remainder is card below it;
+                    // n rows take n pitches less one spacing.
+                    readonly property real pitch: Metrics.rowHeight + spacing
+                    readonly property real room: parent.height - Metrics.spaceSm * 2
+                    height: Math.max(pitch, Math.floor((room + spacing) / pitch) * pitch) - spacing
                     model: root.results
                     currentIndex: root.selectedIndex
                     onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
@@ -571,7 +592,11 @@ ShellPanel {
                         required property int index
                         level: 1
                         width: list.width
-                        implicitHeight: modelData.kind === "calculator" ? Metrics.rowHeight + Metrics.spaceLg : Metrics.rowHeight + Metrics.spaceXs
+                        // The row height, no more: a list of forty-eight-pixel
+                        // rows reads as a list, and the four pixels on top of
+                        // each were a quarter of a row lost over eight of them.
+                        // The calculator's row keeps its room for the big result.
+                        implicitHeight: modelData.kind === "calculator" ? Metrics.rowHeight + Metrics.spaceLg : Metrics.rowHeight
                         selected: index === root.selectedIndex
                         icon: modelData.icon || ""
                         iconSource: modelData.iconSource || ""

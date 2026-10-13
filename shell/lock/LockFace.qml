@@ -63,6 +63,15 @@ Item {
         blurMax: Effects.lockBlurMax
         saturation: Effects.lockSaturation
         brightness: Effects.lockBrightness
+        // Into a layer: the blur of a 4K capture is a full-screen shader
+        // pass, and the lock screen repaints on every frame while the
+        // fingerprint ring and the pulse animate. The layer is drawn once,
+        // when the capture arrives; the fade and the zoom above are applied
+        // to the finished texture, where they cost a textured quad. `smooth`
+        // because the zoom scales that texture. Two `layer.` lines are the
+        // way back.
+        layer.enabled: true
+        layer.smooth: true
     }
     Rectangle { anchors.fill: parent; color: Colors.lockShade }
 
@@ -154,8 +163,8 @@ Item {
                 SequentialAnimation on scale {
                     running: root.lockState.busy && Animations.motionEnabled
                     loops: Animation.Infinite
-                    NumberAnimation { to: 1.05; duration: Animations.lockPulse / 2; easing.type: Easing.InOutSine }
-                    NumberAnimation { to: 1; duration: Animations.lockPulse / 2; easing.type: Easing.InOutSine }
+                    NumberAnimation { to: 1.05; duration: Animations.lockPulse / 2; easing.type: Animations.easingBreathe }
+                    NumberAnimation { to: 1; duration: Animations.lockPulse / 2; easing.type: Animations.easingBreathe }
                     onRunningChanged: if (!running) avatarItem.scale = 1
                 }
                 layer.enabled: true
@@ -206,6 +215,7 @@ Item {
                     Layout.preferredWidth: implicitWidth
                     Layout.preferredHeight: implicitHeight
                     size: Metrics.fingerprintLockGlyph
+                    rippleCycles: Animations.fingerprintRippleCycles
                     mode: root.lockState.fingerprintStage ? "scanning" : "idle"
                     progress: root.lockState.fingerprintStage ? 1 : 0
                     retries: root.lockState.fingerprintMisses

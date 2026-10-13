@@ -11,7 +11,17 @@ import "wallpaper/WallpaperLogic.js" as Logic
 // favourites live in ~/.config/buchhwin-shell/wallpapers.json.
 Singleton {
     id: root
-    readonly property string folder: SettingsService.expandHome(SettingsService.value("wallpaper.folder"))
+    readonly property string configuredFolder: SettingsService.value("wallpaper.folder")
+    // Until user-dirs.dirs has been read (or found missing) the default is not
+    // known: guessing ~/Pictures first made a German session scan the wrong
+    // folder and flash its first image before ~/Bilder arrived.
+    readonly property string folder: configuredFolder.length ? SettingsService.expandHome(configuredFolder)
+        : userDirsRead ? Logic.defaultFolder(picturesDir, Paths.home) : ""
+    property bool userDirsRead: false
+    readonly property bool folderIsDefault: !configuredFolder.length
+    readonly property var recentFolders: Logic.recentFolders(SettingsService.value("wallpaper.recentFolders"))
+        .filter(path => SettingsService.expandHome(path) !== folder)
+    property string picturesDir: ""
     readonly property string configuredPath: SettingsService.expandHome(SettingsService.value("wallpaper.path"))
     readonly property bool slideshow: SettingsService.value("wallpaper.slideshow")
     readonly property int intervalMinutes: Math.max(1, SettingsService.value("wallpaper.intervalMinutes"))
@@ -68,6 +78,24 @@ Singleton {
         if (!importProc.running) importProc.running = true
     }
 
+    // Another folder, from the KDE folder dialog or from the recent list.
+    // The subfolder the slideshow was narrowed to belongs to the old folder,
+    // so it is let go; the FolderListModels follow `folder` on their own.
+    function chooseFolder() {
+        if (!chooseProc.running) chooseProc.running = true
+    }
+    function setFolder(path) {
+        const value = Logic.contractHome(String(path || "").trim(), Paths.home)
+        if (!value.length || value === "~") return false
+        const recent = Logic.addRecentFolder(SettingsService.value("wallpaper.recentFolders"),
+                                             Logic.contractHome(folder, Paths.home))
+        return SettingsService.setAll({ "wallpaper.folder": value, "wallpaper.slideshowFolder": "",
+                                        "wallpaper.recentFolders": Logic.addRecentFolder(recent, value) })
+    }
+    function useDefaultFolder() {
+        SettingsService.setAll({ "wallpaper.folder": "", "wallpaper.slideshowFolder": "" })
+    }
+
     function next(step) {
         const list = pool
         if (!list.length) return
@@ -91,6 +119,24 @@ Singleton {
         // An empty read during a file replacement keeps the current state.
         onLoaded: if (text().trim().length || !root.stateLoaded) { root.state = Logic.parseState(text()); root.stateLoaded = true }
         onFileChanged: reload()
+    }
+
+    FileView {
+        path: (Quickshell.env("XDG_CONFIG_HOME") || Paths.home + "/.config") + "/user-dirs.dirs"
+        printErrors: false
+        watchChanges: true
+        onLoaded: { root.picturesDir = Logic.picturesDir(text(), Paths.home); root.userDirsRead = true }
+        onLoadFailed: root.userDirsRead = true
+        onFileChanged: reload()
+    }
+
+    Process {
+        id: chooseProc
+        stderr: ErrorLog { label: "WallpaperService.chooseProc" }
+        command: ["kdialog", "--title", "Wallpaper folder", "--getexistingdirectory", root.folder]
+        stdout: StdioCollector {
+            onStreamFinished: { const path = text.trim(); if (path.length) root.setFolder(path) }
+        }
     }
 
     Process {

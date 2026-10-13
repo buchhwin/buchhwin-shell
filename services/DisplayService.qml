@@ -23,7 +23,11 @@ Singleton {
     readonly property int confirmSeconds: 15
     readonly property bool confirming: countdown > 0
     readonly property bool dirty: draft.length > 0 && Logic.changed(monitors, draft)
-    readonly property bool valid: Logic.enabledCount(draft) > 0
+    // No apply while anything overlaps: Hyprland keeps explicit positions as
+    // given and only warns, with input landing on the wrong screen. The
+    // page's moves never produce an overlap (Logic.placeApart), so this only
+    // catches a layout edited by hand.
+    readonly property bool valid: Logic.enabledCount(draft) > 0 && !Logic.overlapping(draft)
     readonly property bool overlapping: Logic.overlapping(draft)
     readonly property var transforms: Logic.TRANSFORMS
     readonly property var vrrModes: Logic.VRR
@@ -84,6 +88,13 @@ Singleton {
         if (confirming) return
         draft = Logic.update(draft, name, patch)
     }
+    // An edit that changes a monitor's size (mode, scale, rotation) or brings
+    // one back: its neighbours are pushed clear afterwards (Logic.spread), so
+    // a bigger screen never ends up under the next one.
+    function resize(name, patch) {
+        if (confirming) return
+        draft = Logic.spread(Logic.update(draft, name, patch))
+    }
     function setResolution(name, value) {
         const target = monitor(name)
         if (!target) return
@@ -92,11 +103,11 @@ Singleton {
         if (!modes.length) return
         const sameRate = modes.find(mode => Math.abs(mode.refresh - target.refresh) < 0.5)
         const mode = sameRate || modes[0]
-        edit(name, { width: mode.width, height: mode.height, refresh: mode.refresh })
+        resize(name, { width: mode.width, height: mode.height, refresh: mode.refresh })
     }
     function setRefresh(name, value) { edit(name, { refresh: Number(value) }) }
-    function setScale(name, value) { edit(name, { scale: Number(value) }) }
-    function setTransform(name, value) { edit(name, { transform: Number(value) }) }
+    function setScale(name, value) { resize(name, { scale: Number(value) }) }
+    function setTransform(name, value) { resize(name, { transform: Number(value) }) }
     function setVrr(name, value) { edit(name, { vrr: Number(value) }) }
     function setPosition(name, x, y) { edit(name, { x: Math.round(x), y: Math.round(y) }) }
 
@@ -114,7 +125,9 @@ Singleton {
     }
     function setEnabled(name, value) {
         const next = Logic.update(draft, name, { disabled: !value })
-        if (Logic.enabledCount(next) > 0 && !confirming) draft = next
+        // A monitor coming back keeps its old place, which may be under a
+        // neighbour that moved in the meantime.
+        if (Logic.enabledCount(next) > 0 && !confirming) draft = value ? Logic.spread(next) : next
     }
     function discard() { if (!confirming) draft = monitors.slice() }
 
@@ -167,6 +180,28 @@ Singleton {
         if (Logic.changed(monitors, target)) {
             run(target)
             refreshSoon.restart()
+        }
+        // A file whose positions had to be spread apart is rewritten with the
+        // corrected ones, once, so the next login does not start by
+        // correcting it again. From the lid-free layout (the lid's disabling
+        // is runtime only), and from a timer rather than from here, which may
+        // be running inside the file's own `loaded` handler: one FileView
+        // write per turn, or the read is dropped.
+        if (saved && !confirming) {
+            const corrected = Logic.repairSaved(saved, base)
+            if (corrected) { repaired = corrected; repairWrite.restart() }
+        }
+    }
+    property var repaired: null
+    Timer {
+        id: repairWrite
+        interval: 1500
+        onTriggered: {
+            if (root.repaired && !root.confirming) {
+                root.saved = root.repaired
+                savedFile.setText(JSON.stringify(root.saved, null, 2) + "\n")
+            }
+            root.repaired = null
         }
     }
 

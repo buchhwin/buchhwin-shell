@@ -28,6 +28,7 @@ import qs.shell.components
 import qs.services
 import qs.theme
 import "services/profile/ProfileLogic.js" as Profile
+import "services/notch/NotchLogic.js" as NotchLogic
 
 ShellRoot {
     id: root
@@ -65,6 +66,8 @@ ShellRoot {
     readonly property bool updatesReady: UpdatesService.checkHours >= 0
     // Apps following the theme are switched from startup (opt-in).
     readonly property bool appThemeReady: AppThemeService.statePath.length > 0
+    // With no weather place set, the location by IP is asked for once.
+    readonly property bool locationReady: LocationService.autoLocate !== undefined
     WallpaperLayer {}
     ScreenCorners {}
     WidgetHost {}
@@ -293,9 +296,12 @@ ShellRoot {
         function refresh(): void { WeatherService.refresh() }
         function setLocation(name: string, lat: real, lon: real): bool { return WeatherService.setLocation(name, lat, lon) }
         function clearLocation(): void { WeatherService.clearLocation() }
+        function detectLocation(): void { LocationService.detectByIp() }
+        // Whether a place is set, not which: get() handlers return counts and
+        // flags, never names (the place is the user's own business).
         function get(): string {
             const current = WeatherService.current
-            return JSON.stringify({ status: WeatherService.status, location: WeatherService.locationName,
+            return JSON.stringify({ status: WeatherService.status, hasLocation: WeatherService.hasLocation,
                                     temperature: current ? current.temperature : null, condition: current ? current.label : "",
                                     hours: WeatherService.hourly.length, days: WeatherService.daily.length })
         }
@@ -765,9 +771,28 @@ ShellRoot {
         // Synthetic now-playing row for screenshots; controls stay disabled.
         function previewMedia(enabled: bool): void { NotchService.mediaPreview = enabled }
         function setOption(key: string, value: string): bool {
-            return key === "fullscreen" ? SettingsService.set("notch.fullscreen", value)
-                : ["reserve", "expandOnHover"].indexOf(key) >= 0 ? SettingsService.set("notch." + key, value === "true") : false
+            if (["fullscreen", "hoverMode", "clickAction"].indexOf(key) >= 0) return SettingsService.set("notch." + key, value)
+            if (["openDelay", "closeDelay"].indexOf(key) >= 0) {
+                const number = Number(value)
+                if (!isFinite(number) || number < 0 || number > 2000) return false
+                return SettingsService.set("notch." + key, Math.round(number))
+            }
+            // The collapsed body (bodyHeight 24-64, bodyRadius 0-32,
+            // bodyPadding 0-48): the ranges the notch clamps to, so a value
+            // outside them is refused here rather than silently clamped.
+            if (["bodyHeight", "bodyRadius", "bodyPadding"].indexOf(key) >= 0) {
+                const number = Number(value)
+                const range = NotchLogic.BODY_RANGES[key]
+                if (!isFinite(number) || number < range.min || number > range.max) return false
+                return SettingsService.set("notch." + key, Math.round(number))
+            }
+            if (key === "reserve") return SettingsService.set("notch.reserve", value === "true")
+            // The switch this replaced, for scripts written against it.
+            if (key === "expandOnHover") return SettingsService.set("notch.hoverMode", value === "true" ? "hover" : "click")
+            return false
         }
+        // A built-in ("island") or saved preset, by id; one undo step.
+        function applyPreset(id: string): bool { return LayoutService.applyNotchPreset(id) }
         // Mode, settings and per screen what is shown (row ids and sizes, no titles).
         function get(): string { return NotchService.describe() }
     }

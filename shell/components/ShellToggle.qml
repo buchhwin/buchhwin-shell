@@ -36,13 +36,7 @@ Item {
             border.width: Metrics.borderWidth
             border.color: Colors.knobBorder
             scale: root.down ? Effects.knobPressScale : 1
-            Behavior on x {
-                NumberAnimation {
-                    duration: Animations.move(Animations.control)
-                    easing.type: Animations.easingControl
-                    easing.overshoot: Animations.overshoot
-                }
-            }
+            Behavior on x { enabled: Animations.motionEnabled; SpringMotion { kind: "fast" } }
             Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
         }
     }

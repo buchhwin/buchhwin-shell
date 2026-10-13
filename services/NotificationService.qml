@@ -166,7 +166,10 @@ Singleton {
         // previous snapshot. Filtering against that dropped every fresh popup
         // the moment it was added.
         function onValuesChanged() {
-            root.popups = Logic.livePopups(root.popups, root.server ? root.server.trackedNotifications.values : [])
+            const next = Logic.livePopups(root.popups, root.server ? root.server.trackedNotifications.values : [])
+            // The list changes for every arrival too, and most arrivals take
+            // nothing out of the queue: the same queue is left alone.
+            if (!Logic.sameSequence(root.popups, next)) root.popups = next
         }
     }
 

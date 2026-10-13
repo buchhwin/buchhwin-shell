@@ -153,6 +153,26 @@ unreadable = checks.animation_drift(conf, JS.replace('{ leaf: "windows",', '{ le
 check(len(unreadable) == 1 and "3 leaves but 2 entries" in unreadable[0],
       f"an entry the reader cannot parse is an error, not a shorter table: {unreadable}")
 
+# ---- springs: Lua only, the curve is where the dialects may differ ---------
+SPRING_LUA = LUA.replace('hl.animation({ leaf = "windows", enabled = true, speed = 2.0, bezier = "curveA", style = "popin 96%" })',
+                         'hl.curve("springA", { type = "spring", mass = 1, stiffness = 380, dampening = 34 })\n'
+                         'hl.animation({ leaf = "windows", enabled = true, speed = 2.0, spring = "springA", style = "popin 96%" })')
+spring_lua = checks._hypr_lua(SPRING_LUA)
+check(spring_lua.get("spring:springA") == "1.0,380.0,34.0", f"a spring curve is read by field name: {spring_lua.get('spring:springA')!r}")
+check(spring_lua.get("animation:windows") == "1,2.0,springA,popin 96%", f"a leaf with a spring names it: {spring_lua.get('animation:windows')!r}")
+check(checks.hypr_drift(conf, spring_lua) == [], f"a spring in Lua and a bezier in the conf is not drift: {checks.hypr_drift(conf, spring_lua)}")
+check(any(p.startswith("animation:windows") for p in checks.hypr_drift(conf, checks._hypr_lua(SPRING_LUA.replace("speed = 2.0, spring", "speed = 3.0, spring")))),
+      "but a different speed still is")
+SPRING_JS = JS.replace('{ leaf: "windows", speed: 2.0, bezier: "curveA", style: "popin 96%" }',
+                       '{ leaf: "windows", speed: 2.0, spring: "springA", bezier: "curveA", style: "popin 96%" }') + \
+    '\nvar SPRINGS = [\n    { name: "springA", mass: 1, stiffness: 380, dampening: 34 }\n]\n'
+check(checks.animation_drift(conf, SPRING_JS, spring_lua) == [],
+      f"Lua's spring, the conf's bezier and the table agree: {checks.animation_drift(conf, SPRING_JS, spring_lua)}")
+stiffer = checks.animation_drift(conf, SPRING_JS.replace("stiffness: 380", "stiffness: 400"), spring_lua)
+check(len(stiffer) == 1 and stiffer[0].startswith("spring:springA"), f"a spring that drifts is reported: {stiffer}")
+wrong_curve = checks.animation_drift(conf, SPRING_JS, lua)
+check(any("animates with 'curveA'" in p for p in wrong_curve), f"a Lua leaf on the bezier where the table has a spring is reported: {wrong_curve}")
+
 if failures:
     for failure in failures:
         print("FAIL hypr_drift: " + failure)

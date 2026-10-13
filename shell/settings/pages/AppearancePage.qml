@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../../services/appearance/AnimationLogic.js" as AnimationLogic
 
 GridLayout {
     id: root
@@ -525,7 +526,7 @@ GridLayout {
         }
         SettingRow {
             label: "Animation speed"
-            hint: "How fast the motion runs, on the desktop and in the shell alike. Nothing that travels goes below ten frames however far this is turned up, or it stops reading as motion at all."
+            hint: "How fast the motion runs, on the desktop and in the shell alike - the springs included, which play the same curve faster or slower. From half speed to double."
             // The mode above chooses the character of the motion, this chooses
             // its pace - and it drives the compositor's own animations too, so
             // a window and the panel over it move at one rhythm. Off has
@@ -534,7 +535,7 @@ GridLayout {
                 focusOnTab: true
                 Layout.fillWidth: true
                 enabledState: SettingsService.animationMode !== "off"
-                from: 0.25; to: 3
+                from: AnimationLogic.SPEED_MIN; to: AnimationLogic.SPEED_MAX
                 value: SettingsService.animationSpeed
                 // Snapped to twentieths: the difference between 1.00 and 1.03
                 // is not a difference anyone can see, and a stored 1.0374 only
@@ -543,7 +544,8 @@ GridLayout {
                     Math.round(value * 20) / 20)
             }
             ShellText {
-                text: SettingsService.animationSpeed.toFixed(2) + "x"
+                readonly property real pace: SettingsService.animationSpeed
+                text: pace.toFixed(2) + "x · " + (pace < 0.9 ? "slow" : pace > 1.1 ? "fast" : "normal")
                 role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl
             }
         }

@@ -1,0 +1,5 @@
+#%PAM-1.0
+# buchhwin-shell lock screen (lock.qml) on openSUSE. common-auth is what
+# pam-config writes, pam_fprintd included when the reader is enabled there.
+auth       include      common-auth
+account    required     pam_permit.so

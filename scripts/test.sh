@@ -5,6 +5,8 @@ set -euo pipefail
 #   scripts/test.sh            static checks and QML/JS unit tests
 #   scripts/test.sh --session  additionally load the shell in a nested Hyprland
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+# shellcheck source=lib/hyprland-prefix.sh
+if [[ -r "$project_dir/scripts/lib/hyprland-prefix.sh" ]]; then source "$project_dir/scripts/lib/hyprland-prefix.sh"; fi
 strict_style=${BUCHHWIN_STRICT_STYLE:-1}
 
 # A section that needs a binary this machine does not have is **named**, here
@@ -49,7 +51,7 @@ if command -v Hyprland >/dev/null; then
   grep -q 'config ok' <<<"$lua_output" || { printf '%s\n' "$lua_output"; exit 1; }
   printf 'lua config ok\n'
 else
-  note_skip 'Hyprland configuration parses (Hyprland not installed; package hyprland)'
+  note_skip 'Hyprland configuration parses (Hyprland not installed; package hyprland, or install/build-hyprland-leap.sh on Leap)'
 fi
 
 printf '== Style tokens\n'
@@ -63,6 +65,7 @@ printf '== Signal handler parameters\n'
 python3 "$project_dir/scripts/lib/checks.py" handlers
 python3 "$project_dir/scripts/lib/checks.py" icons
 python3 "$project_dir/scripts/lib/checks.py" ipc
+python3 "$project_dir/scripts/lib/checks.py" reserved
 
 printf '== QML lint\n'
 qmllint_bin=$(command -v qmllint || command -v qmllint-qt6 || true)
@@ -100,6 +103,7 @@ done
 printf '== Installers and session launcher\n'
 "$project_dir/tests/install-test.sh"
 "$project_dir/tests/bootstrap-test.sh"
+"$project_dir/tests/build-hyprland-test.sh"
 "$project_dir/tests/sddm-theme-install-test.sh"
 "$project_dir/tests/session-launcher-test.sh"
 "$project_dir/tests/deploy-test.sh"
@@ -108,6 +112,8 @@ printf '== Session actions\n'
 "$project_dir/tests/start-shell-test.sh"
 "$project_dir/tests/session-action-test.sh"
 "$project_dir/tests/shell-control-test.sh"
+"$project_dir/tests/launch-app-test.sh"
+"$project_dir/tests/wallet-unlock-test.sh"
 "$project_dir/tests/x11-dpi-test.sh"
 "$project_dir/tests/shell-update-test.sh"
 

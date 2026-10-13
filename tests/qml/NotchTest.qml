@@ -1,10 +1,15 @@
 import Quickshell
+import Quickshell.Io
 import QtQuick
 import "Harness.js" as T
 import "../../services/notch/NotchLogic.js" as N
 import "../../services/LayoutLogic.js" as L
 
 ShellRoot {
+    // The real built-in preset, so a broken file fails here and not on a desktop.
+    FileView { id: islandFile; path: Qt.resolvedUrl("../../config/notch-presets/island.json").toString().replace("file://", ""); blockLoading: true }
+    FileView { id: classicFile; path: Qt.resolvedUrl("../../config/notch-presets/classic.json").toString().replace("file://", ""); blockLoading: true }
+
     Component.onCompleted: {
         const at = (h, m) => new Date(2026, 8, 17, h, m || 0)
         const now = at(14, 30)
@@ -93,6 +98,31 @@ ShellRoot {
              "the automatic chip carries no id, so it cannot be dragged")
         T.eq(N.stripItems([one("clock", "notch-clock-1")], false)[0].id, "notch-clock-1", "stored ids are kept")
 
+        // The strip around its clock: as wide on the lighter side as on the
+        // heavier one, so the time sits in the middle of the screen. The pad
+        // the lighter side gets is split, half outside the group (the row's
+        // offset, for a left pad) and half between the group and the clock.
+        T.eq(N.stripSymmetry(227, 130, 40), { width: 300, offset: 0, leftPad: 0, rightPad: 73 },
+             "a heavier left side widens the right")
+        T.eq(N.stripSymmetry(200, 20, 40), { width: 320, offset: 60, leftPad: 120, rightPad: 0 },
+             "a heavier right side pads the left, and the row shifts by half of it")
+        T.eq(N.stripSymmetry(120, 40, 40), { width: 120, offset: 0, leftPad: 0, rightPad: 0 }, "already symmetric: nothing changes")
+        T.eq(N.stripSymmetry(40, 0, 40), { width: 40, offset: 0, leftPad: 0, rightPad: 0 }, "a clock alone")
+        T.eq(N.stripSymmetry(200, -1, 0), { width: 200, offset: 0, leftPad: 0, rightPad: 0 }, "no clock: the row as measured")
+        T.eq(N.stripSymmetry(200, 180, 40), { width: 200, offset: 0, leftPad: 0, rightPad: 0 }, "a clock that is not inside the row yet is ignored")
+        // The lighter group in the middle of its half: a group of 60 left of
+        // the clock, 200 right of it. The half is 200 wide, the group starts
+        // at the offset and ends a pad's half before the clock, whose left
+        // edge is the strip's centre less half the clock - the same gap on
+        // both sides of the group.
+        const centred = N.stripSymmetry(300, 60, 40)
+        T.eq(centred, { width: 440, offset: 70, leftPad: 140, rightPad: 0 }, "a left pad is split in two")
+        T.eq([centred.offset, (centred.width - 40) / 2 - (centred.offset + 60)], [70, 70],
+             "half of it outside the group and half between the group and the clock: the group is centred in its half")
+        // And the right-hand counterpart: the row does not shift, the gap
+        // the strip puts after the clock is half the right pad.
+        T.eq(N.stripSymmetry(300, 200, 40).rightPad / 2, 70, "a right pad's inner half sits between the clock and its group")
+
         // A pill is a notch that let go of the top edge.
         T.eq(N.pillTop("pill", 10), 10, "a pill sits below the edge")
         T.eq(N.pillTop("notch", 10), 0, "a notch hangs from it")
@@ -168,7 +198,7 @@ ShellRoot {
         T.eq(sizes(L.setNotchItemSize(fresh, "nothing", 4, 4)), sizes(fresh), "an unknown id changes nothing")
         T.eq(JSON.stringify(L.defaultNotch()), JSON.stringify(fresh), "none of it touched the input")
         T.eq(L.notchItems(L.addNotchItem(fresh, "cpu", "expanded"), "expanded").slice(-1)[0],
-             { id: "notch", type: "cpu", w: 1, h: 2 }, "a widget added to the overview starts two rows tall")
+             { id: "notch", type: "cpu", w: 1, h: 2, display: "full", options: {} }, "a widget added to the overview starts two rows tall")
 
         // A type the catalogue gives a floor cannot be pulled below it: the
         // grid refuses rather than handing back a cell that only clips. The
@@ -241,6 +271,98 @@ ShellRoot {
         L.addNotchItem(three, "battery")
         L.removeNotchItem(three, "e1")
         T.eq(JSON.stringify(three), before, "every operation copies rather than edits")
+
+        // How the notch opens.
+        T.eq([N.hoverMode("click"), N.hoverMode("off"), N.hoverMode("sideways"), N.hoverMode(undefined)],
+             ["click", "off", "hover", "hover"], "hover mode validated")
+        T.eq([N.hoverOpens("hover"), N.hoverOpens("click"), N.hoverOpens("off")], [true, false, false], "only hover opens on hover")
+        T.eq([N.clickResult("hover", "dashboard"), N.clickResult("hover", "expand"), N.clickResult("hover", "evil"),
+              N.clickResult("click", "dashboard"), N.clickResult("off", "expand")],
+             ["dashboard", "expand", "dashboard", "expand", "dashboard"], "what a click on the collapsed notch does")
+        T.eq([N.delay(120, N.OPEN_DELAY), N.delay(-5, N.OPEN_DELAY), N.delay(99999, N.CLOSE_DELAY), N.delay("x", N.CLOSE_DELAY)],
+             [120, 0, 2000, 400], "delays clamped, nonsense falls back")
+
+        // The collapsed body: clamped to its ranges, rounded, and the theme's
+        // token (the caller's fallback) for anything that is not a number.
+        T.eq([N.bodySize(32, N.BODY_HEIGHT, 40), N.bodySize(10, N.BODY_HEIGHT, 40), N.bodySize(999, N.BODY_RADIUS, 16),
+              N.bodySize(11.4, N.BODY_RADIUS, 16), N.bodySize("x", N.BODY_PADDING, 22), N.bodySize(undefined, N.BODY_PADDING, 22)],
+             [32, 24, 32, 11, 22, 22], "body sizes clamped and rounded, nonsense falls back to the token")
+        T.eq(Object.keys(N.BODY_RANGES), ["bodyHeight", "bodyRadius", "bodyPadding"], "one range per body setting, under its key")
+        T.ok(N.BODY_HEIGHT.min <= 32 && N.BODY_RADIUS.min <= 11 && N.BODY_PADDING.min <= 16, "Classic's body is inside the ranges")
+        T.ok(N.BODY_HEIGHT.max >= 40 && N.BODY_RADIUS.max >= 16 && N.BODY_PADDING.max >= 22, "and so is Island's")
+        T.eq(N.migrate({ notch: { expandOnHover: false, reserve: true } }).notch, { reserve: true, hoverMode: "click" },
+             "expandOnHover off becomes click")
+        T.eq(N.migrate({ notch: { expandOnHover: true, hoverMode: "off" } }).notch, { hoverMode: "off" },
+             "an existing hover mode wins, the old key goes")
+        const untouched = { notch: { reserve: true } }
+        T.ok(N.migrate(untouched) === untouched, "nothing to migrate, nothing copied")
+
+        // Presets: the short form, sanitizing, and the user's own.
+        const spec = { label: "Test", collapsed: ["workspace", "clock"],
+                       expanded: [{ type: "clock", w: 4, h: 1 }, { type: "media", w: 1, h: 1 }, "", { type: 3 }],
+                       options: { hoverMode: "click", openDelay: 90, bodyHeight: 32, evil: "x", shape: { nested: 1 } } }
+        const fromSpec = L.sanitizeNotchPreset(spec, true)
+        T.eq(L.notchTypes(fromSpec.layout, "collapsed"), ["workspace", "clock"], "strip from the short form")
+        T.eq(L.notchItems(fromSpec.layout, "expanded").map(item => [item.type, item.w, item.h]),
+             [["clock", 4, 1], ["media", 2, 2]], "sizes kept, the media floor applied, junk entries dropped")
+        T.eq(fromSpec.options, { hoverMode: "click", openDelay: 90, bodyHeight: 32 }, "only known, primitive options kept")
+        T.ok(["bodyHeight", "bodyRadius", "bodyPadding"].every(key => L.NOTCH_PRESET_OPTIONS.indexOf(key) >= 0),
+             "a preset carries the collapsed body")
+        T.eq([fromSpec.id, fromSpec.builtin], ["test", true], "id from the label, marked built-in")
+        T.eq(L.sanitizeNotchPreset({ label: "  " }), null, "a preset needs a name")
+
+        const island = L.sanitizeNotchPreset(JSON.parse(islandFile.text()), true)
+        T.ok(island !== null && island.label === "Island", "the Island preset file reads")
+        T.eq(L.notchTypes(island.layout, "collapsed"), ["workspace", "clock", "network", "battery"], "Island strip")
+        T.eq(L.notchItems(island.layout, "collapsed").map(item => [item.display, item.options.style || "", item.options.mode || "", item.options.glyph || ""]),
+             [["full", "dots", "open", ""], ["full", "", "", ""], ["icon", "", "", ""], ["icon", "", "", ""]],
+             "dots for the open workspaces, the network and the battery as their plain glyphs (13.10.: no bars, no lying battery)")
+        T.eq(L.notchTypes(island.layout, "expanded")[0], "clock", "Island opens on the time and date")
+        T.eq(island.options.hoverMode, "hover", "Island opens on hover")
+        T.eq([island.options.bodyHeight, island.options.bodyRadius, island.options.bodyPadding], [40, 16, 22],
+             "Island's body is the theme's: 40 tall, corners of 16, 22 of air")
+
+        // Classic is the notch as it was before Island: the time alone in the
+        // strip, the overview of five on hover, at the default width.
+        const classic = L.sanitizeNotchPreset(JSON.parse(classicFile.text()), true)
+        T.ok(classic !== null && classic.label === "Classic", "the Classic preset file reads")
+        T.eq(L.notchTypes(classic.layout, "collapsed"), ["clock"], "Classic strip: the time alone")
+        T.eq(L.notchTypes(classic.layout, "expanded")[0], "clock", "Classic opens on the time and date")
+        T.eq(L.notchTypes(classic.layout, "expanded"), L.notchTypes(L.defaultNotch(), "expanded"),
+             "and its overview is the default notch's: weather, music, events and status")
+        T.eq(L.notchItems(classic.layout, "expanded").map(item => [item.w, item.h]), sizes(fresh),
+             "at the default notch's sizes")
+        T.eq(classic.options.hoverMode, "hover", "Classic opens on hover")
+        T.eq([classic.options.shape, classic.options.expandedWidth, classic.options.eventCount], ["notch", 0, 2],
+             "hanging from the edge, at the default width, two events")
+        T.eq([classic.options.bodyHeight, classic.options.bodyRadius, classic.options.bodyPadding], [32, 11, 16],
+             "Classic's body is the one before Island: 32 tall, corners of 11, 16 of air")
+
+        // The files themselves: sanitizing drops an unknown option without a
+        // word, and a body size outside its range would be clamped on screen
+        // to something other than what the file says.
+        const files = [["Island", islandFile], ["Classic", classicFile]]
+        for (let i = 0; i < files.length; i++) {
+            const options = JSON.parse(files[i][1].text()).options
+            T.ok(Object.keys(options).every(key => L.NOTCH_PRESET_OPTIONS.indexOf(key) >= 0),
+                 files[i][0] + ": every option in the file is one a preset carries")
+            T.ok(Object.keys(N.BODY_RANGES).every(key => N.bodySize(options[key], N.BODY_RANGES[key], -1) === options[key]),
+                 files[i][0] + ": the body sizes are inside their ranges")
+        }
+
+        let presetConfig = L.sanitize({})
+        T.eq(presetConfig.notchPresets, [], "no saved presets by default")
+        const added = L.addNotchPreset(presetConfig, "My notch", L.defaultNotch(), { hoverMode: "off" }, ["island"])
+        T.eq(added.id, "custom-my-notch", "saved presets get their own id space")
+        presetConfig = L.sanitize(added.config)
+        T.eq(presetConfig.notchPresets.length, 1, "kept by sanitize")
+        T.eq(L.addNotchPreset(presetConfig, "My notch", L.defaultNotch(), {}, []).id, "custom-my-notch-2", "a second one with the same name")
+        presetConfig = L.sanitize(L.renameNotchPreset(presetConfig, "custom-my-notch", "  Renamed  "))
+        T.eq(presetConfig.notchPresets[0].label, "Renamed", "renamed, trimmed")
+        T.eq(L.renameNotchPreset(presetConfig, "custom-my-notch", " ").notchPresets[0].label, "Renamed", "an empty name changes nothing")
+        presetConfig = L.sanitize(L.removeNotchPreset(presetConfig, "custom-my-notch"))
+        T.eq(presetConfig.notchPresets, [], "removed")
+        T.eq(L.addNotchPreset(presetConfig, "", L.defaultNotch(), {}, []).id, "", "no name, nothing saved")
 
         T.finish("NotchTest")
     }

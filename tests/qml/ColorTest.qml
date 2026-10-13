@@ -31,11 +31,11 @@ ShellRoot {
         // Picking the same colour again is not a second entry: it moves up.
         T.eq(C.addToHistory(["#111111", "#222222"], "#222222"), "#222222,#111111", "a repeat moves to the front")
         T.eq(C.addToHistory(["#111111"], "nonsense"), "#111111", "and nothing that is not a colour is kept")
-        const long = Array.from({ length: C.HISTORY_MAX }, (_, i) => "#0000" + (10 + i))
-        T.eq(C.parseHistory(C.addToHistory(long, "#ffffff")).length, C.HISTORY_MAX,
+        const full = Array.from({ length: C.HISTORY_MAX }, (_, i) => "#0000" + (10 + i))
+        T.eq(C.parseHistory(C.addToHistory(full, "#ffffff")).length, C.HISTORY_MAX,
              "a full history stays its size")
-        T.eq(C.parseHistory(C.addToHistory(long, "#ffffff"))[0], "#ffffff", "with the newest in front")
-        T.eq(C.parseHistory(C.addToHistory(long, "#ffffff")).indexOf(long[long.length - 1]), -1,
+        T.eq(C.parseHistory(C.addToHistory(full, "#ffffff"))[0], "#ffffff", "with the newest in front")
+        T.eq(C.parseHistory(C.addToHistory(full, "#ffffff")).indexOf(full[full.length - 1]), -1,
              "and the oldest falls off the end")
 
         // Which ink reads on a swatch. A judgement, not a colour: naming the

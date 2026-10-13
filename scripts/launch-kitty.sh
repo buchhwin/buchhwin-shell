@@ -22,5 +22,17 @@ overrides="${XDG_CONFIG_HOME:-$HOME/.config}/buchhwin-shell/kitty.conf"
 [[ -r $overrides ]] && configs+=(--config "$overrides")
 [[ $theme == light ]] && configs+=(--config "$project_dir/terminal/colors-light.conf")
 
-export ZDOTDIR="$project_dir/zsh"
-exec kitty "${configs[@]}" -o shell=zsh "$@"
+# The session's own zsh configuration, unless Settings > Terminal says to use
+# the account's ~/.zshrc (terminal.personalShell) - then zsh starts as it would
+# anywhere else and the prompt settings are the account's business.
+personal_shell=false
+if command -v jq >/dev/null 2>&1 && [[ -r $settings ]]; then
+  personal_shell=$(jq -r '.terminal.personalShell // false' "$settings" 2>/dev/null || printf false)
+fi
+if [[ $personal_shell == true ]]; then
+  unset ZDOTDIR
+else
+  export ZDOTDIR="$project_dir/zsh"
+fi
+# In a scope of its own, named after the entry (scripts/launch-app.sh).
+exec "$project_dir/scripts/launch-app.sh" kitty kitty "${configs[@]}" -o shell=zsh "$@"

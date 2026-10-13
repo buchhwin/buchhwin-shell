@@ -19,6 +19,11 @@ Rectangle {
     // The hero field of a panel (the launcher): taller, card-shaped and set in
     // the title size, but the same material as every other field.
     property bool large: false
+    // Whether keyboard focus draws the accent outline. Off for a field that
+    // is the only input on its surface and holds the focus for as long as the
+    // surface is open (the launcher): an outline that never goes away marks
+    // nothing and reads as a stuck border. The fill still lightens on focus.
+    property bool focusOutline: true
     signal accepted()
     signal escapePressed()
     // Delete with an empty field (TextInput would swallow the key otherwise).
@@ -34,7 +39,7 @@ Rectangle {
     radius: large ? Metrics.radiusCard : Metrics.pillRadius(height)
     color: input.activeFocus ? Colors.controlFillHover : Colors.controlFill
     border.width: Metrics.borderWidth
-    border.color: input.activeFocus ? Colors.accentBorder : large ? Colors.border : "transparent"
+    border.color: input.activeFocus && focusOutline ? Colors.accentBorder : large ? Colors.border : "transparent"
     Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
     Behavior on border.color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
 

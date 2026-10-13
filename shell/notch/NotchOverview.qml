@@ -196,10 +196,13 @@ Item {
         property int cellH: 1
         // No anchors: it is the root of a Loader that already has the cell's
         // size, and a second one would fight it.
+        // An item can ask to stand free, without the field's own surface -
+        // the island preset keeps a card only for what is a card (the media).
+        property bool plain: false
         clip: true
         radius: Metrics.notchFieldRadius
-        color: Colors.notchField
-        border.width: Metrics.borderWidth
+        color: plain ? "transparent" : Colors.notchField
+        border.width: plain ? 0 : Metrics.borderWidth
         border.color: Colors.notchFieldBorder
         Item {
             id: fieldBody
@@ -219,27 +222,35 @@ Item {
         property int columns: 1
         onClicked: root.notch.openPanel("dashboard")
         // 36 px of time over a date needs two of the notch's rows. In one it
-        // is the time alone, at the size the collapsed strip uses - the same
-        // clock, read the same way, in the room there is. And the long date
-        // only fits across two columns; below that it is the short one.
+        // is the time alone, at the size the collapsed strip uses - unless the
+        // row spans three columns or more, which makes it a header (below).
+        // The long date only fits across two columns; below that it is the
+        // short one.
         readonly property bool oneRow: clockBlock.rows <= 1
-        ColumnLayout {
-            anchors.left: parent.left
+        // One row across most of the notch is a header: the time and the
+        // short date side by side, centred, the way an island reads.
+        readonly property bool header: oneRow && clockBlock.columns >= 3
+        GridLayout {
+            anchors.left: clockBlock.header ? undefined : parent.left
+            anchors.horizontalCenter: clockBlock.header ? parent.horizontalCenter : undefined
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            spacing: 0
+            width: clockBlock.header ? implicitWidth : parent.width
+            columns: clockBlock.header ? 2 : 1
+            columnSpacing: Metrics.spaceSm
+            rowSpacing: 0
             NotchText {
-                Layout.fillWidth: true
+                Layout.fillWidth: !clockBlock.header
                 text: Logic.timeText(root.now)
                 font.pixelSize: clockBlock.oneRow ? Typography.notchTimeSize : Typography.notchLargeTimeSize
                 font.weight: Typography.light
                 font.features: { "tnum": 1 }
             }
             NotchText {
-                Layout.fillWidth: true
-                visible: !clockBlock.oneRow
+                Layout.fillWidth: !clockBlock.header
+                Layout.alignment: Qt.AlignVCenter
+                visible: !clockBlock.oneRow || clockBlock.header
                 text: SettingsService.locale.toString(root.now,
-                    clockBlock.columns >= 2 ? "dddd, MMMM d" : "ddd, MMM d")
+                    clockBlock.columns >= 2 && !clockBlock.header ? "dddd, MMMM d" : "ddd, MMM d")
                 muted: true
                 font.pixelSize: Typography.smallSize
             }
@@ -590,8 +601,8 @@ Item {
                  width: Math.round(item.width), height: Math.round(item.height) }
     }
 
-    // From the resting places, never from the items themselves: a cell glides
-    // to its new place over `Animations.reorder` and the report fires long
+    // From the resting places, never from the items themselves: a cell springs
+    // to its new place (ArrangeItem, SpringMotion) and the report fires long
     // before that, so reporting an item's own x and y described where it was
     // halfway there. The frames then sat beside the things they belong to.
     function reportRects() {
@@ -658,19 +669,19 @@ Item {
     // body, not in the field, so a parent chain would be one step longer than
     // it looks and would break the first time the field grows a wrapper.
     Component { id: clockPart
-        Field { id: clockField; cellW: gridW; cellH: gridH
+        Field { id: clockField; cellW: gridW; cellH: gridH; plain: notchItem.options.plain === true
             ClockBlock { rows: clockField.cellH; columns: clockField.cellW } } }
     Component { id: weatherPart
-        Field { id: weatherField; cellW: gridW; cellH: gridH
+        Field { id: weatherField; cellW: gridW; cellH: gridH; plain: notchItem.options.plain === true
             WeatherBlock { rows: weatherField.cellH } } }
     Component { id: statusPart
-        Field { id: statusField; cellW: gridW; cellH: gridH
+        Field { id: statusField; cellW: gridW; cellH: gridH; plain: notchItem.options.plain === true
             StatusBlock { columns: statusField.cellW } } }
     Component { id: mediaPart
-        Field { id: mediaField; cellW: gridW; cellH: gridH
+        Field { id: mediaField; cellW: gridW; cellH: gridH; plain: notchItem.options.plain === true
             MediaBlock { columns: mediaField.cellW } } }
     Component { id: eventsPart
-        Field { id: eventsField; cellW: gridW; cellH: gridH
+        Field { id: eventsField; cellW: gridW; cellH: gridH; plain: notchItem.options.plain === true
             EventsBlock {} } }
 
     // Any other type is a widget: the same file the desktop and the bar load,
@@ -678,6 +689,7 @@ Item {
     Component {
         id: widgetPart
         Field {
+            plain: notchItem.options.plain === true
             id: widgetBox
             readonly property var entry: WidgetRegistry.type(notchItem.type)
             // The same click a pill and a desktop widget give it: the panel
@@ -712,8 +724,8 @@ Item {
                     // surface per screen, so it never changes.
                     item.instance = { id: notchItem.id, type: notchItem.type,
                                       screen: root.notch ? root.notch.screenName : "",
-                                      options: widgetBox.entry && widgetBox.entry.options
-                                          ? widgetBox.entry.options : {} }
+                                      options: Object.assign({}, widgetBox.entry && widgetBox.entry.options
+                                          ? widgetBox.entry.options : {}, notchItem.options || {}) }
                     // **Not** `inGroup`. That flag means "you are one of
                     // several things crammed into one pill", and it makes a
                     // widget drop its label and everything above it. The

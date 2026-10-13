@@ -17,6 +17,7 @@ Singleton {
     readonly property string copy: "󰅌"
     readonly property string search: "󰍉"
     readonly property string settings: "󰒓"
+    readonly property string location: "󰍎"
     readonly property string folder: "󰉋"
     readonly property string edit: "󰕰"
     // Showing a password and hiding it again: the open eye and the closed one.

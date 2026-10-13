@@ -12,7 +12,8 @@ set -uo pipefail
 #                   summaries are small and always read from the remote)
 # Output: sections "@NAME EXIT" followed by the command's output, parsed by
 # services/updates/UpdatesLogic.js:
-#   @dnf              dnf5 check-upgrade --json (stderr in @dnf-stderr)
+#   @dnf              dnf5 check-upgrade --json (stderr in @dnf-stderr); on
+#                     openSUSE zypper's list in the same JSON (zypper-updates.py)
 #   @dnf-cached       the same from the cache when the online run failed
 #   @advisories       dnf5 advisory list --json (cache only, after @dnf)
 #   @installed        rpm NAME.ARCH<TAB>EPOCH:VERSION-RELEASE of the upgrades
@@ -53,22 +54,53 @@ section() {
   return "$code"
 }
 
-dnf_args=(check-upgrade --json)
-(( cache_only )) && dnf_args+=(--cacheonly)
-(( refresh && !cache_only )) && dnf_args+=(--refresh)
-section dnf 600 dnf5 "${dnf_args[@]}"
-code=$?
-names=$tmp/names
-if (( code == 0 || code == 100 )); then
-  cp -- "$tmp/out" "$tmp/dnf.json"
-elif (( code != 127 && !cache_only )); then
-  # Offline or a broken mirror: show what the cache knows.
-  section dnf-cached 120 dnf5 check-upgrade --json --cacheonly
+# openSUSE: zypper as a user never refreshes (that needs root and is the
+# system's own timer's job), it reads the cache - so --refresh and
+# --cache-only change nothing there. Its XML becomes dnf5's JSON under the
+# same section name, and everything below, the installed versions included,
+# stays one path for both distributions.
+zypper_updates() {
+  local code
+  LC_ALL=C.UTF-8 timeout 300 zypper --non-interactive --no-refresh --xmlout list-updates \
+    >"$tmp/zypper.xml" 2>"$tmp/err" </dev/null
   code=$?
-  (( code == 0 || code == 100 )) && cp -- "$tmp/out" "$tmp/dnf.json"
+  if (( code == 0 )) && ! python3 "${BASH_SOURCE[0]%/*}/zypper-updates.py" <"$tmp/zypper.xml" >"$tmp/out" 2>>"$tmp/err"; then
+    code=1
+  fi
+  printf '@dnf %d\n' "$code"
+  (( code == 0 )) && cat -- "$tmp/out"
+  if [[ -s $tmp/err ]]; then
+    printf '\n@dnf-stderr %d\n' "$code"
+    tail -n 20 -- "$tmp/err"
+  fi
+  printf '\n'
+  return "$code"
+}
+
+names=$tmp/names
+zypper_only=0
+command -v dnf5 >/dev/null 2>&1 || ! command -v zypper >/dev/null 2>&1 || zypper_only=1
+if (( zypper_only )); then
+  zypper_updates
+  (( $? == 0 )) && cp -- "$tmp/out" "$tmp/dnf.json"
+else
+  dnf_args=(check-upgrade --json)
+  (( cache_only )) && dnf_args+=(--cacheonly)
+  (( refresh && !cache_only )) && dnf_args+=(--refresh)
+  section dnf 600 dnf5 "${dnf_args[@]}"
+  code=$?
+  if (( code == 0 || code == 100 )); then
+    cp -- "$tmp/out" "$tmp/dnf.json"
+  elif (( code != 127 && !cache_only )); then
+    # Offline or a broken mirror: show what the cache knows.
+    section dnf-cached 120 dnf5 check-upgrade --json --cacheonly
+    code=$?
+    (( code == 0 || code == 100 )) && cp -- "$tmp/out" "$tmp/dnf.json"
+  fi
 fi
 if [[ -s $tmp/dnf.json ]]; then
-  section advisories 120 dnf5 advisory list --json --cacheonly
+  # zypper's patches are not mapped to packages, so openSUSE has no advisories.
+  (( zypper_only )) || section advisories 120 dnf5 advisory list --json --cacheonly
   # Installed versions of the packages that have upgrades.
   if command -v jq >/dev/null 2>&1; then
     jq -r '.upgrades[]? | "\(.name).\(.arch)"' "$tmp/dnf.json" 2>/dev/null | sort -u >"$names"

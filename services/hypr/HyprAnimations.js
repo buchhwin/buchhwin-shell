@@ -12,31 +12,54 @@
 // slower animation - it scales the same way theme/Animations.qml's `factor`
 // does, which is why one setting can drive both.
 
-// Ten frames is the floor here as well as in the shell, and three leaves were
-// below it at the *designed* pace, before any speed setting touched them:
-// windowsOut at 1.4 was 8.4 frames and fade and layers at 1.6 were 9.6. A
-// window closing in eight frames of a 4 % scale change is the "window
-// animations are broken" report, and no floor behind the division can rescue
-// it, because that floor is capped at the base and the base was the problem.
-//
-// `popin 96%` is 4 % of travel. Hyprland's own table uses 87 %, three times
-// as far, and the lesson from the panels applies unchanged: enough frames is
-// not enough if there is nothing to see in them.
-var BASE = [
-    { leaf: "windows", speed: 2.0, bezier: "buchhwinSpring", style: "popin 87%" },
-    { leaf: "windowsOut", speed: 1.7, bezier: "buchhwinFast", style: "popin 87%" },
-    { leaf: "windowsMove", speed: 2.0, bezier: "buchhwinFast", style: "" },
-    { leaf: "fade", speed: 1.7, bezier: "buchhwinFast", style: "" },
-    { leaf: "layers", speed: 1.7, bezier: "buchhwinFast", style: "fade" },
-    { leaf: "workspaces", speed: 2.2, bezier: "buchhwinFast", style: "slidefade 10%" },
-    { leaf: "specialWorkspace", speed: 2.0, bezier: "buchhwinFast", style: "slidefadevert 15%" },
-    { leaf: "border", speed: 2.0, bezier: "buchhwinFast", style: "" },
-    // Off in every mode: a border that cycles its hue forever is motion with
-    // nothing to say.
-    { leaf: "borderangle", speed: 1, bezier: "buchhwinFast", style: "", off: true }
+// Springs, for everything that moves (Hyprland reads them from the Lua
+// config only; hyprland.conf has no spring syntax and uses each leaf's
+// `bezier` instead). Material 3 in spirit - a spatial family that may
+// overshoot a little and an effects family that is critically damped - with
+// values of this session's own. Mass 1 throughout; the damping ratio
+// d / (2·√k) is in the comment.
+var SPRINGS = [
+    { name: "buchhwinSpatialFast", mass: 1, stiffness: 700, dampening: 50 },   // 0.94
+    { name: "buchhwinSpatial", mass: 1, stiffness: 380, dampening: 34 },       // 0.87
+    { name: "buchhwinSpatialSlow", mass: 1, stiffness: 200, dampening: 26 },   // 0.92
+    { name: "buchhwinEffectsFast", mass: 1, stiffness: 3200, dampening: 113 }, // 1.00
+    { name: "buchhwinEffects", mass: 1, stiffness: 1400, dampening: 75 },      // 1.00
+    { name: "buchhwinEffectsSlow", mass: 1, stiffness: 700, dampening: 53 }    // 1.00
 ]
 
-// How the shell's four animation modes read on the compositor. Only the
+// Beziers: the layers keep a timed curve (a surface fading in has nothing to
+// spring), and the legacy configuration uses them for every leaf.
+//   buchhwinFast      fast off the mark, long soft landing (OutQuint-like)
+//   buchhwinSpring    a hint of push, the bezier stand-in for a spatial spring
+//   buchhwinStandard  Material's standard curve
+//   buchhwinAccel     Material's emphasized accelerate, for leaving
+var BEZIERS = [
+    { name: "buchhwinFast", points: [0.22, 1.0, 0.36, 1.0] },
+    { name: "buchhwinSpring", points: [0.2, 1.12, 0.32, 1.0] },
+    { name: "buchhwinStandard", points: [0.2, 0.0, 0.0, 1.0] },
+    { name: "buchhwinAccel", points: [0.3, 0.0, 0.8, 0.15] }
+]
+
+// The leaves. `spring` is what the Lua configuration animates with; `bezier`
+// and `speed` are what the legacy one does (and what a leaf without a spring
+// uses in both). `popin 87%` is enough travel to be seen: Hyprland's own
+// table uses 87 % too, and 96 % was a window that barely moved.
+var BASE = [
+    { leaf: "windows", speed: 2.0, spring: "buchhwinSpatial", bezier: "buchhwinSpring", style: "popin 87%" },
+    { leaf: "windowsOut", speed: 1.7, spring: "buchhwinSpatialFast", bezier: "buchhwinFast", style: "popin 87%" },
+    { leaf: "windowsMove", speed: 2.0, spring: "buchhwinSpatial", bezier: "buchhwinFast", style: "" },
+    { leaf: "fade", speed: 1.7, spring: "buchhwinEffects", bezier: "buchhwinFast", style: "" },
+    { leaf: "layers", speed: 1.7, spring: "", bezier: "buchhwinStandard", style: "fade" },
+    { leaf: "layersOut", speed: 1.5, spring: "", bezier: "buchhwinAccel", style: "fade" },
+    { leaf: "workspaces", speed: 2.2, spring: "buchhwinSpatial", bezier: "buchhwinFast", style: "slidefade 10%" },
+    { leaf: "specialWorkspace", speed: 2.0, spring: "buchhwinSpatialSlow", bezier: "buchhwinFast", style: "slidefadevert 15%" },
+    { leaf: "border", speed: 2.0, spring: "buchhwinEffectsSlow", bezier: "buchhwinFast", style: "" },
+    // Off in every mode: a border that cycles its hue forever is motion with
+    // nothing to say.
+    { leaf: "borderangle", speed: 1, spring: "", bezier: "buchhwinFast", style: "", off: true }
+]
+
+// How the shell's three animation modes read on the compositor. Only the
 // durations are scaled and only `borderangle` and the two pointer-driven
 // `misc` flags are switched: which style string means "less movement" differs
 // per leaf and guessing at it would be cosmetic invention, so the modes stay
@@ -60,21 +83,31 @@ function plan(mode) {
 // has to mean the same thing on both sides of the session or the desktop
 // moves at two rhythms at once.
 //
-// And so does the floor: without it the shell kept its ten frames while the
-// compositor did not, so at 1.5x a window closed in 93 ms - five and a half
-// frames of a 4 % scale change, which is not a motion anybody can see. The
-// old `Math.max(0.1, ...)` was a floor of ten milliseconds, which is to say
-// none at all. AnimationLogic.travelSpeed is the real one.
+// And so does the floor - six frames, AnimationLogic.travelSpeed - or the
+// shell would keep its frames while the compositor rushed a window through
+// fewer than anybody can see. It applies to the bezier leaves; a spring has no
+// duration and is scaled in `curves()` instead.
 function entries(mode, speed) {
     const wanted = plan(mode)
-    const pace = Math.max(0.25, Number(speed) || 1)
+    const pace = Anim.speed(speed === undefined ? 1 : speed)
     return BASE.map(entry => ({
         leaf: entry.leaf,
         enabled: wanted.enabled && !entry.off,
         speed: Math.max(0.1, Math.round(Anim.travelSpeed(entry.speed, wanted.factor / pace, wanted.moving) * 100) / 100),
+        spring: entry.spring,
         bezier: entry.bezier,
         style: entry.style
     }))
+}
+
+// The springs as one mode wants them at one speed. A spring ignores the
+// leaf's `speed`, so the pace is put into the spring: faster by `scale`
+// means stiffer by scale² and damped by scale, which is the same motion
+// played faster. Reduced is faster again, the way its durations are shorter.
+function curves(mode, speed) {
+    const wanted = plan(mode)
+    const scale = Anim.speed(speed === undefined ? 1 : speed) / (wanted.factor > 0 ? wanted.factor : 1)
+    return SPRINGS.map(curve => Anim.scaleSpring(curve, scale))
 }
 
 function pointerAnimated(mode) {

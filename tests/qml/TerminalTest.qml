@@ -6,7 +6,7 @@ import "../../services/terminal/TerminalLogic.js" as L
 ShellRoot {
     Component.onCompleted: {
         const base = {
-            fontFamily: "JetBrains Mono", fontSize: 11, opacity: 0.86, padding: 12, cursorShape: "beam", cursorBlink: true,
+            fontFamily: "JetBrainsMono Nerd Font", fontSize: 11, opacity: 0.8, padding: 10, cursorShape: "beam", cursorBlink: true,
             promptColor: "shell", errorColor: "#f07178", symbol: "❯", errorSymbol: "❯", gitSymbol: "󰊢",
             username: true, hostname: true, directory: true, git: true, gitStatus: true, python: false, nodejs: false,
             docker: false, commandDuration: true, jobs: true, time: false, twoLine: true, newline: true,
@@ -35,13 +35,17 @@ ShellRoot {
         T.ok(kitty.indexOf("font_size 20.0") >= 0 && kitty.indexOf("background_opacity 0.50") >= 0, "kitty values clamped")
         T.ok(kitty.indexOf("cursor_shape beam") >= 0 && kitty.indexOf("cursor_blink_interval 0\n") >= 0, "cursor shape validated, blink off")
         const soft = L.kittyConf(Object.assign({}, base, { cursorBlink: true, cursorBlinkStyle: "soft", cursorTrail: "short" }), "#62d394")
-        T.ok(soft.indexOf("cursor_blink_interval 0.6 ease-in-out") >= 0, "a soft blink carries an easing function")
+        T.ok(soft.indexOf("cursor_blink_interval 0.5 ease-in-out") >= 0, "a soft blink carries an easing function")
         T.ok(soft.indexOf("cursor_trail 3") >= 0 && soft.indexOf("cursor_trail_color #62d394") >= 0, "the trail follows the accent")
         const hard = L.kittyConf(Object.assign({}, base, { cursorBlink: true, cursorBlinkStyle: "hard", cursorTrail: "off" }), "#62d394")
-        T.ok(hard.indexOf("cursor_blink_interval 0.6\n") >= 0, "a hard blink has no easing")
+        T.ok(hard.indexOf("cursor_blink_interval 0.5\n") >= 0, "a hard blink has no easing")
         T.ok(hard.indexOf("cursor_trail 0") >= 0 && hard.indexOf("cursor_trail_decay") < 0, "no trail, no decay line")
         T.ok(L.kittyConf(Object.assign({}, base, { cursorTrail: "evil; rm -rf ~" }), "#62d394").indexOf("cursor_trail 3") >= 0, "an unknown trail falls back")
         T.eq(kitty.split("\n").filter(line => line.startsWith("include")).length, 0, "font family cannot inject directives")
+        // Defaults follow the Alacritty setup when a value is missing.
+        const bare = L.kittyConf({}, "#62d394")
+        T.ok(bare.indexOf("font_family JetBrainsMono Nerd Font") >= 0 && bare.indexOf("background_opacity 0.80") >= 0
+             && bare.indexOf("window_padding_width 10") >= 0, "missing values fall back to the Alacritty defaults")
 
         T.eq(L.ansiToRich("\x1b[1;38;2;79;143;247mme\x1b[0m <a>"), "<font color=\"#4f8ff7\"><b>me</b></font>&nbsp;&lt;a&gt;", "ANSI colour and bold to rich text")
         T.eq(L.ansiToRich("%{\x1b[31m%}x%{\x1b[0m%}\ny"), "<font color=\"#f07178\">x</font><br>y", "zsh wrappers removed, basic colours, line break")

@@ -34,6 +34,11 @@
 var columns = 4
 var rows = 8
 
+// `maxW`/`maxH` is a ceiling of the block's own, under the grid's; the file
+// is lowered to it on load, the way the result list is raised to its floor.
+// Nobody names one at the moment: the search field had one of a single row
+// for a day (a field is one line of text) and lost it again on the user's
+// word (2026-10-13) - how tall the search block is, is theirs to drag.
 var catalogue = [
     { type: "search", label: "Search field", icon: "", w: 3, h: 1, minW: 1, minH: 1 },
     { type: "modes", label: "Modes", icon: "", w: 1, h: 1, minW: 1, minH: 1 },
@@ -70,6 +75,13 @@ function size(type) {
 
 function minSize(type) {
     return Fit.minSize(entry(type))
+}
+
+// The largest cell a block may be pulled to: the grid, unless the entry names
+// a lower ceiling of its own (the search field's one row).
+function maxSize(type) {
+    const found = entry(type) || {}
+    return { w: Math.min(columns, found.maxW || columns), h: Math.min(rows, found.maxH || rows) }
 }
 
 // **The search field is the one block that may not be taken off.** A launcher

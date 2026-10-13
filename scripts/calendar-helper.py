@@ -104,8 +104,9 @@ try:
     from AkonadiCore import Akonadi
 except ImportError as error:  # pragma: no cover - environment check
     print(json.dumps({"ok": False,
-                      "error": "python3-kf6-kcoreaddons and python3-kf6-kcalendarcore "
-                               "are missing", "detail": str(error)}))
+                      "error": "the Akonadi Python bindings are missing (Fedora: python3-kf6-kcoreaddons "
+                               "and python3-kf6-kcalendarcore; openSUSE Leap does not package them)",
+                      "detail": str(error)}))
     sys.exit(1)
 
 

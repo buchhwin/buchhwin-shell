@@ -81,8 +81,8 @@ Item {
         color: root.style === "underline" ? Colors.accent : Colors.segmentSelected
         border.width: root.style === "underline" ? 0 : Metrics.borderWidth
         border.color: Colors.border
-        Behavior on x { NumberAnimation { duration: Animations.move(Animations.control); easing.type: Animations.easing } }
-        Behavior on width { NumberAnimation { duration: Animations.move(Animations.control); easing.type: Animations.easing } }
+        Behavior on x { enabled: Animations.motionEnabled; SpringMotion { kind: "fast" } }
+        Behavior on width { enabled: Animations.motionEnabled; SpringMotion { kind: "fast" } }
     }
 
     RowLayout {

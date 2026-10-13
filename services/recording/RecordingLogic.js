@@ -11,7 +11,6 @@ var MODES = ["region", "screen", "window"]
 var AUDIO_MODES = ["off", "desktop", "desktop+mic"]
 var FPS_CHOICES = [30, 60]
 var GSR_FLATPAK = "com.dec05eba.gpu_screen_recorder"
-var INSTALL_HINT = "sudo dnf install wf-recorder"
 
 function validMode(mode) {
     return MODES.indexOf(mode) >= 0
@@ -185,6 +184,8 @@ function parseStopResult(text) {
     return { ok: false, file: "", message: last }
 }
 
-function missingNotification() {
-    return { title: "Screen recording needs wf-recorder", body: "Install with: " + INSTALL_HINT }
+// installHint: DistroService.installHint("wf-recorder"), so the command
+// matches the distribution.
+function missingNotification(installHint) {
+    return { title: "Screen recording needs wf-recorder", body: String(installHint || "") }
 }

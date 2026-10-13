@@ -491,7 +491,7 @@ ShellPanel {
                 id: locationField
                 Layout.fillWidth: true
                 focusOnTab: true
-                icon: "󰍎"
+                icon: Icons.location
                 placeholder: "Location (optional)"
                 onTextChanged: root.update({ location: text })
                 onAccepted: root.submit()

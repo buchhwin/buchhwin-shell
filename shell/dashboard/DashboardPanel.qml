@@ -260,7 +260,7 @@ ShellPanel {
             // being cut off at its own baseline, and the date shortens with
             // it - the same ladder the date widget has always had.
             readonly property bool tiny: fitClass === "icon"
-            readonly property bool short: fitClass === "small" || fitClass === "wide"
+            readonly property bool compact: fitClass === "small" || fitClass === "wide"
             CardSection {
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -273,7 +273,7 @@ ShellPanel {
                     color: Colors.text
                     font.family: Typography.family
                     font.pixelSize: clockBody.tiny ? Typography.headlineSize
-                        : clockBody.short ? Typography.displaySize : Typography.dashboardClockSize
+                        : clockBody.compact ? Typography.displaySize : Typography.dashboardClockSize
                     font.weight: Typography.light
                     font.features: { "tnum": 1 }
                     renderType: Typography.renderType
@@ -282,8 +282,8 @@ ShellPanel {
                     Layout.fillWidth: true
                     visible: !clockBody.tiny
                     text: SettingsService.locale.toString(clock.date,
-                        clockBody.short ? "ddd, MMM d" : "dddd, MMMM d")
-                    role: clockBody.short ? "small" : "headline"
+                        clockBody.compact ? "ddd, MMM d" : "dddd, MMMM d")
+                    role: clockBody.compact ? "small" : "headline"
                     font.weight: Typography.light
                 }
             }

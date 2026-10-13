@@ -93,7 +93,8 @@ ShellRoot {
         T.eq(R.parseStopResult("saved /v/Recording_1.mp4\n"), { ok: true, file: "/v/Recording_1.mp4", message: "" }, "saved")
         T.eq(R.parseStopResult("failed No recording is running\n"), { ok: false, file: "", message: "No recording is running" }, "failed")
         T.eq(R.baseName("/v/Recording_1.mp4"), "Recording_1.mp4", "base name")
-        T.eq(R.missingNotification(), { title: "Screen recording needs wf-recorder", body: "Install with: sudo dnf install wf-recorder" },
+        T.eq(R.missingNotification("Install with: sudo dnf install wf-recorder"),
+             { title: "Screen recording needs wf-recorder", body: "Install with: sudo dnf install wf-recorder" },
              "install hint")
         T.finish("RecordingTest")
     }

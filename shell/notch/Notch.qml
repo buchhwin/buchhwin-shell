@@ -8,8 +8,9 @@ import qs.services
 import "../../services/notch/NotchLogic.js" as Logic
 
 // Desktop mode "notch": a black notch at the top centre of every screen, like
-// a MacBook notch, showing only the time (and a recording indicator). Hovering
-// it morphs the shape into a small overview (NotchOverview). The surface is
+// a MacBook notch, showing what its strip is given (the time, by default, and
+// a recording indicator). Hovering or clicking it - as notch.hoverMode says -
+// morphs the shape into a small overview (NotchOverview). The surface is
 // sized for the expanded shape; input only reaches the shape, so clicks next
 // to it go to the windows below. Panels opened by hotkeys appear centred
 // below the collapsed notch (LayoutService.clockRect).
@@ -45,7 +46,7 @@ Variants {
 
         // Expansion: hover (after a short delay) or IPC; a panel opening closes it.
         property bool hoverExpanded: false
-        readonly property bool wantExpanded: active && (hoverExpanded || NotchService.forcedScreen === screenName)
+        readonly property bool wantExpanded: active && (hoverExpanded || NotchService.forcedScreens.indexOf(screenName) >= 0)
         // Shape target and content visibility, staged so the content fades in
         // after the shape grows and out before it shrinks.
         property bool expanded: false
@@ -54,8 +55,8 @@ Variants {
         // Measured from the strip the user arranged, never below the minimum
         // and never wider than the expanded shape.
         readonly property real collapsedWidth: Logic.collapsedWidth(strip.implicitWidth,
-            NotchService.storedCollapsedWidth, Metrics.notchMinWidth, expandedWidth, Metrics.notchPadding)
-        readonly property real contentHeight: overviewLoader.item ? overviewLoader.item.implicitHeight : Metrics.notchHeight
+            NotchService.storedCollapsedWidth, Metrics.notchMinWidth, expandedWidth, NotchService.bodyPadding)
+        readonly property real contentHeight: overviewLoader.item ? overviewLoader.item.implicitHeight : NotchService.bodyHeight
         // The size the overview was dragged to, bounded by the surface. The
         // height is a floor: what the grid needs always wins, or an item would
         // be cut off with no way to reach it.
@@ -72,9 +73,15 @@ Variants {
         // The body may use the whole surface but its bottom margin, so the
         // clamp and the surface can never drift apart.
         readonly property real maxBodyHeight: Metrics.notchSurfaceHeight - Metrics.spaceXl
-        NotchValue { id: bodyHeight; minimum: Metrics.notchHeight; to: window.expanded ? window.overviewHeight : Metrics.notchHeight }
+        // The collapsed height and radius are the user's (NotchService.body*:
+        // the theme's tokens unless a preset - Classic - says otherwise); the
+        // expanded shape keeps the theme's own.
+        NotchValue { id: bodyHeight; minimum: NotchService.bodyHeight; to: window.expanded ? window.overviewHeight : NotchService.bodyHeight }
         NotchValue { id: bodyEar; minimum: Metrics.notchEar; to: window.expanded ? Metrics.notchExpandedEar : Metrics.notchEar }
-        NotchValue { id: bodyRadius; minimum: Metrics.notchRadius; to: window.expanded ? Metrics.notchExpandedRadius : Metrics.notchRadius }
+        NotchValue { id: bodyRadius; minimum: NotchService.bodyRadius; to: window.expanded ? Metrics.notchExpandedRadius : NotchService.bodyRadius }
+        // The body's geometry, shared by the outline, the pill and the shadow.
+        readonly property var bodyShape: Logic.geometry(window.width / 2,
+            bodyWidth.value, bodyHeight.value, bodyEar.value, bodyRadius.value)
 
         screen: modelData
         visible: active && !remapping
@@ -86,7 +93,7 @@ Variants {
         // "no reserve" is a zone of 0 rather than ExclusionMode.Ignore.
         exclusionMode: ExclusionMode.Normal
         exclusiveZone: NotchService.reserve
-            ? Logic.reserveHeight(NotchService.shape, Metrics.notchHeight,
+            ? Logic.reserveHeight(NotchService.shape, NotchService.bodyHeight,
                                   Metrics.notchPillMargin, Metrics.windowGap) : 0
         WlrLayershell.namespace: "buchhwin-notch"
         // Hyprland hides the Top layer under fullscreen windows; "Always show"
@@ -161,7 +168,7 @@ Variants {
             const screenWidth = modelData ? modelData.width : 0
             LayoutService.reportNotchRect(screenName, active && screenWidth > 0
                 ? { x: Math.round((screenWidth - collapsedWidth) / 2), y: shapeTop,
-                    width: Math.round(collapsedWidth), height: Metrics.notchHeight }
+                    width: Math.round(collapsedWidth), height: NotchService.bodyHeight }
                 : null)
         }
 
@@ -186,16 +193,25 @@ Variants {
         function openPanel(panelId, args) {
             hoverExpanded = false
             openTimer.stop()
-            if (NotchService.forcedScreen === screenName) NotchService.collapse()
+            NotchService.collapse(screenName)
             PanelService.open(panelId, Object.assign({}, args || {}, { anchorX: modelData.width / 2 }))
         }
 
+        function remap() {
+            if (!visible) return
+            remapping = true
+            remapTimer.restart()
+        }
         Connections {
             target: NotchService
-            function onReserveChanged() {
-                if (!window.visible) return
-                window.remapping = true
-                remapTimer.restart()
+            function onReserveChanged() { window.remap() }
+            // The body height is part of the zone, so a preset that changes
+            // it (Classic's 32 for Island's 40) maps the surface again too
+            // while space is reserved - and the rectangle the panels align to
+            // is reported again either way.
+            function onBodyHeightChanged() {
+                if (NotchService.reserve) window.remap()
+                window.reportPlace()
             }
         }
         Timer {
@@ -210,28 +226,26 @@ Variants {
                 if (PanelService.active.length === 0) return
                 window.hoverExpanded = false
                 openTimer.stop()
-                if (!NotchService.arranging && NotchService.forcedScreen === window.screenName)
-                    NotchService.collapse()
+                if (!NotchService.arranging) NotchService.collapse(window.screenName)
             }
         }
 
         Timer {
             id: openTimer
-            interval: Animations.notchHoverDelay
+            interval: NotchService.openDelay
             onTriggered: if (hover.hovered && PanelService.active.length === 0) window.hoverExpanded = true
         }
         Timer {
             id: closeTimer
-            interval: Animations.notchLeaveDelay
+            interval: NotchService.closeDelay
             // Leaving undoes what the hover did, not what somebody else did.
-            // The layout editor holds the notch open through `forcedScreen`,
+            // The layout editor holds the notch open through `forcedScreens`,
             // and it covers the notch with its own surface - so opening the
             // editor while the notch was hovered sends a leave, and clearing
-            // `forcedScreen` here closed the very thing being arranged.
+            // the forced screen here closed the very thing being arranged.
             onTriggered: if (!hover.hovered) {
                 window.hoverExpanded = false
-                if (!NotchService.arranging && NotchService.forcedScreen === window.screenName)
-                    NotchService.collapse()
+                if (!NotchService.arranging) NotchService.collapse(window.screenName)
             }
         }
         Timer {
@@ -251,17 +265,37 @@ Variants {
         // a Shape through a layer and a blur on each of them is the cost
         // ShellPanel avoids the same way. The ears are left out - they are
         // concave cuts into the top edge, where there is nothing to fall on.
+        //
+        // A plain rectangle that follows the springs is still a layer and a
+        // blur per frame of the morph. So, as in ShellPanel, the caster takes
+        // the shape the springs are *heading for* - the same target geometry
+        // the input mask is cut from, which changes twice per morph rather
+        // than once per frame - and the effect is scaled and moved onto the
+        // body as it springs. The scale works from the caster's top-left
+        // corner, and the top edge is the one edge the two shapes share, so
+        // only x needs an offset: how far the body's left edge is from the
+        // target's. At rest the two shapes are the same and the picture is
+        // the one drawn before. `staticShadow: false` is the way back to the
+        // per-frame shadow.
+        property bool staticShadow: true
+        readonly property var targetShape: Logic.geometry(window.width / 2,
+            bodyWidth.to, bodyHeight.to, bodyEar.to, bodyRadius.to)
+        readonly property var shadowShape: staticShadow ? targetShape : bodyShape
+        // The caster reaches above the top edge by the corner radius, so the
+        // notch's square top corners cast nothing onto the screen; the pill
+        // is detached and rounded all the way round.
+        readonly property real shadowReach: NotchService.pill ? 0 : NotchService.bodyRadius
         Rectangle {
             id: shadowCaster
             visible: false
-            x: outline.shape.left
-            y: window.shapeTop - (NotchService.pill ? 0 : Metrics.notchRadius)
-            width: Math.max(0, outline.shape.right - outline.shape.left)
-            height: Math.max(0, outline.shape.bottom + (NotchService.pill ? 0 : Metrics.notchRadius))
-            topLeftRadius: NotchService.pill ? outline.shape.radius : 0
-            topRightRadius: NotchService.pill ? outline.shape.radius : 0
-            bottomLeftRadius: outline.shape.radius
-            bottomRightRadius: outline.shape.radius
+            x: window.shadowShape.left
+            y: window.shapeTop - window.shadowReach
+            width: Math.max(0, window.shadowShape.right - window.shadowShape.left)
+            height: Math.max(0, window.shadowShape.bottom + window.shadowReach)
+            topLeftRadius: NotchService.pill ? window.shadowShape.radius : 0
+            topRightRadius: NotchService.pill ? window.shadowShape.radius : 0
+            bottomLeftRadius: window.shadowShape.radius
+            bottomRightRadius: window.shadowShape.radius
             color: Colors.shadow
             layer.enabled: true
         }
@@ -279,6 +313,20 @@ Variants {
             maskEnabled: true
             maskSource: shadowCaster
             maskInverted: true
+            // Scale about the corner, then translate - not `scale`, which
+            // works from the centre and so from the padding too (ShellPanel
+            // has the whole of it): the body's rect over the caster's.
+            transform: [
+                Scale {
+                    origin.x: 0
+                    origin.y: 0
+                    xScale: window.staticShadow
+                        ? (window.bodyShape.right - window.bodyShape.left) / Math.max(1, shadowCaster.width) : 1
+                    yScale: window.staticShadow
+                        ? (window.bodyShape.bottom + window.shadowReach) / Math.max(1, shadowCaster.height) : 1
+                },
+                Translate { x: window.staticShadow ? window.bodyShape.left - shadowCaster.x : 0 }
+            ]
         }
 
         // The outline as path elements instead of a PathSvg: the springs move
@@ -291,51 +339,60 @@ Variants {
 
         Rectangle {
             visible: NotchService.pill
-            x: outline.shape.left
+            x: window.bodyShape.left
             y: window.shapeTop
-            width: Math.max(0, outline.shape.right - outline.shape.left)
-            height: Math.max(0, outline.shape.bottom)
-            radius: Logic.pillRadius(height, Metrics.notchRadius, Metrics.notchExpandedRadius, window.expanded)
+            width: Math.max(0, window.bodyShape.right - window.bodyShape.left)
+            height: Math.max(0, window.bodyShape.bottom)
+            radius: Logic.pillRadius(height, NotchService.bodyRadius, Metrics.notchExpandedRadius, window.expanded)
             color: Colors.notch
         }
 
-        Shape {
-            visible: !NotchService.pill
+        // The outline is built again each time the window is shown. A Shape
+        // drawn by the CurveRenderer keeps its last geometry across an unmap
+        // and map of the layer surface - hidden for a fullscreen window, or
+        // remapped for a reserve change - and paints the body where it was
+        // when the window went away, until the next morph changes the path.
+        // Seen as the notch coming back with its body half off the left edge
+        // while the clock and the shadow, which read the geometry directly,
+        // were in the right place; a hover (a morph) put it right.
+        Loader {
+            active: !NotchService.pill && window.visible
             anchors.fill: parent
-            preferredRendererType: Shape.CurveRenderer
-            ShapePath {
-                id: outline
-                readonly property var shape: Logic.geometry(window.width / 2,
-                    bodyWidth.value, bodyHeight.value, bodyEar.value, bodyRadius.value)
+            sourceComponent: Shape {
+                preferredRendererType: Shape.CurveRenderer
+                ShapePath {
+                    id: outline
+                    readonly property var shape: window.bodyShape
 
-                fillColor: Colors.notch
-                strokeWidth: -1
-                strokeColor: "transparent"
-                startX: outline.shape.left - outline.shape.ear
-                startY: 0
-                // Concave ear into the top edge, down to the bottom corners.
-                PathArc {
-                    x: outline.shape.left; y: outline.shape.ear
-                    radiusX: outline.shape.ear; radiusY: outline.shape.ear
-                    direction: PathArc.Clockwise
-                }
-                PathLine { x: outline.shape.left; y: outline.shape.bottom - outline.shape.radius }
-                PathArc {
-                    x: outline.shape.left + outline.shape.radius; y: outline.shape.bottom
-                    radiusX: outline.shape.radius; radiusY: outline.shape.radius
-                    direction: PathArc.Counterclockwise
-                }
-                PathLine { x: outline.shape.right - outline.shape.radius; y: outline.shape.bottom }
-                PathArc {
-                    x: outline.shape.right; y: outline.shape.bottom - outline.shape.radius
-                    radiusX: outline.shape.radius; radiusY: outline.shape.radius
-                    direction: PathArc.Counterclockwise
-                }
-                PathLine { x: outline.shape.right; y: outline.shape.ear }
-                PathArc {
-                    x: outline.shape.right + outline.shape.ear; y: 0
-                    radiusX: outline.shape.ear; radiusY: outline.shape.ear
-                    direction: PathArc.Clockwise
+                    fillColor: Colors.notch
+                    strokeWidth: -1
+                    strokeColor: "transparent"
+                    startX: outline.shape.left - outline.shape.ear
+                    startY: 0
+                    // Concave ear into the top edge, down to the bottom corners.
+                    PathArc {
+                        x: outline.shape.left; y: outline.shape.ear
+                        radiusX: outline.shape.ear; radiusY: outline.shape.ear
+                        direction: PathArc.Clockwise
+                    }
+                    PathLine { x: outline.shape.left; y: outline.shape.bottom - outline.shape.radius }
+                    PathArc {
+                        x: outline.shape.left + outline.shape.radius; y: outline.shape.bottom
+                        radiusX: outline.shape.radius; radiusY: outline.shape.radius
+                        direction: PathArc.Counterclockwise
+                    }
+                    PathLine { x: outline.shape.right - outline.shape.radius; y: outline.shape.bottom }
+                    PathArc {
+                        x: outline.shape.right; y: outline.shape.bottom - outline.shape.radius
+                        radiusX: outline.shape.radius; radiusY: outline.shape.radius
+                        direction: PathArc.Counterclockwise
+                    }
+                    PathLine { x: outline.shape.right; y: outline.shape.ear }
+                    PathArc {
+                        x: outline.shape.right + outline.shape.ear; y: 0
+                        radiusX: outline.shape.ear; radiusY: outline.shape.ear
+                        direction: PathArc.Clockwise
+                    }
                 }
             }
         }
@@ -374,14 +431,15 @@ Variants {
                 }
             }
 
-            // Collapsed: a click expands (hover off) or opens the dashboard.
+            // Collapsed: a click opens the overview or the dashboard, as the
+            // hover mode and the click action say (NotchLogic.clickResult).
             MouseArea {
                 anchors.fill: parent
                 enabled: !window.expanded
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
-                    if (NotchService.expandOnHover) window.openPanel("dashboard")
-                    else NotchService.expand(window.screenName)
+                    if (NotchService.clickResult === "expand") NotchService.expand(window.screenName)
+                    else window.openPanel("dashboard")
                 }
             }
 
@@ -392,7 +450,7 @@ Variants {
                 id: displayLoader
                 x: (hitArea.width - width) / 2
                 width: Math.max(0, bodyWidth.value)
-                height: Metrics.notchHeight
+                height: NotchService.bodyHeight
                 active: window.displaying || opacity > 0
                 opacity: window.displaying ? 1 : 0
                 visible: opacity > 0
@@ -410,7 +468,7 @@ Variants {
                 id: collapsedContent
                 x: (hitArea.width - width) / 2
                 width: window.collapsedWidth
-                height: Metrics.notchHeight
+                height: NotchService.bodyHeight
                 opacity: window.expanded || window.displaying ? 0 : 1
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: Animations.hover; easing.type: Animations.easing } }

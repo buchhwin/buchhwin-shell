@@ -161,6 +161,22 @@ ShellRoot {
         T.eq(W.poolIsFallback(shelf, anyState, "folder", home, "gone"), true, "and says that is what it did")
         T.eq(W.poolIsFallback(shelf, anyState, "all", home, ""), false, "everything never falls back")
 
+        // The folder: the pictures directory from user-dirs.dirs, so a German
+        // system gets ~/Bilder/Desktop rather than a ~/Pictures that is not there.
+        const dirs = '# written by xdg-user-dirs-update\nXDG_DESKTOP_DIR="$HOME/Schreibtisch"\nXDG_PICTURES_DIR="$HOME/Bilder"\n'
+        T.eq(W.picturesDir(dirs, "/home/u"), "/home/u/Bilder", "pictures directory from $HOME")
+        T.eq(W.picturesDir('XDG_PICTURES_DIR="/data/pics"', "/home/u"), "/data/pics", "an absolute pictures directory")
+        T.eq([W.picturesDir("", "/home/u"), W.picturesDir('XDG_PICTURES_DIR="$(rm -rf ~)"', "/home/u"),
+              W.picturesDir('XDG_PICTURES_DIR="$HOME"', "/home/u")], ["", "", ""], "missing, shell code or bare home is no answer")
+        T.eq(W.defaultFolder("/home/u/Bilder", "/home/u"), "/home/u/Bilder/Desktop", "default follows the pictures directory")
+        T.eq(W.defaultFolder("", "/home/u"), "/home/u/Pictures/Desktop", "and falls back to ~/Pictures")
+        T.eq([W.contractHome("/home/u/Bilder/Desktop", "/home/u"), W.contractHome("/home/uu/x", "/home/u"),
+              W.contractHome("/srv/w", "/home/u")], ["~/Bilder/Desktop", "/home/uu/x", "/srv/w"], "home contracted only at a boundary")
+        T.eq(W.recentFolders(" ~/a, ~/b,,~/a "), ["~/a", "~/b"], "recent folders trimmed and unique")
+        T.eq(W.addRecentFolder("~/a,~/b", "~/b"), "~/b,~/a", "a reused folder moves to the front")
+        T.eq(W.addRecentFolder("~/1,~/2,~/3,~/4,~/5", "~/6").split(",").length, 5, "at most five")
+        T.eq(W.addRecentFolder("~/a", "~/x,y"), "~/a", "a comma would split the list, so it is not stored")
+
         T.finish("WallpaperTest")
     }
 }

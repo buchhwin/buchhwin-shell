@@ -11,6 +11,9 @@
 # configuration is fine. An explicit reload afterwards clears that, which is
 # why this also runs when the caller was started from outside the session (no
 # HYPRLAND_INSTANCE_SIGNATURE) and why it checks the result.
+# Hyprland built into the home directory (openSUSE Leap) on PATH, as in the session.
+# shellcheck source=hyprland-prefix.sh
+if [[ -r "$(dirname -- "${BASH_SOURCE[0]}")/hyprland-prefix.sh" ]]; then source "$(dirname -- "${BASH_SOURCE[0]}")/hyprland-prefix.sh"; fi
 reload_hyprland() {
   command -v hyprctl >/dev/null 2>&1 || return 0
   local signature=${HYPRLAND_INSTANCE_SIGNATURE:-} instances

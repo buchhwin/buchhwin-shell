@@ -35,13 +35,14 @@ Item {
     readonly property real notchWidth: state && state.expanded ? state.width
         : notch ? notch.width : Metrics.notchMinWidth
     readonly property real notchHeight: state && state.expanded ? state.height
-        : notch ? notch.height : Metrics.notchHeight
+        : notch ? notch.height : NotchService.bodyHeight
 
     implicitHeight: hint.y + hint.height
 
     // The notch shows what it would show, so turning a field off is visible
     // where it happens. It goes back to its own behaviour when the editor
-    // closes; `forcedScreen` is the same handle the IPC preview uses.
+    // closes; `forcedScreens` is the same handle the IPC preview uses, one
+    // entry per monitor, so every monitor's editor arranges its own notch.
     // Not `visible` alone: the editor's window is built once and only hidden,
     // so this item is visible from the moment the desktop mode is "notch",
     // whether or not the editor is open. Binding the notch's state to it left
@@ -57,7 +58,7 @@ Item {
         // The strip is arranged on the collapsed notch, the overview on the
         // expanded one, so the editor only holds it open for the second.
         if (active && LayoutService.notchEditZone === "expanded") NotchService.expand(screenName)
-        else if (NotchService.forcedScreen === screenName) NotchService.collapse()
+        else NotchService.collapse(screenName)
     }
 
     Connections {
@@ -69,7 +70,7 @@ Item {
     Component.onCompleted: follow()
     Component.onDestruction: {
         LayoutService.notchEditing = false
-        if (NotchService.forcedScreen === screenName) NotchService.collapse()
+        NotchService.collapse(screenName)
     }
 
     // Where the notch is, so the controls below it line up. The outline
@@ -180,6 +181,9 @@ Item {
             role: "small"; muted: true; wrapMode: Text.Wrap
         }
 
+        ShellText { Layout.fillWidth: true; text: "Presets"; role: "label" }
+        NotchPresetPicker { Layout.fillWidth: true }
+
         // Every option the Bar & Notch page has, not a subset of it: two places
         // that show different halves of one thing are worse than one place.
         // The size is not among them any more - it is dragged on the notch.
@@ -206,16 +210,7 @@ Item {
                 onSelected: value => LayoutService.changeNotch("notch.eventCount", Number(value))
             }
         }
-        SettingRow {
-            Layout.fillWidth: true
-            labelFills: true
-            label: "Expand on hover"
-            hint: "Otherwise a click opens the overview"
-            ShellToggle {
-                checked: SettingsService.value("notch.expandOnHover")
-                onToggled: value => LayoutService.changeNotch("notch.expandOnHover", value)
-            }
-        }
+        NotchHoverRows { Layout.fillWidth: true }
         SettingRow {
             Layout.fillWidth: true
             labelFills: true

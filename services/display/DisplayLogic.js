@@ -32,6 +32,32 @@ function validScale(value) {
     return isFinite(scale) && scale >= SCALE_MIN && scale <= SCALE_MAX
 }
 
+// The scale Hyprland actually runs a mode at. A scale that does not divide
+// the mode into whole logical pixels is corrected by the compositor
+// (src/output/Monitor.cpp, applyMonitorRule): it is taken to the nearest
+// 1/120, and if that still leaves a fraction, the first multiple of 1/120
+// above or below that gives whole numbers wins - up before down at each
+// distance, up to 89 steps. The rule still sends the two-decimal value;
+// the geometry has to use what Hyprland makes of it, or every position
+// computed from the shell's width is wrong by the difference. 1.67 on a 4K
+// screen is 200/120 and 2304 wide, not 2299: the shell wrote x = 2299 for
+// the next monitor on 2026-10-09, five pixels inside its neighbour, and its
+// own overlap check, built on the same width, saw nothing.
+function effectiveScale(scale, width, height) {
+    const asked = Number(scale) || 1
+    const w = Number(width) || 0, h = Number(height) || 0
+    if (w <= 0 || h <= 0) return asked
+    const whole = s => (w / s) === Math.round(w / s) && (h / s) === Math.round(h / s)
+    if (whole(asked)) return asked
+    const search = Math.round(asked * 120)
+    if (whole(search / 120)) return search / 120
+    for (let i = 1; i < 90; ++i) {
+        if (whole((search + i) / 120)) return (search + i) / 120
+        if (search - i > 0 && whole((search - i) / 120)) return (search - i) / 120
+    }
+    return asked
+}
+
 function modeKey(width, height, refresh) {
     return width + "x" + height + "@" + round2(refresh).toFixed(2)
 }
@@ -90,11 +116,13 @@ function scaleChoices(current) {
     return list.sort((a, b) => a - b)
 }
 
-// Size in layout (logical) pixels, honouring scale and rotation.
+// Size in layout (logical) pixels, honouring scale and rotation - at the
+// scale Hyprland runs the mode at (effectiveScale), rounded the way it rounds.
 function logicalSize(monitor) {
     const rotated = monitor.transform % 2 === 1
-    const width = (rotated ? monitor.height : monitor.width) / (monitor.scale || 1)
-    const height = (rotated ? monitor.width : monitor.height) / (monitor.scale || 1)
+    const scale = effectiveScale(monitor.scale || 1, monitor.width, monitor.height)
+    const width = (rotated ? monitor.height : monitor.width) / scale
+    const height = (rotated ? monitor.width : monitor.height) / scale
     return { width: Math.round(width), height: Math.round(height) }
 }
 
@@ -154,7 +182,57 @@ function snap(monitors, name, x, y, threshold) {
         for (const candidate of xs) if (Math.abs(candidate - x) < dx) { dx = Math.abs(candidate - x); bestX = candidate }
         for (const candidate of ys) if (Math.abs(candidate - y) < dy) { dy = Math.abs(candidate - y); bestY = candidate }
     }
-    return { x: dx <= threshold ? bestX : Math.round(x), y: dy <= threshold ? bestY : Math.round(y) }
+    return placeApart(monitors, name, dx <= threshold ? bestX : Math.round(x), dy <= threshold ? bestY : Math.round(y))
+}
+
+// A place for the monitor that overlaps nobody: from `x`,`y`, the monitor is
+// moved out of every enabled monitor it would cover, each time along the
+// axis that needs the smaller move and towards the side its centre is on,
+// until it is clear. Dropped half onto a neighbour it pops out to that
+// neighbour's edge; dropped squarely onto one it lands below or beside it,
+// whichever is nearer. Hyprland keeps explicit positions exactly as given
+// and only warns about an overlap, with input landing on the wrong screen,
+// so no position may leave here overlapping.
+function placeApart(monitors, name, x, y) {
+    const target = monitors.find(monitor => monitor.name === name)
+    let px = Math.round(x), py = Math.round(y)
+    if (!target) return { x: px, y: py }
+    const size = logicalSize(target)
+    for (let pass = 0; pass < 8; ++pass) {
+        let moved = false
+        for (const other of monitors) {
+            if (other.name === name || other.disabled) continue
+            const o = logicalSize(other)
+            const overlapX = Math.min(px + size.width, other.x + o.width) - Math.max(px, other.x)
+            const overlapY = Math.min(py + size.height, other.y + o.height) - Math.max(py, other.y)
+            if (overlapX <= 0 || overlapY <= 0) continue
+            if (overlapX <= overlapY) px += px + size.width / 2 < other.x + o.width / 2 ? -overlapX : overlapX
+            else py += py + size.height / 2 < other.y + o.height / 2 ? -overlapY : overlapY
+            moved = true
+        }
+        if (!moved) break
+    }
+    return { x: px, y: py }
+}
+
+// The whole layout without overlaps: enabled monitors are placed one after
+// another, left to right and top to bottom, each pushed out of the ones
+// already placed (placeApart). A clean layout comes back unchanged. This is
+// what a saved file goes through on load - positions summed from the
+// shell's old, too-short widths come back five pixels apart from each other
+// - and what a resolution, scale or rotation change goes through, since
+// those change a monitor's size under its neighbours.
+function spread(monitors) {
+    const result = monitors.slice()
+    const order = result.map((monitor, index) => index).filter(index => !result[index].disabled)
+        .sort((a, b) => result[a].x - result[b].x || result[a].y - result[b].y)
+    const placed = []
+    for (const index of order) {
+        const position = placeApart(placed.concat([result[index]]), result[index].name, result[index].x, result[index].y)
+        result[index] = Object.assign({}, result[index], position)
+        placed.push(result[index])
+    }
+    return result
 }
 
 // Move a monitor by whole steps with the arrow keys, then let `snap` finish
@@ -180,7 +258,10 @@ function nudge(monitors, name, dx, dy, step, threshold) {
                 Math.max(0, Number(threshold) || 0))
 }
 
-// True when enabled monitors overlap (Hyprland would move them itself).
+// True when enabled monitors overlap. Hyprland does not move them: explicit
+// positions are kept as given, a warning is shown, and input lands on the
+// wrong screen - which is why the page refuses to apply such a layout and
+// every move goes through placeApart.
 function overlapping(monitors) {
     const enabled = monitors.filter(monitor => !monitor.disabled)
     for (let i = 0; i < enabled.length; ++i) {
@@ -229,6 +310,26 @@ function toSaved(monitors) {
     return result
 }
 
+// The saved file with the positions `applySaved` had to correct (spread),
+// and nothing else touched: entries of monitors that are not connected now
+// stay as they are, which is why this does not go through `toSaved`. Null
+// when the file already says what the layout says.
+function repairSaved(saved, monitors) {
+    if (!saved || saved.version !== 1 || !saved.monitors) return null
+    let changed = false
+    const entries = {}
+    for (const name in saved.monitors) entries[name] = Object.assign({}, saved.monitors[name])
+    for (const monitor of monitors) {
+        const entry = entries[monitor.name]
+        if (!entry || monitor.disabled) continue
+        if (Number(entry.x) === monitor.x && Number(entry.y) === monitor.y) continue
+        entry.x = monitor.x
+        entry.y = monitor.y
+        changed = true
+    }
+    return changed ? { version: 1, monitors: entries } : null
+}
+
 // Monitors with saved settings applied (only connected ones; never disables
 // every monitor).
 function applySaved(monitors, saved) {
@@ -252,5 +353,8 @@ function applySaved(monitors, saved) {
             disabled: entry.disabled === true
         })
     })
-    return enabledCount(next) > 0 ? next : monitors
+    // Spread, because the positions in the file may have been computed from
+    // widths that were wrong (effectiveScale), and because a mode or scale
+    // changed by hand in the file changes a size under its neighbours.
+    return enabledCount(next) > 0 ? spread(next) : monitors
 }

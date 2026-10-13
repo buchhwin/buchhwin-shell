@@ -125,6 +125,12 @@ ShellPanel {
                 icon: Icons.folder; text: "Folder"; compact: true
                 onClicked: { Quickshell.execDetached(["xdg-open", WallpaperService.folder]); PanelService.close("wallpaperPicker") }
             }
+            // The KDE folder dialog is a window of its own; the picker holds
+            // the keyboard, so it steps aside rather than sit on top of it.
+            ShellButton {
+                icon: Icons.edit; text: "Change"; compact: true
+                onClicked: { PanelService.close("wallpaperPicker"); WallpaperService.chooseFolder() }
+            }
         }
 
         // One chip per subfolder of the wallpaper folder, which is how the
@@ -191,7 +197,14 @@ ShellPanel {
             clip: true
             cellWidth: Math.floor(width / root.columns)
             cellHeight: Math.round(cellWidth * 9 / 16) + Metrics.rowHeight
-            model: root.items
+            // Only while the panel is on screen. The panel's body exists from
+            // start and hides rather than closes, and every thumbnail is a
+            // decoded image plus two layers and a mask effect: a folder of
+            // forty wallpapers held 15-30 MB for a picker nobody had open.
+            // `shown` goes false after the close animation, so the grid is
+            // still there while the card fades out, and comes back before
+            // the open selects (ShellPanel sets it first).
+            model: root.shown ? root.items : []
             boundsBehavior: Flickable.StopAtBounds
             // One direction only: the view is the owner, `root.currentIndex`
             // is what everything else reads.

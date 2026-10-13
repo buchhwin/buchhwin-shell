@@ -59,22 +59,10 @@ Item {
     // is sized, a glide would trail the corner being pulled.
     readonly property bool glides: Animations.motionEnabled && !item.dragging
         && !item.sizing && (!item.area || item.area.gliding)
-    Behavior on x {
-        enabled: item.glides
-        NumberAnimation { duration: Animations.reorder; easing.type: Animations.easing }
-    }
-    Behavior on y {
-        enabled: item.glides
-        NumberAnimation { duration: Animations.reorder; easing.type: Animations.easing }
-    }
-    Behavior on width {
-        enabled: item.glides
-        NumberAnimation { duration: Animations.reorder; easing.type: Animations.easing }
-    }
-    Behavior on height {
-        enabled: item.glides
-        NumberAnimation { duration: Animations.reorder; easing.type: Animations.easing }
-    }
+    Behavior on x { enabled: item.glides; SpringMotion {} }
+    Behavior on y { enabled: item.glides; SpringMotion {} }
+    Behavior on width { enabled: item.glides; SpringMotion {} }
+    Behavior on height { enabled: item.glides; SpringMotion {} }
 
     onContentHeightChanged: if (area) area.reportHeight(itemId, contentHeight)
     Component.onCompleted: if (area) area.reportHeight(itemId, contentHeight)

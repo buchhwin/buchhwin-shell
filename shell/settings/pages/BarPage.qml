@@ -65,6 +65,12 @@ ColumnLayout {
         visible: LayoutService.notchShown
 
         SettingRow {
+            Layout.fillWidth: true
+            label: "Preset"
+            hint: "A whole notch at once - what it shows and how it opens. Save your own from the notch as it is now."
+            NotchPresetPicker { Layout.fillWidth: true }
+        }
+        SettingRow {
             label: "Size"
             hint: "Drag the notch itself in the layout editor (Super+Alt+E): the strip sideways, the hover overview in both directions"
             ShellButton {
@@ -105,7 +111,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 current: String(SettingsService.value("notch.eventCount"))
                 options: [{ value: "1", label: "1" }, { value: "2", label: "2" }, { value: "3", label: "3" }, { value: "4", label: "4" }]
-                onSelected: value => SettingsService.set("notch.eventCount", Number(value))
+                onSelected: value => LayoutService.changeNotch("notch.eventCount", Number(value))
             }
         }
 
@@ -139,19 +145,16 @@ ColumnLayout {
             role: "small"; muted: true; wrapMode: Text.Wrap
         }
 
-        SettingRow {
-            Layout.fillWidth: true
-            labelFills: true
-            label: "Expand on hover"
-            hint: "Otherwise a click opens the overview"
-            ShellToggle { focusOnTab: true; checked: SettingsService.value("notch.expandOnHover"); onToggled: value => SettingsService.set("notch.expandOnHover", value) }
-        }
+        NotchHoverRows { Layout.fillWidth: true }
+        // Notch options take an undo step (LayoutService.changeNotch), the
+        // same as the editor's rows for them and the hover rows above: an
+        // undo in the editor must reach a change made on this page too.
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
             label: "Reserve space for windows"
             hint: "Windows start below the notch instead of behind it"
-            ShellToggle { focusOnTab: true; checked: SettingsService.value("notch.reserve"); onToggled: value => SettingsService.set("notch.reserve", value) }
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("notch.reserve"); onToggled: value => LayoutService.changeNotch("notch.reserve", value) }
         }
         SettingRow {
             label: "In fullscreen"
@@ -160,7 +163,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 current: SettingsService.value("notch.fullscreen")
                 options: [{ value: "hide", label: "Hide" }, { value: "show", label: "Always show" }]
-                onSelected: value => SettingsService.set("notch.fullscreen", value)
+                onSelected: value => LayoutService.changeNotch("notch.fullscreen", value)
             }
         }
     }
@@ -351,7 +354,7 @@ ColumnLayout {
                 focusOnTab: true
                 Layout.fillWidth: true
                 current: SettingsService.value("workspaces.style")
-                options: [{ value: "numbers", label: "Numbers" }, { value: "dots", label: "Dots" },
+                options: [{ value: "numbers", label: "Numbers" }, { value: "dots", label: "Dots" }, { value: "pills", label: "Pills" },
                           { value: "activeDot", label: "Dot for the active one" }]
                 onSelected: value => SettingsService.set("workspaces.style", value)
             }

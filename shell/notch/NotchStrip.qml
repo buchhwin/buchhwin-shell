@@ -11,10 +11,38 @@ import "../../services/notch/NotchLogic.js" as Logic
 // handed the notch's colours because the notch is black in both themes.
 //
 // Its width is measured, not computed: what the strip carries is a list now,
-// not a clock with an optional chip beside it.
+// not a clock with an optional chip beside it. Measured around the clock,
+// when there is one: the notch is centred on the screen, and the time should
+// be too, so the lighter side is padded to the heavier one's width
+// (NotchLogic.stripSymmetry) rather than the row simply being centred. The
+// lighter side's padding is split: half of it outside the group, half between
+// the group and the clock, so the group stands in the middle of its half.
 Item {
     id: root
     property real scaleFactor: 1
+    // Where the clock sits inside the row, written by its delegate. Stale
+    // values do no harm: `hasClock` is read from the list itself.
+    property real clockX: -1
+    property real clockWidth: 0
+    readonly property bool hasClock: items.some(item => item && item.type === "clock")
+    readonly property int clockIndex: items.findIndex(item => item && item.type === "clock")
+    readonly property var symmetry: Logic.stripSymmetry(row.implicitWidth,
+        hasClock ? clockX : -1, hasClock ? clockWidth : 0)
+
+    // The inner halves of the pads, as a shift of the parts: everything from
+    // the clock on moves by half the left pad (the room before the clock),
+    // everything after the clock by half the right pad as well (the room
+    // after it). A shift and not a spacer item in the row, because the row
+    // is what the pads are measured from: a spacer inside it would be
+    // measured with it, and the pad would size the measurement that sizes
+    // the pad - a binding loop, with the log to show for it. The row's `x`
+    // carries the outer half of the left pad (`symmetry.offset`), so the
+    // clock lands where it did: in the middle of the strip.
+    function padShift(index) {
+        if (clockIndex < 0) return 0
+        return (index >= clockIndex ? symmetry.leftPad / 2 : 0)
+             + (index > clockIndex ? symmetry.rightPad / 2 : 0)
+    }
     // The screen this strip is drawn on. Empty means it reports nothing, which
     // is what the copy inside the expanded notch wants while it is not the one
     // on screen.
@@ -25,8 +53,8 @@ Item {
     // one itself - the same rule the pill bar follows for its recording pill.
     readonly property var items: Logic.stripItems(NotchService.collapsedItems, RecordingService.active)
 
-    implicitWidth: row.implicitWidth
-    implicitHeight: Metrics.notchHeight
+    implicitWidth: symmetry.width
+    implicitHeight: NotchService.bodyHeight
 
     SystemClock { id: clock; precision: SystemClock.Minutes }
 
@@ -46,8 +74,10 @@ Item {
 
     function reportRects() {
         if (!screenName.length) return
+        // The whole strip, padding included: a drop beside the lighter side
+        // is a drop on the strip.
         LayoutService.reportSurfaceRect(screenName, "notchzone:collapsed",
-                                        reporting ? screenRect(row) : null)
+                                        reporting ? screenRect(root) : null)
         for (let index = 0; index < items.length; ++index) {
             const id = items[index].id
             if (!id.length) continue
@@ -84,7 +114,12 @@ Item {
 
     Row {
         id: row
-        anchors.centerIn: parent
+        anchors.verticalCenter: parent.verticalCenter
+        // The symmetric strip centred in whatever width the notch gives it,
+        // then the row shifted by the outer half of the left pad; the inner
+        // halves are the parts' own shift (`padShift`), and the two together
+        // put the clock's centre on the strip's centre.
+        x: (root.width - root.symmetry.width) / 2 + root.symmetry.offset
         spacing: Metrics.spaceMd * root.scaleFactor
 
         Repeater {
@@ -92,8 +127,16 @@ Item {
             model: root.items
             Loader {
                 required property var modelData
+                required property int index
+                readonly property bool isClock: modelData.type === "clock"
                 anchors.verticalCenter: parent.verticalCenter
-                onWidthChanged: reportTimer.restart()
+                onWidthChanged: { reportTimer.restart(); if (isClock) root.clockWidth = width }
+                onXChanged: if (isClock) root.clockX = x
+                Component.onCompleted: if (isClock) { root.clockX = x; root.clockWidth = width }
+                // The pad's inner half. `x` stays the row's own, which is what
+                // `clockX` measures; the drawn and the hit-tested place carry
+                // the shift, and so does `screenRect`, which maps through it.
+                transform: Translate { x: root.padShift(index) }
                 sourceComponent: modelData.type === "clock" ? timePart
                     : modelData.type === "recording" ? recordingPart : widgetPart
             }
@@ -166,11 +209,15 @@ Item {
                 // See the overview: three types share one file and are told
                 // apart by `options.metric`.
                 // `screen` as well as `type`; see NotchOverview.
+                // The registry's options, then the item's own on top (a
+                // workspace style chosen for this notch only).
                 item.instance = { id: modelData.id, type: modelData.type,
                                   screen: root.screenName,
-                                  options: entry && entry.options ? entry.options : {} }
+                                  options: Object.assign({}, entry && entry.options ? entry.options : {},
+                                                         modelData.options || {}) }
                 item.scaleFactor = root.scaleFactor
-                item.sizeClass = "small"
+                // "icon": the glyph alone - a battery without its percentage.
+                item.sizeClass = modelData.display === "icon" ? "icon" : "small"
                 // The strip really is a cramped row, so this one stays.
                 item.inGroup = true
                 item.textColor = Colors.notchText

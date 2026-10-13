@@ -204,11 +204,12 @@ function sanitize(config) {
     // A file without it simply gets the default, the way a mode without a
     // `quick` does, so no version bump and no migration step is needed.
     const result = { configVersion: 3, activeProfile: DEFAULT_PROFILE, activeMode: MODE_NAMES[0],
-                     profiles: {}, notch: defaultNotch(), lock: defaultLock(), adopted: [] }
+                     profiles: {}, notch: defaultNotch(), notchPresets: [], lock: defaultLock(), adopted: [] }
     if (!config || typeof config !== "object") return result
     if (Array.isArray(config.adopted))
         result.adopted = config.adopted.filter(name => typeof name === "string" && name.length).map(String)
     if (config.notch) result.notch = sanitizeNotch(config.notch)
+    result.notchPresets = sanitizeNotchPresets(config.notchPresets)
     if (config.lock) result.lock = sanitizeLock(config.lock)
     if (typeof config.activeProfile === "string" && config.activeProfile.length)
         result.activeProfile = config.activeProfile
@@ -551,7 +552,105 @@ function notchTypes(notch, zone) {
 function notchItems(notch, zone) {
     const list = notch && Array.isArray(notch[zone]) ? notch[zone] : []
     return list.map(pill => ({ id: pill.id, type: pill.items[0].type,
-                               w: pill.items[0].w, h: pill.items[0].h }))
+                               w: pill.items[0].w, h: pill.items[0].h,
+                               display: pill.items[0].display, options: pill.items[0].options || {} }))
+}
+
+// ---- notch presets ---------------------------------------------------------
+// A preset is a whole notch: both lists and the options that shape it (size,
+// outline, how it opens, and the collapsed body's height, corner radius and
+// padding - Classic's 32 / 11 / 16 against Island's 40 / 16 / 22). The
+// built-in ones are files in config/notch-presets/ written in a short form;
+// the user's own live in the layout file beside the notch itself, global like
+// it. Applying one is a single undo step (LayoutService.applyNotchPreset).
+var NOTCH_PRESET_OPTIONS = ["shape", "collapsedWidth", "expandedWidth", "expandedHeight",
+                            "hoverMode", "openDelay", "closeDelay", "clickAction", "eventCount",
+                            "bodyHeight", "bodyRadius", "bodyPadding"]
+
+function notchPresetOptions(options) {
+    const result = {}
+    const source = options && typeof options === "object" ? options : {}
+    for (const key of NOTCH_PRESET_OPTIONS) {
+        const value = source[key]
+        if (typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && isFinite(value)))
+            result[key] = value
+    }
+    return result
+}
+
+// The short form of a built-in preset: each list a row of types, or of
+// { type, w, h } where the size matters.
+function notchFromSpec(spec) {
+    const taken = []
+    const zone = list => (Array.isArray(list) ? list : []).map((entry, index) => {
+        const type = typeof entry === "string" ? entry : entry && entry.type
+        if (typeof type !== "string" || !type.length) return null
+        const id = uniqueId("notch-" + type + "-" + (index + 1), taken)
+        taken.push(id)
+        const size = notchSize(type)
+        const w = entry && typeof entry.w === "number" ? entry.w : size.w
+        const h = entry && typeof entry.h === "number" ? entry.h : size.h
+        // "icon" draws a widget as its glyph alone (a battery without its
+        // percentage); options are the widget's own, e.g. a workspace style.
+        const display = entry && typeof entry.display === "string" ? entry.display : "full"
+        const options = entry && entry.options && typeof entry.options === "object" ? entry.options : {}
+        return { id: id, items: [{ type: type, display: display, size: "small", w: w, h: h, options: options }] }
+    }).filter(pill => pill !== null)
+    return sanitizeNotch({ collapsed: zone(spec && spec.collapsed), expanded: zone(spec && spec.expanded) })
+}
+
+// A preset as stored or loaded: null when it has no name to show.
+function sanitizeNotchPreset(preset, builtin) {
+    if (!preset || typeof preset !== "object") return null
+    const label = typeof preset.label === "string" ? preset.label.trim().slice(0, 40) : ""
+    if (!label.length) return null
+    const layout = preset.layout && typeof preset.layout === "object" ? sanitizeNotch(preset.layout) : notchFromSpec(preset)
+    return { id: typeof preset.id === "string" && preset.id.length ? preset.id : Profile.slug(label),
+             label: label, builtin: builtin === true,
+             description: typeof preset.description === "string" ? preset.description.slice(0, 120) : "",
+             layout: layout, options: notchPresetOptions(preset.options) }
+}
+
+function sanitizeNotchPresets(list) {
+    const taken = []
+    const result = []
+    for (const entry of Array.isArray(list) ? list : []) {
+        const preset = sanitizeNotchPreset(entry, false)
+        if (!preset) continue
+        preset.id = uniqueId(preset.id, taken)
+        taken.push(preset.id)
+        result.push(preset)
+    }
+    return result
+}
+
+// The user's own: saved from the notch as it is now. `reserved` holds the ids
+// of the built-in presets, which a custom one must not shadow.
+function addNotchPreset(config, label, notch, options, reserved) {
+    const next = JSON.parse(JSON.stringify(config))
+    const presets = sanitizeNotchPresets(next.notchPresets)
+    const taken = presets.map(preset => preset.id).concat(Array.isArray(reserved) ? reserved : [])
+    const preset = sanitizeNotchPreset({ label: label, layout: notch, options: options }, false)
+    if (!preset) return { config: config, id: "" }
+    preset.id = uniqueId("custom-" + Profile.slug(preset.label), taken)
+    presets.push(preset)
+    next.notchPresets = presets
+    return { config: next, id: preset.id }
+}
+
+function renameNotchPreset(config, id, label) {
+    const text = String(label || "").trim().slice(0, 40)
+    if (!text.length) return config
+    const next = JSON.parse(JSON.stringify(config))
+    next.notchPresets = sanitizeNotchPresets(next.notchPresets).map(preset =>
+        preset.id === id ? Object.assign({}, preset, { label: text }) : preset)
+    return next
+}
+
+function removeNotchPreset(config, id) {
+    const next = JSON.parse(JSON.stringify(config))
+    next.notchPresets = sanitizeNotchPresets(next.notchPresets).filter(preset => preset.id !== id)
+    return next
 }
 
 function copyNotch(notch) {
@@ -661,6 +760,10 @@ const LAUNCHER = {
     defaults: LauncherCatalogue.defaults,
     sizeOf: LauncherCatalogue.size,
     leastOf: LauncherCatalogue.minSize,
+    // A ceiling per type under the grid's, the counterpart of `leastOf`: the
+    // search field stops at one row (see the catalogue), and a file that
+    // stored it taller loads at one, the row going to the result list.
+    mostOf: LauncherCatalogue.maxSize,
     knows: LauncherCatalogue.isKnown,
     // The block that may not be taken off, and that a file without it gets
     // back (see sanitizeTiles).
@@ -738,8 +841,10 @@ function sanitizeTiles(kind, surface) {
                               : zones[kind.zone]
     // The floor the editor applies is applied to the file as well, so a tile
     // written below its catalogue's minimum loads at the minimum rather than
-    // at a size it only stops at once dragged.
-    const tiles = known.map(pill => ({ id: pill.id, items: [raiseToLeast(pill.items[0], tileMinSize(kind, pill.items[0].type))] }))
+    // at a size it only stops at once dragged - and the ceiling likewise, so
+    // a search field stored two rows tall comes back one row tall.
+    const tiles = known.map(pill => ({ id: pill.id, items: [lowerToMost(raiseToLeast(pill.items[0], tileMinSize(kind, pill.items[0].type)),
+                                                                         tileMaxSize(kind, pill.items[0].type))] }))
     if (!tiles.length) return defaultTiles(kind)
     // A block the surface cannot do without - the launcher's search field -
     // goes back in front when a file lost it: `removeTile` refuses to take
@@ -788,13 +893,30 @@ function setTileSize(kind, surface, id, w, h) {
     if (index < 0) return next
     const item = next[kind.zone][index].items[0]
     const least = tileMinSize(kind, item.type)
-    item.w = clamp(Math.round(num(w, item.w)), least.w, kind.maxW || GRID_MAX_W)
-    item.h = clamp(Math.round(num(h, item.h)), least.h, kind.maxH || GRID_MAX_H)
+    const most = tileMaxSize(kind, item.type)
+    item.w = clamp(Math.round(num(w, item.w)), least.w, most.w)
+    item.h = clamp(Math.round(num(h, item.h)), least.h, most.h)
     return sanitizeTiles(kind, next)
 }
 
 function tileMinSize(kind, type) {
     return kind.leastOf ? kind.leastOf(type) : { w: 1, h: 1 }
+}
+
+// The largest cell one tile may be pulled to: the surface's grid, unless its
+// catalogue names a lower ceiling for the type (`mostOf`; only the launcher's
+// search field has one). A surface without `mostOf` stops at the grid, which
+// is where it stopped before this existed.
+function tileMaxSize(kind, type) {
+    const grid = { w: kind.maxW || GRID_MAX_W, h: kind.maxH || GRID_MAX_H }
+    const most = kind.mostOf ? kind.mostOf(type) : {}
+    return { w: Math.min(grid.w, most.w || grid.w), h: Math.min(grid.h, most.h || grid.h) }
+}
+
+function lowerToMost(item, most) {
+    item.w = Math.min(item.w, most.w)
+    item.h = Math.min(item.h, most.h)
+    return item
 }
 
 function moveTile(kind, surface, id, delta) {

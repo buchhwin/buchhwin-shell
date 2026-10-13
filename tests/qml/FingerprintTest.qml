@@ -108,6 +108,18 @@ ShellRoot {
         T.eq(F.systemFingerprint("", 0), null, "and neither is empty output")
         T.eq(F.systemFingerprint("with-fingerprint", 0), null,
              "output that is not authselect's is refused rather than pattern-matched")
+        // openSUSE has no authselect; pam-config writes the line into common-auth.
+        const suse = "#%PAM-1.0\nauth\trequired\tpam_env.so\nauth\tsufficient\tpam_fprintd.so\nauth\trequired\tpam_unix.so\ttry_first_pass\n"
+        const suseOff = "#%PAM-1.0\nauth\trequired\tpam_env.so\n# auth sufficient pam_fprintd.so\nauth\trequired\tpam_unix.so\n"
+        T.eq(F.systemFingerprintPam(suse), true, "common-auth with pam_fprintd")
+        T.eq(F.systemFingerprintPam(suseOff), false, "a commented line does not count")
+        T.eq(F.systemFingerprintPam("auth [success=1 default=ignore] pam_fprintd.so\n"), true, "bracketed control")
+        T.eq(F.systemFingerprintPam(""), null, "empty is not an answer")
+        T.eq(F.parseSystemFingerprint("opensuse", suse, 0), true, "dispatch: openSUSE reads PAM")
+        T.eq(F.parseSystemFingerprint("opensuse", suse, 1), null, "dispatch: a failed read is not an answer")
+        T.eq(F.parseSystemFingerprint("fedora", withFp, 0), true, "dispatch: Fedora asks authselect")
+        T.eq([F.systemFingerprintCommand("fedora"), F.systemFingerprintCommand("opensuse"), F.systemFingerprintCommand("")],
+             [["authselect", "current"], ["cat", "/etc/pam.d/common-auth"], []], "the command per family")
 
         T.finish("FingerprintTest")
     }

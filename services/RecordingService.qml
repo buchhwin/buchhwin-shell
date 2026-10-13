@@ -125,7 +125,7 @@ Singleton {
     }
 
     function missing() {
-        const text = Logic.missingNotification()
+        const text = Logic.missingNotification(DistroService.installHint("wf-recorder"))
         lastError = text.title
         if (realSession) {
             Quickshell.execDetached(["notify-send", "--app-name=Screen recording", "--icon=media-record", "--",

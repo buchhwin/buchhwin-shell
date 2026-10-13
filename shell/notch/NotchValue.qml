@@ -1,8 +1,8 @@
 import QtQuick
 import qs.theme
 
-// One animated size of the notch shape. Fast and Normal animation modes
-// follow `to` with a spring (a little overshoot like the Dynamic Island),
+// One animated size of the notch shape. Full follows `to` with a spring (a
+// little overshoot like the Dynamic Island, scaled by the speed setting),
 // Reduced with a plain ease, Off jumps. The value never springs below
 // `minimum` (the collapsed size), so collapsing settles without bobbing.
 QtObject {

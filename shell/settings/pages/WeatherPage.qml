@@ -10,14 +10,15 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Location"
-        description: "Only the location, rounded to about 1 km, is sent to Open-Meteo, and it is stored only locally."
+        description: "Only the location, rounded to about 1 km, is sent to Open-Meteo, and it is stored only locally. "
+            + "Detecting it automatically asks ipinfo.io once, which sees this connection's IP address."
 
         ListRow {
             Layout.fillWidth: true
-            icon: "󰍎"
+            icon: Icons.location
             active: WeatherService.hasLocation
             title: WeatherService.hasLocation ? WeatherService.locationName : "No location set"
-            subtitle: !WeatherService.hasLocation ? "Search for your city below"
+            subtitle: !WeatherService.hasLocation ? (LocationService.detecting ? "Detecting …" : "Search for your city below")
                 : WeatherService.status === "ok" ? "Updated " + WeatherService.updatedText
                 : WeatherService.status === "stale" ? "Offline · updated " + WeatherService.updatedText
                 : WeatherService.status === "error" ? "Weather service not reachable"
@@ -51,13 +52,42 @@ ColumnLayout {
             color: Colors.warning
         }
 
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Metrics.spaceSm
+            ShellButton {
+                focusOnTab: true
+                icon: Icons.location
+                text: LocationService.detecting ? "Detecting …" : "Detect automatically"
+                compact: true
+                enabledState: !LocationService.detecting
+                onClicked: LocationService.detectByIp()
+            }
+            ShellText {
+                Layout.fillWidth: true
+                visible: LocationService.detectError.length > 0 && !LocationService.detecting
+                text: LocationService.detectError
+                role: "small"
+                color: Colors.warning
+                wrapMode: Text.Wrap
+            }
+        }
+
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Detect when no location is set"
+            hint: "Once, at startup; a place you chose is never replaced"
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("weather.autoLocate"); onToggled: value => SettingsService.set("weather.autoLocate", value) }
+        }
+
         Repeater {
             model: searchField.text.trim().length >= 2 ? LocationService.results : []
             ListRow {
                 focusOnTab: true
                 required property var modelData
                 Layout.fillWidth: true
-                icon: "󰍎"
+                icon: Icons.location
                 title: modelData.name
                 subtitle: modelData.region
                 chevron: true

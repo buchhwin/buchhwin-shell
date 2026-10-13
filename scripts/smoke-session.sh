@@ -6,6 +6,8 @@ set -euo pipefail
 #   scripts/smoke-session.sh --nested   use a disposable nested Hyprland
 #   BUCHHWIN_SMOKE_KEEP=1               keep the nested session running
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+# shellcheck source=lib/hyprland-prefix.sh
+if [[ -r "$project_dir/scripts/lib/hyprland-prefix.sh" ]]; then source "$project_dir/scripts/lib/hyprland-prefix.sh"; fi
 # Every IpcHandler target shell.qml declares, in its order; only `show` is
 # read, nothing is called. tests/python/smoke_targets_test.py holds this list
 # to shell.qml in both directions.
@@ -133,7 +135,14 @@ if [[ ${1:-} == --nested && ${BUCHHWIN_SMOKE_POINTER:-1} == 1 ]]; then
     # Notch mode: hovering the notch expands it, leaving collapses it again.
     previous_mode=$(quickshell ipc --path "$config_path" call bar get | jq -r '.mode')
     quickshell ipc --path "$config_path" call bar setMode notch >/dev/null
-    sleep 0.6
+    # Until the notch on the test output says it is there: a fixed 0.6 s was
+    # usually enough and sometimes not, and a pointer that arrives before the
+    # surface does hovers nothing - a failure of the test, not of the notch.
+    for _ in {1..50}; do
+      [[ $(quickshell ipc --path "$config_path" call notch get | jq -r '.screens.BUCHTEST.shown') == true ]] && break
+      sleep 0.1
+    done
+    sleep 0.3
     centre=$(jq '.width / .scale / 2 | floor' <<<"$monitor")
     notch_state() { quickshell ipc --path "$config_path" call notch get | jq -r '.screens.BUCHTEST.expanded'; }
     # What it *shows*, not only that it opened. A commit once filtered the whole

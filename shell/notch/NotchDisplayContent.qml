@@ -17,8 +17,8 @@ Item {
     readonly property string kind: content && content.kind ? content.kind : ""
     readonly property bool levelled: kind === "osd" && content.level !== undefined
 
-    implicitHeight: Metrics.notchHeight
-    implicitWidth: row.implicitWidth + Metrics.notchPadding * 2
+    implicitHeight: NotchService.bodyHeight
+    implicitWidth: row.implicitWidth + NotchService.bodyPadding * 2
 
     RowLayout {
         id: row

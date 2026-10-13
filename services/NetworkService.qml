@@ -35,6 +35,15 @@ Singleton {
         return strength > 0.75 ? "󰤨" : strength > 0.5 ? "󰤥" : strength > 0.25 ? "󰤢" : "󰤟"
     }
 
+    // The bars glyph (NetworkWidget, `options.glyph: "bars"`): of `total`, how
+    // many are lit. Every one when wired, none when off or not connected, and
+    // never none while connected.
+    function signalBars(total) {
+        if (!wifiEnabled && !wiredConnected) return 0
+        if (current) return Math.max(1, Math.min(total, Math.ceil(Number(current.signalStrength || 0) * total)))
+        return wiredConnected ? total : 0
+    }
+
     readonly property string icon: !wifiEnabled && !wiredConnected ? "󰤮"
         : wiredConnected && !current ? "󰈀"
         : current ? signalIcon(current.signalStrength) : "󰤯"
@@ -149,7 +158,22 @@ Singleton {
     }
 
     function setWifiEnabled(enabled) { Networking.wifiEnabled = enabled }
-    function setScanning(enabled) { if (wifiDevice) wifiDevice.scannerEnabled = enabled }
+    // Every network view - the popup, the control-center page, the settings
+    // page - turns scanning on when it comes into view and off when it goes,
+    // so this is also where the service learns that someone is looking.
+    // Those views are the only readers of `hotspotActive`, and reading it
+    // means running a python helper; with nobody looking it is left to the
+    // next open (read at once then) rather than run on every NetworkManager
+    // event of an idle session. A hotspot this shell started is the
+    // exception: it can go down on its own, so it keeps being read.
+    property bool viewOpen: false
+    property bool hotspotRead: false
+    function setScanning(enabled) {
+        viewOpen = enabled
+        if (wifiDevice) wifiDevice.scannerEnabled = enabled
+        if (enabled) refreshHotspot()
+    }
+    function refreshHotspot() { if (!hotspotStatusProc.running) hotspotStatusProc.running = true }
     function connectNetwork(network) { if (network) network.connect() }
     function disconnectNetwork(network) { if (network) network.disconnect() }
     function forget(network) { if (network) network.forget() }
@@ -169,10 +193,10 @@ Singleton {
         const fields = []
         let currentField = ""
         for (let i = 0; i < line.length; ++i) {
-            const char = line[i]
-            if (char === "\\" && i + 1 < line.length) { currentField += line[++i]; continue }
-            if (char === ":") { fields.push(currentField); currentField = ""; continue }
-            currentField += char
+            const ch = line[i]
+            if (ch === "\\" && i + 1 < line.length) { currentField += line[++i]; continue }
+            if (ch === ":") { fields.push(currentField); currentField = ""; continue }
+            currentField += ch
         }
         fields.push(currentField)
         return fields
@@ -180,7 +204,9 @@ Singleton {
 
     function refresh() {
         if (!connectionsProc.running) connectionsProc.running = true
-        if (!hotspotStatusProc.running) hotspotStatusProc.running = true
+        // Once at start as well, so a hotspot started before this shell, or
+        // outside it, shows without a network view having been opened first.
+        if (viewOpen || hotspotActive || !hotspotRead) { hotspotRead = true; refreshHotspot() }
     }
 
     Process {
@@ -235,6 +261,10 @@ Singleton {
             monitorProc.running = true
         }
     }
-    Timer { id: debounce; interval: 400; onTriggered: root.refresh() }
+    // `nmcli monitor` reports one change as several lines (device, connection,
+    // addresses, each a few hundred ms apart on a reconnect); 1.5 s gathers a
+    // whole reconnect into one nmcli run, where 400 ms ran it three or four
+    // times for the same state.
+    Timer { id: debounce; interval: 1500; onTriggered: root.refresh() }
     Component.onCompleted: refresh()
 }

@@ -292,3 +292,23 @@ function systemFingerprint(output, exitCode) {
     if (!/Profile ID:/.test(text)) return null
     return /^\s*-\s*with-fingerprint\s*$/m.test(text)
 }
+
+// The same question on openSUSE, which has no authselect: pam-config writes
+// pam_fprintd straight into /etc/pam.d/common-auth, so an active `auth` line
+// naming it is the answer. Comments do not count.
+function systemFingerprintPam(text) {
+    if (typeof text !== "string" || !/^\s*auth\s/m.test(text)) return null
+    return /^\s*auth\s[^#\n]*\bpam_fprintd\.so\b/m.test(text)
+}
+
+// The read-only command that answers it, per distribution family.
+function systemFingerprintCommand(family) {
+    if (family === "fedora") return ["authselect", "current"]
+    if (family === "opensuse") return ["cat", "/etc/pam.d/common-auth"]
+    return []
+}
+
+function parseSystemFingerprint(family, output, exitCode) {
+    if (family === "opensuse") return Number(exitCode) === 0 ? systemFingerprintPam(String(output || "")) : null
+    return systemFingerprint(output, exitCode)
+}

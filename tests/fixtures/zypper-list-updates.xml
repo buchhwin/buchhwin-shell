@@ -1,0 +1,24 @@
+<?xml version='1.0'?>
+<stream>
+<message type="info">Loading repository data...</message>
+<message type="info">Reading installed packages...</message>
+<update-status version="0.6">
+<update-list>
+<update kind="package" name="kitty" edition="0.42.1-160000.2.1" arch="x86_64" edition-old="0.42.0-160000.1.1">
+<summary>A fast, feature-rich, GPU based terminal emulator</summary>
+<description></description>
+<license></license>
+<source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/>
+</update>
+<update kind="package" name="python313-Pillow" edition="11.3.0-160000.3.1" arch="x86_64" edition-old="11.2.1-160000.1.2">
+<summary>Python Imaging Library (Fork)</summary>
+<description></description>
+<license></license>
+<source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/>
+</update>
+<update kind="package" name="broken" arch="noarch">
+<summary>no edition, skipped</summary>
+</update>
+</update-list>
+</update-status>
+</stream>

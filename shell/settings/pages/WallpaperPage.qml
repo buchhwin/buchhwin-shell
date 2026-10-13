@@ -176,10 +176,44 @@ ColumnLayout {
             ShellText {
                 Layout.fillWidth: true
                 text: "Folder: " + WallpaperService.folder + " · " + WallpaperService.images.length + " images"
+                    + (WallpaperService.folderIsDefault ? " (default)" : "")
                 // Wrap between words and elide in the middle of the path, so a
                 // long folder name never breaks mid-word.
                 role: "small"; muted: true; wrapMode: Text.Wrap
                 elide: Text.ElideMiddle; maximumLineCount: 2
+            }
+            // Subfolders of the chosen folder become the picker's chips; the
+            // last few folders stay one click away.
+            Flow {
+                Layout.fillWidth: true
+                spacing: Metrics.spaceSm
+                ShellButton {
+                    focusOnTab: true
+                    icon: Icons.edit; text: "Choose folder …"; compact: true
+                    onClicked: { PanelService.close(); WallpaperService.chooseFolder() }
+                }
+                ShellButton {
+                    focusOnTab: true
+                    visible: !WallpaperService.folderIsDefault
+                    icon: Icons.reset; text: "Default folder"; compact: true
+                    onClicked: WallpaperService.useDefaultFolder()
+                }
+            }
+            // Chips rather than a select: a select steps through its options
+            // on the arrow keys, and stepping here switched the folder.
+            Flow {
+                Layout.fillWidth: true
+                visible: WallpaperService.recentFolders.length > 0
+                spacing: Metrics.spaceSm
+                Repeater {
+                    model: WallpaperService.recentFolders
+                    ChipButton {
+                        focusOnTab: true
+                        required property string modelData
+                        title: modelData
+                        onClicked: WallpaperService.setFolder(SettingsService.expandHome(modelData))
+                    }
+                }
             }
         }
     }
@@ -192,7 +226,7 @@ ColumnLayout {
             + (root.target.length ? " · Selection applies to " + root.target : "")
 
         RowLayout {
-            ShellButton { focusOnTab: true; icon: Icons.add; text: "Add images …"; compact: true; onClicked: WallpaperService.importImages() }
+            ShellButton { focusOnTab: true; icon: Icons.add; text: "Add images …"; compact: true; onClicked: { PanelService.close(); WallpaperService.importImages() } }
         }
 
         // The picker has had a keyboard since it was built - arrows to move,

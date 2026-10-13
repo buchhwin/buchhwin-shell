@@ -1,0 +1,111 @@
+diff --git a/src/pointer/PointerManager.cpp b/src/pointer/PointerManager.cpp
+index e3e81af..8ac3ca3 100644
+--- a/src/pointer/PointerManager.cpp
++++ b/src/pointer/PointerManager.cpp
+@@ -22,6 +22,7 @@
+ #include "../helpers/Drm.hpp"
+ #include "../event/EventBus.hpp"
+ #include "../state/MonitorState.hpp"
++#include "../xwayland/XWayland.hpp"
+ #include <climits>
+ #include <cstring>
+ #include <gbm.h>
+@@ -572,7 +573,7 @@ SP<Aquamarine::IBuffer> CPointerManager::renderHWCursorBuffer(SP<CPointerManager
+         const auto TR = state->monitor->m_transform;
+ 
+         // we need to scale the cursor to the right size, because it might not be (esp with XCursor)
+-        const auto SCALE = texture->m_size / (m_currentCursorImage.size / m_currentCursorImage.scale * state->monitor->m_scale);
++        const auto SCALE = texture->m_size / (m_currentCursorImage.size / cursorImageScaleFor(state->monitor.lock()) * state->monitor->m_scale);
+         const auto SX = SCALE.x, SY = SCALE.y;
+         const auto BW = sc<double>(DMABUF.size.x), BH = sc<double>(DMABUF.size.y);
+ 
+@@ -626,7 +627,7 @@ SP<Aquamarine::IBuffer> CPointerManager::renderHWCursorBuffer(SP<CPointerManager
+     g_pHyprRenderer->startRenderPass();
+     g_pHyprRenderer->draw(CClearPassElement::SClearData{{0.F, 0.F, 0.F, 0.F}});
+ 
+-    CBox xbox = {{}, Vector2D{m_currentCursorImage.size / m_currentCursorImage.scale * state->monitor->m_scale}.round()};
++    CBox xbox = {{}, Vector2D{m_currentCursorImage.size / cursorImageScaleFor(state->monitor.lock()) * state->monitor->m_scale}.round()};
+     Log::logger->log(Log::TRACE, "[pointer] monitor: {}, size: {}, hw buf: {}, scale: {:.2f}, monscale: {:.2f}, xbox: {}", state->monitor->m_name, m_currentCursorImage.size,
+                      cursorSize, m_currentCursorImage.scale, state->monitor->m_scale, xbox.size());
+ 
+@@ -702,11 +703,40 @@ Vector2D CPointerManager::getCursorPosForMonitor(PHLMONITOR pMonitor) {
+         pMonitor->m_scale;
+ }
+ 
++bool CPointerManager::cursorIsXWayland() {
++    if (!m_currentCursorImage.surface || !m_currentCursorImage.surface->resource() || !g_pXWayland || !g_pXWayland->m_server)
++        return false;
++    return m_currentCursorImage.surface->resource()->client() == g_pXWayland->m_server->m_xwaylandClient;
++}
++
++PHLMONITOR CPointerManager::monitorUnderPointer() {
++    for (auto const& m : State::monitorState()->monitors()) {
++        if (m->m_enabled && m->logicalBox().containsPoint(m_pointerPos))
++            return m;
++    }
++    return nullptr;
++}
++
++float CPointerManager::cursorImageScaleFor(PHLMONITOR pMonitor) {
++    static auto PXWLFORCESCALEZERO = CConfigValue<Config::INTEGER>("xwayland:force_zero_scaling");
++    if (*PXWLFORCESCALEZERO && pMonitor && m_currentCursorImage.scale == 1.F && cursorIsXWayland())
++        return pMonitor->m_scale;
++    return m_currentCursorImage.scale;
++}
++
++Vector2D CPointerManager::hotspotLogicalFor(PHLMONITOR pMonitor) {
++    // set_cursor hotspots are surface-local: buffer pixels divided by the surface scale.
++    const auto SCALE = cursorImageScaleFor(pMonitor);
++    if (SCALE == m_currentCursorImage.scale)
++        return m_currentCursorImage.hotspot;
++    return m_currentCursorImage.hotspot * (m_currentCursorImage.scale / SCALE);
++}
++
+ Vector2D CPointerManager::transformedHotspot(PHLMONITOR pMonitor) {
+     if (!pMonitor->m_cursorSwapchain)
+         return {}; // doesn't matter, we have no hw cursor, and this is only for hw cursors
+ 
+-    return CBox{m_currentCursorImage.hotspot * pMonitor->m_scale, {0, 0}}
++    return CBox{hotspotLogicalFor(pMonitor) * pMonitor->m_scale, {0, 0}}
+         .transform(Math::wlTransformToHyprutils(Math::invertTransform(pMonitor->m_transform)), pMonitor->m_cursorSwapchain->currentOptions().size.x,
+                    pMonitor->m_cursorSwapchain->currentOptions().size.y)
+         .pos();
+@@ -717,7 +747,8 @@ CBox CPointerManager::getCursorBoxLogicalForMonitor(PHLMONITOR pMonitor) {
+ }
+ 
+ CBox CPointerManager::getCursorBoxGlobal() {
+-    return CBox{m_pointerPos, m_currentCursorImage.size / m_currentCursorImage.scale}.translate(-m_currentCursorImage.hotspot);
++    const auto PMONITOR = monitorUnderPointer();
++    return CBox{m_pointerPos, m_currentCursorImage.size / cursorImageScaleFor(PMONITOR)}.translate(-hotspotLogicalFor(PMONITOR));
+ }
+ 
+ Vector2D CPointerManager::closestValid(const Vector2D& pos) {
+@@ -1169,5 +1200,5 @@ void CPointerManager::damageCursor(PHLMONITOR pMonitor, bool skipFrameSchedule)
+ }
+ 
+ Vector2D CPointerManager::cursorSizeLogical() {
+-    return m_currentCursorImage.size / m_currentCursorImage.scale;
++    return m_currentCursorImage.size / cursorImageScaleFor(monitorUnderPointer());
+ }
+diff --git a/src/pointer/PointerManager.hpp b/src/pointer/PointerManager.hpp
+index 867473f..a727cbc 100644
+--- a/src/pointer/PointerManager.hpp
++++ b/src/pointer/PointerManager.hpp
+@@ -112,6 +112,17 @@ namespace Pointer {
+ 
+         Vector2D transformedHotspot(PHLMONITOR pMonitor);
+ 
++        // XWayland cursor surfaces always carry buffer scale 1. With
++        // xwayland:force_zero_scaling the X server draws in physical pixels, so
++        // such a cursor image is already monitor-sized and must not be enlarged
++        // by the monitor scale again (a Windows cursor forwarded by Citrix was
++        // drawn 1.67x on a 1.67 monitor). These treat it as scaled by the
++        // monitor it is shown on; every other cursor keeps its own scale.
++        bool       cursorIsXWayland();
++        float      cursorImageScaleFor(PHLMONITOR pMonitor);
++        Vector2D   hotspotLogicalFor(PHLMONITOR pMonitor);
++        PHLMONITOR monitorUnderPointer();
++
+         struct SPointerListener {
+             CHyprSignalListener destroy;
+             CHyprSignalListener motion;

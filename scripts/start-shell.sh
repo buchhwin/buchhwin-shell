@@ -3,6 +3,14 @@ set -euo pipefail
 
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 installed_dir="$HOME/.local/share/buchhwin-shell"
+# `--reap [DIR]` only ends the helpers a dead shell of DIR left behind (see
+# reap_helpers below) and starts nothing; the session launcher asks for it on
+# the way out.
+reap_only=0
+if [[ ${1:-} == --reap ]]; then
+  reap_only=1
+  shift
+fi
 # The Hyprland config passes the exact path so IPC calls with the same --path
 # reach this instance.
 if [[ -n ${1:-} ]]; then
@@ -20,7 +28,7 @@ fi
 # signature is resolved here when it is missing, and only when exactly one
 # instance is running: a second one means a nested test session, and guessing
 # between them is how a test reaches the real session.
-if [[ -z ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && command -v hyprctl >/dev/null 2>&1; then
+if (( ! reap_only )) && [[ -z ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && command -v hyprctl >/dev/null 2>&1; then
   if [[ $(hyprctl instances 2>/dev/null | grep -c '^instance ') == 1 ]]; then
     HYPRLAND_INSTANCE_SIGNATURE=$(hyprctl instances 2>/dev/null | sed -n 's/^instance \(.*\):$/\1/p' | head -1)
     export HYPRLAND_INSTANCE_SIGNATURE
@@ -33,10 +41,97 @@ state_dir=${XDG_STATE_HOME:-"$HOME/.local/state"}/buchhwin-shell
 log_file="$state_dir/quickshell.log"
 mkdir -p -- "$state_dir"
 
+# Is an instance of this configuration listed? The answer is captured and then
+# searched, never piped into `grep -q`: grep quits at its first match, the
+# writer is left with SIGPIPE, and under pipefail that read as "no instance" -
+# the restart below then stopped waiting for the dead instance to go, and the
+# shell it started exited at once against it. The same mistake fc-list made in
+# bootstrap.sh (docs/testing.md, Pitfalls).
+instance_running() {
+  local list
+  list=$(quickshell list --path "$config_dir" --json 2>/dev/null) || return 1
+  [[ $list == *'"id"'* ]]
+}
+note() { printf '%s start-shell: %s\n' "$(date -Is)" "$1" >>"$log_file"; }
+
+# ---- the helpers a dead shell leaves behind ---------------------------------
+# Quickshell's `Process` children are ordinary child processes, and a shell
+# that dies on a signal - a crash, or the abort on losing the compositor at
+# logout - runs no destructor that would end them. `nmcli monitor`, `udevadm
+# monitor`, the lid inhibitor, cliphist's two wl-paste watchers, drives.py and
+# the bluetooth agent then live on under PID 1: three of them from the
+# previous login were still running on 2026-10-13, and a shell restarted after
+# a crash starts a second set beside them (two wl-paste watchers storing into
+# the same database). So they are ended before a replacement starts, and once
+# more when the session ends (`--reap`, from the session launcher).
+#
+# Only this user's processes (`-u`), only whole command lines (anchored, the
+# paths escaped), and never one whose parent is a living quickshell: a nested
+# test session runs beside the real one with helpers that look the same, and
+# ending the real session's lid inhibitor or clipboard watcher from a test's
+# restart would be exactly the kind of damage this is meant to prevent.
+#
+# pgrep -f takes a regular expression; the path is a literal, so every
+# character that means something to an ERE is escaped first (reload-shell.sh
+# does the same). Quickshell may hand its scripts the resolved path rather
+# than the symlink it was started through, so both spellings are accepted.
+# The executable itself is listed by name or by its resolved path, and the
+# python scripts run through their interpreter (`python3 <script> …`).
+escape_ere() { printf '%s' "$1" | sed 's,[][\.*^$+?(){}|\\],\\&,g'; }
+config_pattern=$(escape_ere "$config_dir")
+real_dir=$(readlink -f -- "$config_dir" 2>/dev/null || printf '%s' "$config_dir")
+if [[ $real_dir != "$config_dir" ]]; then
+  config_pattern="($config_pattern|$(escape_ere "$real_dir"))"
+fi
+helper_patterns=(
+  "^(\\S+ )?${config_pattern}/scripts/drives\\.py monitor\$"
+  "^(\\S+ )?${config_pattern}/scripts/bluetooth-agent\\.py\$"
+  '^(\S*/)?wl-paste --type (text|image) --watch cliphist -db-path \S*/buchhwin-shell/cliphist\.db -max-items [0-9]+ store$'
+  '^(\S*/)?nmcli monitor$'
+  '^(\S*/)?udevadm monitor --udev --subsystem-match=backlight$'
+  '^(\S*/)?systemd-inhibit --what=handle-lid-switch --who=buchhwin-shell .* sleep infinity$'
+)
+reap_helpers() {
+  local uid pattern pid parent parents reaped=0
+  uid=$(id -u)
+  for pattern in "${helper_patterns[@]}"; do
+    parents=
+    for pid in $(pgrep -u "$uid" -f "$pattern" 2>/dev/null || true); do
+      parent=$(awk '/^PPid:/ { print $2 }' "/proc/$pid/status" 2>/dev/null || true)
+      [[ -n $parent ]] || continue
+      [[ $(cat "/proc/$parent/comm" 2>/dev/null || true) == quickshell ]] && continue
+      [[ ,$parents, == *,"$parent",* ]] || parents+=${parents:+,}$parent
+      reaped=$(( reaped + 1 ))
+    done
+    [[ -n $parents ]] || continue
+    # By parent rather than by pid: the parent was just checked, and the
+    # pattern keeps it to the helpers.
+    pkill -u "$uid" -P "$parents" -f "$pattern" 2>/dev/null || true
+  done
+  if (( reaped )); then note "ended $reaped helper(s) left behind by a shell that is gone"; fi
+}
+
+if (( reap_only )); then
+  # Called as the compositor ends, with the shell on its way out behind it
+  # (losing the compositor is an abort, not an exit): wait for its instance
+  # to go, up to 5 s, rather than end helpers it still owns, and leave them
+  # alone if it never goes.
+  for _ in {1..100}; do
+    instance_running || break
+    sleep 0.05
+  done
+  if instance_running; then
+    note "asked to reap, but an instance of this configuration is still listed - leaving its helpers alone"
+  else
+    reap_helpers
+  fi
+  exit 0
+fi
+
 # One log per shell start; the previous one is kept as quickshell.log.old. A
 # start that finds a running instance (--no-duplicate exits at once) keeps the
 # log, because that instance still writes to it.
-if ! quickshell list --path "$config_dir" --json 2>/dev/null | grep -q '"id"'; then
+if ! instance_running; then
   [[ -e $log_file ]] && mv -f -- "$log_file" "$log_file.old"
 fi
 
@@ -75,8 +170,6 @@ window_started=$SECONDS
 stopping=0
 child=
 
-note() { printf '%s start-shell: %s\n' "$(date -Is)" "$1" >>"$log_file"; }
-instance_running() { quickshell list --path "$config_dir" --json 2>/dev/null | grep -q '"id"'; }
 # Without a signature there is nothing to check against (a test, or a start
 # outside any session), and the answer is the one this script always gave.
 compositor_alive() {
@@ -89,9 +182,37 @@ on_stop() {
 }
 trap on_stop TERM INT HUP
 
+# The session exports QT_QPA_PLATFORMTHEME=kde for the applications; the shell
+# itself runs without it (2026-10-13). The KDE platform theme plugin pulled
+# KConfig, KIconThemes and KColorScheme into quickshell and watched kdeglobals
+# for 35 MB of resident memory (377 → 343 MB in a nested session), and the
+# shell used none of it: its fonts and colours are its own tokens, its dialogs
+# are kdialog, and the one thing it did take from the plugin - the icon theme's
+# name for Quickshell.iconPath - is handed over here through QS_ICON_THEME,
+# read from kdeglobals like the plugin did, else chosen by the shell's own
+# theme (the symbolic icons of a dark theme are light). Launcher screenshots
+# with and without the plugin differ in 604 of 537 600 pixels.
+icon_theme=""
+kdeglobals="${XDG_CONFIG_HOME:-$HOME/.config}/kdeglobals"
+# Guarded and status-caught: under `set -e` with pipefail a missing file (a
+# nested session's sandbox has none) would end this script here, before the
+# shell ever started (pitfall 15).
+if [[ -r $kdeglobals ]]; then
+  icon_theme=$(sed -n '/^\[Icons\]/,/^\[/{s/^Theme=//p}' "$kdeglobals" 2>/dev/null | head -n1) || icon_theme=""
+fi
+if [[ -z $icon_theme ]]; then
+  icon_theme=breeze-dark
+  settings="${XDG_CONFIG_HOME:-$HOME/.config}/buchhwin-shell/settings.json"
+  if command -v jq >/dev/null 2>&1 && [[ -s $settings ]] \
+     && [[ $(jq -r '.appearance.theme // "dark"' "$settings" 2>/dev/null) == light ]]; then
+    icon_theme=breeze
+  fi
+fi
+
 while true; do
   status=0
-  quickshell --no-duplicate --path "$config_dir" >>"$log_file" 2>&1 &
+  env -u QT_QPA_PLATFORMTHEME QS_ICON_THEME="$icon_theme" \
+    quickshell --no-duplicate --path "$config_dir" >>"$log_file" 2>&1 &
   child=$!
   # `wait` returns as soon as a trapped signal arrives, before the shell has
   # gone; wait again for its real status.
@@ -138,4 +259,8 @@ while true; do
     instance_running || break
     sleep 0.05
   done
+  # Its helpers outlived it (reap_helpers above): ended now, before the
+  # replacement starts its own, or two of each run side by side. Not while
+  # the instance is still listed - then the helpers may still be its.
+  if ! instance_running; then reap_helpers; fi
 done

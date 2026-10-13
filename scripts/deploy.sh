@@ -15,6 +15,8 @@ set -euo pipefail
 # BUCHHWIN_STABLE_DIR overrides ~/.local/share/buchhwin-shell-stable (tests).
 
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+# shellcheck source=lib/hyprland-prefix.sh
+if [[ -r "$project_dir/scripts/lib/hyprland-prefix.sh" ]]; then source "$project_dir/scripts/lib/hyprland-prefix.sh"; fi
 stable_dir=${BUCHHWIN_STABLE_DIR:-"$HOME/.local/share/buchhwin-shell-stable"}
 action=deploy
 run_tests=true

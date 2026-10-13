@@ -49,7 +49,7 @@ ColumnLayout {
 
             ShellButton {
                 visible: root.status === "noLocation" || root.status === "disabled"
-                icon: "󰍎"
+                icon: Icons.location
                 text: "Set location"
                 compact: true
                 onClicked: PanelService.open("settings", { page: "weather" })
@@ -155,7 +155,7 @@ ColumnLayout {
             visible: root.showLocation
             Layout.fillWidth: true
             spacing: Metrics.spaceXs
-            ShellIcon { glyph: "󰍎"; size: Metrics.iconXs; color: Colors.mutedText }
+            ShellIcon { glyph: Icons.location; size: Metrics.iconXs; color: Colors.mutedText }
             ShellText { Layout.fillWidth: true; text: WeatherService.locationName; role: "small"; muted: true }
             ShellText {
                 text: (WeatherService.status === "stale" ? "Offline · updated " : "Updated ") + WeatherService.updatedText

@@ -154,6 +154,8 @@ function describeExec(arg) {
     if (/session-action\.sh lock\b/.test(text)) return titleOf("Lock screen")
     if (/launch-kitty\.sh\b/.test(text)) return titleOf("Kitty", "apps")
     if (/launch-brave\.sh\b/.test(text)) return titleOf("Brave", "apps")
+    if (/launch-chrome\.sh\b/.test(text)) return titleOf("Google Chrome", "apps")
+    if (/launch-chromium-browser\.sh\b/.test(text)) return titleOf("Chromium", "apps")
     match = text.match(/^gtk-launch ([A-Za-z0-9._-]+)$/)
     if (match) return titleOf("Open " + match[1], "apps")
     if (/^wpctl set-volume\b.*\+$/.test(text)) return titleOf("Volume up")

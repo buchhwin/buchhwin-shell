@@ -16,7 +16,9 @@
 # The repositories installed below are the ones `install/bootstrap.sh` adds,
 # because the last step checks that every package name it hands out exists -
 # and the first run of that check found one, `starship`, that only resolved on
-# the machine the list was written on.
+# the machine the list was written on. The `leap-packages` job does the same
+# for openSUSE Leap 16; the suite itself runs on Fedora only, because the QML
+# files are the same on both.
 name: test
 
 on:
@@ -74,8 +76,14 @@ jobs:
         # The first time install/bootstrap.sh --list-packages is read by a
         # machine that is not the one it was written on: every name it hands
         # out has to exist in the repositories enabled above.
+        shell: bash
         run: |
           set -eu
+          # Captured first: a process substitution's failure is ignored, so a
+          # bootstrap.sh that crashed used to read as an empty list - and an
+          # empty list has every package in it.
+          list=$(install/bootstrap.sh --distro fedora --list-packages)
+          [ -n "$list" ] || { echo "bootstrap.sh listed no packages" >&2; exit 1; }
           missing=0
           while read -r package; do
             [ -n "$package" ] || continue
@@ -83,9 +91,64 @@ jobs:
               printf 'no such package: %s\n' "$package"
               missing=$((missing + 1))
             fi
-          done < <(install/bootstrap.sh --list-packages)
+          done <<<"$list"
           if [ "$missing" -gt 0 ]; then
             printf '%d package name(s) in bootstrap.sh resolve to nothing.\n' "$missing" >&2
             exit 1
           fi
           printf 'every package in bootstrap.sh exists\n'
+
+  leap-packages:
+    runs-on: ubuntu-latest
+    container: registry.opensuse.org/opensuse/leap:16.0
+    steps:
+      - name: What checkout needs
+        run: zypper --non-interactive install --no-recommends git-core tar gzip
+
+      - uses: actions/checkout@v4
+
+      - name: The package list resolves on a fresh Leap 16
+        # The repositories bootstrap.sh adds on Leap, from the list itself, so
+        # the job cannot drift from what users get.
+        shell: bash
+        run: |
+          set -eu
+          while IFS='|' read -r alias url priority; do
+            zypper --non-interactive addrepo --priority "$priority" "$url" "$alias"
+          done < <(bash -c '. install/packages/opensuse-leap.sh; printf "%s\n" "${repos[@]}"')
+          zypper --non-interactive addrepo https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
+          zypper --non-interactive --gpg-auto-import-keys refresh
+          # The packages, from any repository bootstrap.sh adds; the build
+          # dependencies from repo-oss alone, because that is the only one
+          # install/build-hyprland-leap.sh installs them from. Captured first,
+          # so a failing script is a failure and not an empty, passing list.
+          packages=$(install/bootstrap.sh --distro opensuse-leap --list-packages)
+          build=$(install/build-hyprland-leap.sh --list-packages)
+          [ -n "$packages" ] && [ -n "$build" ] || { echo "a package list came back empty" >&2; exit 1; }
+          . install/lib/distro.sh
+          oss=$(leap_oss_alias)
+          [ -n "$oss" ] || { echo "no repo-oss in this container" >&2; exit 1; }
+          names() { LC_ALL=C zypper --non-interactive -q search --match-exact "$@" \
+                      | awk -F'|' 'NR > 2 { gsub(/ /, "", $2); print $2 }' | sort -u; }
+          mapfile -t wanted <<<"$packages"
+          mapfile -t needed <<<"$build"
+          found=$(names "${wanted[@]}")
+          found_oss=$(names --repo "$oss" "${needed[@]}")
+          missing=0
+          for package in "${wanted[@]}"; do
+            if ! grep -qx -- "$package" <<<"$found"; then
+              printf 'no such package: %s\n' "$package"
+              missing=$((missing + 1))
+            fi
+          done
+          for package in "${needed[@]}"; do
+            if ! grep -qx -- "$package" <<<"$found_oss"; then
+              printf 'build dependency not in repo-oss: %s\n' "$package"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then
+            printf '%d package name(s) for Leap resolve to nothing.\n' "$missing" >&2
+            exit 1
+          fi
+          printf 'every package for Leap exists\n'

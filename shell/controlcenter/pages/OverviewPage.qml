@@ -44,7 +44,7 @@ ColumnLayout {
         KdeConnectService.track()
     }
     // Reported from the layout's resting cells, not from the items: an item
-    // glides to its new place over Animations.reorder and a report would fire
+    // springs to its new place (ArrangeItem) and a report would fire
     // long before it arrived, describing where it was halfway there.
     function reportCells() {
         const cells = {}

@@ -5,6 +5,7 @@ import QtQuick
 import "power/PowerSourceLogic.js" as PowerSourceLogic
 import "wallpaper/WallpaperLogic.js" as WallpaperLogic
 import "appearance/AnimationLogic.js" as AnimationLogic
+import "notch/NotchLogic.js" as NotchLogic
 
 // User preferences in ~/.config/buchhwin-shell/settings.json. Missing keys fall
 // back to defaults; only known primitive values are written back.
@@ -110,8 +111,24 @@ Singleton {
             "displayMedia": true,
             "reserve": true,
             "fullscreen": "hide",
-            "expandOnHover": true,
+            // How the overview opens: on hover, only on a click, or never
+            // (services/notch/NotchLogic.js). A click on the collapsed notch
+            // opens the dashboard in hover mode, or the overview with
+            // clickAction "expand". The delays are milliseconds before
+            // opening and before closing again; NotchLogic.delay clamps them.
+            "hoverMode": "hover",
+            "openDelay": 150,
+            "closeDelay": 400,
+            "clickAction": "dashboard",
             "eventCount": 2,
+            // The collapsed body: how tall it is, how round its bottom corners
+            // are and how much air the strip keeps at both ends. These are the
+            // theme's tokens (Metrics.notchHeight / notchRadius / notchPadding,
+            // the Island body); the notch before Island was 32 / 11 / 16, and
+            // the Classic preset carries that. NotchLogic.bodySize clamps them.
+            "bodyHeight": 40,
+            "bodyRadius": 16,
+            "bodyPadding": 22,
             // The notch is not nailed to a size: both shapes are dragged in
             // the layout editor. The strip only horizontally - its height is
             // the notch's own - and the overview freely. A width of 0 means
@@ -141,7 +158,12 @@ Singleton {
         },
         "wallpaper": {
             "path": "",
-            "folder": "~/Pictures/Desktop",
+            // Empty: "Desktop" in the pictures directory of user-dirs.dirs
+            // (~/Bilder/Desktop on a German system). Chosen in the picker or
+            // in Settings > Wallpaper; the last few are kept in recentFolders,
+            // a comma string like autostart.apps.
+            "folder": "",
+            "recentFolders": "",
             "slideshow": false,
             "intervalMinutes": 15,
             "order": "sequential",
@@ -220,10 +242,12 @@ Singleton {
             "fingerprint": "auto"
         },
         "terminal": {
-            "fontFamily": "JetBrains Mono",
+            // The face, spacing and transparency of the Alacritty setup the
+            // session was modelled on (terminal/alacritty.toml).
+            "fontFamily": "JetBrainsMono Nerd Font",
             "fontSize": 11,
-            "opacity": 0.86,
-            "padding": 12,
+            "opacity": 0.8,
+            "padding": 10,
             "cursorShape": "beam",
             "cursorBlink": true,
             "cursorBlinkStyle": "soft",
@@ -251,7 +275,10 @@ Singleton {
             "timeFormat": "%H:%M",
             "fastfetchOnStart": true,
             "imageSize": 30,
-            "previewGit": true
+            "previewGit": true,
+            // Kitty reads the account's own ~/.zshrc instead of the session's
+            // (scripts/launch-kitty.sh); the prompt settings then do nothing.
+            "personalShell": false
         },
         // The colours picked off the screen, newest first. A comma-string,
         // because `sanitizedNode` turns a stored array into {"0": ...} on the
@@ -274,6 +301,9 @@ Singleton {
         },
         "weather": {
             "enabled": true,
+            // With no place set, ask ipinfo.io once where this connection is
+            // (LocationService). A place the user chose is never replaced.
+            "autoLocate": true,
             "locationName": "",
             "lat": 0,
             "lon": 0,
@@ -380,10 +410,10 @@ Singleton {
     readonly property int cursorSize: value("appearance.cursorSize")
     readonly property real panelOpacity: Math.max(0.4, Math.min(1, value("appearance.panelOpacity")))
     readonly property real blurStrength: Math.max(0, Math.min(1, value("appearance.blurStrength")))
-    // Bounded where it stays useful: a quarter speed is a slow, deliberate
-    // glide and three times is as close to instant as motion gets before it
-    // stops reading as motion at all.
-    readonly property real animationSpeed: Math.max(0.25, Math.min(3, value("appearance.animationSpeed")))
+    // Half speed to double (AnimationLogic.speed): beyond that range the old
+    // slider only produced motion that felt broken or that the floors had to
+    // hold back anyway.
+    readonly property real animationSpeed: AnimationLogic.speed(value("appearance.animationSpeed"))
     readonly property int windowRadius: Math.max(0, Math.min(32, value("appearance.windowRadius")))
     readonly property bool borderEnabled: value("appearance.borderEnabled")
     readonly property int borderSize: Math.max(1, Math.min(8, value("appearance.borderSize")))
@@ -407,9 +437,12 @@ Singleton {
         "appearance.clockFormat": ["locale", "24", "12"],
         "appearance.animationMode": ["full", "reduced", "off"],
         "wallpaper.order": ["sequential", "random"],
+        "notch.hoverMode": ["hover", "click", "off"],
+        "notch.shape": ["notch", "pill"],
+        "notch.clickAction": ["dashboard", "expand"],
         "wallpaper.slideshowSource": ["all", "favourites", "chosen", "folder"],
         "workspaces.mode": ["open", "gapless", "fixed"],
-        "workspaces.style": ["numbers", "dots", "activeDot"],
+        "workspaces.style": ["numbers", "dots", "pills", "activeDot"],
         "notch.fullscreen": ["hide", "show"],
         "workspaces.count": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         "weather.unit": ["celsius", "fahrenheit"],
@@ -568,7 +601,7 @@ Singleton {
         if (loaded && !text.trim().length) return
         try {
             data = text.trim().length
-                ? AnimationLogic.migrate(WallpaperLogic.migrate(PowerSourceLogic.migrate(JSON.parse(text)))) : defaults
+                ? NotchLogic.migrate(AnimationLogic.migrate(WallpaperLogic.migrate(PowerSourceLogic.migrate(JSON.parse(text))))) : defaults
         } catch (error) {
             if (loaded) {
                 console.warn("buchhwin-shell: settings file unreadable, keeping current settings:", error)

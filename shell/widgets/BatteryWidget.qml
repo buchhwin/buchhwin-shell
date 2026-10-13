@@ -8,6 +8,13 @@ import qs.services
 // icon-and-label row, which is why it never gained anything the others did.
 WidgetBase {
     id: root
+    // The island's strip asks for a battery lying down (`options.glyph:
+    // "horizontal"`): a case in the muted ink with its nub, filled to the level
+    // in the icon's colour (charging, low, or the plain ink). Without a
+    // battery there is nothing to lie down, and the power glyph stays.
+    readonly property bool lying: instance !== null && instance.options !== undefined
+        && instance.options !== null && instance.options.glyph === "horizontal"
+    glyph: lying && PowerService.hasBattery ? batteryGlyph : null
     icon: PowerService.icon
     iconColor: PowerService.charging ? Colors.success
         : PowerService.percent <= 15 && PowerService.onBattery ? Colors.danger : root.textColor
@@ -17,4 +24,38 @@ WidgetBase {
     meterColor: PowerService.charging ? Colors.success
         : PowerService.percent <= 15 ? Colors.danger : Colors.accent
     detail: PowerService.remainingLabel.length ? PowerService.remainingLabel : PowerService.stateLabel
+
+    Component {
+        id: batteryGlyph
+        Item {
+            implicitWidth: (Metrics.batteryGlyphWidth + Metrics.batteryGlyphNub) * root.scaleFactor
+            implicitHeight: Metrics.batteryGlyphHeight * root.scaleFactor
+            Rectangle {
+                id: batteryCase
+                width: Metrics.batteryGlyphWidth * root.scaleFactor
+                height: parent.height
+                radius: height / 4
+                color: "transparent"
+                border.width: Metrics.borderWidth
+                border.color: root.mutedTextColor
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.margins: Metrics.spaceXxs
+                    width: Math.max(0, (parent.width - Metrics.spaceXxs * 2) * Math.max(0, Math.min(1, PowerService.percent / 100)))
+                    radius: parent.radius / 2
+                    color: root.iconColor
+                }
+            }
+            Rectangle {
+                anchors.left: batteryCase.right
+                anchors.verticalCenter: batteryCase.verticalCenter
+                width: Metrics.batteryGlyphNub * root.scaleFactor
+                height: parent.height / 3
+                radius: width / 2
+                color: root.mutedTextColor
+            }
+        }
+    }
 }

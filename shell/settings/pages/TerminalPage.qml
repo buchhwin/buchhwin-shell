@@ -27,11 +27,28 @@ ColumnLayout {
 
     SettingsSection {
         Layout.fillWidth: true
+        title: "Shell"
+        description: "Which zsh configuration Kitty starts with"
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Use my own zsh configuration"
+            hint: "Kitty reads ~/.zshrc, like terminals outside this session, and the prompt settings below no longer apply. "
+                + "To keep fastfetch, cmatrix and cava in the shell accent, add to it: source ~/.config/buchhwin-shell/shell.zsh"
+            ShellToggle { focusOnTab: true; checked: root.options.personalShell; onToggled: value => root.set("personalShell", value) }
+        }
+    }
+
+    SettingsSection {
+        Layout.fillWidth: true
         title: "Preview"
         description: "New Kitty windows use these settings; open windows update font, opacity and cursor right away."
 
+        // The Starship preview, the Git sample and the greeting are the
+        // session's own zsh; with the account's ~/.zshrc they say nothing.
         Rectangle {
             Layout.fillWidth: true
+            visible: !root.options.personalShell
             implicitHeight: previewLabel.implicitHeight + Metrics.spaceLg * 2
             radius: Metrics.radiusCard
             color: Colors.terminalBackground
@@ -58,12 +75,14 @@ ColumnLayout {
 
         SettingRow {
             Layout.fillWidth: true
+            visible: !root.options.personalShell
             labelFills: true
             label: "Show a Git repository in the preview"
             ShellToggle { focusOnTab: true; checked: root.options.previewGit; onToggled: value => root.set("previewGit", value) }
         }
         SettingRow {
             Layout.fillWidth: true
+            visible: !root.options.personalShell
             labelFills: true
             label: "Fastfetch when a terminal opens"
             hint: "ff and fastfetch always work manually. Labels use the prompt color (the shell accent by default)."
@@ -80,10 +99,10 @@ ColumnLayout {
                 focusOnTab: true
                 Layout.fillWidth: true
                 current: TerminalService.fastfetchLogo
-                options: [{ value: "builtin", label: "Fedora logo" }, { value: "image", label: "Image" }]
+                options: [{ value: "builtin", label: "System logo" }, { value: "image", label: "Image" }]
                 onSelected: value => {
                     if (value === "builtin") TerminalService.useBuiltinLogo()
-                    else if (!TerminalService.fastfetchImage.length) TerminalService.chooseImage()
+                    else if (!TerminalService.fastfetchImage.length) { PanelService.close(); TerminalService.chooseImage() }
                 }
             }
         }
@@ -117,7 +136,7 @@ ColumnLayout {
                 icon: "󰋩"
                 compact: true
                 enabledState: !TerminalService.choosingImage
-                onClicked: TerminalService.chooseImage()
+                onClicked: { PanelService.close(); TerminalService.chooseImage() }
             }
         }
     }
@@ -229,6 +248,7 @@ ColumnLayout {
 
     SettingsSection {
         Layout.fillWidth: true
+        visible: !root.options.personalShell
         title: "Prompt colors"
         description: "Starship prompt symbol, user and host; errors and Git changes"
 
@@ -298,6 +318,7 @@ ColumnLayout {
 
     SettingsSection {
         Layout.fillWidth: true
+        visible: !root.options.personalShell
         title: "Symbols"
         description: "Press Enter to apply (up to 32 characters)"
 
@@ -329,6 +350,7 @@ ColumnLayout {
 
     SettingsSection {
         Layout.fillWidth: true
+        visible: !root.options.personalShell
         title: "Modules"
         description: "What the prompt shows, in this order"
 
@@ -374,6 +396,7 @@ ColumnLayout {
 
     SettingsSection {
         Layout.fillWidth: true
+        visible: !root.options.personalShell
         title: "Clock format"
         description: "Used when the clock module is on. %H hour, %M minute, %S second, %p AM/PM, %d day, %m month"
 

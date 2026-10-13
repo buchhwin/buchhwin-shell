@@ -31,11 +31,21 @@ ShellPanel {
     cardWidth: Metrics.popupWidth
 
     // Below the card body (ShellPanel gives it z 1), masked to the card corners.
+    //
+    // The whole backdrop is one layer: blur, saturation and the mask are
+    // rendered into a texture once per cover and per card size, and every
+    // frame after that draws that texture. Without the layer the 64 px blur
+    // ran as a card-sized shader pass on every frame the card repainted -
+    // which, with the record turning in the media popup, is every frame.
+    // The body is a sibling with its own z, so nothing that animates is in
+    // here. Taking the two `layer.` lines out is the way back.
     Item {
         parent: root.card
         anchors.fill: parent
         visible: root.shown && root.backdropSource.length > 0 && backdropImage.status === Image.Ready
         opacity: Effects.mediaBackdropOpacity
+        layer.enabled: true
+        layer.smooth: true
 
         Image {
             id: backdropImage

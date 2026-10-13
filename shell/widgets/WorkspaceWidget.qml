@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import qs.theme
 import qs.services
+import qs.shell.components
 import "../../services/workspaces/WorkspaceLogic.js" as Logic
 import "../../services/hypr/HiddenWindows.js" as Hidden
 
@@ -25,7 +26,11 @@ Grid {
     // widget placed there is handed its colours instead of the theme's.
     property color textColor: Colors.text
     property color mutedTextColor: Colors.mutedText
-    readonly property var list: Logic.entries(SettingsService.value("workspaces.mode"), SettingsService.value("workspaces.count"),
+    // The session's mode, unless this instance names its own: the island
+    // preset shows a fixed row of dots whatever the bar does.
+    readonly property string mode: root.instance && root.instance.options && root.instance.options.mode
+        ? root.instance.options.mode : SettingsService.value("workspaces.mode")
+    readonly property var list: Logic.entries(root.mode, SettingsService.value("workspaces.count"),
         HyprlandService.workspaces.map(workspace => ({
             id: workspace.id,
             name: workspace.name,
@@ -42,7 +47,10 @@ Grid {
         HyprlandService.activeWorkspaceOn(instance ? instance.screen : ""),
         HyprlandService.offsetFor(instance ? instance.screen : ""),
         HyprlandService.focusedWorkspace !== null ? HyprlandService.focusedWorkspace.id : -1)
-    readonly property string style: SettingsService.value("workspaces.style")
+    // The session's style, unless this instance names its own (a notch preset
+    // drawing dots while the bar keeps numbers).
+    readonly property string style: root.instance && root.instance.options && root.instance.options.style
+        ? root.instance.options.style : SettingsService.value("workspaces.style")
     property bool vertical: false
     columns: vertical ? 1 : 1000
     spacing: Metrics.spaceXs * scaleFactor
@@ -57,9 +65,11 @@ Grid {
             required property var modelData
             readonly property bool current: modelData.active
             readonly property bool labelled: Logic.showsLabel(root.style, modelData)
+            // "pills": a standing capsule instead of a dot, in a narrower slot.
+            readonly property bool pill: !labelled && root.style === "pills"
             readonly property real unit: Metrics.iconMd + Metrics.spaceXs
             implicitHeight: slot.unit * root.scaleFactor
-            implicitWidth: Math.max(pip.width, Metrics.iconMd * root.scaleFactor)
+            implicitWidth: Math.max(pip.width, (slot.pill ? Metrics.workspacePillSlot : Metrics.iconMd) * root.scaleFactor)
 
             Rectangle {
                 id: pip
@@ -68,19 +78,26 @@ Grid {
                 // stretches. With nothing in it a capsule reads as a number
                 // that failed to draw, so it becomes a circle - and the active
                 // one says so by being larger rather than longer.
+                // A pill stands: narrow, and the active one wider rather than
+                // taller, so the row keeps one height.
                 width: slot.labelled
                     ? (slot.current ? Metrics.iconXl : slot.unit) * root.scaleFactor
+                    : slot.pill
+                    ? (slot.current ? Metrics.workspacePillActiveWidth : Metrics.workspacePillWidth) * root.scaleFactor
                     : (slot.current ? Metrics.iconSm : Metrics.iconXs) * root.scaleFactor
-                height: slot.labelled ? slot.height : width
-                radius: height / 2
-                color: slot.current ? Colors.accent : pipMouse.containsMouse ? Colors.surface2Hover : Colors.elevatedSurface
+                height: slot.labelled ? slot.height : slot.pill ? Metrics.workspacePillHeight * root.scaleFactor : width
+                radius: Math.min(width, height) / 2
+                // A bare dot takes the muted ink the surface hands over: the
+                // theme's surface tint vanished on the notch's black.
+                color: slot.current ? Colors.accent : pipMouse.containsMouse ? Colors.surface2Hover
+                    : slot.labelled ? Colors.elevatedSurface : root.mutedTextColor
                 opacity: slot.current || slot.modelData.occupied ? 1 : Effects.mutedOpacity
                 // The pip width is the widget's width, so every frame resizes
                 // the widget's layer surface and re-reports its rectangle.
                 // Reduced and Off skip it like the other movements.
                 Behavior on width {
                     enabled: Animations.motionEnabled
-                    NumberAnimation { duration: Animations.navigation; easing.type: Animations.easing }
+                    SpringMotion { kind: "fast" }
                 }
                 Text {
                     anchors.centerIn: parent

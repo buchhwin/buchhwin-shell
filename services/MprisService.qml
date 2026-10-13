@@ -38,19 +38,42 @@ Singleton {
         return text.indexOf("file://") === 0 ? decodeURIComponent(text.slice(7)) : ""
     }
 
+    // Remote art is fetched by curl into the cache and consumers load the file.
+    // Qt's own HTTP/2 client fails against Spotify's image CDN (the shell log:
+    // "qt.network.http2.connection: HEADERS on invalid stream", then every
+    // Image bound to the url shows nothing and the record has no label);
+    // curl is told --http1.1 and never sees the problem. One fetch per track
+    // change, here, not one per Image. Covers older than 30 days are swept
+    // from the directory on each fetch.
+    readonly property string coverDir: Paths.cacheDir + "/covers"
+    function remote(url) { return /^https?:\/\//.test(String(url || "")) }
+
     function checkArt() {
         // The value is read here and not through a property bound to the same
         // thing: a change handler is not promised that a derived binding has
         // caught up, which this project has already paid for once.
         const url = rawArtUrl
         const path = localPath(url)
+        artCheck.running = false
+        if (remote(url)) {
+            artUrl = ""
+            artCheck.pending = url
+            const file = coverDir + "/" + Qt.md5(url) + ".img"
+            artCheck.command = ["sh", "-c",
+                'mkdir -p -- "$1" && find "$1" -type f -mtime +30 -delete 2>/dev/null; '
+                + 'test -s "$2" || { curl -fsSL --http1.1 --max-time 15 -o "$2.part" -- "$3" && mv -f -- "$2.part" "$2"; }',
+                "sh", coverDir, file, url]
+            artCheck.file = file
+            artCheck.running = true
+            return
+        }
         if (!path.length) {
             artUrl = url
             return
         }
         artUrl = ""
-        artCheck.running = false
         artCheck.pending = url
+        artCheck.file = ""
         artCheck.command = ["test", "-r", path]
         artCheck.running = true
     }
@@ -62,8 +85,17 @@ Singleton {
         // Which url this answer belongs to; a slow answer must not overwrite
         // the art of a track that has already started.
         property string pending: ""
+        // The cached file a remote url was fetched to; empty for a local path.
+        property string file: ""
         onExited: code => {
-            if (root.rawArtUrl === artCheck.pending) root.artUrl = code === 0 ? artCheck.pending : ""
+            if (root.rawArtUrl !== artCheck.pending) return
+            if (artCheck.file.length) {
+                // Fetched: the file. Not fetched (offline, odd CDN): the url
+                // itself, which is what consumers always got before.
+                root.artUrl = code === 0 ? "file://" + artCheck.file : artCheck.pending
+                return
+            }
+            root.artUrl = code === 0 ? artCheck.pending : ""
         }
     }
     readonly property bool playing: active !== null && active.isPlaying

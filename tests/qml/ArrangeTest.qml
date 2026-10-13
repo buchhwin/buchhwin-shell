@@ -285,6 +285,14 @@ ShellRoot {
              "dragged past the corner it stops at its floors")
         T.eq(A.panelDragTo(-500, 5000, corner, bounds), { width: 900, height: 800 },
              "and dragged off the screen it stops at its ceilings")
+        // A centred card moves both edges: measured from the centre, the
+        // corner stays under the pointer instead of travelling half its way.
+        T.eq(A.panelDragTo(400, 700, { centreX: 700, centreY: 400 }, bounds), { width: 600, height: 600 },
+             "a centred card is twice the pointer's distance from its centre")
+        T.eq(A.panelDragTo(400, 700, { centreX: 700, top: 100 }, bounds), { width: 600, height: 600 },
+             "centred sideways only: the height still runs from the top")
+        T.eq(A.panelDragTo(650, 450, { centreX: 700, centreY: 400 }, bounds), { width: 360, height: 200 },
+             "and it stops at its floors like any other")
 
 
         // ---- the bar: one row, through the same functions -----------------

@@ -228,3 +228,49 @@ function moveIndex(index, delta, count, columns) {
     const target = current + (delta / Math.abs(delta)) * cols
     return target < 0 || target >= count ? current : target
 }
+
+// ---- the folder --------------------------------------------------------------
+// ~/.config/user-dirs.dirs → the pictures directory, "" when it does not say.
+// The file is shell syntax written by xdg-user-dirs-update:
+//   XDG_PICTURES_DIR="$HOME/Bilder"
+// Only the $HOME form and absolute paths are taken; anything else is not ours
+// to evaluate.
+function picturesDir(text, home) {
+    const match = /^\s*XDG_PICTURES_DIR\s*=\s*"([^"\n]*)"\s*$/m.exec(String(text || ""))
+    if (!match) return ""
+    const value = match[1]
+    if (value.indexOf("$HOME/") === 0) return String(home || "") + value.slice(5)
+    if (value === "$HOME") return ""
+    return value.charAt(0) === "/" ? value : ""
+}
+
+// The folder when the setting is empty: "Desktop" inside the pictures
+// directory, which is ~/Bilder on a German system - the old fixed default,
+// ~/Pictures/Desktop, did not exist there.
+function defaultFolder(pictures, home) {
+    return (pictures || String(home || "") + "/Pictures") + "/Desktop"
+}
+
+// "/home/a/x" → "~/x", so the setting survives a renamed home.
+function contractHome(path, home) {
+    const value = String(path || "")
+    const base = String(home || "")
+    if (base.length && value === base) return "~"
+    return base.length && value.indexOf(base + "/") === 0 ? "~" + value.slice(base.length) : value
+}
+
+// The recently used folders, newest first, as the comma string
+// SettingsService can store (a list would come back as {"0": ...}).
+var RECENT_MAX = 5
+
+function recentFolders(text) {
+    const seen = {}
+    return String(text || "").split(",").map(item => item.trim())
+        .filter(item => item.length && !seen[item] && (seen[item] = true)).slice(0, RECENT_MAX)
+}
+
+function addRecentFolder(text, folder) {
+    const value = String(folder || "").trim()
+    if (!value.length || value.indexOf(",") >= 0) return recentFolders(text).join(",")
+    return [value].concat(recentFolders(text).filter(item => item !== value)).slice(0, RECENT_MAX).join(",")
+}

@@ -88,15 +88,18 @@ ShellRoot {
 
         T.eq([W.showsLabel("numbers", plain), W.showsLabel("numbers", here)], [true, true], "numbers writes every one")
         T.eq([W.showsLabel("dots", plain), W.showsLabel("dots", here)], [false, false], "dots writes none of them")
+        T.eq([W.showsLabel("pills", plain), W.showsLabel("pills", here)], [false, false], "pills writes none of them either")
         T.eq([W.showsLabel("activeDot", plain), W.showsLabel("activeDot", here)], [true, false],
              "a dot for the one you are on, numbers for the ones you could go to")
 
         // A name somebody chose is not a number and is never thrown away: that
         // is the only thing that made naming a workspace worth doing.
         T.eq(W.showsLabel("dots", named), true, "a named workspace keeps its name even in dots")
+        T.eq(W.showsLabel("pills", named), true, "and in pills")
         T.eq(W.showsLabel("activeDot", namedHere), true, "and even when it is the one you are on")
 
         T.eq(W.normalizeStyle("dots"), "dots", "a known style is itself")
+        T.eq(W.normalizeStyle("pills"), "pills", "pills is a style")
         T.eq(W.normalizeStyle("sparkles"), "numbers", "an unknown one is numbers")
         T.eq(W.normalizeStyle(undefined), "numbers", "and so is none")
         T.eq(W.showsLabel("numbers", null), true, "no workspace at all is not a reason to hide a number")

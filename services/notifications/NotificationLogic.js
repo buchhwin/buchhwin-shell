@@ -103,3 +103,17 @@ function livePopups(popups, live) {
     const values = live || []
     return (popups || []).filter(item => values.indexOf(item) >= 0)
 }
+
+// Whether two queues hold the same notifications in the same order. By
+// identity, which is how `livePopups` and `hidePopup` find a notification too:
+// the server hands out one object per notification and keeps it for its whole
+// life. A queue that has not changed is not assigned again, so nothing that
+// hangs off it has to be worked out again. Unit tested.
+function sameSequence(a, b) {
+    const left = a || []
+    const right = b || []
+    if (left.length !== right.length) return false
+    for (let index = 0; index < left.length; ++index)
+        if (left[index] !== right[index]) return false
+    return true
+}
