@@ -15,6 +15,7 @@ import "../../services/LayoutLogic.js" as LayoutLogic
 Item {
     id: root
     required property var notch
+    readonly property CalendarDemand calendarDemand: CalendarDemand { active: NotchService.shows("events") }
     readonly property date now: clock.date
     readonly property var event: Logic.nextEvent(CalendarService.eventsFor(now), now)
     readonly property bool mediaPreview: NotchService.mediaPreview

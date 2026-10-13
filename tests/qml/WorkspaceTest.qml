@@ -138,6 +138,16 @@ ShellRoot {
              [], "with a monitor gone its block follows the order, and a block beyond the monitors stays")
         T.eq(W.misplaced(["DP-8", "DP-13"], [{ id: 12, monitor: "DP-8" }]), [{ id: 12, monitor: "DP-13" }],
              "the second block belongs to whoever is second now")
+        // After the moves: a monitor left showing a stranger (Hyprland filled
+        // it with the next free number) goes to one of its own.
+        T.eq(W.homes(order, [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 12 }],
+                     [{ monitor: "DP-8", id: 1 }, { monitor: "DP-10", id: 12 }, { monitor: "DP-13", id: 2 }]),
+             [{ monitor: "DP-13", id: 21 }], "the third screen showing 2 goes to 21")
+        T.eq(W.homes(order, [{ id: 1 }, { id: 14 }, { id: 12 }],
+                     [{ monitor: "DP-10", id: 3 }]),
+             [{ monitor: "DP-10", id: 12 }], "to the lowest of its own that exists")
+        T.eq(W.homes(order, [], [{ monitor: "DP-8", id: 4 }, { monitor: "DP-10", id: 15 }, { monitor: "HDMI-1", id: 2 }]), [],
+             "nothing to do when every screen shows its own, and an unknown screen is left alone")
         T.eq(W.misplaced([], afterBoot), [], "no monitors known, nothing moves")
         T.eq(W.misplaced(order, null), [], "no workspaces, nothing moves")
         T.eq(W.misplaced(order, [{ id: "3", monitor: "DP-13" }, { id: 4 }]),

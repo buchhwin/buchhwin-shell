@@ -5,6 +5,7 @@ import qs.services
 import qs.shell.components
 
 ColumnLayout {
+    readonly property CalendarDemand calendarDemand: CalendarDemand {}
     spacing: Metrics.spaceLg
 
     SettingsSection {

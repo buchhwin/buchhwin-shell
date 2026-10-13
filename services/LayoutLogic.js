@@ -564,7 +564,7 @@ function notchItems(notch, zone) {
 // the user's own live in the layout file beside the notch itself, global like
 // it. Applying one is a single undo step (LayoutService.applyNotchPreset).
 var NOTCH_PRESET_OPTIONS = ["shape", "collapsedWidth", "expandedWidth", "expandedHeight",
-                            "hoverMode", "openDelay", "closeDelay", "clickAction", "eventCount",
+                            "hoverMode", "openDelay", "closeDelay", "clickAction", "middleAction", "rightAction", "swipe", "panelOrigin", "eventCount",
                             "bodyHeight", "bodyRadius", "bodyPadding"]
 
 function notchPresetOptions(options) {

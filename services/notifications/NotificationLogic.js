@@ -11,13 +11,25 @@ function appKey(notification) {
 // (resolved by `iconPath`, which is Quickshell's lookup), else a bell. Takes
 // the notification itself, so the caller reads its fields at one moment
 // rather than through a binding that may not have caught up. Unit tested.
+// The picture a notification shows: its own image, else its app icon. An
+// image given as an http(s) url is skipped for the icon: Qt's HTTP/2 client
+// is where the shell's crashes and the "HEADERS on invalid stream" noise
+// came from (pitfall 28), and a notification has no business making the
+// shell fetch from the network. Unit tested.
+function picture(notification, iconPath) {
+    const it = notification || {}
+    const image = String(it.image || "")
+    if (image && !/^https?:\/\//i.test(image)) return image
+    return it.appIcon ? String(iconPath(it.appIcon) || "") : ""
+}
+
 function notchContent(notification, iconPath) {
     const it = notification || {}
-    const picture = it.image || (it.appIcon ? String(iconPath(it.appIcon) || "") : "")
+    const shown = picture(it, iconPath)
     return {
         kind: "notification",
-        icon: picture ? "" : "󰂚",
-        iconSource: picture,
+        icon: shown ? "" : "󰂚",
+        iconSource: shown,
         title: it.summary || it.appName || "Notification",
         subtitle: it.body || ""
     }

@@ -784,7 +784,7 @@ Singleton {
     // it lives in settings.json. Its options are still edited in the editor,
     // and Ctrl+Z there has to reach them, so an undo step carries them along.
     readonly property var notchKeys: ["notch.eventCount", "notch.hoverMode", "notch.openDelay", "notch.closeDelay",
-                                      "notch.clickAction", "notch.reserve",
+                                      "notch.clickAction", "notch.middleAction", "notch.rightAction", "notch.swipe", "notch.panelOrigin", "notch.reserve",
                                       "notch.fullscreen", "notch.shape", "notch.collapsedWidth",
                                       "notch.expandedWidth", "notch.expandedHeight",
                                       "notch.bodyHeight", "notch.bodyRadius", "notch.bodyPadding"]

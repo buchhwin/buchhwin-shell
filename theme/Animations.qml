@@ -14,7 +14,8 @@ Singleton {
     // *duration* multiplier, so a faster speed divides it: at 2x an animation
     // takes half as long.
     readonly property real modeFactor: mode === "off" ? 0 : mode === "reduced" ? 0.6 : 1
-    readonly property real speed: Logic.speed(SettingsService.animationSpeed)
+    // The slider's value times the base pace (AnimationLogic.BASE_PACE).
+    readonly property real speed: Logic.pace(SettingsService.animationSpeed)
     readonly property real factor: modeFactor / speed
     readonly property bool motionEnabled: mode === "full"
     readonly property bool enabled: factor > 0

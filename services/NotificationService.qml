@@ -62,7 +62,11 @@ Singleton {
 
     function hidePopup(notification) {
         popups = popups.filter(item => item !== notification)
+        if (heldPopup === notification) heldPopup = null
     }
+    // The popup the notch is showing opened up (a click on it): its timer
+    // waits until it is closed again, the way a card waits under the pointer.
+    property var heldPopup: null
 
     function markRead() { unread = 0 }
 

@@ -5,6 +5,7 @@ import Quickshell.Services.Notifications
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../services/notifications/NotificationLogic.js" as NotificationLogic
 
 // One notification with icon, text, actions and close button.
 ShellCard {
@@ -75,7 +76,7 @@ ShellCard {
                 Image {
                     id: image
                     anchors.fill: parent
-                    source: root.notification.image || (root.notification.appIcon ? Quickshell.iconPath(root.notification.appIcon, true) : "")
+                    source: NotificationLogic.picture(root.notification, name => Quickshell.iconPath(name, true))
                     sourceSize.width: Metrics.iconXl * 2
                     sourceSize.height: Metrics.iconXl * 2
                     fillMode: Image.PreserveAspectFit

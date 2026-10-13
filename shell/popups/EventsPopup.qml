@@ -1,6 +1,5 @@
 import Quickshell
 import QtQuick
-import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
@@ -9,6 +8,7 @@ import qs.shell.dashboard
 // Events pill/widget: today's events that have not ended yet.
 PopupPanel {
     id: root
+    readonly property CalendarDemand calendarDemand: CalendarDemand { active: root.shown }
     panelId: "eventsPopup"
     heading: "Today"
     detail: SettingsService.locale.toString(clock.date, "dddd, MMMM d")

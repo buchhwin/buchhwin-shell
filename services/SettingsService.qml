@@ -109,6 +109,9 @@ Singleton {
             "displayOsd": true,
             "displayNotifications": true,
             "displayMedia": true,
+            // How a level shows in the notch: a ring with the figure beside it
+            // (the Dynamic Island way), or the flat track it was before.
+            "osdStyle": "ring",
             "reserve": true,
             "fullscreen": "hide",
             // How the overview opens: on hover, only on a click, or never
@@ -120,6 +123,17 @@ Singleton {
             "openDelay": 150,
             "closeDelay": 400,
             "clickAction": "dashboard",
+            // The middle and the right button on the collapsed notch
+            // (NotchLogic.BUTTON_ACTIONS); the left one is clickAction above.
+            "middleAction": "none",
+            // A scroll or swipe over the collapsed notch moves between the
+            // date, the strip and what is playing (NotchLogic.swipeSettle).
+            "swipe": true,
+            // Where a panel opens in notch mode: below the notch, or out of
+            // it - glued to the top edge with the notch's ears, the notch
+            // gone while it is open (ShellPanel `fromNotch`).
+            "panelOrigin": "below",
+            "rightAction": "none",
             "eventCount": 2,
             // The collapsed body: how tall it is, how round its bottom corners
             // are and how much air the strip keeps at both ends. These are the
@@ -440,6 +454,12 @@ Singleton {
         "notch.hoverMode": ["hover", "click", "off"],
         "notch.shape": ["notch", "pill"],
         "notch.clickAction": ["dashboard", "expand"],
+        "notch.osdStyle": ["ring", "bar"],
+        "notch.panelOrigin": ["below", "notch"],
+        "notch.middleAction": ["none", "dashboard", "controlCenter", "notifications", "launcher",
+                               "clipboard", "mediaPopup", "playPause", "overview"],
+        "notch.rightAction": ["none", "dashboard", "controlCenter", "notifications", "launcher",
+                              "clipboard", "mediaPopup", "playPause", "overview"],
         "wallpaper.slideshowSource": ["all", "favourites", "chosen", "folder"],
         "workspaces.mode": ["open", "gapless", "fixed"],
         "workspaces.style": ["numbers", "dots", "pills", "activeDot"],

@@ -7,7 +7,10 @@ import "Style.js" as S
 // buchhwin-shell login screen for SDDM (Theme-API 2, Qt 6 greeter). It looks
 // like the shell's lock screen (shell/lock/): blurred wallpaper, date and a
 // large rolling clock, avatar, name and password pill. SDDM loads it once per
-// screen; the login controls only appear on the primary one.
+// screen, and every screen gets the login controls: SDDM's primary screen is
+// whatever its compositor says, and with the laptop lid shut on a dock that
+// was the dark built-in panel - three monitors showing a clock and nothing to
+// log in with (2026-10-13). The primary one only takes the first focus.
 //
 // SDDM provides the context objects `sddm`, `config` (theme.conf and
 // theme.conf.user), `userModel`, `sessionModel`, `keyboard` and
@@ -38,6 +41,8 @@ Rectangle {
     readonly property bool preview: previewLogin === "fail" || previewLogin === "success"
 
     readonly property bool primary: typeof primaryScreen === "undefined" || primaryScreen === true
+    // Where the login controls are drawn: every screen (see the top).
+    readonly property bool controls: true
 
     property int userIndex: Logic.clampIndex(userModel.lastIndex, userModel.count)
     property int sessionIndex: Logic.clampIndex(sessionModel.lastIndex, sessionModel.count)
@@ -217,10 +222,11 @@ Rectangle {
     }
     Rectangle { anchors.fill: parent; color: S.shade }
 
-    // Closes an open menu when clicking elsewhere.
+    // Closes an open menu when clicking elsewhere, and a click anywhere on a
+    // screen gives that screen's password field the keyboard - each screen is
+    // a window of its own, and the one the hand is on is the one to type in.
     MouseArea {
         anchors.fill: parent
-        enabled: root.menu.length > 0
         onClicked: {
             root.menu = ""
             password.focusInput()
@@ -267,7 +273,7 @@ Rectangle {
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: S.spaceXl
-        visible: root.primary && root.showsKeyboard && layoutText.text.length > 0
+        visible: root.controls && root.showsKeyboard && layoutText.text.length > 0
         opacity: root.topIn
         spacing: S.spaceSm
         Icon { name: "keyboard"; size: S.iconMd; opacity: S.mutedOpacity + (1 - S.mutedOpacity) * (layoutArea.containsMouse ? 1 : 0) }
@@ -294,7 +300,7 @@ Rectangle {
     // Avatar, name, password and status.
     ColumnLayout {
         id: loginBlock
-        visible: root.primary
+        visible: root.controls
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         // Glides to the middle of the screen while typing.
@@ -370,7 +376,7 @@ Rectangle {
         anchors.bottom: parent.bottom
         anchors.margins: S.spaceXl
         anchors.bottomMargin: S.spaceXl + S.captionSize + S.spaceXs
-        visible: root.primary
+        visible: root.controls
         opacity: root.cornersIn
         spacing: S.spaceSm
 
@@ -406,7 +412,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: S.spaceXl
-        visible: root.primary
+        visible: root.controls
         opacity: root.cornersIn
         spacing: S.spaceLg
         Repeater {

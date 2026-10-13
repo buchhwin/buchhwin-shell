@@ -15,6 +15,12 @@ ShellRoot {
         T.eq([A.SPEED_MIN, A.SPEED_MAX], [0.5, 2], "the slider runs from half speed to double")
         T.eq([A.speed(1), A.speed(0.1), A.speed(9), A.speed("x"), A.speed(0)], [1, 0.5, 2, 1, 1],
              "a stored speed is clamped to the slider, nonsense is the designed pace")
+        // The slider's 1 is the session's base pace (1.5x the designed
+        // durations since 2026-10-13); the multiplier is clamped to the
+        // slider's range at that pace.
+        T.eq([A.pace(1), A.pace(2), A.pace(0.5), A.pace("x")], [1.5, 3, 0.75, 1.5], "1x on the slider plays at the base pace")
+        T.eq([A.rate(3), A.rate(9), A.rate(0.1), A.rate(0)], [3, 3, 0.5, 1], "a multiplier stays inside the slider's range at that pace")
+        T.eq(A.spring("standard", A.pace(1)).spring, Math.round(4.5 * 2.25 * 100) / 100, "the springs take the base pace too")
 
         // ---- the floor ---------------------------------------------------
 

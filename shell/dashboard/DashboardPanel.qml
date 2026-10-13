@@ -13,6 +13,7 @@ import "../../services/appearance/TimeFormat.js" as TimeFormat
 // Weather comes from Open-Meteo, events from the KDE calendars (Akonadi).
 ShellPanel {
     id: root
+    readonly property CalendarDemand calendarDemand: CalendarDemand { active: root.shown }
     panelId: "dashboard"
     placement: "top-right"
     // The dashboard is a grid the user sizes, the way the control center and

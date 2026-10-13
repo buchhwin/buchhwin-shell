@@ -90,6 +90,7 @@ Singleton {
     // numbers stop meaning anything; with it a returning monitor takes its own
     // back. The rules are re-emitted after a config reload as well, because
     // that resets everything the shell set at runtime.
+    property string appliedRules: ""
     function applyWorkspaceRules() {
         if (!perMonitor || !HyprCompat.detected) return
         const order = Workspaces.monitorOrder(monitorList)
@@ -98,7 +99,14 @@ Singleton {
         for (let index = 0; index < order.length; ++index)
             for (let local = 1; local <= Workspaces.perMonitorBlock; ++local)
                 rules.push(HyprCompat.commands.workspaceRule(Workspaces.globalId(local, index), order[index]))
-        HyprCompat.configure(HyprCompat.commands.combine(rules))
+        // The rules only when they say something new: this runs on every
+        // workspace that comes or goes now, and the same thirty rules again
+        // would be a process for nothing. A config reload forgets them.
+        const ruleKey = order.join(",")
+        if (ruleKey !== appliedRules) {
+            appliedRules = ruleKey
+            HyprCompat.configure(HyprCompat.commands.combine(rules))
+        }
         // A rule binds a workspace when it is *created*, and the compositor
         // creates one per monitor before the shell is up - so after every
         // reboot 3 sat on the second screen and 4 on the third, and the
@@ -107,14 +115,38 @@ Singleton {
         // that is what the rule would have done a second earlier.
         const placed = Hyprland.workspaces.values.map(workspace => ({
             id: workspace.id, monitor: workspace.monitor ? workspace.monitor.name : "" }))
-        for (const move of Workspaces.misplaced(order, placed))
-            HyprCompat.dispatch(HyprCompat.commands.moveWorkspaceToMonitor(move.id, move.monitor))
+        const moves = Workspaces.misplaced(order, placed)
+        const steps = moves.map(move => HyprCompat.commands.moveWorkspaceToMonitor(move.id, move.monitor))
+        // And a screen left showing someone else's - Hyprland fills an
+        // emptied monitor with the next free number - is sent to its own,
+        // the focus put back where the hand is afterwards.
+        const actives = Hyprland.monitors.values
+            .filter(monitor => order.indexOf(monitor.name) >= 0)
+            .map(monitor => ({ monitor: monitor.name, id: monitor.activeWorkspace ? monitor.activeWorkspace.id : 0 }))
+            .map(active => {
+                const moved = moves.find(move => move.id === active.id)
+                return moved ? { monitor: active.monitor, id: -1 } : active
+            })
+        const homes = Workspaces.homes(order, placed, actives)
+        for (const home of homes) {
+            steps.push(HyprCompat.commands.focusMonitor(home.monitor))
+            steps.push(HyprCompat.commands.workspace(home.id))
+        }
+        if (homes.length && focusedMonitorName.length) steps.push(HyprCompat.commands.focusMonitor(focusedMonitorName))
+        HyprCompat.dispatchInOrder(steps)
     }
     onMonitorListChanged: ruleTimer.restart()
+    // A workspace appearing or going is where the strays come from (see
+    // `homes`), so the check runs then too. Idempotent: with every block in
+    // place it sends nothing.
+    Connections {
+        target: Hyprland.workspaces
+        function onValuesChanged() { if (root.perMonitor) ruleTimer.restart() }
+    }
     onPerMonitorChanged: ruleTimer.restart()
     Connections {
         target: root
-        function onConfigReloaded() { ruleTimer.restart() }
+        function onConfigReloaded() { root.appliedRules = ""; ruleTimer.restart() }
     }
     // Monitors arrive one at a time while a dock settles; one batch after they
     // have stopped moving rather than one per monitor.

@@ -73,6 +73,7 @@ ColumnLayout {
         switch (type) {
         case "wifi": return wifiTile
         case "bluetooth": return bluetoothTile
+        case "vpn": return vpnTile
         case "dnd": return dndTile
         case "microphone": return microphoneTile
         case "fingerprint": return fingerprintTile
@@ -205,6 +206,26 @@ ColumnLayout {
             showChevron: true
             onToggled: value => BluetoothService.setEnabled(value)
             onDetailsRequested: root.openPage("bluetooth")
+        }
+    }
+
+    // One switch for the tunnels: off takes every active one down, on brings
+    // up the first. Hidden while there are none to switch.
+    Component {
+        id: vpnTile
+        QuickTile {
+            shape: fitClass
+            readonly property bool shown: NetworkService.vpns.length > 0
+            icon: "󰖂"
+            title: "VPN"
+            subtitle: NetworkService.activeVpns.length ? NetworkService.activeVpns[0].name : "Off"
+            checked: NetworkService.activeVpns.length > 0
+            showChevron: true
+            onToggled: value => {
+                if (value && NetworkService.vpns.length) NetworkService.setVpn(NetworkService.vpns[0].uuid, true)
+                else for (const tunnel of NetworkService.activeVpns) NetworkService.setVpn(tunnel.uuid, false)
+            }
+            onDetailsRequested: root.openPage("network")
         }
     }
 

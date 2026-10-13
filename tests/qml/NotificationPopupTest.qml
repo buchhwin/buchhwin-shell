@@ -82,6 +82,10 @@ ShellRoot {
         T.eq(N.notchContent({ appIcon: "nonsense" }, name => "").icon, "󰂚",
              "an app icon that resolves to nothing is a bell too, like on the card")
         T.eq(N.notchContent(null, icons).title, "Notification", "no notification at all does not throw")
+        T.eq(N.picture({ image: "https://cdn.example/a.jpg", appIcon: "signal" }, icons), "/icons/signal.png",
+             "a remote image is never handed to Qt: the app icon instead")
+        T.eq(N.picture({ image: "HTTP://cdn.example/a.jpg" }, icons), "", "and with no app icon, nothing")
+        T.eq(N.picture({ image: "file:///tmp/a.png" }, icons), "file:///tmp/a.png", "a local image stays")
 
         T.finish("NotificationPopupTest")
     }

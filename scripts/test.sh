@@ -68,10 +68,24 @@ python3 "$project_dir/scripts/lib/checks.py" ipc
 python3 "$project_dir/scripts/lib/checks.py" reserved
 
 printf '== QML lint\n'
-qmllint_bin=$(command -v qmllint || command -v qmllint-qt6 || true)
-[[ -z $qmllint_bin && -x /usr/lib64/qt6/bin/qmllint ]] && qmllint_bin=/usr/lib64/qt6/bin/qmllint
+# The Qt 6 one, by name first: on openSUSE `qmllint` is Qt 5's, which rejects
+# --max-warnings, and `|| true` turned the whole step into a no-op.
+qmllint_bin=""
+for candidate in qmllint6 qmllint-qt6 /usr/lib64/qt6/bin/qmllint /usr/lib/qt6/bin/qmllint qmllint; do
+  path=$(command -v "$candidate" 2>/dev/null) || continue
+  version=$("$path" --version 2>/dev/null) || version=""
+  if [[ $version == *" 6."* ]]; then qmllint_bin=$path; break; fi
+done
 if [[ -n $qmllint_bin ]]; then
-  "$qmllint_bin" --max-warnings -1 $(find "$project_dir/shell" "$project_dir/services" "$project_dir/theme" -name '*.qml' 2>/dev/null) || true
+  # Without Quickshell's qmltypes every `qs.*` name is unresolved, so the full
+  # report (tens of thousands of lines) goes to a file and only the kinds that
+  # mean something without them are shown. Warnings never fail the run.
+  lint_log=${XDG_CACHE_HOME:-$HOME/.cache}/buchhwin-shell/qmllint.log
+  mkdir -p "${lint_log%/*}"
+  "$qmllint_bin" --max-warnings -1 $(find "$project_dir/shell" "$project_dir/services" "$project_dir/theme" -name '*.qml' 2>/dev/null) >"$lint_log" 2>&1 || true
+  lint_shown=$(grep -E '\[(duplicate-property-binding|syntax|read-only-property)\]' "$lint_log" || true)
+  [[ -n $lint_shown ]] && printf '%s\n' "$lint_shown"
+  printf '%s: %s warnings in all, full report in %s\n' "${qmllint_bin##*/}" "$(grep -c '^Warning' "$lint_log" || true)" "$lint_log"
 else
   note_skip 'QML lint (qmllint not installed; package qt6-qtdeclarative-devel)'
 fi

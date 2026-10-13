@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Networking
 import QtQuick
+import "network/WireguardLogic.js" as WireguardLogic
 
 // Wi-Fi through Quickshell.Networking (NetworkManager). VPN connections and
 // addresses come from nmcli, refreshed only when `nmcli monitor` reports a
@@ -186,6 +187,117 @@ Singleton {
 
     function setVpn(uuid, up) {
         Quickshell.execDetached(["nmcli", "connection", up ? "up" : "down", "uuid", uuid])
+    }
+
+    // ---- WireGuard tunnels (scripts/wireguard-helper.py) --------------------
+    // Added as the user's own NetworkManager connections, which need no
+    // administrator password and which Plasma lists as well - one
+    // NetworkManager, the same tunnels in both sessions. Keys go to the helper
+    // on stdin, never as arguments; the private key a "Generate" makes is held
+    // here only until the form takes it.
+    property string wgState: ""          // "", "generating", "adding", "deleting"
+    property string wgError: ""
+    property string wgNotice: ""
+    property string wgPrivate: ""
+    property string wgPublic: ""
+    property string wgPending: ""
+    signal wgAdded()
+
+    function wgGenerate() {
+        if (wgProc.running) return
+        wgError = ""
+        wgState = "generating"
+        wgProc.command = [Paths.script("wireguard-helper.py"), "genkey"]
+        wgProc.running = true
+    }
+    // The public half of a key typed or pasted into the form.
+    function wgPublicOf(privateKey) {
+        if (wgProc.running) return
+        wgState = "pubkey"
+        wgPending = privateKey + "\n"
+        wgProc.command = [Paths.script("wireguard-helper.py"), "pubkey"]
+        wgProc.running = true
+    }
+    function wgAdd(name, ifname, configText) {
+        if (wgProc.running) return false
+        wgError = ""
+        wgNotice = ""
+        wgState = "adding"
+        wgPending = configText
+        wgProc.command = [Paths.script("wireguard-helper.py"), "add", "--name=" + name, "--ifname=" + ifname]
+        wgProc.running = true
+        return true
+    }
+    // A wg-quick file picked with kdialog. The settings panel closes first
+    // (a dialog under a panel with the keyboard is unusable) and opens again
+    // on its network page with the answer.
+    function wgImport() {
+        if (wgProc.running || wgPick.running) return
+        wgError = ""
+        wgNotice = ""
+        PanelService.close()
+        wgPick.running = true
+    }
+    function wgDelete(uuid) {
+        if (wgProc.running) return
+        wgError = ""
+        wgState = "deleting"
+        wgPending = ""
+        wgProc.command = [Paths.script("wireguard-helper.py"), "delete", "--uuid=" + uuid]
+        wgProc.running = true
+    }
+
+    Process {
+        id: wgPick
+        command: ["kdialog", "--title", "Import a WireGuard tunnel", "--getopenfilename",
+                  Quickshell.env("HOME") || "/", "WireGuard (*.conf)"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const path = text.trim()
+                if (!path.length) return
+                const name = WireguardLogic.nameFromPath(path)
+                root.wgState = "importing"
+                root.wgPending = ""
+                wgProc.command = [Paths.script("wireguard-helper.py"), "add", "--name=" + name,
+                                  "--ifname=" + WireguardLogic.interfaceName(name), "--file=" + path]
+                wgProc.running = true
+            }
+        }
+    }
+
+    Process {
+        id: wgProc
+        stderr: ErrorLog { label: "NetworkService.wgProc" }
+        stdinEnabled: true
+        onStarted: {
+            if (root.wgPending.length) write(root.wgPending)
+            root.wgPending = ""
+            stdinEnabled = false
+        }
+        stdout: StdioCollector {
+            onStreamFinished: {
+                let answer = null
+                try { answer = JSON.parse(text.trim().split("\n").pop() || "{}") } catch (error) { answer = null }
+                const state = root.wgState
+                root.wgState = ""
+                if (!answer || !answer.ok) {
+                    root.wgError = answer && answer.error ? answer.error : "The helper did not answer"
+                } else if (state === "generating") {
+                    root.wgPrivate = answer["private"]
+                    root.wgPublic = answer["public"]
+                } else if (state === "pubkey") {
+                    root.wgPublic = answer["public"]
+                } else if (state === "adding" || state === "importing") {
+                    root.wgNotice = answer.warning || "Added. It is in Plasma's network list too."
+                    root.wgPrivate = ""
+                    root.wgPublic = ""
+                    root.wgAdded()
+                }
+                if (state === "importing") PanelService.open("settings", { page: "network" })
+                root.refresh()
+            }
+        }
+        onExited: stdinEnabled = true
     }
 
     // nmcli -t escapes ':' inside values as '\:'.

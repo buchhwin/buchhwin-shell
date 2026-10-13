@@ -29,6 +29,7 @@ import qs.services
 import qs.theme
 import "services/profile/ProfileLogic.js" as Profile
 import "services/notch/NotchLogic.js" as NotchLogic
+import "services/appearance/AnimationLogic.js" as AnimationLogic
 
 ShellRoot {
     id: root
@@ -234,6 +235,11 @@ ShellRoot {
     IpcHandler {
         target: "settings"
         function setAnimationMode(mode: string): bool { return SettingsService.set("appearance.animationMode", mode) }
+        // The slider's value (0.5-2, 1 = the base pace), for the active mode.
+        function setAnimationSpeed(speed: real): bool {
+            if (!isFinite(speed) || speed < AnimationLogic.SPEED_MIN || speed > AnimationLogic.SPEED_MAX) return false
+            return SettingsService.set("appearance.animationSpeed", Math.round(speed * 20) / 20)
+        }
         function setTheme(theme: string): bool { return SettingsService.set("appearance.theme", theme) }
         function get(path: string): string { return JSON.stringify(SettingsService.value(path)) }
         function open(page: string): void { PanelService.open("settings", { page: page }) }
@@ -771,7 +777,8 @@ ShellRoot {
         // Synthetic now-playing row for screenshots; controls stay disabled.
         function previewMedia(enabled: bool): void { NotchService.mediaPreview = enabled }
         function setOption(key: string, value: string): bool {
-            if (["fullscreen", "hoverMode", "clickAction"].indexOf(key) >= 0) return SettingsService.set("notch." + key, value)
+            if (["fullscreen", "hoverMode", "clickAction", "middleAction", "rightAction", "panelOrigin", "osdStyle"].indexOf(key) >= 0)
+                return SettingsService.set("notch." + key, value)
             if (["openDelay", "closeDelay"].indexOf(key) >= 0) {
                 const number = Number(value)
                 if (!isFinite(number) || number < 0 || number > 2000) return false
@@ -787,6 +794,10 @@ ShellRoot {
                 return SettingsService.set("notch." + key, Math.round(number))
             }
             if (key === "reserve") return SettingsService.set("notch.reserve", value === "true")
+            if (key === "swipe") return SettingsService.set("notch.swipe", value === "true")
+            // The form (notch or pill), the editor's switch: one undo step.
+            if (key === "shape") return SettingsService.allowed["notch.shape"].indexOf(value) >= 0
+                && LayoutService.changeNotch("notch.shape", value) !== false
             // The switch this replaced, for scripts written against it.
             if (key === "expandOnHover") return SettingsService.set("notch.hoverMode", value === "true" ? "hover" : "click")
             return false
@@ -795,6 +806,17 @@ ShellRoot {
         function applyPreset(id: string): bool { return LayoutService.applyNotchPreset(id) }
         // Mode, settings and per screen what is shown (row ids and sizes, no titles).
         function get(): string { return NotchService.describe() }
+    }
+
+    IpcHandler {
+        target: "timer"
+        // A countdown in the notch: "5m", "90s", "1h30m", "1:30" or minutes.
+        function start(duration: string): bool { return TimerService.startText(duration) }
+        function stop(): void { TimerService.stop() }
+        // Running, and the seconds left; no label, there is none.
+        function get(): string {
+            return JSON.stringify({ running: TimerService.running, remaining: Math.ceil(TimerService.remaining / 1000) })
+        }
     }
 
     IpcHandler {

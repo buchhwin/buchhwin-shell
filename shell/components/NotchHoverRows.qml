@@ -41,6 +41,60 @@ ColumnLayout {
             onSelected: value => root.set("clickAction", value)
         }
     }
+    // The other two buttons. Off unless chosen; the left click above is not
+    // touched by them.
+    readonly property var buttonOptions: [
+        { value: "none", label: "Nothing" }, { value: "dashboard", label: "Dashboard" },
+        { value: "controlCenter", label: "Quick settings" }, { value: "notifications", label: "Notifications" },
+        { value: "launcher", label: "Launcher" }, { value: "clipboard", label: "Clipboard" },
+        { value: "mediaPopup", label: "Media" }, { value: "playPause", label: "Play / pause" },
+        { value: "overview", label: "Workspaces overview" }
+    ]
+    SettingRow {
+        Layout.fillWidth: true
+        label: "Middle click"
+        hint: "On the collapsed notch"
+        ShellSelect {
+            focusOnTab: true
+            Layout.fillWidth: true
+            options: root.buttonOptions
+            current: NotchService.middleAction
+            onSelected: value => root.set("middleAction", value)
+        }
+    }
+    SettingRow {
+        Layout.fillWidth: true
+        label: "Right click"
+        hint: "On the collapsed notch"
+        ShellSelect {
+            focusOnTab: true
+            Layout.fillWidth: true
+            options: root.buttonOptions
+            current: NotchService.rightAction
+            onSelected: value => root.set("rightAction", value)
+        }
+    }
+    SettingRow {
+        Layout.fillWidth: true
+        visible: NotchService.shape !== "pill"
+        label: "Panels open"
+        hint: NotchService.panelsFromNotch ? "Out of the notch, which makes way for them"
+                                           : "Below the notch"
+        SegmentedControl {
+            focusOnTab: true
+            Layout.fillWidth: true
+            current: SettingsService.value("notch.panelOrigin")
+            options: [{ value: "below", label: "Below" }, { value: "notch", label: "Out of the notch" }]
+            onSelected: value => root.set("panelOrigin", value)
+        }
+    }
+    SettingRow {
+        Layout.fillWidth: true
+        labelFills: true
+        label: "Swipe between pages"
+        hint: "Scroll or swipe on the collapsed notch: the date on the left, what is playing on the right"
+        ShellToggle { focusOnTab: true; checked: NotchService.swipe; onToggled: value => root.set("swipe", value) }
+    }
     SettingRow {
         id: openRow
         Layout.fillWidth: true

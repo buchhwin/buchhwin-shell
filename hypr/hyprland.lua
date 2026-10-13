@@ -184,8 +184,8 @@ hl.animation({ leaf = "windowsMove", enabled = true, speed = 2.0, spring = "buch
 hl.animation({ leaf = "fade", enabled = true, speed = 1.7, spring = "buchhwinEffects" })
 hl.animation({ leaf = "layers", enabled = true, speed = 1.7, bezier = "buchhwinStandard", style = "fade" })
 hl.animation({ leaf = "layersOut", enabled = true, speed = 1.5, bezier = "buchhwinAccel", style = "fade" })
-hl.animation({ leaf = "workspaces", enabled = true, speed = 2.2, spring = "buchhwinSpatial", style = "slidefade 10%" })
-hl.animation({ leaf = "specialWorkspace", enabled = true, speed = 2.0, spring = "buchhwinSpatialSlow", style = "slidefadevert 15%" })
+hl.animation({ leaf = "workspaces", enabled = true, speed = 2.2, spring = "buchhwinSpatial", style = "slide" })
+hl.animation({ leaf = "specialWorkspace", enabled = true, speed = 2.0, spring = "buchhwinSpatialSlow", style = "slidevert" })
 hl.animation({ leaf = "border", enabled = true, speed = 2.0, spring = "buchhwinEffectsSlow" })
 hl.animation({ leaf = "borderangle", enabled = false, speed = 1, bezier = "buchhwinFast" })
 

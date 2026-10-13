@@ -42,8 +42,10 @@ PanelWindow {
 
     screen: PanelService.screen
     // Mapped for as long as the dimming is on, not only while it is drawn.
-    // See `level` below for what that buys and what it costs.
-    visible: dimming
+    // See `level` below for what that buys and what it costs. With the
+    // dimming off it is still mapped while a panel is open, undrawn: it is
+    // what a click beside the panel lands on.
+    visible: dimming || catching
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     anchors { top: true; bottom: true; left: true; right: true }
@@ -55,9 +57,20 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-    // Nothing here takes input. The panel above it owns the click that
-    // dismisses it, the way it always has.
-    mask: Region {}
+    // **The click beside a panel lands here** (2026-10-13). A panel's surface
+    // used to be the whole screen and caught that click itself; now it is the
+    // size of its card (ShellPanel, `compactSurface`), so this surface - full
+    // screen, below every panel and above the bar, the notch and every window
+    // - takes it while a panel is open, and nothing at all otherwise.
+    readonly property bool catching: PanelService.active.length > 0 && PanelService.outsideCloses
+    mask: catching ? null : noInput
+    Region { id: noInput }
+    MouseArea {
+        anchors.fill: parent
+        enabled: scrim.catching
+        acceptedButtons: Qt.AllButtons
+        onClicked: PanelService.close()
+    }
 
     // How much of it is there. A `PanelWindow` is a window, not an item, so it
     // has no opacity of its own: the rectangle carries it and this carries the

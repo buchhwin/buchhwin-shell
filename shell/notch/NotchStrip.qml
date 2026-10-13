@@ -1,5 +1,6 @@
 import Quickshell
 import QtQuick
+import QtQuick.Shapes
 import qs.theme
 import qs.services
 import "../../services/notch/NotchLogic.js" as Logic
@@ -51,7 +52,7 @@ Item {
     property point reportOrigin: Qt.point(0, 0)
     // While a recording runs the chip leads the strip, unless the list carries
     // one itself - the same rule the pill bar follows for its recording pill.
-    readonly property var items: Logic.stripItems(NotchService.collapsedItems, RecordingService.active)
+    readonly property var items: Logic.stripItems(NotchService.collapsedItems, RecordingService.active, TimerService.running)
 
     implicitWidth: symmetry.width
     implicitHeight: NotchService.bodyHeight
@@ -138,7 +139,8 @@ Item {
                 // the shift, and so does `screenRect`, which maps through it.
                 transform: Translate { x: root.padShift(index) }
                 sourceComponent: modelData.type === "clock" ? timePart
-                    : modelData.type === "recording" ? recordingPart : widgetPart
+                    : modelData.type === "recording" ? recordingPart
+                    : modelData.type === "timer" ? timerPart : widgetPart
             }
         }
     }
@@ -194,6 +196,62 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: RecordingService.stop()
+            }
+        }
+    }
+
+    // A countdown: a ring that empties and the time left; a click stops it.
+    Component {
+        id: timerPart
+        Item {
+            implicitWidth: timerChip.implicitWidth
+            implicitHeight: timerChip.implicitHeight
+            Row {
+                id: timerChip
+                anchors.centerIn: parent
+                spacing: (Metrics.spaceXs + Metrics.spaceXxs) * root.scaleFactor
+                Shape {
+                    id: timerRing
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Metrics.notchTimerRing * root.scaleFactor
+                    height: width
+                    preferredRendererType: Shape.CurveRenderer
+                    readonly property real r: (width - Metrics.notchRingStroke) / 2
+                    ShapePath {
+                        fillColor: "transparent"
+                        strokeColor: Colors.notchTrack
+                        strokeWidth: Metrics.notchRingStroke
+                        PathAngleArc { centerX: timerRing.width / 2; centerY: timerRing.height / 2
+                                       radiusX: timerRing.r; radiusY: timerRing.r; startAngle: 0; sweepAngle: 360 }
+                    }
+                    ShapePath {
+                        fillColor: "transparent"
+                        strokeColor: timerStop.containsMouse ? Colors.notchMutedText : Colors.accent
+                        strokeWidth: Metrics.notchRingStroke
+                        capStyle: ShapePath.RoundCap
+                        PathAngleArc { centerX: timerRing.width / 2; centerY: timerRing.height / 2
+                                       radiusX: timerRing.r; radiusY: timerRing.r
+                                       startAngle: -90; sweepAngle: 360 * TimerService.fraction }
+                    }
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: TimerService.remainingText
+                    color: Colors.notchText
+                    font.family: Typography.family
+                    font.pixelSize: Typography.notchTimeSize * root.scaleFactor
+                    font.weight: Typography.semibold
+                    font.features: { "tnum": 1 }
+                    renderType: Typography.renderType
+                }
+            }
+            MouseArea {
+                id: timerStop
+                anchors.fill: parent
+                anchors.margins: -Metrics.spaceXs
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: TimerService.stop()
             }
         }
     }

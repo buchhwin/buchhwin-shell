@@ -31,8 +31,8 @@ ShellPanel {
     morph: false
     scrimColor: Colors.overviewScrim
     keyForward: search
-    cardWidth: width
-    cardHeight: height - Metrics.panelTopOffset - Metrics.screenMargin
+    cardWidth: screenW
+    cardHeight: screenH - Metrics.panelTopOffset - Metrics.screenMargin
     property var workspaces: []
     // The monitors as `hyprctl` last described them, for the grouping.
     property var monitors: []

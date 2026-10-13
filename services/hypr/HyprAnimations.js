@@ -51,8 +51,11 @@ var BASE = [
     { leaf: "fade", speed: 1.7, spring: "buchhwinEffects", bezier: "buchhwinFast", style: "" },
     { leaf: "layers", speed: 1.7, spring: "", bezier: "buchhwinStandard", style: "fade" },
     { leaf: "layersOut", speed: 1.5, spring: "", bezier: "buchhwinAccel", style: "fade" },
-    { leaf: "workspaces", speed: 2.2, spring: "buchhwinSpatial", bezier: "buchhwinFast", style: "slidefade 10%" },
-    { leaf: "specialWorkspace", speed: 2.0, spring: "buchhwinSpatialSlow", bezier: "buchhwinFast", style: "slidefadevert 15%" },
+    // A plain slide: `slidefade` blends every window of both workspaces for
+    // the whole switch, and on two 4K outputs that cost 14-18 frames over
+    // 20 ms in eight switches; `slide` cost 0-1 (measured 2026-10-13).
+    { leaf: "workspaces", speed: 2.2, spring: "buchhwinSpatial", bezier: "buchhwinFast", style: "slide" },
+    { leaf: "specialWorkspace", speed: 2.0, spring: "buchhwinSpatialSlow", bezier: "buchhwinFast", style: "slidevert" },
     { leaf: "border", speed: 2.0, spring: "buchhwinEffectsSlow", bezier: "buchhwinFast", style: "" },
     // Off in every mode: a border that cycles its hue forever is motion with
     // nothing to say.
@@ -78,7 +81,7 @@ function plan(mode) {
 // decimals, because Hyprland takes them as text and a long float only makes
 // the command noisy.
 //
-// `speed` is the user's setting (1 is the designed pace) and it divides the
+// `speed` is the multiplier (`pace(setting)`; 1 is the designed pace) and it divides the
 // duration, the same way it does for the shell's own animations - one control
 // has to mean the same thing on both sides of the session or the desktop
 // moves at two rhythms at once.
@@ -89,7 +92,7 @@ function plan(mode) {
 // duration and is scaled in `curves()` instead.
 function entries(mode, speed) {
     const wanted = plan(mode)
-    const pace = Anim.speed(speed === undefined ? 1 : speed)
+    const pace = Anim.rate(speed === undefined ? 1 : speed)
     return BASE.map(entry => ({
         leaf: entry.leaf,
         enabled: wanted.enabled && !entry.off,
@@ -106,8 +109,14 @@ function entries(mode, speed) {
 // played faster. Reduced is faster again, the way its durations are shorter.
 function curves(mode, speed) {
     const wanted = plan(mode)
-    const scale = Anim.speed(speed === undefined ? 1 : speed) / (wanted.factor > 0 ? wanted.factor : 1)
+    const scale = Anim.rate(speed === undefined ? 1 : speed) / (wanted.factor > 0 ? wanted.factor : 1)
     return SPRINGS.map(curve => Anim.scaleSpring(curve, scale))
+}
+
+// The speed setting as the multiplier `entries` and `curves` take
+// (AnimationLogic.pace: the slider's 1 is the session's base pace).
+function pace(setting) {
+    return Anim.pace(setting)
 }
 
 function pointerAnimated(mode) {

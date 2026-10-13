@@ -128,8 +128,11 @@ function gridColumns(width, cell, maxColumns) {
 // while a recording runs and the list does not carry one itself. The pill bar
 // follows the same rule for its own recording pill. The automatic chip has no
 // id because it is not in the list, which is also what makes it undraggable.
-function stripItems(items, recording) {
-    const list = Array.isArray(items) ? items.slice() : []
+function stripItems(items, recording, timer) {
+    let list = Array.isArray(items) ? items.slice() : []
+    // A running countdown leads the strip too, after a recording.
+    if (timer && !list.some(item => item && item.type === "timer"))
+        list = [{ id: "", type: "timer" }].concat(list)
     if (recording && !list.some(item => item && item.type === "recording"))
         return [{ id: "", type: "recording" }].concat(list)
     return list
@@ -249,6 +252,43 @@ function clickResult(mode, action) {
     if (which === "click") return "expand"
     if (which === "off") return "dashboard"
     return CLICK_ACTIONS.indexOf(action) >= 0 ? action : "dashboard"
+}
+
+// What the middle and the right button do on the collapsed notch; the left
+// one is `clickResult` and stays exactly what it was. "none" by default: a
+// click that does something new is a change nobody asked the notch for.
+var BUTTON_ACTIONS = ["none", "dashboard", "controlCenter", "notifications", "launcher",
+                      "clipboard", "mediaPopup", "playPause", "overview"]
+
+function buttonAction(value) {
+    return BUTTON_ACTIONS.indexOf(value) >= 0 ? value : "none"
+}
+
+// ---- swiping the collapsed notch --------------------------------------------
+// A scroll or a two-finger swipe over the collapsed notch moves between its
+// pages: the date on the left (-1), the strip (0), what is playing on the
+// right (+1). Tide-island's numbers for a touchpad: a page is crossed past
+// 56 % of the way, the gesture settles 150 ms after the last event, the
+// larger axis wins and 240 px (times 0.8) is one page. A mouse wheel has no
+// pixels, and Tide's quarter of its angle made a page seven notches; here a
+// notch is 0.35 of a page, so two of them turn it.
+var SWIPE = { threshold: 0.56, idleMs: 150, pagePixels: 240, notchPage: 0.35 }
+
+// One wheel event as a step along the pages: positive is to the right (and
+// down, for a plain mouse wheel, which only has the one axis).
+function swipeStep(pixelX, pixelY, angleX, angleY) {
+    const px = Number(pixelX) || 0, py = Number(pixelY) || 0
+    if (px || py) return (Math.abs(px) >= Math.abs(py) ? -px : -py) * 0.8 / SWIPE.pagePixels
+    const ax = Number(angleX) || 0, ay = Number(angleY) || 0
+    return (Math.abs(ax) >= Math.abs(ay) ? -ax : -ay) / 120 * SWIPE.notchPage
+}
+
+// Where a swipe lands: the next page past the threshold, if there is one,
+// else back where it started.
+function swipeSettle(page, position, pages) {
+    const list = Array.isArray(pages) ? pages : [0]
+    const target = position >= SWIPE.threshold ? page + 1 : position <= -SWIPE.threshold ? page - 1 : page
+    return list.indexOf(target) >= 0 ? target : page
 }
 
 function delay(value, range) {

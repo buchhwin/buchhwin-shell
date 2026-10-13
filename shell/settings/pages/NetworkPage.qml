@@ -139,7 +139,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "VPN"
-        description: "Turn VPN connections on or off. New VPNs are set up in KDE's connection editor."
+        description: "Turn VPN connections on or off, and add WireGuard tunnels. They are NetworkManager's, so Plasma lists the same ones."
 
         EmptyState { Layout.fillWidth: true; visible: NetworkService.vpns.length === 0; icon: "󰖂"; title: "No VPN connections set up yet" }
         Repeater {
@@ -154,9 +154,52 @@ ColumnLayout {
                 active: modelData.active
                 onClicked: NetworkService.setVpn(modelData.uuid, !modelData.active)
                 ShellToggle { focusOnTab: true; checked: modelData.active; onToggled: value => NetworkService.setVpn(modelData.uuid, value) }
+                // A tunnel goes for good, so the button asks twice.
+                ShellButton {
+                    focusOnTab: true
+                    visible: modelData.type === "wireguard"
+                    compact: true
+                    variant: "ghost"
+                    icon: Icons.remove
+                    toolTip: "Delete this tunnel"
+                    confirm: true
+                    confirmText: "Delete"
+                    onClicked: NetworkService.wgDelete(modelData.uuid)
+                }
             }
         }
+        ShellText {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: NetworkService.wgError.length ? NetworkService.wgError : NetworkService.wgNotice
+            color: NetworkService.wgError.length ? Colors.danger : Colors.mutedText
+            role: "small"
+            wrapMode: Text.Wrap
+        }
+        Loader {
+            id: wireguardForm
+            Layout.fillWidth: true
+            active: false
+            visible: active
+            sourceComponent: WireguardForm { onDone: wireguardForm.active = false }
+        }
         RowLayout {
+            spacing: Metrics.spaceSm
+            ShellButton {
+                focusOnTab: true
+                icon: Icons.add
+                text: "New WireGuard tunnel"
+                compact: true
+                visible: !wireguardForm.active
+                onClicked: { NetworkService.wgNotice = ""; NetworkService.wgError = ""; wireguardForm.active = true }
+            }
+            ShellButton {
+                focusOnTab: true
+                icon: Icons.folder
+                text: "Import file …"
+                compact: true
+                onClicked: NetworkService.wgImport()
+            }
             ShellButton {
                 focusOnTab: true
                 icon: Icons.settings

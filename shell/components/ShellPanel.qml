@@ -2,12 +2,23 @@ import Quickshell
 import Quickshell.Wayland
 import QtQuick
 import QtQuick.Effects
+import QtQuick.Shapes
 import qs.theme
 import qs.services
 import "../../services/arrange/ArrangeLogic.js" as Arrange
 
-// Full-screen overlay hosting one floating panel card. Handles focus, scrim,
-// Escape, click-outside and the open/close transition.
+// An overlay hosting one floating panel card. Handles focus, scrim, Escape,
+// click-outside and the open/close transition.
+//
+// **The surface is the size of the card, not of the screen** (`compactSurface`,
+// 2026-10-13). It used to be a full-screen Overlay surface per open: on a 4K
+// output a 3840x2160 buffer allocated, configured and blended for a card of a
+// few hundred pixels, and the first frames of every open paid for it. Now it
+// covers the card where it settles, what it grows out of, and the shadow's
+// reach, and it follows those with margins. Everything inside still works in
+// screen coordinates: `stage` is a screen-sized item moved by the surface's
+// own offset, so the placement below did not have to change. A click beside
+// the card lands on the scrim (ScrimLayer), which closes the panel.
 PanelWindow {
     id: window
     required property string panelId
@@ -15,7 +26,7 @@ PanelWindow {
     property real cardWidth: Metrics.controlCenterWidth
     property real cardHeight: -1               // -1 follows content height
     property real maxCardHeight: anchorBottom >= 0 ? anchorBottom - Metrics.screenMargin
-        : height - (anchorTop >= 0 ? anchorTop : Metrics.screenMargin) - bottomOffset
+        : screenH - (anchorTop >= 0 ? anchorTop : Metrics.screenMargin) - bottomOffset
     // What is really left below where the card starts, which without an anchor
     // is `topOffset` (under the notch or the bar) rather than the screen edge.
     // `maxCardHeight` measures from the edge and so promises more room than
@@ -27,7 +38,7 @@ PanelWindow {
     // whose size follows the body height - which turns the clamp into a
     // binding loop on `targetHeight`. Panels that need the honest figure ask
     // for it; fixing the rest is its own piece of work.
-    readonly property real roomBelowTop: Math.max(0, height - topOffset - bottomOffset)
+    readonly property real roomBelowTop: Math.max(0, screenH - topOffset - bottomOffset)
     property color scrimColor: Colors.scrim
     // A panel the user may drag by the strip along the top of its card.
     // `moveX`/`moveY` are an offset from where the panel would otherwise sit,
@@ -119,9 +130,12 @@ PanelWindow {
     // right for a panel about the notch and wrong for one that belongs in the
     // corner. `followClock` is how a panel says it belongs in the corner.
     property bool followClock: true
+    // The notch's anchor is its centre, which is the clock again: a panel
+    // that does not follow the clock does not follow that one either.
+    readonly property bool notchAnchor: !!(openArgs && openArgs.fromNotch)
     readonly property real anchorX: spotAlong >= 0 && !barVertical ? spotAlong
-        : argNumber("anchorX") >= 0 ? argNumber("anchorX")
-        : followClock && placement === "top-right" && clockCentre >= 0 && clockCentre < width * 2 / 3
+        : argNumber("anchorX") >= 0 && (followClock || !notchAnchor) ? argNumber("anchorX")
+        : followClock && placement === "top-right" && clockCentre >= 0 && clockCentre < screenW * 2 / 3
             ? clockCentre : -1
     readonly property real anchorTop: argNumber("anchorTop")
     readonly property real anchorBottom: argNumber("anchorBottom")
@@ -136,7 +150,7 @@ PanelWindow {
     // hand and wanting it always in the middle are both reasonable and only
     // the user knows which.
     readonly property string barSpot: LayoutService.barPanelSpot()
-    readonly property real spotSpan: barVertical ? height : width
+    readonly property real spotSpan: barVertical ? screenH : screenW
     readonly property real spotAlong: barSpot === "start" ? Metrics.screenMargin
         : barSpot === "centre" ? spotSpan / 2
         : barSpot === "end" ? spotSpan - Metrics.screenMargin
@@ -152,6 +166,18 @@ PanelWindow {
     // The notch reports its collapsed rect, so a hotkey-opened panel grows out
     // of it without the caller passing anything.
     readonly property var notchOrigin: LayoutService.notchShown ? clockRect : null
+    // Out of the notch (Settings: "Panels open: Out of the notch"): a panel
+    // that docks at the top is glued to the top edge, centred on the notch,
+    // with square top corners and the notch's ears, and the notch makes way
+    // for it while it is open. Dialogs in the middle of the screen, a panel
+    // the user drags and the overview are left where they are.
+    readonly property bool fromNotch: NotchService.panelsFromNotch && notchOrigin !== null && notchOrigin !== undefined
+        && showCard && !movable && !barVertical
+        && (placement === "top-right" || placement === "top-center")
+    readonly property int earSize: Metrics.notchExpandedEar
+    // The card's colour along its top edge, which the ears continue.
+    readonly property color topColor: Qt.tint(Colors.panelFor(panelId),
+        Qt.rgba(Colors.sheen.r, Colors.sheen.g, Colors.sheen.b, Effects.sheenTop)) // style: the sheen colour and its strength are both tokens
     readonly property bool hasOrigin: morph && Animations.motionEnabled
         && (originWidth > 0 || (notchOrigin !== null && notchOrigin !== undefined))
     readonly property real fromX: originWidth > 0 ? originX : notchOrigin ? notchOrigin.x : 0
@@ -205,11 +231,46 @@ PanelWindow {
         else keyForward.forceActiveFocus()
     }
 
+    // The screen this panel is placed on, in logical pixels. Every placement
+    // reads these, never the window's own size, which is the card's now.
+    readonly property real screenW: screen ? screen.width : 0
+    readonly property real screenH: screen ? screen.height : 0
+    // `false` keeps the whole screen, as before (the overview, which draws
+    // the screen itself, and a panel the user drags around by its title).
+    property bool compactSurface: showCard && !movable
+    // The surface goes full-screen while something may reach beyond the
+    // card: a resize grip being pulled, an arrange drag whose ghost follows
+    // the pointer. Only margins and size change, which a mapped layer surface
+    // takes; its anchors (top and left) never do.
+    readonly property bool fullSurface: !compactSurface || gripShown || sizing
+        || LayoutService.arrangeDragging.length > 0
+    // How far the shadow reaches past the card: its blur plus how far it is
+    // dropped. Tooltips under the last row fit in it too.
+    readonly property int surfacePad: elevationMax + elevationOffset
+    // Origin and target together, so the morph is never cut off.
+    readonly property rect surfaceRect: {
+        if (fullSurface || screenW <= 0) return Qt.rect(0, 0, screenW, screenH)
+        let x0 = card.placedX, y0 = card.placedY
+        let x1 = card.placedX + card.targetWidth, y1 = card.placedY + card.targetHeight
+        if (hasOrigin) {
+            x0 = Math.min(x0, fromX); y0 = Math.min(y0, fromY)
+            x1 = Math.max(x1, fromX + fromWidth); y1 = Math.max(y1, fromY + fromHeight)
+        }
+        x0 = Math.max(0, Math.floor(x0 - surfacePad))
+        y0 = Math.max(0, Math.floor(y0 - surfacePad))
+        x1 = Math.min(screenW, Math.ceil(x1 + surfacePad))
+        y1 = Math.min(screenH, Math.ceil(y1 + surfacePad))
+        return Qt.rect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0))
+    }
+
     screen: PanelService.screen
     visible: shown
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
-    anchors { top: true; bottom: true; left: true; right: true }
+    anchors { top: true; left: true }
+    margins { top: surfaceRect.y; left: surfaceRect.x }
+    implicitWidth: surfaceRect.width
+    implicitHeight: surfaceRect.height
     WlrLayershell.namespace: "buchhwin-" + panelId
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: wanted ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
@@ -226,7 +287,7 @@ PanelWindow {
             // because two panels are on screen whenever one hands over to
             // another and two scrims fading past each other is a visible
             // flicker. Saying how deep this one wants it is all that is left.
-            PanelService.reportScrim(panelId, scrimColor)
+            PanelService.reportScrim(panelId, scrimColor, dismissOnOutsideClick, fromNotch)
             // A panel that may be moved starts where it was left.
             if (movable) { moveX = savedMoveX; moveY = savedMoveY }
             closeTimer.stop()
@@ -324,351 +385,405 @@ PanelWindow {
         }
     }
 
-    MouseArea {
-        anchors.fill: parent
-        enabled: window.dismissOnOutsideClick
-        onClicked: window.requestClose()
-    }
-
-    // Holds the panel's key focus while nothing inside the card wants it. The
-    // content is a sibling of this item, not a child, so a key pressed inside
-    // the card never reaches it - a panel with a keyForward hands the focus to
-    // that field instead and lets the card handle Escape.
+    // The screen, moved by where the surface starts on it: everything below
+    // is placed in screen coordinates, whatever part of it the surface shows.
     Item {
-        id: keyScope
-        anchors.fill: parent
-        focus: window.wanted && !window.keyForward
-        Keys.onEscapePressed: window.escapeKey()
-    }
+        id: stage
+        x: -window.surfaceRect.x
+        y: -window.surfaceRect.y
+        width: window.screenW
+        height: window.screenH
 
-    // The shadow is cast by an invisible twin of the card, not by putting the
-    // card itself behind a MultiEffect: a lone rounded rectangle is a trivial
-    // texture that is only redrawn when the geometry changes, while the card
-    // would be re-rendered on every hover inside it.
-    //
-    // While the card grows out of what opened it the geometry changes on
-    // every frame, and "redrawn when the geometry changes" then means the
-    // caster's layer and the whole blur chain behind it (up to 72 px of it),
-    // once per frame, for every one of the 14 to 20 frames of the morph.
-    // With `staticShadow` the twin takes the size and the place the card
-    // *settles* at, so it is drawn once, and the effect is scaled and moved
-    // onto the card as it grows - the shadow still follows the card, from a
-    // cached picture. A scaled blur is a little tighter than a re-blurred one
-    // while the card is small, which is not visible at a tenth of a second
-    // under a fading opacity. At rest the scale is 1 and the offset 0, so the
-    // picture is the one drawn before. A panel without an origin never
-    // morphs and keeps the live bindings.
-    Rectangle {
-        id: shadowCaster
-        visible: false
-        x: window.shadowFromTarget ? card.placedX : card.x
-        y: window.shadowFromTarget ? card.placedY : card.y
-        width: window.shadowFromTarget ? card.targetWidth : card.width
-        height: window.shadowFromTarget ? card.targetHeight : card.height
-        radius: card.radius
-        color: Colors.shadow
-        layer.enabled: true
-    }
-    MultiEffect {
-        source: shadowCaster
-        // The caster's size, whatever the card's: the effect's own textures
-        // are allocated for this size and must not be resized per frame
-        // either. Following the card is the transform's job.
-        anchors.fill: shadowCaster
-        visible: window.showCard && window.shadow
-        opacity: progress.value
-        shadowEnabled: true
-        shadowColor: Colors.shadow
-        blurMax: window.elevationMax
-        shadowBlur: window.elevationBlur
-        shadowOpacity: window.elevationOpacity
-        shadowVerticalOffset: window.elevationOffset
-        // The caster is painted too, and the panel is translucent, so an
-        // unmasked shadow would darken the panel from underneath. Masked by
-        // the caster itself, inverted, only what falls outside the card is
-        // drawn. autoPadding stays on, or the shadow is clipped to the rect it
-        // is supposed to spread beyond.
-        maskEnabled: true
-        maskSource: shadowCaster
-        maskInverted: true
-        // A Scale about the top-left corner and then a Translate, not the
-        // `scale` property: that one works from the centre, and with the
-        // padding the shadow spreads into, the item's centre is not the
-        // card's. Scaled from the corner, the caster's picture lands exactly
-        // on the card's rect: the caster is `targetWidth` wide and the card
-        // `width`, so the ratio maps one onto the other, and the offset is
-        // where the card is relative to where the caster is. The mask scales
-        // with it, so the cut-out stays under the card.
-        transform: [
-            Scale {
-                origin.x: 0
-                origin.y: 0
-                xScale: window.shadowFromTarget ? card.width / Math.max(1, card.targetWidth) : 1
-                yScale: window.shadowFromTarget ? card.height / Math.max(1, card.targetHeight) : 1
-            },
-            Translate {
-                x: window.shadowFromTarget ? card.x - shadowCaster.x : 0
-                y: window.shadowFromTarget ? card.y - shadowCaster.y : 0
-            }
-        ]
-    }
-
-    Rectangle {
-        id: card
-        // The layer that draws a tooltip for any control inside this card. It
-        // is named here, on an ancestor of the content, because a control finds
-        // it by walking up its own parents - the layer itself lives on the
-        // overlay, which is a sibling of the card and unclipped.
-        readonly property Item toolTipLayer: tips
-        // The size and place the panel settles at. The card itself may be
-        // smaller while it grows out of what opened it.
-        readonly property real targetWidth: Math.min(window.cardWidth, window.width - Metrics.screenMargin * 2)
-        readonly property real targetHeight: window.cardHeight > 0 ? Math.min(window.cardHeight, window.maxCardHeight)
-            : Math.min(body.childrenRect.height + Metrics.panelPadding * 2, window.maxCardHeight)
-        // A vertical bar pushes the panel sideways rather than down, so a
-        // panel opened from one of its pills comes out *beside* it and every
-        // other panel simply keeps clear of it.
-        readonly property real targetX: window.placement === "center" ? (window.width - targetWidth) / 2
-            : window.anchorY >= 0
-                ? (window.barAtRight ? Math.max(window.leftOffset, window.width - window.rightOffset - targetWidth)
-                                     : window.leftOffset)
-            : window.anchorX >= 0 && window.placement !== "right"
-                ? Math.max(window.leftOffset, Math.min(window.width - targetWidth - window.rightOffset, window.anchorX - targetWidth / 2))
-            : window.placement === "top-center" ? (window.width - targetWidth) / 2
-            : window.width - targetWidth - window.rightOffset
-        // A panel opened with no anchor sits under the bar when the bar is at
-        // the top, and above it when it is at the bottom. Its anchor is fixed
-        // for the panel's whole life and only this margin moves, which is what
-        // a mapped layer surface will accept.
-        readonly property real targetY: window.placement === "center" ? (window.height - targetHeight) / 2
-            : window.placement === "right" ? Metrics.screenMargin
-            // Centred on the pill that opened it, clamped into the screen.
-            : window.anchorY >= 0
-                ? Math.max(Metrics.screenMargin,
-                           Math.min(window.height - targetHeight - Metrics.screenMargin, window.anchorY - targetHeight / 2))
-            : window.anchorBottom >= 0 ? Math.max(Metrics.screenMargin, window.anchorBottom - targetHeight)
-            : window.anchorTop >= 0 ? Math.min(window.anchorTop, window.height - targetHeight - window.bottomOffset)
-            : window.barAtBottom ? window.height - targetHeight - window.bottomOffset
-            : window.topOffset
-        // Linear in the transition's own eased progress, so the grow follows
-        // the same curve as the fade.
-        function grow(from, to) { return window.hasOrigin ? from + (to - from) * progress.value : to }
-
-        // The card stays centred on the interpolated centre, so it really does
-        // widen out of the notch or the pill. Offsetting the start by the
-        // *settled* width instead put the left edge at its final place on the
-        // first frame and grew the card rightwards from there, which read as
-        // "it starts on the left". `growing` is read instead of `width` so the
-        // x binding does not depend on its own result.
-        readonly property real growing: grow(window.fromWidth, targetWidth)
-        // Where it really sits: the place the panel would take, plus however
-        // far the user has dragged it, clamped into the screen.
-        readonly property real placedX: window.movable
-            ? Math.max(Metrics.screenMargin,
-                       Math.min(window.width - targetWidth - Metrics.screenMargin, targetX + window.moveX))
-            : targetX
-        readonly property real placedY: window.movable
-            ? Math.max(window.topOffset,
-                       Math.min(window.height - targetHeight - window.bottomOffset, targetY + window.moveY))
-            : targetY
-        width: growing
-        height: grow(window.fromHeight, targetHeight)
-        x: grow(window.fromX + window.fromWidth / 2, placedX + targetWidth / 2) - growing / 2
-        y: grow(window.fromY, placedY)
-        radius: Metrics.radiusPanel
-        // Escape from inside the panel: the card is an ancestor of the content,
-        // so a key the content did not take arrives here.
-        Keys.onEscapePressed: window.escapeKey()
-        color: "transparent"
-        clip: window.showCard
-        opacity: progress.value
-
-        // The chrome is a child rather than the card itself, so `showCard:
-        // false` can take the background, the border and the clipping away and
-        // still leave the geometry, the focus and Escape in place. That is
-        // what a panel that fills the screen and draws its own background
-        // needs (the overview).
-        Rectangle {
-            anchors.fill: parent
-            visible: window.showCard
-            radius: parent.radius
-            border.width: Metrics.borderWidth
-            border.color: Colors.panelBorder
-            // Not one flat fill: the panel catches a little light along its top
-            // edge, which gives a large surface a direction. Two stops on one
-            // rectangle, so it stays a single scene-graph node.
-            gradient: Gradient {
-                GradientStop { position: 0; color: Qt.tint(Colors.panelFor(window.panelId),
-                    Qt.rgba(Colors.sheen.r, Colors.sheen.g, Colors.sheen.b, Effects.sheenTop)) } // style: the sheen colour and its strength are both tokens
-                GradientStop { position: 1; color: Qt.tint(Colors.panelFor(window.panelId),
-                    Qt.rgba(Colors.sheen.r, Colors.sheen.g, Colors.sheen.b, Effects.sheenBottom)) } // style: see above
-            }
-        }
-        scale: Animations.motionEnabled && !window.hasOrigin
-            ? Effects.hoverScaleFrom + (1 - Effects.hoverScaleFrom) * progress.value : 1
-        transform: Translate {
-            y: Animations.motionEnabled && !window.hasOrigin ? (1 - progress.value) * -Metrics.spaceSm : 0
-        }
-
-        MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: event => event.accepted = false }
-
-        // Dragging a movable panel. The strip is below `body` (z 1), so
-        // anything the panel puts along its top keeps its own clicks; what is
-        // left up there is a title, which is text.
-        //
-        // The offset accumulates from the press point and is never re-based:
-        // the strip moves with the card, so once the card has followed the
-        // pointer the local position is back where the press was, and the next
-        // event's offset is again exactly what is still to move. Re-basing it
-        // on every event moves the card once and then stops.
         MouseArea {
-            id: mover
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            height: Metrics.controlHeight
-            enabled: window.movable && window.showCard
-            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-            property real fromX: 0
-            property real fromY: 0
-            onPressed: mouse => { fromX = mouse.x; fromY = mouse.y }
-            onPositionChanged: mouse => {
-                if (!pressed) return
-                window.moveX = card.placedX - card.targetX + (mouse.x - fromX)
-                window.moveY = card.placedY - card.targetY + (mouse.y - fromY)
-            }
-            onReleased: window.moved(window.moveX, window.moveY)
-            // Back to where the panel places itself.
-            onDoubleClicked: {
-                window.moveX = 0
-                window.moveY = 0
-                window.moved(0, 0)
-            }
+            anchors.fill: parent
+            enabled: window.dismissOnOutsideClick
+            onClicked: window.requestClose()
         }
 
+        // Holds the panel's key focus while nothing inside the card wants it. The
+        // content is a sibling of this item, not a child, so a key pressed inside
+        // the card never reaches it - a panel with a keyForward hands the focus to
+        // that field instead and lets the card handle Escape.
         Item {
-            id: body
-            // Above optional card backgrounds (PopupPanel backdrop).
-            z: 1
-            // Not anchors.fill: the content keeps the size the panel settles
-            // at while the card grows, so no layout runs per frame and the
-            // card clips what does not fit yet.
-            x: Metrics.panelPadding
-            y: Metrics.panelPadding
-            width: Math.max(0, card.targetWidth - Metrics.panelPadding * 2)
-            // With a stored height the content gets exactly that - the granted
-            // figure, never `card.targetHeight`, which is what measures the
-            // content when nothing is stored: a body that read it stayed
-            // subscribed across the switch, and a child that filled its parent
-            // then set the measurement that set its parent, which is the
-            // binding loop again. Without a stored height the content is
-            // given the room instead - the most the card can be - and the card
-            // clips to what it settles at.
-            height: Math.max(0, (window.cardHeight > 0 ? window.cardTargetHeight : window.maxCardHeight)
-                                - Metrics.panelPadding * 2)
+            id: keyScope
+            anchors.fill: parent
+            focus: window.wanted && !window.keyForward
+            Keys.onEscapePressed: window.escapeKey()
         }
-    }
 
-    // After the card, so it paints above it. What it holds is usually a
-    // picture - a drag ghost - but a grip on the card's corner lives here too,
-    // because the card clips and a grip on its edge would be cut in half.
-    Item {
-        id: overlayLayer
-        anchors.fill: parent
-        z: 10
+        // The shadow is cast by an invisible twin of the card, not by putting the
+        // card itself behind a MultiEffect: a lone rounded rectangle is a trivial
+        // texture that is only redrawn when the geometry changes, while the card
+        // would be re-rendered on every hover inside it.
+        //
+        // While the card grows out of what opened it the geometry changes on
+        // every frame, and "redrawn when the geometry changes" then means the
+        // caster's layer and the whole blur chain behind it (up to 72 px of it),
+        // once per frame, for every one of the 14 to 20 frames of the morph.
+        // With `staticShadow` the twin takes the size and the place the card
+        // *settles* at, so it is drawn once, and the effect is scaled and moved
+        // onto the card as it grows - the shadow still follows the card, from a
+        // cached picture. A scaled blur is a little tighter than a re-blurred one
+        // while the card is small, which is not visible at a tenth of a second
+        // under a fading opacity. At rest the scale is 1 and the offset 0, so the
+        // picture is the one drawn before. A panel without an origin never
+        // morphs and keeps the live bindings.
+        Rectangle {
+            id: shadowCaster
+            visible: false
+            x: window.shadowFromTarget ? card.placedX : card.x
+            y: window.shadowFromTarget ? card.placedY : card.y
+            width: window.shadowFromTarget ? card.targetWidth : card.width
+            height: window.shadowFromTarget ? card.targetHeight : card.height
+            radius: card.radius
+            topLeftRadius: window.fromNotch ? 0 : card.radius
+            topRightRadius: window.fromNotch ? 0 : card.radius
+            color: Colors.shadow
+            layer.enabled: true
+        }
+        MultiEffect {
+            source: shadowCaster
+            // The caster's size, whatever the card's: the effect's own textures
+            // are allocated for this size and must not be resized per frame
+            // either. Following the card is the transform's job.
+            anchors.fill: shadowCaster
+            visible: window.showCard && window.shadow
+            opacity: progress.value
+            shadowEnabled: true
+            shadowColor: Colors.shadow
+            blurMax: window.elevationMax
+            shadowBlur: window.elevationBlur
+            shadowOpacity: window.elevationOpacity
+            shadowVerticalOffset: window.elevationOffset
+            // The caster is painted too, and the panel is translucent, so an
+            // unmasked shadow would darken the panel from underneath. Masked by
+            // the caster itself, inverted, only what falls outside the card is
+            // drawn. autoPadding stays on, or the shadow is clipped to the rect it
+            // is supposed to spread beyond.
+            maskEnabled: true
+            maskSource: shadowCaster
+            maskInverted: true
+            // A Scale about the top-left corner and then a Translate, not the
+            // `scale` property: that one works from the centre, and with the
+            // padding the shadow spreads into, the item's centre is not the
+            // card's. Scaled from the corner, the caster's picture lands exactly
+            // on the card's rect: the caster is `targetWidth` wide and the card
+            // `width`, so the ratio maps one onto the other, and the offset is
+            // where the card is relative to where the caster is. The mask scales
+            // with it, so the cut-out stays under the card.
+            transform: [
+                Scale {
+                    origin.x: 0
+                    origin.y: 0
+                    xScale: window.shadowFromTarget ? card.width / Math.max(1, card.targetWidth) : 1
+                    yScale: window.shadowFromTarget ? card.height / Math.max(1, card.targetHeight) : 1
+                },
+                Translate {
+                    x: window.shadowFromTarget ? card.x - shadowCaster.x : 0
+                    y: window.shadowFromTarget ? card.y - shadowCaster.y : 0
+                }
+            ]
+        }
 
         Rectangle {
-            id: gripDot
-            visible: window.resizable && window.gripShown && window.showCard
-            // Far enough in that a round grip clears a round corner. A circle
-            // of radius g sits inside a corner of radius r only while its
-            // centre is within r - g of the arc's centre, and the centre of a
-            // grip inset by `i` on both edges is at √2 (r - i - g) from it. At
-            // a flat 2 px the grip hung 2.1 px outside the card's bottom-left
-            // corner at the default 20 px rounding, which reads as a stray dot
-            // beside the panel rather than a handle on it.
-            //
-            // A corner smaller than the grip has no room to escape into, so
-            // the term goes negative there and the plain inset stands. The
-            // extra step is breathing room: the bare minimum has the grip
-            // *touching* the arc, which still reads as a dot on the edge
-            // rather than one inside the card.
-            readonly property int inset: Math.max(Metrics.spaceXxs,
-                Math.ceil((card.radius - width / 2) * (1 - Math.SQRT1_2)) + Metrics.spaceXxs)
-            x: card.x + inset
-            y: card.y + card.height - height - inset
-            width: Metrics.iconSm
-            height: width
-            radius: width / 2
-            // Accent and opaque, like the handle on every tile: at 11.5 % white
-            // it vanished on a light panel.
-            color: grip.pulling || grip.containsMouse ? Colors.accentHover : Colors.accent
-            border.width: Metrics.borderWidth
-            border.color: Colors.accent
+            id: card
+            // The layer that draws a tooltip for any control inside this card. It
+            // is named here, on an ancestor of the content, because a control finds
+            // it by walking up its own parents - the layer itself lives on the
+            // overlay, which is a sibling of the card and unclipped.
+            readonly property Item toolTipLayer: tips
+            // The size and place the panel settles at. The card itself may be
+            // smaller while it grows out of what opened it.
+            readonly property real targetWidth: Math.min(window.cardWidth, window.screenW - Metrics.screenMargin * 2)
+            readonly property real targetHeight: window.cardHeight > 0 ? Math.min(window.cardHeight, window.maxCardHeight)
+                : Math.min(body.childrenRect.height + Metrics.panelPadding * 2, window.maxCardHeight)
+            // A vertical bar pushes the panel sideways rather than down, so a
+            // panel opened from one of its pills comes out *beside* it and every
+            // other panel simply keeps clear of it.
+            readonly property real targetX: window.fromNotch ? Math.max(window.leftOffset + window.earSize,
+                    Math.min(window.screenW - targetWidth - window.rightOffset - window.earSize, (window.screenW - targetWidth) / 2))
+                : window.placement === "center" ? (window.screenW - targetWidth) / 2
+                : window.anchorY >= 0
+                    ? (window.barAtRight ? Math.max(window.leftOffset, window.screenW - window.rightOffset - targetWidth)
+                                         : window.leftOffset)
+                : window.anchorX >= 0 && window.placement !== "right"
+                    ? Math.max(window.leftOffset, Math.min(window.screenW - targetWidth - window.rightOffset, window.anchorX - targetWidth / 2))
+                : window.placement === "top-center" ? (window.screenW - targetWidth) / 2
+                : window.screenW - targetWidth - window.rightOffset
+            // A panel opened with no anchor sits under the bar when the bar is at
+            // the top, and above it when it is at the bottom. Its anchor is fixed
+            // for the panel's whole life and only this margin moves, which is what
+            // a mapped layer surface will accept.
+            readonly property real targetY: window.fromNotch ? 0
+                : window.placement === "center" ? (window.screenH - targetHeight) / 2
+                : window.placement === "right" ? Metrics.screenMargin
+                // Centred on the pill that opened it, clamped into the screen.
+                : window.anchorY >= 0
+                    ? Math.max(Metrics.screenMargin,
+                               Math.min(window.screenH - targetHeight - Metrics.screenMargin, window.anchorY - targetHeight / 2))
+                : window.anchorBottom >= 0 ? Math.max(Metrics.screenMargin, window.anchorBottom - targetHeight)
+                : window.anchorTop >= 0 ? Math.min(window.anchorTop, window.screenH - targetHeight - window.bottomOffset)
+                : window.barAtBottom ? window.screenH - targetHeight - window.bottomOffset
+                : window.topOffset
+            // Linear in the transition's own eased progress, so the grow follows
+            // the same curve as the fade.
+            function grow(from, to) { return window.hasOrigin ? from + (to - from) * progress.value : to }
 
-            MouseArea {
-                id: grip
+            // The card stays centred on the interpolated centre, so it really does
+            // widen out of the notch or the pill. Offsetting the start by the
+            // *settled* width instead put the left edge at its final place on the
+            // first frame and grew the card rightwards from there, which read as
+            // "it starts on the left". `growing` is read instead of `width` so the
+            // x binding does not depend on its own result.
+            readonly property real growing: grow(window.fromWidth, targetWidth)
+            // Where it really sits: the place the panel would take, plus however
+            // far the user has dragged it, clamped into the screen.
+            readonly property real placedX: window.movable
+                ? Math.max(Metrics.screenMargin,
+                           Math.min(window.screenW - targetWidth - Metrics.screenMargin, targetX + window.moveX))
+                : targetX
+            readonly property real placedY: window.movable
+                ? Math.max(window.topOffset,
+                           Math.min(window.screenH - targetHeight - window.bottomOffset, targetY + window.moveY))
+                : targetY
+            width: growing
+            height: grow(window.fromHeight, targetHeight)
+            x: grow(window.fromX + window.fromWidth / 2, placedX + targetWidth / 2) - growing / 2
+            y: grow(window.fromY, placedY)
+            radius: Metrics.radiusPanel
+            // Escape from inside the panel: the card is an ancestor of the content,
+            // so a key the content did not take arrives here.
+            Keys.onEscapePressed: window.escapeKey()
+            color: "transparent"
+            clip: window.showCard
+            opacity: progress.value
+
+            // The chrome is a child rather than the card itself, so `showCard:
+            // false` can take the background, the border and the clipping away and
+            // still leave the geometry, the focus and Escape in place. That is
+            // what a panel that fills the screen and draws its own background
+            // needs (the overview).
+            Rectangle {
                 anchors.fill: parent
-                anchors.margins: -Metrics.spaceXs
-                acceptedButtons: Qt.LeftButton
-                hoverEnabled: true
-                preventStealing: true
-                cursorShape: Qt.SizeBDiagCursor
-                readonly property bool pulling: window.sizing
-                // The corner the card is anchored by, taken once at the press.
-                // The live edge cannot be used: a panel anchored to the desktop
-                // clock has *both* edges move with the width, so the drag
-                // chased its own result - the gearing halved and it never
-                // landed where it was let go. A centred placement moves both
-                // edges by design, so for that axis the origin is the centre
-                // and the size is measured from it (ArrangeLogic.panelDragTo).
-                property var origin: ({})
-                property real pressX: 0
-                property real pressY: 0
-                property bool moved: false
-                onPressed: mouse => {
-                    const point = mapToItem(overlayLayer, mouse.x, mouse.y)
-                    const from = { right: card.x + card.width, top: card.y }
-                    if (window.placement === "center" || window.placement === "top-center") from.centreX = card.x + card.width / 2
-                    if (window.placement === "center") from.centreY = card.y + card.height / 2
-                    origin = from
-                    pressX = point.x
-                    pressY = point.y
-                    moved = false
-                    window.dragWidth = card.width
-                    window.dragHeight = card.height
-                    window.sizing = true
+                visible: window.showCard
+                radius: parent.radius
+                // Out of the notch the top edge is the screen's: square.
+                topLeftRadius: window.fromNotch ? 0 : parent.radius
+                topRightRadius: window.fromNotch ? 0 : parent.radius
+                // No outline either, like the notch: it would run up into
+                // the ears and draw a seam where the two shapes meet.
+                border.width: window.fromNotch ? 0 : Metrics.borderWidth
+                border.color: Colors.panelBorder
+                // Not one flat fill: the panel catches a little light along its top
+                // edge, which gives a large surface a direction. Two stops on one
+                // rectangle, so it stays a single scene-graph node.
+                gradient: Gradient {
+                    GradientStop { position: 0; color: window.topColor }
+                    GradientStop { position: 1; color: Qt.tint(Colors.panelFor(window.panelId),
+                        Qt.rgba(Colors.sheen.r, Colors.sheen.g, Colors.sheen.b, Effects.sheenBottom)) } // style: see above
                 }
+            }
+            scale: Animations.motionEnabled && !window.hasOrigin
+                ? Effects.hoverScaleFrom + (1 - Effects.hoverScaleFrom) * progress.value : 1
+            transform: Translate {
+                y: Animations.motionEnabled && !window.hasOrigin ? (1 - progress.value) * -Metrics.spaceSm : 0
+            }
+
+            MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons; onWheel: event => event.accepted = false }
+
+            // Dragging a movable panel. The strip is below `body` (z 1), so
+            // anything the panel puts along its top keeps its own clicks; what is
+            // left up there is a title, which is text.
+            //
+            // The offset accumulates from the press point and is never re-based:
+            // the strip moves with the card, so once the card has followed the
+            // pointer the local position is back where the press was, and the next
+            // event's offset is again exactly what is still to move. Re-basing it
+            // on every event moves the card once and then stops.
+            MouseArea {
+                id: mover
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: Metrics.controlHeight
+                enabled: window.movable && window.showCard
+                cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                property real fromX: 0
+                property real fromY: 0
+                onPressed: mouse => { fromX = mouse.x; fromY = mouse.y }
                 onPositionChanged: mouse => {
-                    if (!window.sizing) return
-                    const point = mapToItem(overlayLayer, mouse.x, mouse.y)
-                    if (!moved) {
-                        if (Math.abs(point.x - pressX) + Math.abs(point.y - pressY) < Metrics.dragThreshold) return
-                        moved = true
-                    }
-                    const wanted = Arrange.panelDragTo(point.x, point.y, grip.origin, window.sizeBounds)
-                    window.dragWidth = wanted.width
-                    window.dragHeight = wanted.height
+                    if (!pressed) return
+                    window.moveX = card.placedX - card.targetX + (mouse.x - fromX)
+                    window.moveY = card.placedY - card.targetY + (mouse.y - fromY)
                 }
-                onReleased: {
-                    if (!window.sizing) return
-                    window.sizing = false
-                    // A press that never moved is not a resize. It used to
-                    // write the size the card happened to be clamped to at that
-                    // moment, which on a narrower screen silently shrank the
-                    // stored one.
-                    if (moved) window.resized(window.dragWidth, window.dragHeight)
-                    moved = false
+                onReleased: window.moved(window.moveX, window.moveY)
+                // Back to where the panel places itself.
+                onDoubleClicked: {
+                    window.moveX = 0
+                    window.moveY = 0
+                    window.moved(0, 0)
                 }
-                onCanceled: {
-                    window.sizing = false
-                    moved = false
-                }
+            }
+
+            Item {
+                id: body
+                // Above optional card backgrounds (PopupPanel backdrop).
+                z: 1
+                // Not anchors.fill: the content keeps the size the panel settles
+                // at while the card grows, so no layout runs per frame and the
+                // card clips what does not fit yet.
+                x: Metrics.panelPadding
+                y: Metrics.panelPadding
+                width: Math.max(0, card.targetWidth - Metrics.panelPadding * 2)
+                // With a stored height the content gets exactly that - the granted
+                // figure, never `card.targetHeight`, which is what measures the
+                // content when nothing is stored: a body that read it stayed
+                // subscribed across the switch, and a child that filled its parent
+                // then set the measurement that set its parent, which is the
+                // binding loop again. Without a stored height the content is
+                // given the room instead - the most the card can be - and the card
+                // clips to what it settles at.
+                height: Math.max(0, (window.cardHeight > 0 ? window.cardTargetHeight : window.maxCardHeight)
+                                    - Metrics.panelPadding * 2)
             }
         }
 
-        // Above the drag ghost: a tooltip explains a control, and a control is
-        // never the thing being dragged.
-        ToolTipLayer { id: tips; z: 1 }
+        // The notch's ears, on the card's two top corners while it stands in
+        // for the notch: concave cuts that join the card to the top edge.
+        Shape {
+            visible: window.fromNotch && window.showCard
+            x: card.x - window.earSize
+            y: 0
+            width: window.earSize
+            height: window.earSize
+            opacity: progress.value
+            preferredRendererType: Shape.CurveRenderer
+            ShapePath {
+                fillColor: window.topColor
+                strokeWidth: -1
+                startX: 0; startY: 0
+                PathArc { x: window.earSize; y: window.earSize; radiusX: window.earSize; radiusY: window.earSize; direction: PathArc.Clockwise }
+                PathLine { x: window.earSize; y: 0 }
+            }
+        }
+        Shape {
+            visible: window.fromNotch && window.showCard
+            x: card.x + card.width
+            y: 0
+            width: window.earSize
+            height: window.earSize
+            opacity: progress.value
+            preferredRendererType: Shape.CurveRenderer
+            ShapePath {
+                fillColor: window.topColor
+                strokeWidth: -1
+                startX: 0; startY: window.earSize
+                PathArc { x: window.earSize; y: 0; radiusX: window.earSize; radiusY: window.earSize; direction: PathArc.Clockwise }
+                PathLine { x: 0; y: 0 }
+            }
+        }
+
+        // After the card, so it paints above it. What it holds is usually a
+        // picture - a drag ghost - but a grip on the card's corner lives here too,
+        // because the card clips and a grip on its edge would be cut in half.
+        Item {
+            id: overlayLayer
+            anchors.fill: parent
+            z: 10
+
+            Rectangle {
+                id: gripDot
+                visible: window.resizable && window.gripShown && window.showCard
+                // Far enough in that a round grip clears a round corner. A circle
+                // of radius g sits inside a corner of radius r only while its
+                // centre is within r - g of the arc's centre, and the centre of a
+                // grip inset by `i` on both edges is at √2 (r - i - g) from it. At
+                // a flat 2 px the grip hung 2.1 px outside the card's bottom-left
+                // corner at the default 20 px rounding, which reads as a stray dot
+                // beside the panel rather than a handle on it.
+                //
+                // A corner smaller than the grip has no room to escape into, so
+                // the term goes negative there and the plain inset stands. The
+                // extra step is breathing room: the bare minimum has the grip
+                // *touching* the arc, which still reads as a dot on the edge
+                // rather than one inside the card.
+                readonly property int inset: Math.max(Metrics.spaceXxs,
+                    Math.ceil((card.radius - width / 2) * (1 - Math.SQRT1_2)) + Metrics.spaceXxs)
+                x: card.x + inset
+                y: card.y + card.height - height - inset
+                width: Metrics.iconSm
+                height: width
+                radius: width / 2
+                // Accent and opaque, like the handle on every tile: at 11.5 % white
+                // it vanished on a light panel.
+                color: grip.pulling || grip.containsMouse ? Colors.accentHover : Colors.accent
+                border.width: Metrics.borderWidth
+                border.color: Colors.accent
+
+                MouseArea {
+                    id: grip
+                    anchors.fill: parent
+                    anchors.margins: -Metrics.spaceXs
+                    acceptedButtons: Qt.LeftButton
+                    hoverEnabled: true
+                    preventStealing: true
+                    cursorShape: Qt.SizeBDiagCursor
+                    readonly property bool pulling: window.sizing
+                    // The corner the card is anchored by, taken once at the press.
+                    // The live edge cannot be used: a panel anchored to the desktop
+                    // clock has *both* edges move with the width, so the drag
+                    // chased its own result - the gearing halved and it never
+                    // landed where it was let go. A centred placement moves both
+                    // edges by design, so for that axis the origin is the centre
+                    // and the size is measured from it (ArrangeLogic.panelDragTo).
+                    property var origin: ({})
+                    property real pressX: 0
+                    property real pressY: 0
+                    property bool moved: false
+                    onPressed: mouse => {
+                        const point = mapToItem(overlayLayer, mouse.x, mouse.y)
+                        const from = { right: card.x + card.width, top: card.y }
+                        if (window.placement === "center" || window.placement === "top-center") from.centreX = card.x + card.width / 2
+                        if (window.placement === "center") from.centreY = card.y + card.height / 2
+                        origin = from
+                        pressX = point.x
+                        pressY = point.y
+                        moved = false
+                        window.dragWidth = card.width
+                        window.dragHeight = card.height
+                        window.sizing = true
+                    }
+                    onPositionChanged: mouse => {
+                        if (!window.sizing) return
+                        const point = mapToItem(overlayLayer, mouse.x, mouse.y)
+                        if (!moved) {
+                            if (Math.abs(point.x - pressX) + Math.abs(point.y - pressY) < Metrics.dragThreshold) return
+                            moved = true
+                        }
+                        const wanted = Arrange.panelDragTo(point.x, point.y, grip.origin, window.sizeBounds)
+                        window.dragWidth = wanted.width
+                        window.dragHeight = wanted.height
+                    }
+                    onReleased: {
+                        if (!window.sizing) return
+                        window.sizing = false
+                        // A press that never moved is not a resize. It used to
+                        // write the size the card happened to be clamped to at that
+                        // moment, which on a narrower screen silently shrank the
+                        // stored one.
+                        if (moved) window.resized(window.dragWidth, window.dragHeight)
+                        moved = false
+                    }
+                    onCanceled: {
+                        window.sizing = false
+                        moved = false
+                    }
+                }
+            }
+
+            // Above the drag ghost: a tooltip explains a control, and a control is
+            // never the thing being dragged.
+            ToolTipLayer { id: tips; z: 1 }
+        }
     }
 }

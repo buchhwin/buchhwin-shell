@@ -15,6 +15,7 @@ import "../../services/notch/NotchLogic.js" as NotchLogic
 // layout, power buttons. Keys go to the shared state in LockScreen.
 Item {
     id: root
+    readonly property CalendarDemand calendarDemand: CalendarDemand {}
     required property var lockState
     required property string screenName
     focus: true

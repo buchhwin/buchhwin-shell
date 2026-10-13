@@ -13,6 +13,7 @@
 var catalogue = [
     { type: "wifi", label: "Wi-Fi", icon: "󰤨", w: 1, h: 2 },
     { type: "bluetooth", label: "Bluetooth", icon: "󰂯", w: 1, h: 2 },
+    { type: "vpn", label: "VPN", icon: "󰖂", w: 1, h: 2 },
     { type: "dnd", label: "Do Not Disturb", icon: "󰂚", w: 1, h: 2 },
     { type: "microphone", label: "Microphone", icon: "󰍬", w: 1, h: 2 },
     { type: "fingerprint", label: "Fingerprint", icon: "󰈷", w: 2, h: 2 },

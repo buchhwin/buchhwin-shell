@@ -30,6 +30,9 @@ expect("x\nconst long = 2\n", [(2, "long")], "the line number")
 
 # What is fine on both.
 expect("text: clockBody.short ? a : b\n", [], "a member access")
+expect("x = answer.public\n", [(1, "public")], "a strict-mode word refuses even as a member")
+expect('x = answer["public"]\n', [], "and is read with brackets")
+expect('cmd: "gsettings get org.gnome.desktop.interface x"\n', [], "inside a string it is only text")
 expect("function f(day: string, index: int): bool {}\n", [], "a type annotation")
 expect("signal chosen(int index)\n", [], "a signal parameter type")
 expect("property int short_value: 1\n", [], "a longer name")

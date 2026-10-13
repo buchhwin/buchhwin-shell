@@ -127,6 +127,19 @@ ColumnLayout {
         }
         SettingRow {
             Layout.fillWidth: true
+            visible: SettingsService.value("notch.displayOsd")
+            label: "Level as"
+            hint: "A ring beside the figure, or a flat track"
+            SegmentedControl {
+                focusOnTab: true
+                Layout.fillWidth: true
+                current: SettingsService.value("notch.osdStyle")
+                options: [{ value: "ring", label: "Ring" }, { value: "bar", label: "Track" }]
+                onSelected: value => SettingsService.set("notch.osdStyle", value)
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
             labelFills: true
             label: "Notifications in the notch"
             hint: "The newest one, in the notch instead of below it. The others wait; all of them are in the notification center either way."

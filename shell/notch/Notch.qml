@@ -5,6 +5,7 @@ import QtQuick.Effects
 import QtQuick.Shapes
 import qs.theme
 import qs.services
+import qs.shell.components
 import "../../services/notch/NotchLogic.js" as Logic
 
 // Desktop mode "notch": a black notch at the top centre of every screen, like
@@ -40,9 +41,73 @@ Variants {
             && NotchService.displayScreen === screenName && !expanded
             && NotchService.takesDisplay(NotchService.displayKind, screenName)
         readonly property var displayContent: NotchService.display ? NotchService.display.content : null
+        // A notification in the notch opens up on a click (Tide-island's
+        // idea): the body wraps, the notch grows to fit it and the popup's
+        // timer waits until a second click closes it again.
+        property bool displayOpen: false
+        readonly property bool showingNotification: displaying && NotchService.displayKind === "notification"
+        onShowingNotificationChanged: if (!showingNotification) closeDisplay()
+        onDisplayContentChanged: if (displayOpen) closeDisplay()
+        function closeDisplay() {
+            displayOpen = false
+            NotificationService.heldPopup = null
+        }
+        function toggleDisplay() {
+            if (displayOpen) { closeDisplay(); return }
+            displayOpen = true
+            NotificationService.heldPopup = NotificationService.popups.length ? NotificationService.popups[0] : null
+        }
+        // ---- pages: scrolled or swiped to on the collapsed notch -----------
+        // -1 the date and the next event, 0 the strip, +1 what is playing
+        // (only while something is). NotchLogic.swipeSettle decides.
+        property int page: 0
+        property bool swiped: false
+        property real swipePosition: 0
+        readonly property var pages: MprisService.hasPlayer ? [-1, 0, 1] : [-1, 0]
+        onPagesChanged: if (pages.indexOf(page) < 0) page = 0
+        readonly property bool paging: page !== 0 && !expanded && !displaying
+        readonly property var pageContent: page > 0
+            ? { kind: "page", icon: MprisService.artUrl.length ? "" : (MprisService.playing ? Icons.play : Icons.pause),
+                iconSource: MprisService.artUrl, title: MprisService.title, subtitle: MprisService.artist }
+            : page < 0 ? Object.assign({ kind: "page", icon: "\u{f00ed}" }, window.dayPage(pageClock.date))
+            : null
+        function dayPage(now) {
+            const next = CalendarService.remainingToday(now).find(event => !event.allDay)
+            return { title: Qt.formatDate(now, "dddd, d MMMM"),
+                     subtitle: next ? next.title + " \u00b7 " + CalendarService.formatRange(next) : "Nothing else today" }
+        }
+        SystemClock { id: pageClock; precision: SystemClock.Minutes; enabled: window.page < 0 }
+        readonly property CalendarDemand calendarDemand: CalendarDemand { active: window.page < 0 }
+        readonly property real pageWidth: Math.max(collapsedWidth,
+            Math.min(Metrics.notchMaxExpandedWidth, pageLoader.item ? pageLoader.item.implicitWidth : collapsedWidth))
+        Timer {
+            id: swipeSettle
+            interval: Logic.SWIPE.idleMs
+            onTriggered: {
+                window.page = Logic.swipeSettle(window.page, window.swipePosition, window.pages)
+                window.swipePosition = 0
+            }
+        }
+
+        readonly property real displayHeight: displayOpen && displayLoader.item
+            ? Math.min(maxBodyHeight, displayLoader.item.implicitHeight) : NotchService.bodyHeight
         readonly property real displayWidth: Math.max(collapsedWidth,
             Math.min(Metrics.notchMaxExpandedWidth,
                      displayLoader.item ? displayLoader.item.implicitWidth : collapsedWidth))
+
+        // A panel that came out of the notch stands in for it (Settings:
+        // "Panels open: Out of the notch"), so the notch on that screen makes
+        // way while it is open and comes back as the panel shrinks into it.
+        readonly property bool madeWay: PanelService.overNotch && PanelService.active.length > 0
+            && PanelService.screen === modelData
+        property real bodyOpacity: madeWay ? 0 : 1
+        Behavior on bodyOpacity {
+            enabled: Animations.enabled
+            NumberAnimation {
+                duration: window.madeWay ? Animations.hover : Animations.popupClose
+                easing.type: Animations.easing
+            }
+        }
 
         // Expansion: hover (after a short delay) or IPC; a panel opening closes it.
         property bool hoverExpanded: false
@@ -69,14 +134,17 @@ Variants {
 
         NotchValue { id: bodyWidth; minimum: Math.min(window.collapsedWidth, to)
                      to: window.expanded ? window.expandedWidth
-                         : window.displaying ? window.displayWidth : window.collapsedWidth }
+                         : window.displaying ? window.displayWidth
+                         : window.paging ? window.pageWidth : window.collapsedWidth }
         // The body may use the whole surface but its bottom margin, so the
         // clamp and the surface can never drift apart.
         readonly property real maxBodyHeight: Metrics.notchSurfaceHeight - Metrics.spaceXl
         // The collapsed height and radius are the user's (NotchService.body*:
         // the theme's tokens unless a preset - Classic - says otherwise); the
         // expanded shape keeps the theme's own.
-        NotchValue { id: bodyHeight; minimum: NotchService.bodyHeight; to: window.expanded ? window.overviewHeight : NotchService.bodyHeight }
+        NotchValue { id: bodyHeight; minimum: NotchService.bodyHeight
+                     to: window.expanded ? window.overviewHeight
+                         : window.displaying ? window.displayHeight : NotchService.bodyHeight }
         NotchValue { id: bodyEar; minimum: Metrics.notchEar; to: window.expanded ? Metrics.notchExpandedEar : Metrics.notchEar }
         NotchValue { id: bodyRadius; minimum: NotchService.bodyRadius; to: window.expanded ? Metrics.notchExpandedRadius : NotchService.bodyRadius }
         // The body's geometry, shared by the outline, the pill and the shadow.
@@ -184,17 +252,37 @@ Variants {
             surfaceWidth: Math.round(window.width),
             reportX: Math.round(reportOrigin.x)
         })
-        onReportStateChanged: NotchService.report(screenName, reportState)
+        // A turn later, not inside the change: the report rewrites
+        // `NotchService.states`, `displaying` reads it back and the body's
+        // `to` reads `displaying`, so a synchronous report closed the loop
+        // that logged "Binding loop detected for property reportState"
+        // (and "displaying", "display", "to"; one per start). A Timer and
+        // not Qt.callLater: callLater folds calls of the same function, and
+        // every screen's notch would share one report.
+        onReportStateChanged: reportTimer.restart()
+        Timer {
+            id: reportTimer
+            interval: 0
+            onTriggered: NotchService.report(window.screenName, window.reportState)
+        }
 
         // Collapse at once, then open a panel centred below the notch.
         // `args` is what the thing that was clicked wants to say beyond which
         // panel to open - a widget's `actionArgs`, which names the page. The
-        // anchor is the notch's own and always wins.
+        // anchor is the notch's own and wins over the widget's; `fromNotch`
+        // lets a panel that belongs in the corner (`followClock: false`, the
+        // notification list) keep its corner and only grow out of the notch.
         function openPanel(panelId, args) {
             hoverExpanded = false
             openTimer.stop()
             NotchService.collapse(screenName)
-            PanelService.open(panelId, Object.assign({}, args || {}, { anchorX: modelData.width / 2 }))
+            PanelService.open(panelId, Object.assign({}, args || {}, { anchorX: modelData.width / 2, fromNotch: true }))
+        }
+
+        function buttonAction(action) {
+            if (action === "none") return
+            if (action === "playPause") { MprisService.togglePlaying(); return }
+            window.openPanel(action)
         }
 
         function remap() {
@@ -233,7 +321,7 @@ Variants {
         Timer {
             id: openTimer
             interval: NotchService.openDelay
-            onTriggered: if (hover.hovered && PanelService.active.length === 0) window.hoverExpanded = true
+            onTriggered: if (hover.hovered && !window.swiped && PanelService.active.length === 0) window.hoverExpanded = true
         }
         Timer {
             id: closeTimer
@@ -300,6 +388,7 @@ Variants {
             layer.enabled: true
         }
         MultiEffect {
+            opacity: window.bodyOpacity
             source: shadowCaster
             anchors.fill: shadowCaster
             shadowEnabled: true
@@ -338,6 +427,7 @@ Variants {
         readonly property int shapeTop: Logic.pillTop(NotchService.shape, Metrics.notchPillMargin)
 
         Rectangle {
+            opacity: window.bodyOpacity
             visible: NotchService.pill
             x: window.bodyShape.left
             y: window.shapeTop
@@ -356,6 +446,7 @@ Variants {
         // while the clock and the shadow, which read the geometry directly,
         // were in the right place; a hover (a morph) put it right.
         Loader {
+            opacity: window.bodyOpacity
             active: !NotchService.pill && window.visible
             anchors.fill: parent
             sourceComponent: Shape {
@@ -413,6 +504,7 @@ Variants {
         // are children so hovering them keeps the notch open.
         Item {
             id: hitArea
+            opacity: window.bodyOpacity
             x: (window.width - width) / 2
             y: window.shapeTop
             width: Math.max(bodyWidth.value + bodyEar.value * 2, maskArea.width)
@@ -425,6 +517,7 @@ Variants {
                         closeTimer.stop()
                         if (NotchService.expandOnHover && !window.hoverExpanded) openTimer.restart()
                     } else {
+                        window.swiped = false
                         openTimer.stop()
                         closeTimer.restart()
                     }
@@ -433,13 +526,52 @@ Variants {
 
             // Collapsed: a click opens the overview or the dashboard, as the
             // hover mode and the click action say (NotchLogic.clickResult).
+            // The middle and the right button do what their own settings say,
+            // nothing unless they are set.
             MouseArea {
                 anchors.fill: parent
                 enabled: !window.expanded
+                acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    if (NotchService.clickResult === "expand") NotchService.expand(window.screenName)
+                onClicked: mouse => {
+                    if (mouse.button === Qt.LeftButton && window.showingNotification) window.toggleDisplay()
+                    else if (mouse.button === Qt.LeftButton && window.paging)
+                        window.openPanel(window.page > 0 ? "mediaPopup" : "dashboard")
+                    else if (mouse.button === Qt.MiddleButton) window.buttonAction(NotchService.middleAction)
+                    else if (mouse.button === Qt.RightButton) window.buttonAction(NotchService.rightAction)
+                    else if (NotchService.clickResult === "expand") NotchService.expand(window.screenName)
                     else window.openPanel("dashboard")
+                }
+            }
+
+            WheelHandler {
+                enabled: NotchService.swipe && !window.expanded && !window.displaying
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                onWheel: event => {
+                    // A hand that scrolls is paging, not resting: the hover
+                    // does not open the overview under it until it leaves.
+                    window.swiped = true
+                    openTimer.stop()
+                    window.swipePosition = Math.max(-1, Math.min(1, window.swipePosition
+                        + Logic.swipeStep(event.pixelDelta.x, event.pixelDelta.y, event.angleDelta.x, event.angleDelta.y)))
+                    swipeSettle.restart()
+                }
+            }
+
+            // A page, in the strip's place: the same row the display uses.
+            Loader {
+                id: pageLoader
+                x: (hitArea.width - width) / 2
+                width: Math.max(0, bodyWidth.value)
+                height: NotchService.bodyHeight
+                clip: true
+                active: window.paging || opacity > 0
+                opacity: window.paging ? 1 : 0
+                visible: opacity > 0
+                Behavior on opacity { NumberAnimation { duration: Animations.notchContentFade; easing.type: Animations.easing } }
+                sourceComponent: NotchDisplayContent {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    content: window.pageContent || ({})
                 }
             }
 
@@ -450,14 +582,16 @@ Variants {
                 id: displayLoader
                 x: (hitArea.width - width) / 2
                 width: Math.max(0, bodyWidth.value)
-                height: NotchService.bodyHeight
+                height: Math.max(NotchService.bodyHeight, bodyHeight.value)
+                clip: true
                 active: window.displaying || opacity > 0
                 opacity: window.displaying ? 1 : 0
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: Animations.notchContentFade; easing.type: Animations.easing } }
                 sourceComponent: NotchDisplayContent {
-                    anchors.centerIn: parent
+                    anchors.horizontalCenter: parent.horizontalCenter
                     content: window.displayContent || ({})
+                    open: window.displayOpen
                 }
             }
 
@@ -469,7 +603,7 @@ Variants {
                 x: (hitArea.width - width) / 2
                 width: window.collapsedWidth
                 height: NotchService.bodyHeight
-                opacity: window.expanded || window.displaying ? 0 : 1
+                opacity: window.expanded || window.displaying || window.paging ? 0 : 1
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: Animations.hover; easing.type: Animations.easing } }
 

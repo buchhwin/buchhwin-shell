@@ -3,12 +3,14 @@ import QtQuick
 import QtQuick.Layouts
 import qs.theme
 import qs.services
+import qs.shell.components
 import "../../services/appearance/TimeFormat.js" as TimeFormat
 
 // Next of today's remaining events. small: one line; medium: up to three
 // events. Hidden when nothing else happens today.
 ColumnLayout {
     id: root
+    readonly property CalendarDemand calendarDemand: CalendarDemand {}
     property var instance: null
     property real scaleFactor: 1
     property string sizeClass: "small"

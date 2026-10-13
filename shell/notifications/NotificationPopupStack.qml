@@ -154,7 +154,7 @@ PanelWindow {
                     readonly property int timeout: card.modelData.expireTimeout > 0
                         ? card.modelData.expireTimeout : SettingsService.value("notifications.popupTimeoutMs")
                     interval: timeout
-                    running: !card.critical && !card.hovered
+                    running: !card.critical && !card.hovered && NotificationService.heldPopup !== card.modelData
                     onTriggered: NotificationService.hidePopup(card.modelData)
                 }
             }

@@ -8,6 +8,10 @@ import qs.theme
 Rectangle {
     id: root
     property alias text: input.text
+    // Typed into since the last Return: a value the field has not handed on
+    // yet. Settings keeps a page loaded while one of its fields says so.
+    property bool edited: false
+    objectName: "shellTextField"
     property alias echoMode: input.echoMode
     readonly property alias inputActiveFocus: input.activeFocus
     property string icon: ""
@@ -65,7 +69,8 @@ Rectangle {
             clip: true
             activeFocusOnTab: root.focusOnTab
             onActiveFocusChanged: if (activeFocus && root.selectAllOnFocus) selectAll()
-            onAccepted: root.accepted()
+            onAccepted: { root.edited = false; root.accepted() }
+            onTextEdited: root.edited = true
             Keys.onPressed: event => root.keyPressed(event)
             Keys.onDeletePressed: event => {
                 if (text.length) { event.accepted = false; return }

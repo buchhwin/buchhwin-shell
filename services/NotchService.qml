@@ -23,6 +23,13 @@ Singleton {
     readonly property string clickAction: SettingsService.value("notch.clickAction")
     // What a click on the collapsed notch does: "expand" or "dashboard".
     readonly property string clickResult: NotchLogic.clickResult(hoverMode, clickAction)
+    // The middle and the right button (NotchLogic.buttonAction): "none" or
+    // what they open.
+    readonly property string middleAction: NotchLogic.buttonAction(SettingsService.value("notch.middleAction"))
+    readonly property string rightAction: NotchLogic.buttonAction(SettingsService.value("notch.rightAction"))
+    readonly property bool swipe: SettingsService.value("notch.swipe") !== false
+    // Panels open out of the notch rather than below it (ShellPanel).
+    readonly property bool panelsFromNotch: SettingsService.value("notch.panelOrigin") === "notch" && !pill
     // ---- the collapsed body -----------------------------------------------
     // How tall it is, how round its bottom corners are and how much air the
     // strip keeps at both ends. The theme's tokens are the defaults and the
@@ -103,6 +110,7 @@ Singleton {
     readonly property bool displayOsd: SettingsService.value("notch.displayOsd")
     readonly property bool displayNotifications: SettingsService.value("notch.displayNotifications")
     readonly property bool displayMedia: SettingsService.value("notch.displayMedia")
+    readonly property bool osdRing: SettingsService.value("notch.osdStyle") !== "bar"
     function displayEnabled(kind) {
         return kind === "osd" ? displayOsd : kind === "notification" ? displayNotifications
             : kind === "media" ? displayMedia : false

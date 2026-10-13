@@ -1,5 +1,5 @@
+import Quickshell
 import QtQuick
-import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
@@ -56,7 +56,10 @@ Grid {
     spacing: Metrics.spaceXs * scaleFactor
 
     Repeater {
-        model: root.list
+        // Matched by id, not rebuilt: a plain array threw every pip away on
+        // each switch, in every screen's notch at once. Kept delegates get
+        // their new modelData.
+        model: ScriptModel { values: root.list; objectProp: "id" }
         // A slot rather than the pip itself: a dot is smaller than the row is
         // tall, and a pointer should not have to find a 14 px target. The slot
         // keeps the full height and a hand's width whatever is drawn in it.
@@ -92,13 +95,13 @@ Grid {
                 color: slot.current ? Colors.accent : pipMouse.containsMouse ? Colors.surface2Hover
                     : slot.labelled ? Colors.elevatedSurface : root.mutedTextColor
                 opacity: slot.current || slot.modelData.occupied ? 1 : Effects.mutedOpacity
-                // The pip width is the widget's width, so every frame resizes
-                // the widget's layer surface and re-reports its rectangle.
-                // Reduced and Off skip it like the other movements.
-                Behavior on width {
-                    enabled: Animations.motionEnabled
-                    SpringMotion { kind: "fast" }
-                }
+                // No spring on the width. It never ran while the pips were
+                // rebuilt on every switch, and once they were kept it did -
+                // and redrawing the notch for every frame of a workspace
+                // slide cost 8-9 dropped frames in eight switches against
+                // 0-5 without it (measured on DP-10, 2026-10-13). The pip
+                // changes with the slide, which is the motion already on
+                // screen.
                 Text {
                     anchors.centerIn: parent
                     visible: slot.labelled

@@ -57,7 +57,7 @@
       "w": 1,
       "h": 1,
       "options": {
-        "style": "pills",
+        "style": "dots",
         "mode": "fixed",
         "plain": true
       }

@@ -52,8 +52,17 @@ Singleton {
     property color scrimColor: Colors.scrim
     // The panel that is on screen says how deep its scrim is, as it always
     // did; `ShellPanel` pushes it here when it becomes the active one.
-    function reportScrim(panelId, color) {
-        if (active === panelId) scrimColor = color
+    // And whether a click beside it closes it: the scrim's surface is what
+    // that click lands on, now that a panel's surface is only its card.
+    property bool outsideCloses: true
+    // The open panel came out of the notch and stands in for it: the notch
+    // on that screen hides until it closes (Notch.qml).
+    property bool overNotch: false
+    function reportScrim(panelId, color, closesOnOutsideClick, fromNotch) {
+        if (active !== panelId) return
+        scrimColor = color
+        outsideCloses = closesOnOutsideClick !== false
+        overNotch = fromNotch === true
     }
 
     function open(panelId, options) {

@@ -125,6 +125,11 @@ function address(value) {
     return String(value)
 }
 
+function focusMonitor(name) {
+    const monitor = checkWord(name)
+    return { legacy: "focusmonitor " + monitor, lua: "hl.dsp.focus({ monitor = " + luaString(monitor) + " })" }
+}
+
 function workspace(id) {
     const number = Math.round(Number(id))
     return { legacy: "workspace " + number, lua: "hl.dsp.focus({ workspace = " + number + " })" }

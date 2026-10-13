@@ -396,9 +396,26 @@ Singleton {
         onTriggered: root.timedOut = true
     }
 
+    // Started when something needs it, not with the shell (G6, 2026-10-13):
+    // the clock's event hint needs it all the time and keeps it on; without
+    // the hint, the dashboard, the events popup, the notch's events and its
+    // date page, the calendar widget, the lock screen and Settings > Calendar
+    // say so through CalendarDemand while they are shown. Once started it
+    // stays for five minutes past the last of them, so a dashboard opened
+    // twice does not reconnect to Akonadi twice.
+    property int trackers: 0
+    property bool warm: false
+    function track() { trackers += 1; warm = true; coolDown.stop() }
+    function untrack() {
+        trackers = Math.max(0, trackers - 1)
+        if (trackers === 0) coolDown.restart()
+    }
+    Timer { id: coolDown; interval: 300000; onTriggered: if (root.trackers === 0) root.warm = false }
+    readonly property bool wanted: hintActive || trackers > 0 || warm
+
     LazyLoader {
         id: backend
-        active: root.enabled && !root.sandboxed
+        active: root.enabled && !root.sandboxed && root.wanted
 
         Scope {
             id: scope

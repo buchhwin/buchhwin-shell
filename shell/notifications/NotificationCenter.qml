@@ -17,7 +17,7 @@ ShellPanel {
     // the screen - so a list that belongs in the corner opened dead centre.
     followClock: false
     cardWidth: Metrics.notificationCenterWidth
-    cardHeight: height - topOffset - Metrics.screenMargin
+    cardHeight: screenH - topOffset - Metrics.screenMargin
 
     // Group keys the user expanded ("N more").
     property var expanded: ({})

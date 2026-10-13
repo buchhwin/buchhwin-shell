@@ -97,6 +97,9 @@ ShellRoot {
         T.eq(N.stripItems([one("clock", "notch-clock-1")], true).map(i => i.id), ["", "notch-clock-1"],
              "the automatic chip carries no id, so it cannot be dragged")
         T.eq(N.stripItems([one("clock", "notch-clock-1")], false)[0].id, "notch-clock-1", "stored ids are kept")
+        T.eq(N.stripItems([one("clock")], false, true).map(i => i.type), ["timer", "clock"], "a running timer leads the strip")
+        T.eq(N.stripItems([one("clock")], true, true).map(i => i.type), ["recording", "timer", "clock"],
+             "after a recording, which is the more urgent of the two")
 
         // The strip around its clock: as wide on the lighter side as on the
         // heavier one, so the time sits in the middle of the screen. The pad
@@ -276,6 +279,18 @@ ShellRoot {
         T.eq([N.hoverMode("click"), N.hoverMode("off"), N.hoverMode("sideways"), N.hoverMode(undefined)],
              ["click", "off", "hover", "hover"], "hover mode validated")
         T.eq([N.hoverOpens("hover"), N.hoverOpens("click"), N.hoverOpens("off")], [true, false, false], "only hover opens on hover")
+        // Swiping the collapsed notch between its pages.
+        T.eq(N.swipeStep(0, 0, 0, -120), 0.35, "a wheel notch down is a third of a page to the right")
+        T.ok(N.swipeStep(0, 0, 0, -240) >= N.SWIPE.threshold, "two notches turn the page")
+        T.eq(N.swipeStep(-60, 5, 0, 0), 0.2, "a touchpad's pixels count whole, the larger axis wins")
+        T.eq([N.swipeSettle(0, 0.6, [-1, 0, 1]), N.swipeSettle(0, -0.6, [-1, 0, 1]), N.swipeSettle(0, 0.4, [-1, 0, 1])],
+             [1, -1, 0], "past 56 % it crosses, short of it it snaps back")
+        T.eq([N.swipeSettle(0, 0.9, [-1, 0]), N.swipeSettle(1, 0.9, [-1, 0, 1]), N.swipeSettle(-1, 0.7, [-1, 0, 1])],
+             [0, 1, 0], "no page past the last, and back to the strip from the side")
+        T.eq([N.buttonAction("clipboard"), N.buttonAction("playPause"), N.buttonAction("evil"), N.buttonAction(undefined)],
+             ["clipboard", "playPause", "none", "none"], "the middle and right buttons do nothing unless set")
+        T.ok(L.NOTCH_PRESET_OPTIONS.indexOf("middleAction") >= 0 && L.NOTCH_PRESET_OPTIONS.indexOf("rightAction") >= 0,
+             "a preset carries what the other two buttons do")
         T.eq([N.clickResult("hover", "dashboard"), N.clickResult("hover", "expand"), N.clickResult("hover", "evil"),
               N.clickResult("click", "dashboard"), N.clickResult("off", "expand")],
              ["dashboard", "expand", "dashboard", "expand", "dashboard"], "what a click on the collapsed notch does")
@@ -318,6 +333,8 @@ ShellRoot {
              [["full", "dots", "open", ""], ["full", "", "", ""], ["icon", "", "", ""], ["icon", "", "", ""]],
              "dots for the open workspaces, the network and the battery as their plain glyphs (13.10.: no bars, no lying battery)")
         T.eq(L.notchTypes(island.layout, "expanded")[0], "clock", "Island opens on the time and date")
+        const openWorkspaces = L.notchItems(island.layout, "expanded").filter(item => item.type === "workspace")
+        T.eq(openWorkspaces.map(item => item.options.style), ["dots"], "Island's open workspaces are round dots, like its strip")
         T.eq(island.options.hoverMode, "hover", "Island opens on hover")
         T.eq([island.options.bodyHeight, island.options.bodyRadius, island.options.bodyPadding], [40, 16, 22],
              "Island's body is the theme's: 40 tall, corners of 16, 22 of air")

@@ -17,6 +17,26 @@ function speed(value) {
     return Math.min(SPEED_MAX, Math.max(SPEED_MIN, pace))
 }
 
+// What "1x" plays at. The session was tuned at 1.5x and that is the pace the
+// user wants to call normal (2026-10-13), so the slider's 1 now means the
+// designed durations played 1.5 times as fast, on both sides of the session.
+// The tables keep their designed numbers; this is the one place that moves
+// them, and 1 here is the way back.
+var BASE_PACE = 1.5
+
+// The setting (the slider, 0.5-2) as the multiplier the animations play at.
+function pace(value) {
+    return speed(value) * BASE_PACE
+}
+
+// A multiplier kept sane: the slider's whole range at the base pace, and
+// nonsense is the base itself.
+function rate(value) {
+    const r = Number(value)
+    if (!isFinite(r) || r <= 0) return 1
+    return Math.min(SPEED_MAX * BASE_PACE, Math.max(SPEED_MIN, r))
+}
+
 // A floor for anything that travels: six frames at 60 Hz. Below it a motion
 // stops being one picture after another. The old second floor - four fifths
 // of the designed duration - froze every travelling motion from 1.25x up,
@@ -67,7 +87,7 @@ var SPRINGS = {
 // { spring, damping, mass, epsilon } for SpringAnimation at a pace.
 function spring(kind, pace) {
     const base = SPRINGS[kind] || SPRINGS.standard
-    const s = speed(pace)
+    const s = rate(pace)
     return { spring: Math.round(base.spring * s * s * 100) / 100,
              damping: Math.min(1, Math.round(base.damping * s * 100) / 100),
              mass: 1, epsilon: 0.25 }

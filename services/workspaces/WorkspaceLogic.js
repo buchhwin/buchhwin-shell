@@ -230,3 +230,29 @@ function misplaced(order, workspaces) {
     }
     return moves.sort((a, b) => a.id - b.id)
 }
+
+// The monitors that, once the moves are done, show a workspace that is not
+// one of their own - and which of their own they should show instead: the
+// lowest of theirs that exists on them, else their first. This is the half
+// `misplaced` cannot do. Moving a workspace off a monitor leaves it empty,
+// and Hyprland fills an empty monitor at once with the next free number -
+// 2 on the third screen after a reboot (2026-10-13) - which no monitor change
+// ever came back to look at. `actives` is `[{ monitor, id }]`, `placed` the
+// workspaces as `misplaced` takes them, after its moves. Unit tested.
+function homes(order, placed, actives) {
+    const monitors = Array.isArray(order) ? order : []
+    const result = []
+    for (const active of (Array.isArray(actives) ? actives : [])) {
+        if (!active) continue
+        const index = monitors.indexOf(String(active.monitor || ""))
+        if (index < 0) continue
+        const id = Math.round(Number(active.id))
+        if (isFinite(id) && id >= 1 && monitorIndexOf(id) === index) continue
+        const own = (Array.isArray(placed) ? placed : [])
+            .map(item => Math.round(Number(item && item.id)))
+            .filter(other => other >= 1 && monitorIndexOf(other) === index)
+            .sort((a, b) => a - b)
+        result.push({ monitor: monitors[index], id: own.length ? own[0] : globalId(1, index) })
+    }
+    return result
+}

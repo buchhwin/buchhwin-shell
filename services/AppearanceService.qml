@@ -60,10 +60,11 @@ Singleton {
     // two configuration files are checked against.
     function applyAnimations() {
         const mode = SettingsService.animationMode
-        HyprCompat.configure(Commands.animationMode(Anim.entries(mode, SettingsService.animationSpeed),
+        const pace = Anim.pace(SettingsService.animationSpeed)
+        HyprCompat.configure(Commands.animationMode(Anim.entries(mode, pace),
                                                    Anim.enabled(mode),
                                                    Anim.pointerAnimated(mode),
-                                                   Anim.curves(mode, SettingsService.animationSpeed)))
+                                                   Anim.curves(mode, pace)))
     }
 
     // Settings > Displays > "Sharp X11 applications" makes XWayland draw in

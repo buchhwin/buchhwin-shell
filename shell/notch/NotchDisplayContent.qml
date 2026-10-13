@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Shapes
 import qs.theme
 import qs.services
 import qs.shell.components
@@ -14,15 +15,24 @@ import qs.shell.components
 Item {
     id: display
     required property var content
+    // A notification opened up by a click: the body wraps instead of eliding.
+    property bool open: false
     readonly property string kind: content && content.kind ? content.kind : ""
     readonly property bool levelled: kind === "osd" && content.level !== undefined
+    // A plain level as a ring beside its figure; a stepped one keeps its
+    // boxes, which say how many steps there are.
+    readonly property bool ringed: levelled && !content.segments && NotchService.osdRing
+    readonly property real fraction: Math.max(0, Math.min(1, content && content.level ? content.level : 0))
 
-    implicitHeight: NotchService.bodyHeight
+    readonly property bool opened: open && kind === "notification"
+    implicitHeight: opened ? Math.max(NotchService.bodyHeight, row.implicitHeight + Metrics.spaceMd * 2) : NotchService.bodyHeight
     implicitWidth: row.implicitWidth + NotchService.bodyPadding * 2
 
     RowLayout {
         id: row
-        anchors.centerIn: parent
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: display.opened ? undefined : parent.verticalCenter
+        y: display.opened ? Metrics.spaceMd : 0
         spacing: Metrics.spaceSm
 
         ShellIcon {
@@ -51,7 +61,7 @@ Item {
             Layout.preferredWidth: Metrics.notchLevelWidth
             Layout.preferredHeight: Metrics.meterHeight
             Layout.alignment: Qt.AlignVCenter
-            visible: display.levelled
+            visible: display.levelled && !display.ringed
 
             Rectangle {
                 anchors.fill: parent
@@ -93,20 +103,56 @@ Item {
                 || (display.content && display.content.value !== undefined && String(display.content.value).length > 0)
 
             ShellText {
-                Layout.maximumWidth: Metrics.notchDisplayTextWidth
+                Layout.maximumWidth: display.opened ? Metrics.notchDisplayOpenTextWidth : Metrics.notchDisplayTextWidth
                 text: display.content && display.content.title !== undefined && String(display.content.title).length
                     ? display.content.title : (display.content ? display.content.value || "" : "")
                 role: "small"
+                // The figure beside a ring is the reading, so it is set firmly.
+                font.weight: display.ringed ? Typography.semibold : Typography.regular
                 color: Colors.notchText
                 elide: Text.ElideRight
             }
             ShellText {
-                Layout.maximumWidth: Metrics.notchDisplayTextWidth
+                Layout.maximumWidth: display.opened ? Metrics.notchDisplayOpenTextWidth : Metrics.notchDisplayTextWidth
                 visible: text.length > 0
                 text: display.content && display.content.subtitle ? display.content.subtitle : ""
                 role: "caption"
                 color: Colors.notchMutedText
+                wrapMode: display.opened ? Text.Wrap : Text.NoWrap
+                maximumLineCount: display.opened ? Metrics.notchDisplayOpenLines : 1
                 elide: Text.ElideRight
+            }
+        }
+
+        // The level as a ring, filling clockwise from the top.
+        Shape {
+            id: ring
+            Layout.preferredWidth: Metrics.notchRingSize
+            Layout.preferredHeight: Metrics.notchRingSize
+            Layout.alignment: Qt.AlignVCenter
+            visible: display.ringed
+            preferredRendererType: Shape.CurveRenderer
+            readonly property real r: (Metrics.notchRingSize - Metrics.notchRingStroke) / 2
+            ShapePath {
+                fillColor: "transparent"
+                strokeColor: Colors.notchTrack
+                strokeWidth: Metrics.notchRingStroke
+                PathAngleArc {
+                    centerX: Metrics.notchRingSize / 2; centerY: Metrics.notchRingSize / 2
+                    radiusX: ring.r; radiusY: ring.r
+                    startAngle: 0; sweepAngle: 360
+                }
+            }
+            ShapePath {
+                fillColor: "transparent"
+                strokeColor: display.content && display.content.muted ? Colors.notchMutedText : Colors.accent
+                strokeWidth: Metrics.notchRingStroke
+                capStyle: ShapePath.RoundCap
+                PathAngleArc {
+                    centerX: Metrics.notchRingSize / 2; centerY: Metrics.notchRingSize / 2
+                    radiusX: ring.r; radiusY: ring.r
+                    startAngle: -90; sweepAngle: 360 * display.fraction
+                }
             }
         }
     }

@@ -323,7 +323,17 @@ Singleton {
     // strip rather than letting a long notification stretch it across the
     // screen.
     readonly property int notchLevelWidth: 96
+    // The ring a level is drawn as instead (notch.osdStyle "ring"): about
+    // half the body tall, with a stroke that still reads at that size.
+    readonly property int notchRingSize: 22
+    readonly property int notchRingStroke: 3
+    // The countdown's ring in the strip, the size of the recording dot's row.
+    readonly property int notchTimerRing: 16
     readonly property int notchDisplayTextWidth: 260
+    // A notification opened up in the notch: wider, and the body wraps over
+    // this many lines instead of eliding after one.
+    readonly property int notchDisplayOpenTextWidth: 400
+    readonly property int notchDisplayOpenLines: 6
     // How long a track change stays in the notch. Longer than an OSD, which is
     // a value you already know you changed, and shorter than a notification,
     // which you may have to read.

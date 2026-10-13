@@ -1169,6 +1169,16 @@ RESERVED_NAMES = [
     # and neither is a signal's `(int index)`.
     re.compile(rf"[(,]\s*({_WORDS})\s*(?=[,)=])"),
 ]
+# Strict mode's reserved words are worse: Qt 6.9 refuses them even as a
+# member, so `answer.public` failed NetworkService.qml - and the whole shell -
+# where `item.short` is fine (2026-10-13). Read them as `answer["public"]`.
+STRICT = ("implements", "interface", "package", "private", "protected", "public", "static")
+_STRICT = "|".join(STRICT)
+RESERVED_NAMES += [
+    re.compile(rf"(?<![\w$])[A-Za-z_$][\w$]*\s*\.\s*({_STRICT})\b"),
+    re.compile(rf"\b(?:const|let|var|function)\s+({_STRICT})\b"),
+    re.compile(rf"\bproperty\s+[\w.<>]+\s+({_STRICT})\b"),
+]
 
 
 def reserved_names(text):

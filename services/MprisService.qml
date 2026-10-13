@@ -28,8 +28,8 @@ Singleton {
     // log, and it broke the smoke test, which reads the log.
     //
     // So the path is checked once per change, here, rather than by each
-    // consumer. Anything that is not a local file (http, data:) is handed
-    // straight through: only a path can be checked, and only a path goes stale.
+    // consumer. A data: url is handed straight through; an http(s) one is
+    // fetched (below); only a path can be checked, and only a path goes stale.
     readonly property string rawArtUrl: active ? (active.trackArtUrl || "") : ""
     property string artUrl: ""
 
@@ -90,9 +90,10 @@ Singleton {
         onExited: code => {
             if (root.rawArtUrl !== artCheck.pending) return
             if (artCheck.file.length) {
-                // Fetched: the file. Not fetched (offline, odd CDN): the url
-                // itself, which is what consumers always got before.
-                root.artUrl = code === 0 ? "file://" + artCheck.file : artCheck.pending
+                // Fetched: the file. Not fetched (offline, odd CDN): no
+                // cover. Handing the url on put Qt's HTTP/2 client back in
+                // the path this fetch exists to keep it out of (pitfall 28).
+                root.artUrl = code === 0 ? "file://" + artCheck.file : ""
                 return
             }
             root.artUrl = code === 0 ? artCheck.pending : ""

@@ -26,9 +26,27 @@ ShellPanel {
                                                 "desktop.settingsMoveY": Math.round(y) })
     property string page: "appearance"
     property string search: ""
-    // Once a page has been shown it stays: see the page Loader below.
+    // Once a page has been shown it stays while the panel comes and goes: see
+    // the page Loader below. A minute after it closed for good it is let go,
+    // which is the memory a page holds - unless it still has something the
+    // user typed and did not hand on (a field edited and not confirmed, a
+    // display change waiting for its answer), which a reload would throw away.
     property bool pageKept: false
-    onShownChanged: if (shown) pageKept = true
+    onShownChanged: {
+        if (shown) { releaseTimer.stop(); pageKept = true }
+        else releaseTimer.restart()
+    }
+    Timer {
+        id: releaseTimer
+        interval: 60000
+        onTriggered: if (!root.shown && !DisplayService.confirming && !root.pendingEdits(pageLoader.item)) root.pageKept = false
+    }
+    function pendingEdits(item) {
+        if (!item) return false
+        if (item.objectName === "shellTextField" && item.edited === true) return true
+        for (const child of item.children) if (pendingEdits(child)) return true
+        return false
+    }
     // Sidebar rows (group headings and pages) filtered by the search.
     readonly property var rows: Nav.rows(search)
     readonly property var visiblePageIds: Nav.pageIds(rows)

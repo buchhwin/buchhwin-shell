@@ -38,7 +38,7 @@ Singleton {
 
     readonly property var commands: ({
         options: Commands.options, monitor: Commands.monitor, env: Commands.env, combine: Commands.combine,
-        workspace: Commands.workspace, focusWindow: Commands.focusWindow, moveWindowSilent: Commands.moveWindowSilent,
+        workspace: Commands.workspace, focusMonitor: Commands.focusMonitor, focusWindow: Commands.focusWindow, moveWindowSilent: Commands.moveWindowSilent,
         moveActiveSilent: Commands.moveActiveSilent, workspaceRule: Commands.workspaceRule,
         moveWorkspaceToMonitor: Commands.moveWorkspaceToMonitor,
         closeWindow: Commands.closeWindow, dpms: Commands.dpms, exit: Commands.exit,
@@ -62,6 +62,15 @@ Singleton {
 
     // A dispatcher from `commands` (workspace, focusWindow, …).
     function dispatch(command) { run("dispatch", command) }
+    // Several, one after the other in one process: separate `hyprctl` runs
+    // are not promised to arrive in the order they were started, and a
+    // focus that has to come back last must come back last.
+    function dispatchInOrder(list) {
+        if (!list.length) return
+        if (!detected) { for (const command of list) run("dispatch", command); return }
+        const args = list.map(command => lua ? command.lua : command.legacy)
+        Quickshell.execDetached(["sh", "-c", 'for a; do hyprctl dispatch "$a" >/dev/null || exit 1; done', "sh"].concat(args))
+    }
     // Configuration changes (options, monitor, env or a combination).
     function configure(command) { run("config", command) }
     function setOptions(map) { configure(Commands.options(map)) }
