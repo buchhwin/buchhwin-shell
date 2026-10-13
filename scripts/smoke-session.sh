@@ -18,9 +18,10 @@ expected_targets=(desktop editor welcome emoji launcher controlCenter notificati
 # malformed desktop entries (swappy's Exec line), Plasma owning the notification
 # name in nested tests, PipeWire nodes without a channel map, the KDE calendar
 # plugin reading an empty settings key, a running playerctld without players
-# (its MPRIS proxy answers with errors) and Quickshell's own Wrapper* types
-# overriding implicitWidth (qt.qml.propertyCache.append).
-known_warnings='quickshell\.desktopentry|Could not register notification server|Registration will be attempted again|channelVolumes and channelMap are not the same size|QSettings::value: Empty key passed|playerctld|qt\.qml\.propertyCache\.append'
+# (its MPRIS proxy answers with errors), Quickshell's own Wrapper* types
+# overriding implicitWidth (qt.qml.propertyCache.append) and installed icons
+# Qt's SVG reader cannot parse (qt.svg; btop's, once the launcher opens).
+known_warnings='quickshell\.desktopentry|Could not register notification server|Registration will be attempted again|channelVolumes and channelMap are not the same size|QSettings::value: Empty key passed|playerctld|qt\.qml\.propertyCache\.append|qt\.svg: '
 
 if [[ ${1:-} == --nested ]]; then
   # The trap comes first: a start that fails half-way (set -e ends this script
@@ -131,6 +132,36 @@ if [[ ${1:-} == --nested && ${BUCHHWIN_SMOKE_POINTER:-1} == 1 ]]; then
     else
       printf 'failed   pointer click outside the dashboard (open: %s)\n' "$active"
       status=1
+    fi
+    # A key: Super+D through Hyprland's bind - a global shortcut in the Lua
+    # dialect, the IPC client in the conf one - opens the launcher, and
+    # Escape closes it again.
+    if "$project_dir/scripts/nested-keys" --build 2>/dev/null; then
+      hyprctl dispatch focusmonitor BUCHTEST >/dev/null 2>&1 || true
+      hyprctl dispatch 'hl.dsp.focus({ monitor = "BUCHTEST" })' >/dev/null 2>&1 || true
+      "$project_dir/scripts/nested-keys" combo SUPER+D || true
+      opened=""
+      for _ in {1..20}; do
+        opened=$(popup_state)
+        [[ $opened == launcher ]] && break
+        sleep 0.1
+      done
+      "$project_dir/scripts/nested-keys" combo ESCAPE || true
+      shut=$(popup_state)
+      for _ in {1..20}; do
+        [[ -z $shut ]] && break
+        sleep 0.1
+        shut=$(popup_state)
+      done
+      if [[ $opened == launcher && -z $shut ]]; then
+        printf 'ok       Super+D opens the launcher, Escape closes it\n'
+      else
+        printf 'failed   Super+D (open: %s, after Escape: %s)\n' "${opened:-none}" "${shut:-none}"
+        status=1
+      fi
+    else
+      printf 'skip     keys (tool cannot build)\n'
+      skipped=1
     fi
     # Notch mode: hovering the notch expands it, leaving collapses it again.
     previous_mode=$(quickshell ipc --path "$config_path" call bar get | jq -r '.mode')

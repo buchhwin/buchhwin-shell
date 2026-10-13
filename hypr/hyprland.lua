@@ -193,6 +193,28 @@ hl.animation({ leaf = "borderangle", enabled = false, speed = 1, bezier = "buchh
 -- Lua binds show up as `__lua` in `hyprctl binds`; the descriptions are the
 -- titles Settings > Shortcuts shows (services/shortcuts/ShortcutLogic.js).
 local function exec(command) return hl.dsp.exec_cmd(command) end
+-- What the shell does on a key: a Hyprland global shortcut,
+-- `buchhwin:<target>.<function>[.<argument>]`, which the running shell
+-- registered (shell.qml, services/shortcuts/ShellShortcuts.js) and answers by
+-- running the IPC function of the same name. Through `exec(ipc .. …)` every
+-- press started `sh` and the Quickshell IPC client first - 30-40 ms before
+-- the shell knew about it. `true` here is the way back to that.
+local shortcutsOverIpc = false
+local function shell(action)
+    if shortcutsOverIpc then return exec(ipc .. action) end
+    return hl.dsp.global("buchhwin:" .. action:gsub("%s+", "."))
+end
+-- The same, with Hyprland's own dispatcher when no shell is there to answer:
+-- a workspace key has to work while the shell restarts. The shell is up when
+-- its wallpaper surface is.
+local function shellOr(action, fallback)
+    if shortcutsOverIpc then return exec(ipc .. action) end
+    local shortcut = hl.dsp.global("buchhwin:" .. action:gsub("%s+", "."))
+    return function()
+        if #hl.get_layers({ namespace = "buchhwin-wallpaper" }) > 0 then hl.dispatch(shortcut)
+        else hl.dispatch(fallback) end
+    end
+end
 -- Where a shortcut sits, as opposed to what it does.
 --
 -- What each binding *does* stays in this file and nowhere else. A user who
@@ -240,28 +262,28 @@ hl.bind(keyFor("SUPER + RETURN"), exec(terminal), { description = "Terminal" })
 hl.bind(keyFor("SUPER + B"), exec(browser), { description = "Web browser" })
 hl.bind(keyFor("SUPER + E"), exec(fileManager), { description = "File manager" })
 hl.bind(keyFor("SUPER + CTRL + R"), exec(projectPath .. "/scripts/reload-shell.sh"), { description = "Restart buchhwin-shell" })
-hl.bind(keyFor("SUPER + ALT + E"), exec(ipc .. "editor toggle"), { description = "Layout editor" })
-hl.bind(keyFor("SUPER + ALT + D"), exec(ipc .. "desktop cycleMode"), { description = "Desktop mode: widgets, bar, notch" })
-hl.bind(keyFor("SUPER + ALT + P"), exec(ipc .. "mode cycle"), { description = "Mode: minimal, work, gaming, laptop, docked" })
-hl.bind(keyFor("SUPER + P"), exec(ipc .. "profile toggle"), { description = "Profiles and modes" })
+hl.bind(keyFor("SUPER + ALT + E"), shell("editor toggle"), { description = "Layout editor" })
+hl.bind(keyFor("SUPER + ALT + D"), shell("desktop cycleMode"), { description = "Desktop mode: widgets, bar, notch" })
+hl.bind(keyFor("SUPER + ALT + P"), shell("mode cycle"), { description = "Mode: minimal, work, gaming, laptop, docked" })
+hl.bind(keyFor("SUPER + P"), shell("profile toggle"), { description = "Profiles and modes" })
 -- F1, not ?: on a German layout ? is Shift+ss and unreliable as a binding.
-hl.bind(keyFor("SUPER + F1"), exec(ipc .. "shortcuts toggleSheet"), { description = "All keyboard shortcuts" })
-hl.bind(keyFor("SUPER + D"), exec(ipc .. "launcher toggle"), { description = "Launcher" })
-hl.bind(keyFor("SUPER + O"), exec(ipc .. "controlCenter toggle"), { description = "Control center" })
-hl.bind(keyFor("SUPER + I"), exec(ipc .. "settings toggle"), { description = "Settings" })
-hl.bind(keyFor("SUPER + N"), exec(ipc .. "notifications toggle"), { description = "Notification center" })
-hl.bind(keyFor("SUPER + K"), exec(ipc .. "dashboard toggle"), { description = "Dashboard" })
-hl.bind(keyFor("SUPER + M"), exec(ipc .. "powerMenu toggle"), { description = "Session menu" })
-hl.bind(keyFor("SUPER + W"), exec(ipc .. "overview toggle"), { description = "Overview" })
-hl.bind(keyFor("SUPER + SHIFT + W"), exec(ipc .. "wallpaperPicker toggle"), { description = "Wallpaper picker" })
-hl.bind(keyFor("SUPER + SHIFT + C"), exec(ipc .. "colorPicker pick"), { description = "Pick a colour off the screen" })
+hl.bind(keyFor("SUPER + F1"), shell("shortcuts toggleSheet"), { description = "All keyboard shortcuts" })
+hl.bind(keyFor("SUPER + D"), shell("launcher toggle"), { description = "Launcher" })
+hl.bind(keyFor("SUPER + O"), shell("controlCenter toggle"), { description = "Control center" })
+hl.bind(keyFor("SUPER + I"), shell("settings toggle"), { description = "Settings" })
+hl.bind(keyFor("SUPER + N"), shell("notifications toggle"), { description = "Notification center" })
+hl.bind(keyFor("SUPER + K"), shell("dashboard toggle"), { description = "Dashboard" })
+hl.bind(keyFor("SUPER + M"), shell("powerMenu toggle"), { description = "Session menu" })
+hl.bind(keyFor("SUPER + W"), shell("overview toggle"), { description = "Overview" })
+hl.bind(keyFor("SUPER + SHIFT + W"), shell("wallpaperPicker toggle"), { description = "Wallpaper picker" })
+hl.bind(keyFor("SUPER + SHIFT + C"), shell("colorPicker pick"), { description = "Pick a colour off the screen" })
 -- Alt+Tab switcher: releasing Alt focuses the selection (transparent, so apps
 -- still see the release; a confirm without an open switcher does nothing).
-hl.bind(keyFor("ALT + TAB"), exec(ipc .. "switcher next"), { description = "Next window" })
-hl.bind(keyFor("ALT + SHIFT + TAB"), exec(ipc .. "switcher previous"), { description = "Previous window" })
-hl.bind(keyFor("ALT + ALT_L"), exec(ipc .. "switcher confirm"), { release = true, transparent = true, description = "Switch to selected window" })
-hl.bind(keyFor("SUPER + V"), exec(ipc .. "clipboard toggle"), { description = "Clipboard history" })
-hl.bind(keyFor("SUPER + PERIOD"), exec(ipc .. "emoji toggle"), { description = "Emoji picker" })
+hl.bind(keyFor("ALT + TAB"), shell("switcher next"), { description = "Next window" })
+hl.bind(keyFor("ALT + SHIFT + TAB"), shell("switcher previous"), { description = "Previous window" })
+hl.bind(keyFor("ALT + ALT_L"), shell("switcher confirm"), { release = true, transparent = true, description = "Switch to selected window" })
+hl.bind(keyFor("SUPER + V"), shell("clipboard toggle"), { description = "Clipboard history" })
+hl.bind(keyFor("SUPER + PERIOD"), shell("emoji toggle"), { description = "Emoji picker" })
 hl.bind(keyFor("SUPER + L"), exec(projectPath .. "/scripts/session-action.sh lock"), { description = "Lock screen" })
 
 -- Screenshots.
@@ -270,8 +292,8 @@ hl.bind(keyFor("SUPER + SHIFT + S"), exec(projectPath .. "/scripts/screenshot.sh
 hl.bind(keyFor("SUPER + ALT + S"), exec(projectPath .. "/scripts/screenshot.sh window"), { description = "Screenshot of a window" })
 hl.bind(keyFor("Print"), exec(projectPath .. "/scripts/screenshot.sh region"), { description = "Screenshot of a region" })
 -- Screen recording (pressing it again stops).
-hl.bind(keyFor("SUPER + SHIFT + R"), exec(ipc .. "recording toggle region"), { description = "Record a region" })
-hl.bind(keyFor("SUPER + CTRL + SHIFT + R"), exec(ipc .. "recording toggle screen"), { description = "Record the screen" })
+hl.bind(keyFor("SUPER + SHIFT + R"), shell("recording toggle region"), { description = "Record a region" })
+hl.bind(keyFor("SUPER + CTRL + SHIFT + R"), shell("recording toggle screen"), { description = "Record the screen" })
 
 -- Window actions.
 hl.bind(keyFor("SUPER + Q"), hl.dsp.window.close(), { description = "Close window" })
@@ -295,34 +317,34 @@ hl.bind(keyFor("SUPER + ALT + DOWN"), hl.dsp.focus({ direction = "down" }), { de
 
 -- Workspaces 1-9, through the shell: with workspaces per monitor, `Super+3`
 -- means "the third workspace of the monitor under the focus", and only the
--- shell knows which monitor that is. The `||` tail is the old, global
--- behaviour, for a session whose shell is not running.
+-- shell knows which monitor that is. `shellOr` falls back to the old, global
+-- behaviour (Hyprland's own dispatcher) while no shell is running.
 -- Moving a window keeps the user on the current workspace.
 --
 -- Written out rather than in a loop, and each with its command spelled out:
 -- these go through `keyFor` like every other bind, so Settings > Shortcuts
 -- can move them; the shell reads the default combination out of this file
 -- as the literal string `keyFor("SUPER + 1")` (ShortcutLogic.parseDefaults),
--- and scripts/lib/checks.py reads the command the same way, so a helper
--- function that built it would hide the action from the drift check.
-hl.bind(keyFor("SUPER + 1"), exec(ipc .. "workspaces switchTo 1 || hyprctl dispatch workspace 1"), { description = "Go to workspace 1" })
-hl.bind(keyFor("SUPER + 2"), exec(ipc .. "workspaces switchTo 2 || hyprctl dispatch workspace 2"), { description = "Go to workspace 2" })
-hl.bind(keyFor("SUPER + 3"), exec(ipc .. "workspaces switchTo 3 || hyprctl dispatch workspace 3"), { description = "Go to workspace 3" })
-hl.bind(keyFor("SUPER + 4"), exec(ipc .. "workspaces switchTo 4 || hyprctl dispatch workspace 4"), { description = "Go to workspace 4" })
-hl.bind(keyFor("SUPER + 5"), exec(ipc .. "workspaces switchTo 5 || hyprctl dispatch workspace 5"), { description = "Go to workspace 5" })
-hl.bind(keyFor("SUPER + 6"), exec(ipc .. "workspaces switchTo 6 || hyprctl dispatch workspace 6"), { description = "Go to workspace 6" })
-hl.bind(keyFor("SUPER + 7"), exec(ipc .. "workspaces switchTo 7 || hyprctl dispatch workspace 7"), { description = "Go to workspace 7" })
-hl.bind(keyFor("SUPER + 8"), exec(ipc .. "workspaces switchTo 8 || hyprctl dispatch workspace 8"), { description = "Go to workspace 8" })
-hl.bind(keyFor("SUPER + 9"), exec(ipc .. "workspaces switchTo 9 || hyprctl dispatch workspace 9"), { description = "Go to workspace 9" })
-hl.bind(keyFor("SUPER + SHIFT + 1"), exec(ipc .. "workspaces move 1 || hyprctl dispatch movetoworkspacesilent 1"), { description = "Move window to workspace 1" })
-hl.bind(keyFor("SUPER + SHIFT + 2"), exec(ipc .. "workspaces move 2 || hyprctl dispatch movetoworkspacesilent 2"), { description = "Move window to workspace 2" })
-hl.bind(keyFor("SUPER + SHIFT + 3"), exec(ipc .. "workspaces move 3 || hyprctl dispatch movetoworkspacesilent 3"), { description = "Move window to workspace 3" })
-hl.bind(keyFor("SUPER + SHIFT + 4"), exec(ipc .. "workspaces move 4 || hyprctl dispatch movetoworkspacesilent 4"), { description = "Move window to workspace 4" })
-hl.bind(keyFor("SUPER + SHIFT + 5"), exec(ipc .. "workspaces move 5 || hyprctl dispatch movetoworkspacesilent 5"), { description = "Move window to workspace 5" })
-hl.bind(keyFor("SUPER + SHIFT + 6"), exec(ipc .. "workspaces move 6 || hyprctl dispatch movetoworkspacesilent 6"), { description = "Move window to workspace 6" })
-hl.bind(keyFor("SUPER + SHIFT + 7"), exec(ipc .. "workspaces move 7 || hyprctl dispatch movetoworkspacesilent 7"), { description = "Move window to workspace 7" })
-hl.bind(keyFor("SUPER + SHIFT + 8"), exec(ipc .. "workspaces move 8 || hyprctl dispatch movetoworkspacesilent 8"), { description = "Move window to workspace 8" })
-hl.bind(keyFor("SUPER + SHIFT + 9"), exec(ipc .. "workspaces move 9 || hyprctl dispatch movetoworkspacesilent 9"), { description = "Move window to workspace 9" })
+-- and scripts/lib/checks.py reads the action out of `shellOr("…")` the same
+-- way, so a helper that built the string would hide it from the drift check.
+hl.bind(keyFor("SUPER + 1"), shellOr("workspaces switchTo 1", hl.dsp.focus({ workspace = 1 })), { description = "Go to workspace 1" })
+hl.bind(keyFor("SUPER + 2"), shellOr("workspaces switchTo 2", hl.dsp.focus({ workspace = 2 })), { description = "Go to workspace 2" })
+hl.bind(keyFor("SUPER + 3"), shellOr("workspaces switchTo 3", hl.dsp.focus({ workspace = 3 })), { description = "Go to workspace 3" })
+hl.bind(keyFor("SUPER + 4"), shellOr("workspaces switchTo 4", hl.dsp.focus({ workspace = 4 })), { description = "Go to workspace 4" })
+hl.bind(keyFor("SUPER + 5"), shellOr("workspaces switchTo 5", hl.dsp.focus({ workspace = 5 })), { description = "Go to workspace 5" })
+hl.bind(keyFor("SUPER + 6"), shellOr("workspaces switchTo 6", hl.dsp.focus({ workspace = 6 })), { description = "Go to workspace 6" })
+hl.bind(keyFor("SUPER + 7"), shellOr("workspaces switchTo 7", hl.dsp.focus({ workspace = 7 })), { description = "Go to workspace 7" })
+hl.bind(keyFor("SUPER + 8"), shellOr("workspaces switchTo 8", hl.dsp.focus({ workspace = 8 })), { description = "Go to workspace 8" })
+hl.bind(keyFor("SUPER + 9"), shellOr("workspaces switchTo 9", hl.dsp.focus({ workspace = 9 })), { description = "Go to workspace 9" })
+hl.bind(keyFor("SUPER + SHIFT + 1"), shellOr("workspaces move 1", hl.dsp.window.move({ workspace = 1, follow = false })), { description = "Move window to workspace 1" })
+hl.bind(keyFor("SUPER + SHIFT + 2"), shellOr("workspaces move 2", hl.dsp.window.move({ workspace = 2, follow = false })), { description = "Move window to workspace 2" })
+hl.bind(keyFor("SUPER + SHIFT + 3"), shellOr("workspaces move 3", hl.dsp.window.move({ workspace = 3, follow = false })), { description = "Move window to workspace 3" })
+hl.bind(keyFor("SUPER + SHIFT + 4"), shellOr("workspaces move 4", hl.dsp.window.move({ workspace = 4, follow = false })), { description = "Move window to workspace 4" })
+hl.bind(keyFor("SUPER + SHIFT + 5"), shellOr("workspaces move 5", hl.dsp.window.move({ workspace = 5, follow = false })), { description = "Move window to workspace 5" })
+hl.bind(keyFor("SUPER + SHIFT + 6"), shellOr("workspaces move 6", hl.dsp.window.move({ workspace = 6, follow = false })), { description = "Move window to workspace 6" })
+hl.bind(keyFor("SUPER + SHIFT + 7"), shellOr("workspaces move 7", hl.dsp.window.move({ workspace = 7, follow = false })), { description = "Move window to workspace 7" })
+hl.bind(keyFor("SUPER + SHIFT + 8"), shellOr("workspaces move 8", hl.dsp.window.move({ workspace = 8, follow = false })), { description = "Move window to workspace 8" })
+hl.bind(keyFor("SUPER + SHIFT + 9"), shellOr("workspaces move 9", hl.dsp.window.move({ workspace = 9, follow = false })), { description = "Move window to workspace 9" })
 
 -- Pointer moving and resizing.
 hl.bind(keyFor("SUPER + mouse:272"), hl.dsp.window.drag(), { mouse = true, description = "Move window" })
@@ -339,9 +361,9 @@ hl.bind(keyFor("XF86MonBrightnessDown"), exec("brightnessctl -e4 -n2 set 5%- && 
 -- The keyboard light goes through the shell rather than running brightnessctl
 -- here: the LED's name carries its driver's prefix (tpacpi on this ThinkPad,
 -- asus or dell elsewhere) and a key binding cannot know it.
-hl.bind(keyFor("XF86KbdBrightnessUp"), exec(ipc .. "kbdBacklight up"), { locked = true, repeating = true, description = "Keyboard light up" })
-hl.bind(keyFor("XF86KbdBrightnessDown"), exec(ipc .. "kbdBacklight down"), { locked = true, repeating = true, description = "Keyboard light down" })
-hl.bind(keyFor("XF86KbdLightOnOff"), exec(ipc .. "kbdBacklight toggle"), { locked = true, description = "Keyboard light on or off" })
+hl.bind(keyFor("XF86KbdBrightnessUp"), shell("kbdBacklight up"), { locked = true, repeating = true, description = "Keyboard light up" })
+hl.bind(keyFor("XF86KbdBrightnessDown"), shell("kbdBacklight down"), { locked = true, repeating = true, description = "Keyboard light down" })
+hl.bind(keyFor("XF86KbdLightOnOff"), shell("kbdBacklight toggle"), { locked = true, description = "Keyboard light on or off" })
 hl.bind(keyFor("XF86AudioPlay"), exec("playerctl play-pause"), { locked = true, description = "Play or pause" })
 hl.bind(keyFor("XF86AudioPause"), exec("playerctl play-pause"), { locked = true, description = "Play or pause" })
 hl.bind(keyFor("XF86AudioNext"), exec("playerctl next"), { locked = true, description = "Next track" })

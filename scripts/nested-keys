@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Keyboard input for nested test sessions through zwp_virtual_keyboard_v1:
+# key presses Hyprland handles like a real keyboard's, binds included.
+# Refuses to run unless HYPRLAND_INSTANCE_SIGNATURE and WAYLAND_DISPLAY belong
+# to the session started by scripts/nested-session.sh (same
+# BUCHHWIN_NESTED_DIR), and the tool refuses without the BUCHTEST output.
+#
+#   scripts/nested-keys combo SUPER+D | down KEY | up KEY | sleep MS
+#   scripts/nested-keys --build          only build the helper (exit 3: cannot build)
+# Several commands can follow each other in one call. Layout us.
+# BUCHHWIN_KEYS_OUTPUT picks another nested output (default BUCHTEST).
+
+project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+source_file="$project_dir/tests/tools/nested-keys.c"
+protocol="$project_dir/tests/tools/protocols/virtual-keyboard-unstable-v1.xml"
+build_dir="$project_dir/.cache/nested-keys"
+binary="$build_dir/nested-keys"
+output=${BUCHHWIN_KEYS_OUTPUT:-BUCHTEST}
+
+build() {
+  [[ -x $binary && $binary -nt $source_file && $binary -nt $protocol ]] && return 0
+  local tool
+  for tool in wayland-scanner gcc pkg-config; do
+    command -v "$tool" >/dev/null || { printf 'nested-keys: %s is missing; cannot build\n' "$tool" >&2; return 3; }
+  done
+  local flags
+  flags=$(pkg-config --cflags --libs wayland-client xkbcommon 2>/dev/null) \
+    || { printf 'nested-keys: wayland-client or xkbcommon development files are missing; cannot build\n' >&2; return 3; }
+  mkdir -p -- "$build_dir"
+  local work
+  work=$(mktemp -d "$build_dir/build.XXXXXX")
+  # shellcheck disable=SC2086 # pkg-config output is a word list
+  if wayland-scanner client-header "$protocol" "$work/virtual-keyboard-unstable-v1-client-protocol.h" \
+    && wayland-scanner private-code "$protocol" "$work/virtual-keyboard-unstable-v1-protocol.c" \
+    && gcc -std=c11 -O2 -Wall -Wextra -I"$work" -o "$work/nested-keys" \
+         "$source_file" "$work/virtual-keyboard-unstable-v1-protocol.c" $flags; then
+    mv -f -- "$work/nested-keys" "$binary"
+    rm -rf -- "$work"
+  else
+    rm -rf -- "$work"
+    printf 'nested-keys: build failed; cannot build\n' >&2
+    return 3
+  fi
+}
+
+if [[ $# -eq 0 || ${1:-} == --help || ${1:-} == -h ]]; then
+  sed -n '4,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  exit 2
+fi
+
+status=0
+build || status=$?
+(( status == 0 )) || exit "$status"
+[[ $1 == --build ]] && exit 0
+
+# shellcheck source=lib/nested-guard.sh
+source "$project_dir/scripts/lib/nested-guard.sh"
+nested_guard "$output" || exit 1
+
+exec "$binary" --output "$output" "$@"

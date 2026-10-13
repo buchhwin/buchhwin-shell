@@ -96,7 +96,11 @@ def ipc_action(line):
 
 def ipc_action_of(command):
     match = IPC_CALL.match(command)
-    return re.sub(r"\s+", " ", match.group(1)) if match else None
+    if not match:
+        return None
+    # A workspace key carries `|| hyprctl dispatch …` for a session without a
+    # shell; the action is the IPC call before it.
+    return re.sub(r"\s+", " ", match.group(1).split("||", 1)[0]).strip()
 
 
 def conf_binds():
@@ -211,6 +215,9 @@ def lua_binds(text):
         if wrapped:
             combo_text = wrapped.group(1)
         exec_call = re.fullmatch(r"exec\s*\((.*)\)", args[1], re.S)
+        # `shell("launcher toggle")` and `shellOr("workspaces switchTo 1", …)`:
+        # a global shortcut the shell answers with that IPC call.
+        shell_call = re.match(r"(?:shell|shellOr)\s*\(\s*\"([^\"]+)\"", args[1])
         options = args[2] if len(args) > 2 else ""
         kind = "mouse" if re.search(r"\bmouse\s*=\s*true\b", options) else "key"
         rounds = [{}]
@@ -223,7 +230,7 @@ def lua_binds(text):
                 continue
             parts = combo.split("+")
             normalized = normalize_combo(" ".join(parts[:-1]), parts[-1])
-            action = None
+            action = re.sub(r"\s+", " ", shell_call.group(1)).strip() if shell_call else None
             if exec_call:
                 command = _lua_concat(exec_call.group(1), dict(names, ipc=LUA_IPC_PREFIX))
                 action = ipc_action_of(command) if command is not None else None
@@ -271,10 +278,53 @@ def bind_drift(conf, lua):
     return problems
 
 
+def registered_shortcuts():
+    """The actions services/shortcuts/ShellShortcuts.js registers."""
+    text = (ROOT / "services" / "shortcuts" / "ShellShortcuts.js").read_text()
+    block = re.search(r"var ACTIONS = (.*?)\n\n", text, re.S)
+    if not block:
+        return set()
+    prefixes = re.findall(r'"([^"]+) " \+ n', block.group(1))
+    actions = {item for item in re.findall(r'"([^"]+)"', block.group(1)) if item.strip() not in prefixes}
+    for prefix in prefixes:
+        actions.update(f"{prefix} {n}" for n in range(1, 10))
+    return actions
+
+
+def ipc_functions():
+    """{target: {function names}} of shell.qml's IpcHandlers."""
+    text = (ROOT / "shell.qml").read_text()
+    found = {}
+    for block in re.split(r"\n    IpcHandler \{", text)[1:]:
+        target = re.search(r'target: "(\w+)"', block)
+        if target:
+            found[target.group(1)] = set(re.findall(r"function (\w+)\(", block.split("\n    }", 1)[0]))
+    return found
+
+
+def shortcut_problems(lua_text):
+    """`shell(…)` binds the shell does not register, or cannot run."""
+    problems = []
+    registered = registered_shortcuts()
+    functions = ipc_functions()
+    code = _strip_lua_comments(lua_text)
+    for match in re.finditer(r'\b(?:shell|shellOr)\s*\(\s*"([^"]+)"', code):
+        action = match.group(1)
+        line = code.count("\n", 0, match.start()) + 1
+        if action not in registered:
+            problems.append(f"hyprland.lua:{line}: shell(\"{action}\") is not in services/shortcuts/ShellShortcuts.js")
+        parts = action.split()
+        if len(parts) < 2 or parts[1] not in functions.get(parts[0], set()):
+            problems.append(f"hyprland.lua:{line}: shell(\"{action}\") names no IpcHandler function in shell.qml")
+    return problems
+
+
 def check_binds():
     conf = conf_binds()
-    lua = lua_binds((ROOT / "hypr" / "hyprland.lua").read_text())
+    lua_text = (ROOT / "hypr" / "hyprland.lua").read_text()
+    lua = lua_binds(lua_text)
     problems, seen, actions = _bind_problems(conf)
+    problems += shortcut_problems(lua_text)
     lua_problems, lua_seen, lua_actions = _bind_problems(lua)
     problems += lua_problems
     problems += bind_drift(conf, lua)

@@ -1,5 +1,6 @@
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import qs.shell.emoji
 import qs.shell.welcome
 import qs.shell.launcher
@@ -30,6 +31,7 @@ import qs.theme
 import "services/profile/ProfileLogic.js" as Profile
 import "services/notch/NotchLogic.js" as NotchLogic
 import "services/appearance/AnimationLogic.js" as AnimationLogic
+import "services/shortcuts/ShellShortcuts.js" as ShellShortcuts
 
 ShellRoot {
     id: root
@@ -95,6 +97,7 @@ ShellRoot {
     ShortcutSheet {}
 
     IpcHandler {
+        id: desktopIpc
         target: "desktop"
         // The desktop mode had no key of its own: it could only be changed in
         // Settings or through three launcher commands.
@@ -110,6 +113,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: editorIpc
         target: "editor"
         function toggle(): void { LayoutService.editMode = !LayoutService.editMode }
         function open(): void { LayoutService.editMode = true }
@@ -161,6 +165,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: emojiIpc
         target: "emoji"
         function toggle(): void { PanelService.toggle("emoji") }
         function open(): void { PanelService.open("emoji") }
@@ -168,6 +173,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: launcherIpc
         target: "launcher"
         function toggle(): void { PanelService.toggle("launcher") }
         function open(): void { PanelService.open("launcher") }
@@ -188,6 +194,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: controlCenterIpc
         target: "controlCenter"
         function toggle(): void { PanelService.toggle("controlCenter") }
         function openPage(page: string): void { PanelService.open("controlCenter", { page: page }) }
@@ -202,6 +209,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: notificationsIpc
         target: "notifications"
         function toggle(): void { PanelService.toggle("notifications") }
         function open(): void { PanelService.open("notifications") }
@@ -226,6 +234,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: powerMenuIpc
         target: "powerMenu"
         function toggle(): void { PanelService.toggle("powerMenu") }
         function open(): void { PanelService.open("powerMenu") }
@@ -233,6 +242,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: settingsIpc
         target: "settings"
         function setAnimationMode(mode: string): bool { return SettingsService.set("appearance.animationMode", mode) }
         // The slider's value (0.5-2, 1 = the base pace), for the active mode.
@@ -256,6 +266,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: dashboardIpc
         target: "dashboard"
         function toggle(): void { PanelService.toggle("dashboard") }
         // Select a day (YYYY-MM-DD) like a click in the month grid.
@@ -511,6 +522,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: recordingIpc
         target: "recording"
         // MODE: region, screen or window. Region selection runs slurp.
         function start(mode: string): bool { return RecordingService.start(mode) }
@@ -532,6 +544,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: shortcutsIpc
         target: "shortcuts"
         // Super+F1: the read-only sheet of every combination.
         function toggleSheet(): void { PanelService.toggle("shortcutSheet") }
@@ -571,6 +584,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: overviewIpc
         target: "overview"
         function toggle(): void { PanelService.toggle("overview") }
         function open(): void { PanelService.open("overview") }
@@ -590,6 +604,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: colorPickerIpc
         target: "colorPicker"
         // The list, and the pick itself. `pick` opens the overlay; what it
         // lands on is the pointer's business, so there is nothing to pass.
@@ -610,6 +625,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: wallpaperPickerIpc
         target: "wallpaperPicker"
         function toggle(): void { PanelService.toggle("wallpaperPicker") }
         function open(): void { PanelService.open("wallpaperPicker") }
@@ -623,6 +639,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: switcherIpc
         target: "switcher"
         function next(): void { SwitcherService.next() }
         function previous(): void { SwitcherService.previous() }
@@ -632,6 +649,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: clipboardIpc
         target: "clipboard"
         function toggle(): void { PanelService.toggle("clipboard") }
         function open(): void { PanelService.open("clipboard") }
@@ -648,6 +666,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: workspacesIpc
         target: "workspaces"
         // `Super+N` and `Super+Shift+N` come here rather than dispatching a
         // plain `workspace N`, because only the shell knows which monitor has
@@ -668,6 +687,7 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: kbdBacklightIpc
         target: "kbdBacklight"
         // The keyboard-light keys come here rather than running brightnessctl
         // themselves, because the LED's name carries its driver's prefix
@@ -842,6 +862,7 @@ ShellRoot {
         // The five: minimal, work, gaming, laptop and docked. This is what
         // `profile` did before v3; `profile` is the level above now, and
         // `profile cycle` stays as an alias so nothing that exists breaks.
+        id: modeIpc
         target: "mode"
         function set(name: string): bool { return LayoutService.setActiveMode(name) }
         function get(): string { return LayoutService.activeMode }
@@ -871,6 +892,7 @@ ShellRoot {
         // duplicating, renaming, removing and resetting are here too, because a
         // profile is the one thing in the layout file with no fixed set of
         // names - it is the user's list.
+        id: profileIpc
         target: "profile"
         function set(name: string): bool { return LayoutService.setActiveProfile(name) }
         function get(): string { return LayoutService.activeProfile }
@@ -920,4 +942,38 @@ ShellRoot {
     ColorPickerOverlay {}
     IdentifyOverlay {}
     EditLayer {}
+
+    // ---- keyboard shortcuts straight from Hyprland --------------------------
+    // Each `shell("…")` bind in hypr/hyprland.lua is a Hyprland global
+    // shortcut that lands here and runs the IPC function of the same name
+    // (services/shortcuts/ShellShortcuts.js): the same action, without the
+    // two processes a key press used to start.
+    readonly property var shortcutTargets: ({
+        editor: editorIpc, desktop: desktopIpc, mode: modeIpc, profile: profileIpc, shortcuts: shortcutsIpc,
+        launcher: launcherIpc, controlCenter: controlCenterIpc, settings: settingsIpc,
+        notifications: notificationsIpc, dashboard: dashboardIpc, powerMenu: powerMenuIpc,
+        overview: overviewIpc, wallpaperPicker: wallpaperPickerIpc, colorPicker: colorPickerIpc,
+        switcher: switcherIpc, clipboard: clipboardIpc, emoji: emojiIpc, recording: recordingIpc,
+        workspaces: workspacesIpc, kbdBacklight: kbdBacklightIpc
+    })
+    function runShortcut(name) {
+        const call = ShellShortcuts.parse(name)
+        const handler = call ? shortcutTargets[call.target] : null
+        if (!handler || typeof handler[call.fn] !== "function") {
+            console.warn("buchhwin-shell: unknown shortcut", name)
+            return
+        }
+        handler[call.fn].apply(handler, call.args)
+    }
+    Variants {
+        model: ShellShortcuts.names()
+        GlobalShortcut {
+            required property string modelData
+            appid: ShellShortcuts.APPID
+            name: modelData
+            description: modelData
+            onPressed: if (!ShellShortcuts.onRelease(modelData)) root.runShortcut(modelData)
+            onReleased: if (ShellShortcuts.onRelease(modelData)) root.runShortcut(modelData)
+        }
+    }
 }

@@ -65,15 +65,25 @@ check(("", "PRINT") in by_combo, f"a key without modifiers: {sorted(by_combo)}")
 check(("", "SWITCH:ON:LID SWITCH") in by_combo, "a key with a space in its name")
 check(by_combo.get(("SUPER", "MOUSE:272"), (None,))[0] == ("mouse", "SUPER", "MOUSE:272"), "a mouse binding has its own namespace")
 for round_ in (1, 2, 3):
-    check(by_combo.get(("SUPER", str(round_)), (None, None))[1] == f"workspaces switchTo {round_} || hyprctl dispatch workspace {round_}",
-          f"the loop's round {round_} is one binding with its own action")
+    check(by_combo.get(("SUPER", str(round_)), (None, None))[1] == f"workspaces switchTo {round_}",
+          f"the loop's round {round_} is one binding with its own action, the fallback after || not part of it")
+
+# Global shortcuts: `shell("…")` and `shellOr("…", fallback)` carry the action.
+shortcuts = checks.lua_binds('hl.bind(keyFor("SUPER + O"), shell("controlCenter toggle"), { description = "CC" })\n'
+                             'hl.bind(keyFor("SUPER + 4"), shellOr("workspaces switchTo 4", hl.dsp.focus({ workspace = 4 })), { description = "W" })\n')
+check([action for _, _, action, _ in shortcuts] == ["controlCenter toggle", "workspaces switchTo 4"],
+      f"a global shortcut is the IPC call it names: {shortcuts}")
+check(checks.shortcut_problems('hl.bind("SUPER + Z", shell("launcher nonsense"))\n') != [],
+      "a shortcut the shell does not register is a problem")
+check(checks.shortcut_problems('hl.bind("SUPER + D", shell("launcher toggle"))\n') == [],
+      "a registered one with its IpcHandler function is not")
 
 # ---- both dialects against each other ---------------------------------------
 conf = [(("key", "SUPER", "D"), ("SUPER", "D"), "launcher toggle", "keybinds.conf:1"),
-        (("key", "SUPER", "1"), ("SUPER", "1"), "workspaces switchTo 1 || hyprctl dispatch workspace 1", "keybinds.conf:2"),
+        (("key", "SUPER", "1"), ("SUPER", "1"), "workspaces switchTo 1", "keybinds.conf:2"),
         (("mouse", "SUPER", "MOUSE:272"), ("SUPER", "MOUSE:272"), None, "keybinds.conf:3")]
 same = [(("key", "SUPER", "D"), ("SUPER", "D"), "launcher toggle", "hyprland.lua:1"),
-        (("key", "SUPER", "1"), ("SUPER", "1"), "workspaces switchTo 1 || hyprctl dispatch workspace 1", "hyprland.lua:2"),
+        (("key", "SUPER", "1"), ("SUPER", "1"), "workspaces switchTo 1", "hyprland.lua:2"),
         (("mouse", "SUPER", "MOUSE:272"), ("SUPER", "MOUSE:272"), None, "hyprland.lua:3")]
 check(checks.bind_drift(conf, same) == [], "the same bindings in both dialects are no drift")
 only_conf = checks.bind_drift(conf, same[1:])

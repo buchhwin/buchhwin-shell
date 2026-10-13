@@ -24,7 +24,7 @@ packages=(
   # the backends the shell drives
   brightnessctl wireplumber pipewire-utils playerctl NetworkManager
   plocate jq curl grim slurp swappy wl-clipboard cliphist gammastep
-  swaylock swayidle kdialog udisks2
+  swaylock swayidle kdialog udisks2 wireguard-tools
   # the helper scripts in scripts/ are Python
   python3-dbus python3-gobject python3-pillow
   # KDE pieces the session reuses instead of carrying its own
