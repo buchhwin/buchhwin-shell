@@ -168,6 +168,30 @@ Singleton {
         PanelService.close("settings")
     }
 
+    // The page's install button: Discover, or on Arch the whole upgrade in a
+    // terminal window, checked again once that window is closed.
+    readonly property bool upgrading: upgradeProc.running
+    function installSystem() {
+        if (!DistroService.upgradesInTerminal) {
+            openDiscover()
+            return
+        }
+        if (!actionsAllowed) {
+            say(preview ? "Preview data: updates are disabled" : "Updating only runs in the buchhwin-shell session", true)
+            return
+        }
+        if (upgradeProc.running) return
+        upgradeProc.command = Logic.terminalUpgradeCommand(Paths.script("launch-kitty.sh"))
+        upgradeProc.running = true
+        say("Upgrading the system in a terminal window …", false)
+    }
+
+    Process {
+        id: upgradeProc
+        stderr: ErrorLog { label: "UpdatesService.upgradeProc" }
+        onRunningChanged: if (!running) root.check(false)
+    }
+
     function updateFlatpaks() {
         if (!actionsAllowed) {
             say(preview ? "Preview data: updates are disabled" : "Updating only runs in the buchhwin-shell session", true)
@@ -187,13 +211,25 @@ Singleton {
     }
 
     // ---- notifications (notify-send to the shell's own server) ----------------
+    // A notice still open is taken down, and the new one is sent once its
+    // notify-send has exited: stopped and started in the same turn, the new
+    // one could be lost - and its set was recorded as notified all the same.
+    property var queuedNotice: null
     function notify(next) {
+        queuedNotice = ["notify-send", "--app-name=Updates", "--icon=system-software-update",
+                        "--action=open=Open", "--", Logic.notifyTitle(next), Logic.notifyBody(next)]
         if (notifier.running) {
             dismissNotifications()
             notifier.running = false
+            return
         }
-        notifier.command = ["notify-send", "--app-name=Updates", "--icon=system-software-update",
-                            "--action=open=Open", "--", Logic.notifyTitle(next), Logic.notifyBody(next)]
+        sendNotice()
+    }
+
+    function sendNotice() {
+        if (!queuedNotice || notifier.running) return
+        notifier.command = queuedNotice
+        queuedNotice = null
         notifier.running = true
     }
 
@@ -212,6 +248,7 @@ Singleton {
         stdout: StdioCollector {
             onStreamFinished: if (text.trim() === "open") PanelService.open("settings", { page: "updates" })
         }
+        onExited: if (root.queuedNotice) Qt.callLater(root.sendNotice)
     }
 
     // ---- preview ----------------------------------------------------------------

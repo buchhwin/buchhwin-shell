@@ -158,7 +158,7 @@ Singleton {
     // it is somewhere the picker does not look.
     FolderListModel {
         id: folderModel
-        folder: root.folder.length ? "file://" + root.folder : ""
+        folder: Logic.folderUrl(root.folder)
         nameFilters: root.imageFilters
         showDirs: false
         sortField: FolderListModel.Name
@@ -170,7 +170,7 @@ Singleton {
     // without a restart.
     FolderListModel {
         id: subfolderModel
-        folder: root.folder.length ? "file://" + root.folder : ""
+        folder: Logic.folderUrl(root.folder)
         showDirs: true
         showFiles: false
         showDotAndDotDot: false
@@ -205,7 +205,7 @@ Singleton {
             required property string modelData
             FolderListModel {
                 id: inner
-                folder: "file://" + watcher.modelData
+                folder: Logic.folderUrl(watcher.modelData)
                 nameFilters: root.imageFilters
                 showDirs: false
                 sortField: FolderListModel.Name

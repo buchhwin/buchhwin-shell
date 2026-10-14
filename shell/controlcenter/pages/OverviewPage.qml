@@ -318,7 +318,15 @@ ColumnLayout {
                         value: BrightnessService.value
                         onMoved: value => BrightnessService.set(value)
                     }
-                    ShellText { text: Math.round(BrightnessService.value * 100) + "%"; role: "small"; muted: true }
+                    // Fixed width and even digits: the compact slider beside
+                    // it kept changing length while it was dragged.
+                    ShellText {
+                        Layout.minimumWidth: Metrics.iconXl
+                        horizontalAlignment: Text.AlignRight
+                        text: Math.round(BrightnessService.value * 100) + "%"
+                        role: "small"; muted: true
+                        font.features: { "tnum": 1 }
+                    }
                     ShellButton {
                         icon: "󰖔"
                         compact: true
@@ -343,10 +351,22 @@ ColumnLayout {
         ShellCard {
             readonly property bool shown: true
             implicitHeight: batteryColumn.implicitHeight + Metrics.spaceLg * 2
+            id: batteryCard
             interactive: true
             hovered: batteryMouse.containsMouse
             pressed: batteryMouse.pressed && batteryMouse.containsMouse
             MouseArea { id: batteryMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.openPage("power") }
+            // A stop for the panel's keys like the QuickTiles around it
+            // (NavLogic stops on `focusOnTab`): Return or Space does the click.
+            property bool focusOnTab: false
+            activeFocusOnTab: focusOnTab
+            Keys.onReturnPressed: root.openPage("power")
+            Keys.onEnterPressed: root.openPage("power")
+            Keys.onSpacePressed: root.openPage("power")
+            Accessible.role: Accessible.Button
+            Accessible.name: PowerService.hasBattery ? "Battery" : "Power supply"
+            Accessible.onPressAction: root.openPage("power")
+            FocusRing { active: batteryCard.activeFocus; controlRadius: batteryCard.radius }
             // The same rule as the brightness tile beside it, so the two keep
             // agreeing at every size: too short for a title over a bar, and
             // the bar comes up beside the glyph and the title goes.
@@ -458,10 +478,23 @@ ColumnLayout {
         ShellCard {
             readonly property bool shown: DrivesService.drives.length > 0 || DrivesService.phones.length > 0
             implicitHeight: drivesRow.implicitHeight + Metrics.spaceMd * 2
+            id: drivesCard
             interactive: true
             hovered: drivesMouse.containsMouse
             pressed: drivesMouse.pressed && drivesMouse.containsMouse
             MouseArea { id: drivesMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.openPage("drives") }
+            // One stop for the keys, as on the battery tile. Eject is on the
+            // page it opens, with every other drive action.
+            property bool focusOnTab: false
+            activeFocusOnTab: focusOnTab
+            Keys.onReturnPressed: root.openPage("drives")
+            Keys.onEnterPressed: root.openPage("drives")
+            Keys.onSpacePressed: root.openPage("drives")
+            Accessible.role: Accessible.Button
+            Accessible.name: "Drives"
+            Accessible.description: DrivesService.summary
+            Accessible.onPressAction: root.openPage("drives")
+            FocusRing { active: drivesCard.activeFocus; controlRadius: drivesCard.radius }
             RowLayout {
                 id: drivesRow
                 // Centred in the cell, not stretched across it: a layout that
@@ -515,16 +548,29 @@ ColumnLayout {
         ShellCard {
             readonly property bool shown: KdeConnectService.phone !== null
             implicitHeight: phoneRow.implicitHeight + Metrics.spaceMd * 2
+            id: phoneCard
             interactive: true
             hovered: phoneMouse.containsMouse
             pressed: phoneMouse.pressed && phoneMouse.containsMouse
+            function activate() { PanelService.open("settings", { page: "kdeConnect" }) }
             MouseArea {
                 id: phoneMouse
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: PanelService.open("settings", { page: "kdeConnect" })
+                onClicked: phoneCard.activate()
             }
+            // One stop for the keys, as on the battery tile; Ring is on the
+            // page it opens too.
+            property bool focusOnTab: false
+            activeFocusOnTab: focusOnTab
+            Keys.onReturnPressed: phoneCard.activate()
+            Keys.onEnterPressed: phoneCard.activate()
+            Keys.onSpacePressed: phoneCard.activate()
+            Accessible.role: Accessible.Button
+            Accessible.name: KdeConnectService.phone ? KdeConnectService.phone.name : "Phone"
+            Accessible.onPressAction: phoneCard.activate()
+            FocusRing { active: phoneCard.activeFocus; controlRadius: phoneCard.radius }
             RowLayout {
                 id: phoneRow
                 // Centred in the cell, not stretched across it: a layout that
@@ -651,6 +697,25 @@ ColumnLayout {
             hovered: widgetMouse.containsMouse
             pressed: widgetMouse.pressed && widgetMouse.containsMouse
 
+            // A stop for the panel's keys when it opens something, as the
+            // other tiles are; one that only shows a value is not a control
+            // (NavLogic skips what is not `available`).
+            property bool focusOnTab: false
+            readonly property bool available: action.length > 0
+            activeFocusOnTab: focusOnTab && available
+            function activate() {
+                if (!available) return
+                PanelService.open(widgetCard.action,
+                                  widgetCard.entry && widgetCard.entry.actionArgs ? widgetCard.entry.actionArgs : {})
+            }
+            Keys.onReturnPressed: widgetCard.activate()
+            Keys.onEnterPressed: widgetCard.activate()
+            Keys.onSpacePressed: widgetCard.activate()
+            Accessible.role: available ? Accessible.Button : Accessible.StaticText
+            Accessible.name: entry ? entry.label : typeName
+            Accessible.onPressAction: widgetCard.activate()
+            FocusRing { active: widgetCard.activeFocus; controlRadius: widgetCard.radius }
+
             Loader {
                 id: widget
                 anchors.centerIn: parent
@@ -710,9 +775,7 @@ ColumnLayout {
                 // widgets and the first pass taught only two of them - which
                 // is the same mistake `options.metric` made, where every
                 // system readout on the notch was the CPU.
-                onClicked: PanelService.open(widgetCard.action,
-                                             widgetCard.entry && widgetCard.entry.actionArgs
-                                                 ? widgetCard.entry.actionArgs : {})
+                onClicked: widgetCard.activate()
             }
         }
     }

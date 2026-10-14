@@ -1,6 +1,6 @@
 # buchhwin-shell
 
-A minimal desktop shell for Fedora and openSUSE Leap, Hyprland and Quickshell.
+A minimal desktop shell for Fedora, openSUSE Leap and Arch Linux, Hyprland and Quickshell.
 
 The desktop shows only a clock until you need something. Panels open instantly,
 follow one central theme (dark, light or automatic) and talk to the Linux and
@@ -48,6 +48,18 @@ the build dependencies from repo-oss, and
 `install/build-hyprland-leap.sh --remove --apply` takes it out again. Not
 available on Leap: cmatrix and writing calendar events (no Akonadi Python
 bindings).
+
+**Arch Linux** works as well, detected the same way. Everything comes from
+Arch's own repositories with pacman - Hyprland 0.56, its portal and dialogs,
+Quickshell and both Nerd Fonts included, so nothing is built - except Brave,
+which `bootstrap.sh` installs from the AUR with paru or yay when one of them
+is there (`brave-bin`). pacman installs with `--needed` and asks before it
+changes anything; bring the system up to date first (`sudo pacman -Syu`), as
+the dry run reminds you. Updates run in a terminal (Settings > Updates:
+pacman, or the AUR helper, which covers both). Not available on Arch: writing
+calendar events (no Akonadi Python bindings). Derivatives (EndeavourOS,
+CachyOS) are not detected on their own; `--distro arch` installs the same
+list.
 
 ## Installation
 

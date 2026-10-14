@@ -67,9 +67,16 @@ if [[ -o interactive ]]; then
   fi
   (( $+commands[starship] )) && eval "$(starship init zsh)"
 
-  [[ -r /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh ]] \
-    && source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
-  # Load highlighting last so it can wrap all previously registered widgets.
-  [[ -r /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]] \
-    && source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+  # /usr/share/<plugin> on Fedora and openSUSE, /usr/share/zsh/plugins/<plugin>
+  # on Arch; the first that exists is sourced.
+  for plugin in zsh-autosuggestions zsh-syntax-highlighting; do
+    # Highlighting comes second so it can wrap all previously registered widgets.
+    for plugin_dir in /usr/share/$plugin /usr/share/zsh/plugins/$plugin; do
+      if [[ -r $plugin_dir/$plugin.zsh ]]; then
+        source $plugin_dir/$plugin.zsh
+        break
+      fi
+    done
+  done
+  unset plugin plugin_dir
 fi

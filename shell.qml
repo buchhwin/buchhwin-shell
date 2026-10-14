@@ -32,6 +32,7 @@ import "services/profile/ProfileLogic.js" as Profile
 import "services/notch/NotchLogic.js" as NotchLogic
 import "services/appearance/AnimationLogic.js" as AnimationLogic
 import "services/shortcuts/ShellShortcuts.js" as ShellShortcuts
+import "services/display/DisplayLogic.js" as DisplayLogic
 
 ShellRoot {
     id: root
@@ -591,9 +592,12 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: gesturesIpc
         target: "gestures"
         // Called by touchpad gestures: overview, launcher, dashboard,
-        // controlCenter, notifications, clipboard (toggle) or closePanel.
+        // controlCenter, notifications, clipboard (toggle) or closePanel -
+        // over IPC in the conf dialect, as the global shortcut
+        // `buchhwin:gestures.run.<name>` in the Lua one.
         function run(name: string): bool { return GestureService.run(name) }
         function refresh(): void { GestureService.refreshDevices() }
         // Show Settings > Input > Touchpad gestures without a touchpad.
@@ -657,9 +661,15 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: brightnessIpc
         target: "brightness"
-        // Called by the brightness keys: amdgpu sends no udev event for their
-        // changes, so the OSD would not notice them otherwise.
+        // The brightness keys: one 5 % step through brightnessctl, then the
+        // re-read (BrightnessService.step). The conf dialect's binds call
+        // these over IPC, the Lua binds as global shortcuts.
+        function up(): void { BrightnessService.step(1) }
+        function down(): void { BrightnessService.step(-1) }
+        // Anything that changes the backlight behind the shell's back: amdgpu
+        // sends no udev event for it, so the OSD would not notice otherwise.
         function refresh(): void { BrightnessService.refresh() }
         function get(): string { return JSON.stringify({ available: BrightnessService.available, value: BrightnessService.value }) }
     }
@@ -745,7 +755,12 @@ ShellRoot {
                                     draft: DisplayService.draft.map(m => m.name + " " + m.x + "," + m.y
                                         + " x" + m.scale + " t" + m.transform + (m.disabled ? " off" : "")) })
         }
-        function setScale(name: string, scale: string): void { DisplayService.setScale(name, scale) }
+        // A scale a saved file may ask for too (DisplayLogic.validScale,
+        // 0.5-3): `Number()` alone let NaN or 0 through into the draft, and
+        // from there into the monitor rule.
+        function setScale(name: string, scale: string): void {
+            if (DisplayLogic.validScale(scale)) DisplayService.setScale(name, scale)
+        }
         function setPosition(name: string, x: int, y: int): void { DisplayService.setPosition(name, x, y) }
         function setTransform(name: string, transform: int): void { DisplayService.setTransform(name, transform) }
         // Not `show()`: the client takes that word for itself.
@@ -763,7 +778,15 @@ ShellRoot {
         // style pills|bar, position floating|attached, edge top|bottom|left|
         // right, panelSpot and notificationSpot widget|start|centre|end.
         function setOption(key: string, value: string): bool {
-            return LayoutService.setBarOption(key, key === "reserve" ? value === "true" : key === "scale" ? Number(value) : value)
+            // 0.7-1.5, the range the bar clamps its scale to when the layout
+            // is read (LayoutLogic.sanitizeBar): refused here rather than
+            // stored as NaN or clamped silently.
+            if (key === "scale") {
+                const number = Number(value)
+                if (!isFinite(number) || number < 0.7 || number > 1.5) return false
+                return LayoutService.setBarOption("scale", number)
+            }
+            return LayoutService.setBarOption(key, key === "reserve" ? value === "true" : value)
         }
         function reset(): bool { return LayoutService.resetBar() }
         // Workspace indicator: mode "open", "gapless" or "fixed", 1–10 slots.
@@ -946,14 +969,16 @@ ShellRoot {
     // Each `shell("…")` bind in hypr/hyprland.lua is a Hyprland global
     // shortcut that lands here and runs the IPC function of the same name
     // (services/shortcuts/ShellShortcuts.js): the same action, without the
-    // two processes a key press used to start.
+    // two processes a key press used to start. Touchpad swipes that open a
+    // panel send one too (GestureLogic, `gestures run <name>`).
     readonly property var shortcutTargets: ({
         editor: editorIpc, desktop: desktopIpc, mode: modeIpc, profile: profileIpc, shortcuts: shortcutsIpc,
         launcher: launcherIpc, controlCenter: controlCenterIpc, settings: settingsIpc,
         notifications: notificationsIpc, dashboard: dashboardIpc, powerMenu: powerMenuIpc,
         overview: overviewIpc, wallpaperPicker: wallpaperPickerIpc, colorPicker: colorPickerIpc,
         switcher: switcherIpc, clipboard: clipboardIpc, emoji: emojiIpc, recording: recordingIpc,
-        workspaces: workspacesIpc, kbdBacklight: kbdBacklightIpc
+        workspaces: workspacesIpc, kbdBacklight: kbdBacklightIpc, brightness: brightnessIpc,
+        gestures: gesturesIpc
     })
     function runShortcut(name) {
         const call = ShellShortcuts.parse(name)
@@ -971,8 +996,8 @@ ShellRoot {
             appid: ShellShortcuts.APPID
             name: modelData
             description: modelData
-            onPressed: if (!ShellShortcuts.onRelease(modelData)) root.runShortcut(modelData)
-            onReleased: if (ShellShortcuts.onRelease(modelData)) root.runShortcut(modelData)
+            onPressed: if (ShellShortcuts.runsOn(modelData, true)) root.runShortcut(modelData)
+            onReleased: if (ShellShortcuts.runsOn(modelData, false)) root.runShortcut(modelData)
         }
     }
 }

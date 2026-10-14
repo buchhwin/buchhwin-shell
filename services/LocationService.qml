@@ -51,9 +51,9 @@ Singleton {
         ipProc.running = true
     }
 
-    // The answer, judged in one place once curl has exited: stdout and the
-    // exit status used to set the error text in two handlers, and which one
-    // the user saw depended on which signal came last.
+    // The answer, judged in one place once curl's output and exit are both
+    // in: stdout and the exit status used to set the error text in two
+    // handlers, and which one the user saw depended on which signal came last.
     function finish(exitCode, text) {
         detecting = false
         if (exitCode !== 0) { detectError = "Location by IP unavailable"; return }
@@ -89,45 +89,75 @@ Singleton {
     Timer {
         id: debounce
         interval: 350
-        onTriggered: {
+        onTriggered: root.runSearch()
+    }
+
+    // A search still out is stopped, and the next one starts once it has
+    // exited: stopped and started in the same turn, the new run could be
+    // lost, and the stopped one's failure was shown under the new query.
+    function runSearch() {
+        if (searchProc.running) {
+            searchProc.stale = true
             searchProc.running = false
-            searchProc.requestQuery = root.query
-            searchProc.command = ["curl", "-fsS", "--max-time", "10", Logic.geocodeUrl(root.query)]
-            root.busy = true
-            searchProc.running = true
+            return
         }
+        if (query.length < 2) { busy = false; return }
+        searchProc.stale = false
+        searchProc.requestQuery = query
+        searchProc.command = ["curl", "-fsS", "--max-time", "10", Logic.geocodeUrl(query)]
+        busy = true
+        searchProc.running = true
     }
 
     Process {
         id: ipProc
         stderr: ErrorLog { label: "LocationService.ipProc" }
         command: ["curl", "-fsS", "--max-time", "8", Logic.IP_LOCATION_URL]
-        stdout: StdioCollector { id: ipOutput }
-        onExited: (exitCode, exitStatus) => root.finish(exitCode, ipOutput.text)
+        // The output may arrive before or after the exit; judge once both are in.
+        property string output: ""
+        property bool outputDone: false
+        property int exitCode: -1
+        function done() {
+            if (outputDone && exitCode >= 0) root.finish(exitCode, output)
+        }
+        stdout: StdioCollector { onStreamFinished: { ipProc.output = text; ipProc.outputDone = true; ipProc.done() } }
+        onStarted: { output = ""; outputDone = false; exitCode = -1 }
+        onExited: code => { exitCode = code; done() }
     }
 
     Process {
         id: searchProc
         stderr: ErrorLog { label: "LocationService.searchProc" }
+        // The query this run was started for.
         property string requestQuery: ""
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (searchProc.requestQuery !== root.query) return
-                try {
-                    root.results = Logic.parseGeocode(text)
-                    root.error = root.results.length ? "" : "No location found"
-                } catch (parseError) {
-                    root.results = []
-                    root.error = "Unreadable response"
-                }
-            }
-        }
-        onExited: (exitCode, exitStatus) => {
+        // Stopped for a newer query, which starts once this run is gone.
+        property bool stale: false
+        property string output: ""
+        property bool outputDone: false
+        property int exitCode: -1
+        function done() {
+            if (stale || !outputDone || exitCode < 0) return
             root.busy = false
-            if (exitCode !== 0 && searchProc.requestQuery === root.query) {
+            if (requestQuery !== root.query) return
+            if (exitCode !== 0) {
                 root.results = []
                 root.error = "Location search unavailable"
+                return
             }
+            try {
+                root.results = Logic.parseGeocode(output)
+                root.error = root.results.length ? "" : "No location found"
+            } catch (parseError) {
+                root.results = []
+                root.error = "Unreadable response"
+            }
+        }
+        stdout: StdioCollector { onStreamFinished: { searchProc.output = text; searchProc.outputDone = true; searchProc.done() } }
+        onStarted: { output = ""; outputDone = false; exitCode = -1 }
+        onExited: code => {
+            exitCode = code
+            if (stale) Qt.callLater(root.runSearch)
+            else done()
         }
     }
 }

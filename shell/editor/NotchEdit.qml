@@ -38,6 +38,11 @@ Item {
         : notch ? notch.height : NotchService.bodyHeight
 
     implicitHeight: hint.y + hint.height
+    // Where the editor's own controls begin (EditLayer: the hint line over its
+    // toolbar). The cards stop above it and scroll: the options with their
+    // presets are taller than the room under the notch on a laptop screen,
+    // and they used to run under the toolbar and off the screen.
+    property real bottomLimit: Number.POSITIVE_INFINITY
 
     // The notch shows what it would show, so turning a field off is visible
     // where it happens. It goes back to its own behaviour when the editor
@@ -88,14 +93,17 @@ Item {
     //
     // Two columns of the same shape under the notch: what it carries on the
     // left, what it is on the right. Both cards are the same width and the
-    // same height, so the pair reads as one block rather than as a pile.
+    // same height, so the pair reads as one block rather than as a pile -
+    // capped at the room above the editor's controls, and each card scrolls
+    // its own content once it is taller than that.
     Item {
         id: panels
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: frame.bottom
         anchors.topMargin: Metrics.spaceMd
         width: root.cardWidth
-        height: Math.max(fields.implicitHeight, options.implicitHeight)
+        height: Math.max(0, Math.min(Math.max(fields.implicitHeight, options.implicitHeight),
+            root.bottomLimit - y - hint.anchors.topMargin - hint.height))
 
         readonly property real columnWidth: (width - Metrics.spaceMd) / 2
 
@@ -162,7 +170,9 @@ Item {
             ? "The notch sits at the top center and cannot be moved · drag its right edge to set how wide the strip is · ↓ sends an item to the overview"
             : "Drag a tile to reorder it, its corner to size it · drag the notch's own corner to size the overview · ↑ sends an item to the strip"
         role: "small"
-        color: Colors.text
+        // The scrim's ink: the panel's text is dark in the light theme, and
+        // dark text in a dark outline was dark on dark.
+        color: Colors.scrimText
         style: Text.Outline
         styleColor: Colors.scrimStrong
     }

@@ -85,6 +85,10 @@ Rectangle {
     // destructive button asks.
     function activate() {
         root.hideTip()
+        // A disabled button keeps the focus it had when it was disabled (a
+        // play button the player went away under), and Return or Space on it
+        // still arrived here: the mouse was the only way in that checked.
+        if (!root.enabledState) return
         // The first press on a button that destroys something only arms it.
         if (root.confirm && !root.armed) {
             root.armed = true

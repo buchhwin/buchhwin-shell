@@ -5,6 +5,7 @@ import qs.theme
 import qs.services
 import qs.shell.components
 import "../../../services/lock/LockCatalogue.js" as Lock
+import "../../../services/fingerprint/FingerprintLogic.js" as FingerprintLogic
 
 // Settings > Lock Screen: what the macOS-style lock screen shows (changes apply
 // the next time the screen locks) and fingerprints (fprintd): enrolled fingers
@@ -17,6 +18,9 @@ ColumnLayout {
     property bool enrollOpen: false
     property string enrollFinger: FingerprintService.defaultFinger()
     readonly property var enrollment: FingerprintService.enrollment
+    // Arch with no pam_fprintd in system-auth: the lock cannot offer the
+    // reader whatever the mode says (FingerprintLogic.pamLineMissing).
+    readonly property bool pamLineMissing: FingerprintLogic.pamLineMissing(DistroService.family, FingerprintService.systemEnabled)
 
     PageActivity {
         onOpened: FingerprintService.track()
@@ -118,6 +122,7 @@ ColumnLayout {
 
         ListRow {
             Layout.fillWidth: true
+            interactive: false
             icon: "󰈷"
             active: FingerprintService.available && FingerprintService.fingers.length > 0
             title: !FingerprintService.known ? "Looking for a fingerprint reader …"
@@ -166,8 +171,9 @@ ColumnLayout {
             }
             // "Off" here and still being asked for a finger is not a broken
             // button: the login screen, sudo and every polkit dialog go
-            // through the system-wide PAM stack, where authselect (Fedora) or
-            // pam-config (openSUSE) puts the reader.
+            // through the system-wide PAM stack, where authselect (Fedora),
+            // pam-config (openSUSE) or a hand-made line in system-auth (Arch)
+            // puts the reader.
             // Turning that off is one host command and the user's to run.
             ShellCard {
                 Layout.fillWidth: true
@@ -205,11 +211,49 @@ ColumnLayout {
                     }
                 }
             }
+            // Arch turns the reader on by hand, and until that line is in
+            // system-auth the lock (which includes system-auth only) has no
+            // reader to offer. The line is the user's to add, with sudo.
+            ShellCard {
+                Layout.fillWidth: true
+                visible: root.pamLineMissing
+                implicitHeight: pamNote.implicitHeight + Metrics.spaceMd * 2
+                ColumnLayout {
+                    id: pamNote
+                    anchors.fill: parent
+                    anchors.margins: Metrics.spaceMd
+                    spacing: Metrics.spaceXs
+                    ShellText {
+                        Layout.fillWidth: true
+                        text: "The reader is not in PAM yet"
+                        wrapMode: Text.Wrap
+                    }
+                    ShellText {
+                        Layout.fillWidth: true
+                        text: "On Arch the reader is turned on by hand. Add this line at the top of /etc/pam.d/system-auth, "
+                            + "above the other auth lines; then the lock screen, the login screen, sudo and password dialogs offer the finger:"
+                        role: "caption"
+                        wrapMode: Text.Wrap
+                    }
+                    ShellText {
+                        Layout.fillWidth: true
+                        text: FingerprintLogic.PAM_FPRINTD_LINE
+                        font.family: Typography.monoFamily
+                        wrapMode: Text.Wrap
+                    }
+                    ShellButton {
+                        focusOnTab: true
+                        icon: Icons.copy
+                        text: "Copy line"
+                        onClicked: Quickshell.clipboardText = FingerprintLogic.PAM_FPRINTD_LINE
+                    }
+                }
+            }
             ShellText {
                 Layout.fillWidth: true
-                text: FingerprintService.modeState
+                text: FingerprintLogic.modeState(FingerprintService.mode, FingerprintService.lidClosed, root.pamLineMissing)
                 role: "caption"
-                color: FingerprintService.enabledNow ? Colors.accentForeground : Colors.mutedText
+                color: FingerprintService.enabledNow && !root.pamLineMissing ? Colors.accentForeground : Colors.mutedText
                 wrapMode: Text.Wrap
             }
         }
@@ -220,9 +264,11 @@ ColumnLayout {
                 id: fingerRow
                 required property string modelData
                 Layout.fillWidth: true
+                interactive: false
                 icon: "󰈷"
                 title: FingerprintService.fingerLabel(modelData)
-                subtitle: FingerprintService.deleting === modelData ? "Deleting …" : "Unlocks the lock screen"
+                subtitle: FingerprintService.deleting === modelData ? "Deleting …"
+                    : root.pamLineMissing ? "Enrolled" : "Unlocks the lock screen"
                 ShellButton {
                     focusOnTab: true
                     text: "Delete"

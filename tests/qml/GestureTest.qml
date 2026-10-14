@@ -3,6 +3,7 @@ import QtQuick
 import "Harness.js" as T
 import "../../services/input/GestureLogic.js" as G
 import "../../services/hypr/HyprCommands.js" as H
+import "../../services/shortcuts/ShellShortcuts.js" as S
 
 ShellRoot {
     Component.onCompleted: {
@@ -18,9 +19,12 @@ ShellRoot {
         const plan = G.plan(getter(), shell)
         T.eq(plan.gestures, [
             { fingers: 3, direction: "horizontal", action: "workspace" },
-            { fingers: 3, direction: "up", command: "quickshell --path " + shell + " ipc call gestures run overview" },
-            { fingers: 3, direction: "down", command: "quickshell --path " + shell + " ipc call gestures run closePanel" },
-            { fingers: 4, direction: "pinchin", command: "quickshell --path " + shell + " ipc call gestures run launcher" }
+            { fingers: 3, direction: "up", command: "quickshell --path " + shell + " ipc call gestures run overview",
+              shortcut: "buchhwin:gestures.run.overview" },
+            { fingers: 3, direction: "down", command: "quickshell --path " + shell + " ipc call gestures run closePanel",
+              shortcut: "buchhwin:gestures.run.closePanel" },
+            { fingers: 4, direction: "pinchin", command: "quickshell --path " + shell + " ipc call gestures run launcher",
+              shortcut: "buchhwin:gestures.run.launcher" }
         ], "default gestures")
         T.eq(plan.slots.length, 8, "every slot is managed")
         T.eq(plan.options, { "gestures:workspace_swipe_invert": true, "gestures:workspace_swipe_create_new": false,
@@ -30,13 +34,22 @@ ShellRoot {
         T.eq(G.plan(getter({ "gestures.threeUp": "fullscreen", "gestures.fourHorizontal": "workspace" }), shell).gestures.slice(0, 3), [
             { fingers: 3, direction: "horizontal", action: "workspace" },
             { fingers: 3, direction: "up", action: "fullscreen" },
-            { fingers: 3, direction: "down", command: "quickshell --path " + shell + " ipc call gestures run closePanel" }
+            { fingers: 3, direction: "down", command: "quickshell --path " + shell + " ipc call gestures run closePanel",
+              shortcut: "buchhwin:gestures.run.closePanel" }
         ], "Hyprland actions")
         T.eq(G.plan(getter({ "gestures.threeHorizontal": "overview", "gestures.threeUp": "bogus" }), shell).gestures.map(g => g.direction),
              ["down", "pinchin"], "unknown or misplaced actions skipped")
         T.eq(G.plan(getter(), "/home/a b").gestures.map(g => g.direction), ["horizontal"], "unusable shell path skips panel actions")
         T.eq(G.shellCommand(shell + "/", "dashboard"), "quickshell --path " + shell + " ipc call gestures run dashboard", "trailing slash")
         T.eq(G.shellCommand(shell, "fullscreen"), "", "only panel actions run over IPC")
+        T.eq([G.shortcut("dashboard"), G.shortcut("fullscreen"), G.shortcut("close; rm")],
+             ["buchhwin:gestures.run.dashboard", "", ""], "only panel actions have a global shortcut")
+        // Every panel action's shortcut is one the shell registers and runs
+        // on whichever event arrives (a swipe holds no key down).
+        const panelNames = G.actions.filter(item => G.shellAction(item.value)).map(item => item.value)
+        T.eq(panelNames.filter(name => S.names().indexOf(G.shortcut(name).replace(S.APPID + ":", "")) < 0), [],
+             "every swipe shortcut is registered")
+        T.ok(S.runsOn("gestures.run.overview", true) && S.runsOn("gestures.run.overview", false), "a swipe acts on either event")
         T.eq(G.shellAction("controlCenter").panel, "controlCenter", "panel action")
         T.ok(G.shellAction("closePanel").closePanel, "close panel action")
         T.eq(G.shellAction("close; rm"), null, "unknown IPC action")
@@ -59,7 +72,7 @@ ShellRoot {
             "buchhwin_gestures = {}",
             "hl.gesture({ fingers = 3, direction = \"horizontal\", action = \"workspace\" })",
             "table.insert(buchhwin_gestures, { 3, \"horizontal\" })",
-            "hl.gesture({ fingers = 3, direction = \"up\", action = function() hl.exec_cmd(\"quickshell --path " + shell + " ipc call gestures run overview\") end })",
+            "hl.gesture({ fingers = 3, direction = \"up\", action = function() hl.dispatch(hl.dsp.global(\"buchhwin:gestures.run.overview\")) end })",
             "table.insert(buchhwin_gestures, { 3, \"up\" })"
         ], "Lua gestures remember their slots")
         T.finish("GestureTest")

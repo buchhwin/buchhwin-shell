@@ -8,6 +8,7 @@ import qs.theme
 import qs.services
 import qs.shell.components
 import "../../services/overview/OverviewLogic.js" as Logic
+import "../../services/appearance/ContrastLogic.js" as Contrast
 
 // Super+W: workspaces with live window previews. Type to filter, arrows to
 // select, Enter to focus, Delete to close; click a workspace to switch to it,
@@ -40,6 +41,13 @@ ShellPanel {
     property int selected: 0
     readonly property var flat: Logic.flatWindows(workspaces, search.text)
     readonly property var selectedWindow: flat.length ? flat[Math.min(selected, flat.length - 1)] : null
+    // The accent as text and outline on the scrim, which is dark in both
+    // themes. accentForeground is made for cards: the light theme darkens it
+    // for light ones, and on the scrim it sank into the dark. Readable against
+    // the lock's base instead, which is as dark as the scrim reads; in the dark
+    // theme it stays accentForeground, so nothing changes there.
+    readonly property color scrimAccent: Colors.dark ? Colors.accentForeground
+        : Contrast.readable(String(Colors.accent), String(Colors.lockBase))
     // **One row per monitor.** A monitor's "New workspace" card belongs beside
     // its workspaces, not under them, so the widest row decides the column
     // count and every row lines up with it. The count used to be the *session's*
@@ -177,14 +185,39 @@ ShellPanel {
         // because switching to an empty workspace is a thing to do; once a
         // query is on screen the question is about windows and the honest
         // reply is that there are none.
-        EmptyState {
+        //
+        // EmptyState's centred column, in the scrim's inks: its own are panel
+        // inks, and the light theme's dark grey vanished on the scrim, which
+        // stays dark in both themes.
+        ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
             visible: search.text.length > 0 && window.flat.length === 0
-            icon: Icons.search
-            title: "No window matches \u201c" + search.text + "\u201d"
-            description: "Escape clears the search"
+            spacing: Metrics.spaceSm
+
+            Item { Layout.fillHeight: true }
+            ShellIcon {
+                Layout.alignment: Qt.AlignHCenter
+                glyph: Icons.search
+                size: Metrics.iconXl
+                color: Colors.scrimMutedText
+            }
+            ShellText {
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                text: "No window matches \u201c" + search.text + "\u201d"
+                color: Colors.scrimMutedText
+                wrapMode: Text.Wrap
+            }
+            ShellText {
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                text: "Escape clears the search"
+                role: "small"
+                color: Colors.scrimMutedText
+                wrapMode: Text.Wrap
+            }
+            Item { Layout.fillHeight: true }
         }
 
         Flickable {
@@ -224,7 +257,7 @@ ShellPanel {
                             visible: window.groups.length > 1 && row.modelData.monitor.length > 0
                             text: "Monitor " + row.modelData.number + " \u00b7 " + row.modelData.monitor
                             role: "label"
-                            color: row.modelData.focused ? Colors.accentForeground : Colors.scrimMutedText
+                            color: row.modelData.focused ? window.scrimAccent : Colors.scrimMutedText
                         }
 
                         Flow {
@@ -255,7 +288,7 @@ ShellPanel {
                                         // be 23 while the card is that
                                         // monitor's third.
                                         text: card.placeholder ? "New workspace" : "Workspace " + card.modelData.label
-                                        color: card.modelData.active ? Colors.accentForeground : Colors.scrimText
+                                        color: card.modelData.active ? window.scrimAccent : Colors.scrimText
                                     }
                                     Item { Layout.fillWidth: true }
                                     // The monitor's name is the row's heading
@@ -276,7 +309,7 @@ ShellPanel {
                                     radius: Metrics.radiusCard
                                     color: card.dropHover ? Colors.accentSoft : Colors.panelFor("overview")
                                     border.width: card.modelData.active || card.dropHover ? Metrics.focusBorderWidth : Metrics.borderWidth
-                                    border.color: card.modelData.active || card.dropHover ? Colors.accentForeground : Colors.panelBorder
+                                    border.color: card.modelData.active || card.dropHover ? window.scrimAccent : Colors.panelBorder
                                     clip: true
 
                                     // The wallpaper of the monitor this workspace is

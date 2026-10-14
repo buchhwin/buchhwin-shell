@@ -36,6 +36,14 @@ Item {
         showingCount = count
     }
     property bool pressed: false
+    // A frame made only of widgets that do nothing when clicked (workspaces,
+    // the active window, the recording chip) lifted on hover and dipped on
+    // press like a button. The bar gates its pills the same way (Pill.qml).
+    readonly property bool clickable: entries.some(entry => {
+        const type = entry ? WidgetRegistry.type(entry.type) : null
+        return type !== null && type.action.length > 0
+    })
+    readonly property bool lit: hovered && clickable
 
     readonly property int padX: styleName === "minimal" ? Metrics.spaceSm * scaleFactor
         : styleName === "capsule" ? Metrics.spaceLg * scaleFactor : Metrics.spaceLg * scaleFactor
@@ -52,8 +60,8 @@ Item {
         visible: root.hasContent
         width: root.implicitWidth
         height: root.implicitHeight
-        y: Animations.motionEnabled && root.hovered ? -Effects.hoverTranslate : 0
-        scale: Animations.motionEnabled && root.pressed ? Effects.pressScaleWide : 1
+        y: Animations.motionEnabled && root.lit ? -Effects.hoverTranslate : 0
+        scale: Animations.motionEnabled && root.pressed && root.clickable ? Effects.pressScaleWide : 1
         Behavior on y { NumberAnimation { duration: Animations.move(Animations.hover); easing.type: Animations.easing } }
         Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
 
@@ -64,10 +72,35 @@ Item {
             // every other card.
             radius: root.styleName === "capsule" ? height / 2 : Metrics.radiusCard
             color: root.styleName === "minimal" ? Colors.surface1 : Colors.panelFor("widgets")
-            border.width: root.styleName === "card" || (root.styleName === "minimal" && root.hovered) ? Metrics.borderWidth : 0
+            border.width: root.styleName === "card" || (root.styleName === "minimal" && root.lit) ? Metrics.borderWidth : 0
             border.color: Colors.panelBorder
-            opacity: root.styleName === "minimal" ? (root.hovered ? 1 : 0) : 1
+            opacity: root.styleName === "minimal" ? (root.lit ? 1 : 0) : 1
             Behavior on opacity { NumberAnimation { duration: Animations.hover } }
+        }
+
+        // The padding around the widgets is part of the frame that lifts, so
+        // it answers a click too: a frame that rose under the pointer and then
+        // ignored the click on its own edge was half a button. Below the
+        // widgets, which keep their own clicks; a click here goes to the
+        // widget nearest along the row.
+        MouseArea {
+            anchors.fill: parent
+            enabled: root.interactive && root.clickable
+            cursorShape: Qt.PointingHandCursor
+            onPressedChanged: root.pressed = pressed
+            onClicked: mouse => {
+                let nearest = null, distance = Infinity
+                for (let i = 0; i < entryRepeater.count; ++i) {
+                    const loader = entryRepeater.itemAt(i)
+                    if (!loader || !loader.showing) continue
+                    const centre = loader.mapToItem(body, loader.width / 2, 0).x
+                    if (Math.abs(centre - mouse.x) < distance) {
+                        distance = Math.abs(centre - mouse.x)
+                        nearest = loader
+                    }
+                }
+                if (nearest) root.activate(nearest.modelData.type)
+            }
         }
 
         RowLayout {
@@ -111,29 +144,32 @@ Item {
                         onPressedChanged: root.pressed = pressed
                         cursorShape: WidgetRegistry.type(loader.modelData.type)
                             && WidgetRegistry.type(loader.modelData.type).action.length ? Qt.PointingHandCursor : Qt.ArrowCursor
-                        onClicked: {
-                            const entry = WidgetRegistry.type(loader.modelData.type)
-                            if (!entry || !entry.action.length) return
-                            // Open below the widget, or above it in the lower half of the screen.
-                            const topLeft = root.mapToItem(null, 0, 0)
-                            const left = root.screenOrigin.x + topLeft.x
-                            const top = root.screenOrigin.y + topLeft.y
-                            const screenHeight = root.QsWindow.window && root.QsWindow.window.screen ? root.QsWindow.window.screen.height : 0
-                            const lower = screenHeight > 0 && top + root.height / 2 > screenHeight / 2
-                            // The rect the widget occupies, so the panel grows
-                            // out of it rather than appearing beside it.
-                            const origin = { originX: left, originY: top, originWidth: root.width, originHeight: root.height }
-                            // `actionArgs` is how a widget says *where* in the
-                            // panel it means - Settings opens on a page, not
-                            // at the top of a list of twenty.
-                            PanelService.toggle(entry.action, Object.assign(origin, lower
-                                ? { anchorX: left + root.width / 2, anchorBottom: top - Metrics.spaceSm }
-                                : { anchorX: left + root.width / 2, anchorTop: top + root.height + Metrics.spaceSm },
-                                entry.actionArgs || {}))
-                        }
+                        onClicked: root.activate(loader.modelData.type)
                     }
                 }
             }
         }
+    }
+
+    // A widget's registry action, opened out of this frame.
+    function activate(typeName) {
+        const entry = WidgetRegistry.type(typeName)
+        if (!entry || !entry.action.length) return
+        // Open below the widget, or above it in the lower half of the screen.
+        const topLeft = root.mapToItem(null, 0, 0)
+        const left = root.screenOrigin.x + topLeft.x
+        const top = root.screenOrigin.y + topLeft.y
+        const screenHeight = root.QsWindow.window && root.QsWindow.window.screen ? root.QsWindow.window.screen.height : 0
+        const lower = screenHeight > 0 && top + root.height / 2 > screenHeight / 2
+        // The rect the widget occupies, so the panel grows
+        // out of it rather than appearing beside it.
+        const origin = { originX: left, originY: top, originWidth: root.width, originHeight: root.height }
+        // `actionArgs` is how a widget says *where* in the
+        // panel it means - Settings opens on a page, not
+        // at the top of a list of twenty.
+        PanelService.toggle(entry.action, Object.assign(origin, lower
+            ? { anchorX: left + root.width / 2, anchorBottom: top - Metrics.spaceSm }
+            : { anchorX: left + root.width / 2, anchorTop: top + root.height + Metrics.spaceSm },
+            entry.actionArgs || {}))
     }
 }

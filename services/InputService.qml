@@ -15,7 +15,24 @@ Singleton {
     readonly property var current: Logic.values(path => SettingsService.value(path))
 
     function variantsFor(layout) {
+        loadLayouts()
         return [{ value: "", label: "Default" }].concat(variants[layout] || [])
+    }
+
+    // The layout list is read on first use, not at start: evdev.lst is a
+    // thousand lines sorted with localeCompare, and only Settings > Input
+    // shows it. Settings opening asks for it, so it is there by the time the
+    // Input page is; the page asks too (`variantsFor`), for an open that goes
+    // straight to it. Switching `preload` on is what reads a FileView that
+    // never read (pitfall 34), and it is switched a turn later because the
+    // page asks from a binding, which must not write what it has just read.
+    function loadLayouts() {
+        if (layoutFile.preload) return
+        Qt.callLater(() => { layoutFile.preload = true })
+    }
+    Connections {
+        target: PanelService
+        function onActiveChanged() { if (PanelService.active === "settings") root.loadLayouts() }
     }
 
     property string applied: ""
@@ -83,7 +100,9 @@ Singleton {
     }
 
     FileView {
+        id: layoutFile
         path: "/usr/share/X11/xkb/rules/evdev.lst"
+        preload: false
         printErrors: false
         onLoaded: {
             const parsed = Logic.parseXkbList(text())

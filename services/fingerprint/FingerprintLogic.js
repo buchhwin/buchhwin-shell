@@ -252,8 +252,12 @@ function modeLabel(mode, lidClosed) {
 }
 
 // What the lock screen does right now, for Settings > Lock Screen.
-function modeState(mode, lidClosed) {
+// `pamMissing` (pamLineMissing below): the reader is in no PAM stack the lock
+// goes through, so no mode can offer it - saying "always offers the
+// fingerprint first" there was the page contradicting the lock.
+function modeState(mode, lidClosed, pamMissing) {
     if (mode === "off") return "The lock screen asks for your password only."
+    if (pamMissing === true) return "The reader is not in PAM yet, so the lock screen asks for your password only."
     if (mode === "on") return "The lock screen always offers the fingerprint first."
     return lidClosed === true ? "Off right now because the lid is closed."
         : "On right now because the lid is open."
@@ -295,20 +299,33 @@ function systemFingerprint(output, exitCode) {
 
 // The same question on openSUSE, which has no authselect: pam-config writes
 // pam_fprintd straight into /etc/pam.d/common-auth, so an active `auth` line
-// naming it is the answer. Comments do not count.
+// naming it is the answer. Comments do not count. Arch has neither tool; the
+// line is added to /etc/pam.d/system-auth by hand, and read the same way.
 function systemFingerprintPam(text) {
     if (typeof text !== "string" || !/^\s*auth\s/m.test(text)) return null
     return /^\s*auth\s[^#\n]*\bpam_fprintd\.so\b/m.test(text)
+}
+
+// Arch: the lock's PAM file (session/pam/buchhwin-lock.arch) includes
+// system-auth and nothing else, and pambase ships system-auth without
+// pam_fprintd - adding it by hand is Arch's way to enable a reader. Until
+// then the reader is offered nowhere, the lock screen included, whatever its
+// mode says. Only a definite "no" counts (null is "not known yet"); Fedora and
+// openSUSE turn the reader on with their own tools and keep their texts.
+var PAM_FPRINTD_LINE = "auth sufficient pam_fprintd.so"
+function pamLineMissing(family, systemEnabled) {
+    return family === "arch" && systemEnabled === false
 }
 
 // The read-only command that answers it, per distribution family.
 function systemFingerprintCommand(family) {
     if (family === "fedora") return ["authselect", "current"]
     if (family === "opensuse") return ["cat", "/etc/pam.d/common-auth"]
+    if (family === "arch") return ["cat", "/etc/pam.d/system-auth"]
     return []
 }
 
 function parseSystemFingerprint(family, output, exitCode) {
-    if (family === "opensuse") return Number(exitCode) === 0 ? systemFingerprintPam(String(output || "")) : null
+    if (family === "opensuse" || family === "arch") return Number(exitCode) === 0 ? systemFingerprintPam(String(output || "")) : null
     return systemFingerprint(output, exitCode)
 }

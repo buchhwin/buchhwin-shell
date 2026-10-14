@@ -24,6 +24,7 @@ ColumnLayout {
             ListRow {
                 required property string modelData
                 readonly property var app: AutostartService.entry(modelData)
+                interactive: false
                 Layout.fillWidth: true
                 iconSource: app ? LauncherService.iconSource(app.icon) : ""
                 icon: app ? "" : "󰀻"

@@ -184,9 +184,13 @@ check 'grep -q "kwallet unlocked: open (already)" "$timeline"' "autostart off: t
 check '! grep -q "mask\|buchhwin-shell-autostart.target" "$calls"' "autostart off: no masks, no autostart target"
 rm "$home/.config/buchhwin-shell/settings.json"
 stub busctl 'printf "NAME PID PROCESS\norg.freedesktop.secrets - -\n"'
+# No ksecretd running (the host's real one must not stretch the wait).
+stub pgrep 'exit 1'
 init
-check 'grep -q "secret service NOT on the bus" "$timeline" && grep -q "kwallet NOT available: no service" "$timeline"' \
+check 'grep -q "secret service NOT on the bus after 3 s" "$timeline" && grep -q "kwallet NOT available: no service" "$timeline"' \
   "an activatable but unowned name is not an unlocked wallet"
+check 'grep -q "^pgrep -u [0-9]* -x ksecretd" "$calls"' "a ksecretd still registering is looked for before giving up"
+rm -f "$bin/pgrep"
 rm -f "$runtime/kwallet5.socket"
 stub busctl 'exit 0'
 
@@ -219,6 +223,28 @@ check '! grep -v "^#" "$suse_root/etc/pam.d/buchhwin-lock-password" | grep -q "p
   "openSUSE: password only, nothing from Fedora"
 status=0; BUCHHWIN_DISTRO=opensuse-leap "$project_dir/install/system-install.sh" --fingerprint-lid >/dev/null 2>"$sandbox/stderr.log" || status=$?
 check '[[ $status -eq 1 ]] && grep -q "needs authselect" "$sandbox/stderr.log"' "openSUSE: --fingerprint-lid refuses"
+# Arch has system-auth like Fedora but no password-auth: by the stack alone it
+# would get Fedora's files, and the password service would include nothing.
+arch_root="$sandbox/arch-root"
+mkdir -p "$arch_root/etc/pam.d" && : > "$arch_root/etc/pam.d/system-auth"
+BUCHHWIN_DISTRO=arch "$project_dir/install/system-install.sh" --root "$arch_root" >/dev/null
+check 'grep -q "include *system-auth" "$arch_root/etc/pam.d/buchhwin-lock"' "Arch: the lock includes system-auth"
+check '! grep -v "^#" "$arch_root/etc/pam.d/buchhwin-lock-password" | grep -q "include\|pam_fprintd"' \
+  "Arch: password only, no password-auth and no other stack"
+check 'grep -q "pam_unix.so *try_first_pass" "$arch_root/etc/pam.d/buchhwin-lock-password"' "Arch: the password is pam_unix's"
+# A derivative under sudo: no BUCHHWIN_DISTRO (sudo drops it), an os-release
+# distro_detect refuses, so the name says "fedora" - the stack has to decide.
+derivative_root="$sandbox/derivative-root"
+mkdir -p "$derivative_root/etc/pam.d" && : > "$derivative_root/etc/pam.d/system-auth"
+printf 'ID=endeavouros\nID_LIKE=arch\n' > "$sandbox/os-release-derivative"
+env -u BUCHHWIN_DISTRO BUCHHWIN_OS_RELEASE="$sandbox/os-release-derivative" \
+  "$project_dir/install/system-install.sh" --root "$derivative_root" >/dev/null
+check 'cmp -s "$derivative_root/etc/pam.d/buchhwin-lock-password" "$project_dir/session/pam/buchhwin-lock-password.arch"' \
+  "Arch derivative: system-auth without password-auth gets the .arch password service"
+check 'cmp -s "$derivative_root/etc/pam.d/buchhwin-lock" "$project_dir/session/pam/buchhwin-lock.arch"' \
+  "Arch derivative: and the .arch lock service"
+status=0; BUCHHWIN_DISTRO=arch "$project_dir/install/system-install.sh" --fingerprint-lid >/dev/null 2>"$sandbox/stderr.log" || status=$?
+check '[[ $status -eq 1 ]] && grep -q "needs authselect" "$sandbox/stderr.log"' "Arch: --fingerprint-lid refuses"
 : > "$calls"
 status=0; env -u BUCHHWIN_SHELL_PATH -u BUCHHWIN_HYPR_CONFIG -u XDG_CONFIG_HOME HOME="$home" "$wrapper" 2>/dev/null || status=$?
 check '[[ $status -eq 0 && $(configs) == hyprland.lua ]]' "wrapper runs the launcher from the home directory"

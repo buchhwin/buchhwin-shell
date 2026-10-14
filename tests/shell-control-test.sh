@@ -29,6 +29,15 @@ cat > "$bin/pgrep" <<'EOF'
 #!/bin/sh
 exit 1
 EOF
+# reload-shell.sh starts the shell in a transient scope; the stub runs what
+# follows `--` in place, so nothing reaches the host's user manager.
+cat > "$bin/systemd-run" <<'EOF'
+#!/bin/sh
+printf 'systemd-run %s\n' "$*" >> "$CALLS"
+while [ $# -gt 0 ] && [ "$1" != "--" ] && [ "$1" != "true" ]; do shift; done
+[ "$1" = "--" ] && shift
+exec "$@"
+EOF
 chmod +x "$bin"/*
 export PATH="$bin:$PATH"
 if [[ $(command -v quickshell) != "$bin/quickshell" ]]; then
@@ -120,6 +129,16 @@ if sandboxed BUCHHWIN_NESTED=1 WAYLAND_DISPLAY=wayland-0 \
   failures=$((failures + 1))
 fi
 check '! said "redirected"' 'BUCHHWIN_NESTED=1 refuses on its own'
+
+# A reload of the checkout's own shell starts it in a transient scope of its
+# own, not in the caller's (an editor's or a terminal's).
+rm -f -- "$nested/wayland-display" "$nested/instance"
+: > "$calls"
+sandboxed WAYLAND_DISPLAY=wayland-0 HYPRLAND_INSTANCE_SIGNATURE=real-signature BUCHHWIN_SHELL_PATH="$checkout" \
+  bash "$checkout/scripts/reload-shell.sh" >"$sandbox/out.log" 2>&1 || true
+for _ in {1..20}; do said "^start-shell" && break; sleep 0.1; done
+check 'said "^systemd-run --user --scope --quiet --collect --unit buchhwin-shell-[0-9]*-[0-9]* -- "' 'reload starts the shell in a scope of its own'
+check 'said "^start-shell '"$checkout"'$"' 'and that scope runs start-shell.sh for the checkout'
 
 if (( failures )); then
   printf 'shell-control: %d check(s) failed\n' "$failures" >&2

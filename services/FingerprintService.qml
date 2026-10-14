@@ -111,10 +111,15 @@ Singleton {
         messageError = isError
     }
 
+    // A request while fprintd-list runs is kept for one more run after it:
+    // the refresh at the end of an enrollment would otherwise be dropped
+    // behind a tracker's, and the new finger missing until the next one.
+    property bool refreshQueued: false
     function refresh() {
         if (preview) return
         const argv = Logic.listCommand(user)
-        if (!argv || listProc.running) return
+        if (!argv) return
+        if (listProc.running) { refreshQueued = true; return }
         loading = true
         listProc.command = argv
         listProc.running = true
@@ -227,6 +232,10 @@ Singleton {
         function finish() {
             if (!outputDone || exitCode < 0) return
             root.loading = false
+            if (root.refreshQueued) {
+                root.refreshQueued = false
+                Qt.callLater(root.refresh)
+            }
             if (root.preview) return
             root.reader = Logic.parseList(output, exitCode)
             root.refreshedAt = Date.now()

@@ -66,6 +66,14 @@ numbered = module.parse_conf(CONF.replace("[Interface]", "[Interface]\nTable = 1
 check(module.settings(numbered, "x", "wg-x", "someone")["ipv4"]["route-table"] == 1234, "Table = N: that routing table")
 odd = module.parse_conf(CONF.replace("[Interface]", "[Interface]\nTable = main-ish\nDNS = not a domain!"))
 check(len(module.check(odd)) == 2, "a Table word or a DNS entry that means nothing is still an error: %s" % module.check(odd))
+# wg(8) spells "no keepalive" as off too; that is no keepalive, not an error.
+for word in ("off", "Off"):
+    quiet = module.parse_conf(CONF.replace("PersistentKeepalive = 25", "PersistentKeepalive = " + word))
+    check(module.check(quiet) == [], "PersistentKeepalive = %s is accepted: %s" % (word, module.check(quiet)))
+    check("persistent-keepalive" not in module.settings(quiet, "x", "wg-x", "someone")["wireguard"]["peers"][0],
+          "PersistentKeepalive = %s sets no keepalive" % word)
+noisy = module.parse_conf(CONF.replace("PersistentKeepalive = 25", "PersistentKeepalive = often"))
+check(module.check(noisy) == ["PersistentKeepalive is not a number of seconds"], "another word is still an error")
 for script in ("PostUp = iptables -A x", "SaveConfig = true"):
     try:
         module.parse_conf("[Interface]\n" + script + "\n")

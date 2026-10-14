@@ -36,6 +36,9 @@ ShellPanel {
     // The grip and the drag live in ShellPanel; this says when the grip is
     // reachable and where the result goes.
     resizable: true
+    // Its pages differ in height; the surface stays put while they switch
+    // (see ShellPanel.stableSurfaceHeight).
+    stableSurfaceHeight: true
     gripShown: LayoutService.quickEditing && root.page.length === 0
     onResized: (width, height) => LayoutService.quickResize(width, height)
     cardWidth: sizing ? dragWidth : box.width
@@ -93,7 +96,7 @@ ShellPanel {
                 : root.page === "dnd" ? "Do Not Disturb"
                 : root.page === "power" ? "Power"
                 : root.page === "drives" ? "Drives"
-                : root.page === "tray" ? "Background apps" : "Control Center"
+                : root.page === "tray" ? "Background apps" : "Control center"
 
             ShellButton {
                 visible: root.page.length === 0 && TrayService.items.length > 0

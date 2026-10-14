@@ -75,7 +75,14 @@ Singleton {
     // After a global "dpms on" (idle wake) the closed laptop panel stays dark.
     function reassertLid() { if (lidClosed && lidDpms) setPanelPower(false) }
 
-    function refresh() { if (!monitorsProc.running) monitorsProc.running = true }
+    // A request while hyprctl is running is kept for one more run after it:
+    // docking adds two monitors, and the second refresh, dropped, left the
+    // snapshot (and applySavedIfNeeded) without the second screen.
+    property bool refreshQueued: false
+    function refresh() {
+        if (monitorsProc.running) { refreshQueued = true; return }
+        monitorsProc.running = true
+    }
 
     function monitor(name) { return draft.find(item => item.name === name) || null }
     function resolutions(name) { const target = monitor(name); return target ? Logic.resolutions(target) : [] }
@@ -235,6 +242,11 @@ Singleton {
                     root.applySavedIfNeeded()
                 }
             }
+        }
+        onExited: {
+            if (!root.refreshQueued) return
+            root.refreshQueued = false
+            Qt.callLater(root.refresh)
         }
     }
 

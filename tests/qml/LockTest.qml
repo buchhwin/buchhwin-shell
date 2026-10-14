@@ -17,6 +17,13 @@ ShellRoot {
         T.eq(L.afterPam(2, results).action, "retry", "a PAM error retries like a wrong password")
         T.eq([L.afterPam(1, results).text, L.afterPam(2, results).text], ["", ""],
              "a rejected password says nothing in words")
+        T.eq(L.afterPam(1, results, "The account is locked due to 3 failed logins.").action, "message",
+             "a faillock lockout keeps its message")
+        T.eq(L.lockoutNotice(["The account is locked due to 3 failed logins.", "(9 minutes left to unlock)"]),
+             "The account is locked due to 3 failed logins. (9 minutes left to unlock)", "both faillock lines")
+        T.eq([L.lockoutNotice(["Place your finger on the reader"]), L.lockoutNotice([]), L.lockoutNotice(undefined)],
+             ["", "", ""], "other messages are not a lockout")
+        T.eq(L.afterPam(1, results, "").action, "retry", "no notice: a plain retry")
         T.eq(L.afterPam(0, results).shake, false, "a successful unlock does not shake")
         T.eq([L.afterPam(1, results).shake, L.afterPam(2, results).shake, L.afterPam(3, results).shake],
              [true, true, true], "every rejected attempt shakes: wrong password, PAM error and too many tries")

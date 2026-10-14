@@ -69,6 +69,8 @@ check 'hyprtoolkit finds iniparser and abseil' \
 # ---- refusals ----------------------------------------------------------------
 status=0; env HOME="$home" BUCHHWIN_DISTRO=fedora "$script" >/dev/null 2>&1 || status=$?
 check 'it refuses on Fedora, where Hyprland is a package' '[[ $status -eq 2 ]]'
+status=0; env HOME="$home" BUCHHWIN_DISTRO=arch "$script" >/dev/null 2>&1 || status=$?
+check 'it refuses on Arch, where Hyprland is a package too' '[[ $status -eq 2 ]]'
 status=0; in_sandbox "$script" --nonsense >/dev/null 2>&1 || status=$?
 check 'an unknown option exits 2' '[[ $status -eq 2 ]]'
 

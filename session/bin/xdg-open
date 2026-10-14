@@ -39,7 +39,9 @@ fi
 case ${handler%.desktop} in
   brave-browser|com.brave.Browser) exec "$project_dir/scripts/launch-brave.sh" "$@" ;;
   google-chrome|com.google.Chrome) exec "$project_dir/scripts/launch-chrome.sh" "$@" ;;
-  chromium-browser) exec "$project_dir/scripts/launch-chromium-browser.sh" "$@" ;;
+  # chromium-browser.desktop on Leap, chromium.desktop on Arch; the wrapper
+  # runs whichever command is there.
+  chromium-browser|chromium) exec "$project_dir/scripts/launch-chromium-browser.sh" "$@" ;;
 esac
 if [[ -n $handler ]]; then
   exec "$project_dir/scripts/launch-app.sh" "$handler" "$real" "$@"

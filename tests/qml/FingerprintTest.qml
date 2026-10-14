@@ -118,8 +118,25 @@ ShellRoot {
         T.eq(F.parseSystemFingerprint("opensuse", suse, 0), true, "dispatch: openSUSE reads PAM")
         T.eq(F.parseSystemFingerprint("opensuse", suse, 1), null, "dispatch: a failed read is not an answer")
         T.eq(F.parseSystemFingerprint("fedora", withFp, 0), true, "dispatch: Fedora asks authselect")
-        T.eq([F.systemFingerprintCommand("fedora"), F.systemFingerprintCommand("opensuse"), F.systemFingerprintCommand("")],
-             [["authselect", "current"], ["cat", "/etc/pam.d/common-auth"], []], "the command per family")
+        T.eq([F.systemFingerprintCommand("fedora"), F.systemFingerprintCommand("opensuse"), F.systemFingerprintCommand("arch"), F.systemFingerprintCommand("")],
+             [["authselect", "current"], ["cat", "/etc/pam.d/common-auth"], ["cat", "/etc/pam.d/system-auth"], []], "the command per family")
+        // Arch: system-auth as pambase ships it, and with the reader added by hand.
+        const archOff = "#%PAM-1.0\nauth       required                    pam_faillock.so      preauth\nauth       [success=1 default=bad]     pam_unix.so          try_first_pass nullok\n"
+        const archOn = "#%PAM-1.0\nauth       sufficient                  pam_fprintd.so\n" + archOff.slice(10)
+        T.eq(F.parseSystemFingerprint("arch", archOff, 0), false, "dispatch: Arch reads system-auth, reader off")
+        T.eq(F.parseSystemFingerprint("arch", archOn, 0), true, "dispatch: Arch reads system-auth, reader on")
+        // Arch's lock includes system-auth only: without the line there the
+        // lock cannot offer the reader, and the page must not say it does.
+        T.eq([F.pamLineMissing("arch", false), F.pamLineMissing("arch", true), F.pamLineMissing("arch", null),
+              F.pamLineMissing("fedora", false), F.pamLineMissing("opensuse", false)],
+             [true, false, false, false, false], "only a definite no on Arch is a missing line")
+        T.ok(F.modeState("on", false, true).indexOf("not in PAM") >= 0, "on, but the reader is not in PAM")
+        T.ok(F.modeState("auto", false, true).indexOf("not in PAM") >= 0, "automatic, the same")
+        T.ok(F.modeState("off", false, true).indexOf("password only") >= 0, "off stays off")
+        T.ok(F.modeState("on", false, false).indexOf("always offers") >= 0, "in PAM, the text is unchanged")
+        // The line the page offers to copy is the one the check reads back.
+        T.eq(F.systemFingerprintPam("#%PAM-1.0\n" + F.PAM_FPRINTD_LINE + "\n" + archOff.slice(10)), true,
+             "the offered line is one the check recognises")
 
         T.finish("FingerprintTest")
     }

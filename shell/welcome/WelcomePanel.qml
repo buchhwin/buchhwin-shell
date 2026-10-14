@@ -167,7 +167,9 @@ ShellPanel {
                     implicitWidth: Metrics.dotSize
                     implicitHeight: Metrics.dotSize
                     radius: width / 2
-                    color: index === root.step ? Colors.accent : Colors.border
+                    // The track, as a slider's groove: a hairline's border colour
+                    // left the other steps all but invisible.
+                    color: index === root.step ? Colors.accent : Colors.track
                 }
             }
 

@@ -203,6 +203,9 @@ Singleton {
         if (argv) enqueue(argv, "dismiss", item.name)
     }
 
+    // Files picked with kdialog. The settings panel closes first (a dialog
+    // under a panel with the keyboard is unusable) and opens again on its
+    // KDE Connect page with the answer, as the WireGuard import does.
     function sendFiles(item) {
         if (!actionsAllowed) { say(blockedReason || "KDE Connect is not running", true); return }
         if (pickProc.running || !Logic.validId(item.id)) return
@@ -210,6 +213,7 @@ Singleton {
         pickProc.deviceName = item.name
         pickProc.command = ["kdialog", "--title", "Send files to " + item.name, "--multiple", "--separate-output",
                             "--getopenfilename", Paths.home]
+        PanelService.close()
         pickProc.running = true
     }
 
@@ -315,10 +319,12 @@ Singleton {
         stdout: StdioCollector {
             onStreamFinished: {
                 const files = Logic.parseFiles(text)
+                if (!files.length) return
                 for (const file of files) {
                     const argv = Logic.command("share", pickProc.deviceId, file)
                     if (argv) root.enqueue(argv, "share", pickProc.deviceName)
                 }
+                PanelService.open("settings", { page: "kdeConnect" })
             }
         }
     }

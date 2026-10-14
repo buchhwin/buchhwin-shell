@@ -71,8 +71,10 @@ Item {
         }
         x: layer.bubbleX
         y: layer.bubbleY
-        width: label.implicitWidth + Metrics.spaceSm * 2
-        height: label.implicitHeight + Metrics.spaceXs * 2
+        // As wide as the words, up to a cap and never wider than the window;
+        // past that they wrap. One unbroken line had no limit at all.
+        width: label.width + Metrics.spaceSm * 2
+        height: label.height + Metrics.spaceXs * 2
         radius: Metrics.radiusSm
         color: Colors.solidSurface
         border.width: Metrics.borderWidth
@@ -80,9 +82,13 @@ Item {
 
         ShellText {
             id: label
-            anchors.centerIn: parent
+            x: Metrics.spaceSm
+            y: Metrics.spaceXs
+            width: Math.min(implicitWidth, Metrics.toolTipMaxWidth,
+                            Math.max(0, layer.width - Metrics.spaceXs * 2 - Metrics.spaceSm * 2))
             text: layer.label
             role: "small"
+            wrapMode: Text.Wrap
         }
     }
 }

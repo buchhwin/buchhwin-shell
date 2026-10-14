@@ -144,6 +144,13 @@ Singleton {
         target: root
         function onConfigReloaded() { root.appliedRules = ""; ruleTimer.restart() }
     }
+    // The rules wait for the dialect, and at login the monitors and the
+    // first workspaces have usually settled before the probe answers -
+    // nothing else would ask again, and the workspaces stayed scattered.
+    Connections {
+        target: HyprCompat
+        function onDetectedChanged() { if (HyprCompat.detected) ruleTimer.restart() }
+    }
     // Monitors arrive one at a time while a dock settles; one batch after they
     // have stopped moving rather than one per monitor.
     Timer { id: ruleTimer; interval: 400; onTriggered: root.applyWorkspaceRules() }

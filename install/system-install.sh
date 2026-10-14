@@ -9,7 +9,7 @@ project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 #   --root DIR            install below DIR without root rights (tests)
 # Optional, system-wide fingerprint rule (install/fingerprint-lid.sh), run on
 # its own: sudo, polkit and logins skip pam_fprintd while the lid is closed.
-# Fedora only: it is built on authselect, which openSUSE does not have.
+# Fedora only: it is built on authselect, which openSUSE and Arch do not have.
 #   --fingerprint-lid         adds the authselect profile custom/buchhwin-lid
 #   --fingerprint-lid-remove  selects the previous profile again
 #   (install/fingerprint-lid.sh status works without root)
@@ -66,8 +66,9 @@ if [[ -n $bluetooth_action && ( -n $sddm_action || ${#sddm_args[@]} -gt 0 || -n 
 fi
 
 # The PAM files differ (Fedora: system-auth/password-auth, openSUSE:
-# common-auth); BUCHHWIN_DISTRO decides for tests below --root. Anything
-# unknown gets Fedora's, as before there was a choice.
+# common-auth, Arch: system-auth without a password-auth); BUCHHWIN_DISTRO
+# decides for tests below --root. Anything unknown gets Fedora's, as before
+# there was a choice.
 # shellcheck source=install/lib/distro.sh
 . "$project_dir/install/lib/distro.sh"
 distro=$(distro_detect 2>/dev/null) || distro=fedora
@@ -115,9 +116,20 @@ chmod 0644 "$root/usr/share/wayland-sessions/buchhwin-shell.desktop"
 # By the file the PAM stack actually has, not only by the distribution's
 # name: an openSUSE this script does not know (Tumbleweed) has no system-auth
 # either, and Fedora's files would leave a lock screen that never unlocks.
+# Arch has system-auth like Fedora but no password-auth: Fedora's password
+# file would include a stack that is not there, and the lock would refuse
+# every password once it switched to it. So Arch is decided by name first,
+# and by that missing password-auth after it: `sudo` drops BUCHHWIN_DISTRO,
+# and a derivative (ID=endeavouros, ID_LIKE=arch) is no distribution
+# distro_detect names, so it arrives here as "fedora".
+pam_present() { [[ -e $root/etc/pam.d/$1 || -e $root/usr/lib/pam.d/$1 ]]; }
 pam_suffix=""
-if [[ -e $root/etc/pam.d/common-auth || -e $root/usr/lib/pam.d/common-auth ]]; then
+if [[ $distro == arch ]]; then
+  pam_suffix=.arch
+elif pam_present common-auth; then
   pam_suffix=.suse
+elif pam_present system-auth && ! pam_present password-auth; then
+  pam_suffix=.arch
 elif [[ ! -e $root/etc/pam.d/system-auth && $distro == opensuse-leap ]]; then
   pam_suffix=.suse
 fi

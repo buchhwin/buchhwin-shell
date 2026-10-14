@@ -97,12 +97,19 @@ Singleton {
         running: root.realSession
         command: ["busctl", "--system", "--timeout=2", "get-property", "org.freedesktop.UPower",
                   "/org/freedesktop/UPower", "org.freedesktop.UPower", "LidIsClosed"]
+        // The output may arrive before or after the exit; judge once both
+        // are in. Judged at the exit alone, an exit first read "" and a lid
+        // shut at login was never applied.
         property string output: ""
-        onStarted: output = ""
-        stdout: StdioCollector { onStreamFinished: lidAtStart.output = text }
-        onExited: code => {
-            if (LockLogic.parseLidClosed(lidAtStart.output, code)) DisplayService.setLidClosed(true)
+        property bool outputDone: false
+        property int exitCode: -1
+        function finish() {
+            if (!outputDone || exitCode < 0) return
+            if (LockLogic.parseLidClosed(output, exitCode)) DisplayService.setLidClosed(true)
         }
+        onStarted: { output = ""; outputDone = false; exitCode = -1 }
+        stdout: StdioCollector { onStreamFinished: { lidAtStart.output = text; lidAtStart.outputDone = true; lidAtStart.finish() } }
+        onExited: code => { exitCode = code; finish() }
     }
 
     IdleMonitor {

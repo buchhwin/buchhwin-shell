@@ -2,9 +2,10 @@
 
 // Touchpad gestures from Settings > Input (`gestures.*`), applied as runtime
 // Hyprland gestures through HyprCompat (HyprCommands.gestures). Shell panels
-// run `quickshell ipc call gestures run NAME` when the swipe ends; Hyprland's
-// own actions (workspace, fullscreen, float, close) follow the fingers.
-// Unit tested.
+// open when the swipe ends - through the global shortcut
+// `buchhwin:gestures.run.NAME` in a Lua session, through `quickshell ipc call
+// gestures run NAME` in a conf one; Hyprland's own actions (workspace,
+// fullscreen, float, close) follow the fingers. Unit tested.
 
 // Every slot the shell manages, in settings order.
 var slots = [
@@ -62,7 +63,16 @@ function shellCommand(shellPath, name) {
     return "quickshell --path " + path + " ipc call gestures run " + name
 }
 
-// { enabled, gestures: [{ fingers, direction, action | command }], slots,
+// The same action as the global shortcut the shell registers for it
+// (services/shortcuts/ShellShortcuts.js), or "" for anything else. A Lua
+// gesture dispatches it rather than running the command: the command started
+// the Quickshell IPC client - a Qt process - at the end of every swipe, the
+// shortcut reaches the shell over the Wayland connection it already has.
+function shortcut(name) {
+    return shellAction(name) ? "buchhwin:gestures.run." + name : ""
+}
+
+// { enabled, gestures: [{ fingers, direction, action | command + shortcut }], slots,
 //   options } for a settings getter (path -> value).
 function plan(get, shellPath) {
     const enabled = get("gestures.enabled") !== false
@@ -76,6 +86,7 @@ function plan(get, shellPath) {
             const command = shellCommand(shellPath, action.value)
             if (!command.length) continue
             entry.command = command
+            entry.shortcut = shortcut(action.value)
         }
         list.push(entry)
     }

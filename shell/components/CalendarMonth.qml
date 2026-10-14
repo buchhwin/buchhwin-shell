@@ -112,7 +112,9 @@ ColumnLayout {
                 ShellText {
                     anchors.centerIn: parent
                     text: cell.modelData.day
-                    color: cell.modelData.today ? Colors.accentText : cell.modelData.inMonth ? Colors.text : Colors.subtleText
+                    // A day of the next or last month is still a number to read:
+                    // mutedText, not subtleText, which is for marks.
+                    color: cell.modelData.today ? Colors.accentText : cell.modelData.inMonth ? Colors.text : Colors.mutedText
                 }
                 Rectangle {
                     visible: cell.modelData.hasEvents

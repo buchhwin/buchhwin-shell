@@ -330,6 +330,9 @@ Variants {
                 anchors.right: parent.right
                 anchors.top: parent.top
                 height: implicitHeight
+                // Down to the hint line over the toolbar; its cards scroll
+                // inside that rather than running under it.
+                bottomLimit: editHint.y - Metrics.spaceXl
             }
             NotchEditOverlay {
                 id: notchOverlay
@@ -418,16 +421,25 @@ Variants {
             }
 
             ShellText {
+                id: editHint
                 anchors.horizontalCenter: toolbar.horizontalCenter
                 anchors.bottom: toolbar.top
                 anchors.bottomMargin: Metrics.spaceSm
+                // The toolbar's caption, no wider than the toolbar: the widget
+                // line alone is some 1150 px and ran off a small screen on
+                // one line. Centred, so a second line sits under the first.
+                width: Math.min(toolbar.width, editorRoot.width - Metrics.spaceXl * 2)
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
                 // One sentence for both surfaces: the bar leaves out what only
                 // free placement can do rather than saying it differently.
                 text: editorRoot.notchMode ? "Drag to reorder what the notch carries · ↑ ↓ send an item to the other row · Ctrl+Z undoes · Switch the mode above · Enter done · Esc back"
                     : editorRoot.barMode ? "Drag or arrow keys · Tab selects · A adds · S changes the look · Del removes · Ctrl+Z undoes · Esc back"
                     : "Drag or arrow keys · Alt disables snapping · Shift+Click multi-selects · Tab selects · A adds · S changes the look · +/− resizes · G grid · Del removes · Ctrl+Z undoes · Esc back"
                 role: "small"
-                color: Colors.text
+                // The scrim's ink: the panel's text is dark in the light theme,
+                // and dark text in a dark outline was dark on dark.
+                color: Colors.scrimText
                 style: Text.Outline
                 styleColor: Colors.scrimStrong
             }
@@ -622,6 +634,9 @@ Variants {
                             required property int index
                             Layout.fillWidth: true
                             compact: true
+                            // The buttons beside it move it; the row itself
+                            // does nothing on a click.
+                            interactive: false
                             icon: (WidgetRegistry.type(modelData.type) || { icon: "" }).icon
                             title: (WidgetRegistry.type(modelData.type) || { label: modelData.type }).label
                             RowLayout {

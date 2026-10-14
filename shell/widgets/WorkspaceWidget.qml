@@ -26,6 +26,13 @@ Grid {
     // widget placed there is handed its colours instead of the theme's.
     property color textColor: Colors.text
     property color mutedTextColor: Colors.mutedText
+    // And the fills of a numbered capsule. The theme's surface tints are
+    // made for panels: on the notch's black the light theme's `surface2` (a
+    // dark tint) left the capsules invisible. The notch hands its own ink, so
+    // the fills follow it there - its own button pair, as its controls use.
+    readonly property bool onNotch: Qt.colorEqual(root.textColor, Colors.notchText)
+    property color fillColor: onNotch ? Colors.notchButton : Colors.surface2
+    property color fillHoverColor: onNotch ? Colors.notchHover : Colors.surface2Hover
     // The session's mode, unless this instance names its own: the island
     // preset shows a fixed row of dots whatever the bar does.
     readonly property string mode: root.instance && root.instance.options && root.instance.options.mode
@@ -83,17 +90,28 @@ Grid {
                 // one says so by being larger rather than longer.
                 // A pill stands: narrow, and the active one wider rather than
                 // taller, so the row keeps one height.
+                // A name is as wide as it needs, up to a cap, and elides past
+                // it: "web" spilled out of a 24 px capsule over its
+                // neighbours. Down a vertical bar the capsule keeps the
+                // strip's width and the name elides inside it.
+                readonly property real labelBase: (slot.current ? Metrics.iconXl : slot.unit) * root.scaleFactor
                 width: slot.labelled
-                    ? (slot.current ? Metrics.iconXl : slot.unit) * root.scaleFactor
+                    ? (root.vertical ? labelBase
+                       : Math.max(labelBase, Math.min(label.implicitWidth + Metrics.spaceSm * root.scaleFactor,
+                                                      Metrics.workspaceLabelMax * root.scaleFactor)))
                     : slot.pill
                     ? (slot.current ? Metrics.workspacePillActiveWidth : Metrics.workspacePillWidth) * root.scaleFactor
                     : (slot.current ? Metrics.iconSm : Metrics.iconXs) * root.scaleFactor
                 height: slot.labelled ? slot.height : slot.pill ? Metrics.workspacePillHeight * root.scaleFactor : width
                 radius: Math.min(width, height) / 2
                 // A bare dot takes the muted ink the surface hands over: the
-                // theme's surface tint vanished on the notch's black.
-                color: slot.current ? Colors.accent : pipMouse.containsMouse ? Colors.surface2Hover
-                    : slot.labelled ? Colors.surface2 : root.mutedTextColor
+                // theme's surface tint vanished on the notch's black. Under
+                // the pointer it takes the full ink - the capsule's hover
+                // tint (15 % white) made a dot vanish exactly where it was
+                // pointed at.
+                color: slot.current ? Colors.accent
+                    : slot.labelled ? (pipMouse.containsMouse ? root.fillHoverColor : root.fillColor)
+                    : pipMouse.containsMouse ? root.textColor : root.mutedTextColor
                 opacity: slot.current || slot.modelData.occupied ? 1 : Effects.mutedOpacity
                 // No spring on the width. It never ran while the pips were
                 // rebuilt on every switch, and once they were kept it did -
@@ -103,7 +121,11 @@ Grid {
                 // changes with the slide, which is the motion already on
                 // screen.
                 Text {
+                    id: label
                     anchors.centerIn: parent
+                    width: Math.min(implicitWidth, Math.max(0, parent.width - Metrics.spaceSm * root.scaleFactor))
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
                     visible: slot.labelled
                     // The number of *this monitor's* set, or a name the user
                     // chose. `id` is the compositor's and can be 23.

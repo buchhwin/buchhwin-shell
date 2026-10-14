@@ -172,6 +172,10 @@ ShellRoot {
         T.eq(W.defaultFolder("", "/home/u"), "/home/u/Pictures/Desktop", "and falls back to ~/Pictures")
         T.eq([W.contractHome("/home/u/Bilder/Desktop", "/home/u"), W.contractHome("/home/uu/x", "/home/u"),
               W.contractHome("/srv/w", "/home/u")], ["~/Bilder/Desktop", "/home/uu/x", "/srv/w"], "home contracted only at a boundary")
+        T.eq(W.folderUrl("/home/u/Bilder/Desktop"), "file:///home/u/Bilder/Desktop", "a plain folder url")
+        T.eq(W.folderUrl("/home/u/a#b/x?y/50%2F/Über mich"), "file:///home/u/a%23b/x%3Fy/50%252F/%C3%9Cber%20mich",
+             "#, ?, % and the rest encoded per segment")
+        T.eq(W.folderUrl(""), "", "no folder, no url")
         T.eq(W.recentFolders(" ~/a, ~/b,,~/a "), ["~/a", "~/b"], "recent folders trimmed and unique")
         T.eq(W.addRecentFolder("~/a,~/b", "~/b"), "~/b,~/a", "a reused folder moves to the front")
         T.eq(W.addRecentFolder("~/1,~/2,~/3,~/4,~/5", "~/6").split(",").length, 5, "at most five")

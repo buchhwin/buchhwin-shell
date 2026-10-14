@@ -27,6 +27,7 @@ ColumnLayout {
         description: KdeConnectService.summary
 
         ListRow {
+            interactive: false
             Layout.fillWidth: true
             icon: "󰄜"
             active: KdeConnectService.running
@@ -52,6 +53,7 @@ ColumnLayout {
             wrapMode: Text.Wrap
         }
         ListRow {
+            interactive: false
             Layout.fillWidth: true
             visible: KdeConnectService.running
             icon: "󰌢"
@@ -102,6 +104,7 @@ ColumnLayout {
             model: KdeConnectService.requests
             ListRow {
                 required property var modelData
+                interactive: false
                 Layout.fillWidth: true
                 icon: KdeConnectService.deviceIcon(modelData)
                 active: true
@@ -155,6 +158,7 @@ ColumnLayout {
                 }
 
                 ListRow {
+                    interactive: false
                     Layout.fillWidth: true
                     icon: KdeConnectService.deviceIcon(deviceItem.modelData)
                     active: deviceItem.connected
@@ -185,6 +189,10 @@ ColumnLayout {
                             icon: Icons.remove
                             compact: true
                             variant: "ghost"
+                            // The pairing is gone; it has to be accepted on
+                            // the phone again. Two clicks, as Bluetooth's Remove.
+                            confirm: true
+                            confirmText: "Unpair"
                             toolTip: "Unpair"
                             onClicked: KdeConnectService.run("unpair", deviceItem.modelData)
                         }
@@ -304,6 +312,7 @@ ColumnLayout {
                         model: deviceItem.commandsOpen ? deviceItem.modelData.commands : []
                         ListRow {
                             required property var modelData
+                            interactive: false
                             Layout.fillWidth: true
                             icon: "󰆍"
                             title: modelData.name
@@ -447,6 +456,7 @@ ColumnLayout {
                             property bool answering: false
 
                             ListRow {
+                                interactive: false
                                 Layout.fillWidth: true
                                 icon: "󰂚"
                                 title: noteRow.modelData.title.length ? noteRow.modelData.title : noteRow.modelData.appName
@@ -536,6 +546,7 @@ ColumnLayout {
             model: KdeConnectService.available
             ListRow {
                 required property var modelData
+                interactive: false
                 Layout.fillWidth: true
                 icon: KdeConnectService.deviceIcon(modelData)
                 title: modelData.name

@@ -122,10 +122,12 @@ PopupPanel {
                     }
                 }
 
+                // Each button says for itself whether it can act. The row used
+                // to fade as a whole while Play still took hover, focus and
+                // clicks, and a disabled button inside it faded twice.
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: Metrics.spaceXs
-                    opacity: MprisService.hasPlayer ? 1 : Effects.disabledOpacity
 
                     ControlButton {
                         icon: media.player && media.player.shuffle ? "󰒟" : "󰒞"
@@ -148,6 +150,7 @@ PopupPanel {
                         variant: "accent"
                         icon: MprisService.playing ? Icons.pause : Icons.play
                         iconSize: Metrics.iconLg
+                        enabledState: MprisService.hasPlayer
                         toolTip: MprisService.playing ? "Pause" : "Play"
                         onClicked: MprisService.togglePlaying()
                     }

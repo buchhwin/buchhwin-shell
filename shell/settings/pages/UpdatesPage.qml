@@ -60,9 +60,12 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Software updates"
-        description: "The shell only looks for updates. Installing system packages needs the administrator password and runs in Discover."
+        description: DistroService.upgradesInTerminal
+            ? "The shell only looks for updates. Installing system packages needs the administrator password and runs in a terminal window."
+            : "The shell only looks for updates. Installing system packages needs the administrator password and runs in Discover."
 
         ListRow {
+            interactive: false
             Layout.fillWidth: true
             icon: UpdatesService.checking ? Icons.refresh : UpdatesService.total > 0 ? "󰚰" : Icons.check
             active: UpdatesService.total > 0
@@ -179,10 +182,18 @@ ColumnLayout {
                     focusOnTab: true
                     anchors.verticalCenter: parent.verticalCenter
                     icon: "󰏔"
-                    text: "Install in Discover"
+                    text: !DistroService.upgradesInTerminal ? "Install in Discover"
+                        : UpdatesService.upgrading ? "Upgrading …" : "Upgrade in terminal"
                     compact: true
                     variant: UpdatesService.packages.length ? "accent" : "surface"
-                    onClicked: UpdatesService.openDiscover()
+                    // The terminal upgrade only runs in the session and once at
+                    // a time, like "Update Flatpaks" and "Update the shell";
+                    // Discover opens from anywhere.
+                    enabledState: !DistroService.upgradesInTerminal
+                        || UpdatesService.actionsAllowed && !UpdatesService.upgrading
+                    toolTip: !DistroService.upgradesInTerminal || UpdatesService.actionsAllowed
+                        ? "" : "Only available in the buchhwin-shell session"
+                    onClicked: UpdatesService.installSystem()
                 }
                 ShellIcon {
                     anchors.verticalCenter: parent.verticalCenter

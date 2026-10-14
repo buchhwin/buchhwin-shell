@@ -39,6 +39,9 @@ ShellPanel {
             ShellButton {
                 visible: NotificationService.history.length > 0
                 text: "Clear all"; compact: true; variant: "ghost"
+                // Every notification of every app, with no way back: it asks
+                // twice, like every button that destroys something.
+                confirm: true; confirmText: "Clear all?"
                 onClicked: NotificationService.clearAll()
             }
         }
@@ -112,7 +115,15 @@ ShellPanel {
                                         : groupItem.modelData.icon.length ? Quickshell.iconPath(groupItem.modelData.icon, true) : ""
                                     sourceSize.width: Metrics.iconSm * 2
                                 }
-                                SectionLabel { text: groupItem.modelData.name }
+                                // Elides rather than pushing the buttons out of
+                                // the card: grows to its own width and no
+                                // further, the spacer after it takes the rest.
+                                SectionLabel {
+                                    id: appName
+                                    Layout.fillWidth: true
+                                    Layout.maximumWidth: appName.implicitWidth
+                                    text: groupItem.modelData.name
+                                }
                                 ShellText { text: String(groupItem.modelData.items.length); role: "caption" }
                                 Item { Layout.fillWidth: true }
                                 ShellButton {

@@ -32,17 +32,24 @@ Singleton {
 
     readonly property var history: Logic.parseHistory(SettingsService.value("colorPicker.history"))
 
+    // A close() and a quick open() meet the last helper still going down:
+    // `running = true` does nothing then, and that run's exit would close the
+    // new session. The start waits for the exit instead.
+    property bool startQueued: false
+
     function open() {
         if (active) return
         hovered = ""
         frames = []
         ready = false
         active = true
-        helper.running = true
+        if (helper.running) startQueued = true
+        else helper.running = true
     }
 
     function close() {
         active = false
+        startQueued = false
         ready = false
         frames = []
         hovered = ""
@@ -76,9 +83,14 @@ Singleton {
     Process {
         id: helper
         command: [Paths.script("color-picker.py"), "capture", root.captureDir]
+        // The coordinates go in on stdin; without it the helper reads EOF
+        // right after the frames and exits, and the overlay with it.
+        stdinEnabled: true
         stderr: ErrorLog { label: "ColorPickerService.helper" }
         stdout: SplitParser {
             onRead: data => {
+                // Lines from a run that is going down belong to no session.
+                if (!root.active || root.startQueued) return
                 const line = String(data)
                 if (!root.ready) {
                     // The first line is the frames it froze.
@@ -96,7 +108,16 @@ Singleton {
             }
         }
         // The helper dying is the overlay's cue to go: it has nothing left to
-        // sample, and a picker that answers nothing is worse than none.
-        onRunningChanged: if (!running && root.active) root.close()
+        // sample, and a picker that answers nothing is worse than none. The
+        // exit of the run before a queued start is not this session's.
+        onRunningChanged: {
+            if (running) return
+            if (root.startQueued) {
+                root.startQueued = false
+                Qt.callLater(() => { if (root.active && !helper.running) helper.running = true })
+                return
+            }
+            if (root.active) root.close()
+        }
     }
 }

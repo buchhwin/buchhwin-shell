@@ -13,10 +13,17 @@ Singleton {
     readonly property var device: UPower.displayDevice
     readonly property bool hasBattery: device !== null && device.isLaptopBattery
     readonly property int percent: device ? Math.round(device.percentage * 100) : 0
-    readonly property bool onBattery: UPower.onBattery
+    // UPower's OnBattery alone is not enough: it is false as soon as any power
+    // supply reports itself online, and on the ThinkPad on Arch (14.10.) a
+    // USB-C port stayed "online, charging" with nothing plugged in (UCSI) -
+    // the panel said "Plugged in" and the mains power settings applied while
+    // the battery ran down at 13 W. A battery that is discharging is on
+    // battery, whatever else is online.
+    readonly property bool onBattery: UPower.onBattery || discharging
     readonly property bool charging: device !== null && (device.state === UPowerDeviceState.Charging
         || device.state === UPowerDeviceState.PendingCharge)
     readonly property bool full: device !== null && device.state === UPowerDeviceState.FullyCharged
+    readonly property bool discharging: device !== null && device.state === UPowerDeviceState.Discharging
     readonly property real secondsRemaining: device ? (charging ? device.timeToFull : device.timeToEmpty) : 0
 
     readonly property int profile: PowerProfiles.profile
@@ -26,8 +33,11 @@ Singleton {
 
     readonly property string icon: {
         if (!hasBattery) return "󰚥"
-        if (charging) return "󰂄"
-        const levels = ["󰂎", "󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]
+        // While charging the glyph still shows the level (the bolt variants of
+        // the same ten steps); one bolt for every level hid how full it was.
+        const levels = charging
+            ? ["󰢟", "󰢜", "󰂆", "󰂇", "󰂈", "󰢝", "󰂉", "󰢞", "󰂊", "󰂋", "󰂅"]
+            : ["󰂎", "󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]
         return levels[Math.max(0, Math.min(10, Math.round(percent / 10)))]
     }
 

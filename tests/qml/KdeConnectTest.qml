@@ -92,7 +92,7 @@ ShellRoot {
         T.eq(K.command("ping", id), ["kdeconnect-cli", "--device", id, "--ping"], "ping argv")
         T.eq(K.command("share", id, "/home/user/a file; rm -rf ~"), ["kdeconnect-cli", "--device", id, "--share", "/home/user/a file; rm -rf ~"], "file is one argument")
         T.eq(K.command("share", id, "-rf"), null, "relative or option-like paths rejected")
-        T.eq(K.command("accept", id), ["busctl", "--user", "--auto-start=no", "call", "org.kde.kdeconnect", "/modules/kdeconnect/devices/" + id, "org.kde.kdeconnect.device", "acceptPairing"], "accept through D-Bus")
+        T.eq(K.command("accept", id), ["busctl", "--user", "--auto-start=no", "--", "call", "org.kde.kdeconnect", "/modules/kdeconnect/devices/" + id, "org.kde.kdeconnect.device", "acceptPairing"], "accept through D-Bus")
         T.eq(K.command("ping", "--help"), null, "option-like id rejected")
         T.eq(K.command("reject", "a/../b"), null, "path-like id rejected")
         T.eq(K.command("format", id), null, "unknown action")
@@ -100,11 +100,11 @@ ShellRoot {
 
         // Plugin actions
         const mprisPath = "/modules/kdeconnect/devices/" + id + "/mprisremote"
-        const busCall = ["busctl", "--user", "--auto-start=no", "call", "org.kde.kdeconnect"]
-        const busSet = ["busctl", "--user", "--auto-start=no", "set-property", "org.kde.kdeconnect"]
+        const busCall = ["busctl", "--user", "--auto-start=no", "--", "call", "org.kde.kdeconnect"]
+        const busSet = ["busctl", "--user", "--auto-start=no", "--", "set-property", "org.kde.kdeconnect"]
         T.eq(K.command("play", id), busCall.concat([mprisPath, "org.kde.kdeconnect.device.mprisremote", "sendAction", "s", "PlayPause"]), "play/pause")
-        T.eq(K.command("next", id)[9], "Next", "next track")
-        T.eq(K.command("previous", id)[9], "Previous", "previous track")
+        T.eq(K.command("next", id)[10], "Next", "next track")
+        T.eq(K.command("previous", id)[10], "Previous", "previous track")
         T.eq(K.command("volume", id, 42), busSet.concat([mprisPath, "org.kde.kdeconnect.device.mprisremote", "volume", "i", "42"]), "phone volume")
         T.eq(K.command("volume", id, 120), null, "volume out of range")
         T.eq(K.command("volume", id, "50"), null, "volume must be a number")
@@ -124,9 +124,15 @@ ShellRoot {
              busCall.concat([notePath, noteIface, "sendReply", "s", "On my way"]), "answer a notification")
         T.eq(K.command("reply", id, { note: "../x", text: "hi" }), null, "path-like notification id rejected")
         T.eq(K.command("reply", id, { note: "12", text: "" }), null, "an empty answer is not sent")
-        T.eq(K.command("reply", id, { note: "12", text: "a\nb" })[9], "a\nb",
+        T.eq(K.command("reply", id, { note: "12", text: "a\nb" })[10], "a\nb",
              "an answer of several lines is one argument, not several")
         T.eq(K.command("reply", id, undefined), null, "nothing to answer")
+        // busctl permutes its arguments: a dash-led answer or player name is
+        // only the call's own argument behind the "--" that ends the options.
+        T.eq(K.command("reply", id, { note: "12", text: "-)" }),
+             busCall.concat([notePath, noteIface, "sendReply", "s", "-)"]), "an answer starting with a dash is sent, not read as an option")
+        T.eq(K.command("player", id, "- x"),
+             busSet.concat([mprisPath, "org.kde.kdeconnect.device.mprisremote", "player", "s", "- x"]), "and so is a player name")
         T.eq(K.command("runCommand", id, "abc123"),
              busCall.concat(["/modules/kdeconnect/devices/" + id + "/remotecommands",
                              "org.kde.kdeconnect.device.remotecommands", "triggerCommand", "s", "abc123"]),

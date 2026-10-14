@@ -20,7 +20,11 @@ ShellPanel {
     property string query: ""
     property string group: "recent"
     property int selected: 0
-    readonly property var results: EmojiService.search(query, query.length ? "" : group)
+    // Only evaluated while the picker is visible, like the launcher's. The
+    // panel is built at start, and `search` asks for the list: evaluated
+    // then, it read and parsed config/emoji.json (172 KB, a few MB of
+    // objects) in every session, picker opened or not.
+    readonly property var results: shown ? EmojiService.search(query, query.length ? "" : group) : []
     readonly property int columns: Math.max(1, Math.floor((cardTargetWidth - Metrics.panelPadding * 2)
         / Metrics.emojiCell))
 
@@ -63,7 +67,7 @@ ShellPanel {
             focusOnTab: true
             large: true
             icon: Icons.search
-            placeholder: "Search emoji"
+            placeholder: "Search emoji …"
             onTextChanged: { root.query = text; root.selected = 0 }
             onAccepted: root.pick(root.selected)
             onEscapePressed: root.requestClose()

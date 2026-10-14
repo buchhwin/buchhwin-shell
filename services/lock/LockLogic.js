@@ -21,11 +21,24 @@ function initial(name) {
 //   message – show `text`, restart after a pause
 // A rejected password says so by shaking, never in words: "Authentication
 // failed" under the field told the user nothing they did not just see. Only a
-// lockout keeps a message, because the shake cannot explain a wait.
-function afterPam(result, results) {
+// lockout keeps a message, because the shake cannot explain a wait: PAM's
+// own MaxTries, or `notice`, what a lockout module said during the attempt
+// (`lockoutNotice`).
+function afterPam(result, results, notice) {
     if (result === results.Success) return { action: "unlock", text: "", shake: false }
     if (result === results.MaxTries) return { action: "message", text: "Too many attempts. Try again in a moment.", shake: true }
+    if (notice) return { action: "message", text: String(notice), shake: true }
     return { action: "retry", text: "", shake: true }
+}
+
+// pam_faillock (in Arch's system-auth, which the lock includes there) answers
+// a locked account with "The account is locked due to 3 failed logins." and
+// "(9 minutes left to unlock)", then fails like a wrong password - and the
+// right password went on failing with nothing but a shake for ten minutes.
+// Those messages are kept; anything else PAM says in passing is not.
+function lockoutNotice(messages) {
+    return (messages || []).map(function (m) { return String(m).trim() })
+        .filter(function (m) { return /lock/i.test(m) }).join(" ")
 }
 
 // Caps Lock and the active keyboard layout from `hyprctl -j devices`.

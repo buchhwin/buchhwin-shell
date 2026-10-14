@@ -7,10 +7,17 @@ project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 distro=$(distro_detect 2>/dev/null) || distro=fedora
 package_tool=dnf5
 [[ $distro == opensuse-leap ]] && package_tool=zypper
+# Arch: the update check is checkupdates (pacman-contrib), not pacman itself.
+[[ $distro == arch ]] && package_tool=checkupdates
 # shellcheck source=lib/hyprland-prefix.sh
 if [[ -r "$project_dir/scripts/lib/hyprland-prefix.sh" ]]; then . "$project_dir/scripts/lib/hyprland-prefix.sh"; fi
 status=0
+# Brave is brave-browser from Brave's own packages, brave from Arch's AUR.
 for command_name in Hyprland hyprctl quickshell setpriv kitty zsh brave-browser dolphin; do
+  if [[ $command_name == brave-browser ]] && ! command -v brave-browser >/dev/null 2>&1 \
+      && command -v brave >/dev/null 2>&1; then
+    command_name=brave
+  fi
   if command -v "$command_name" >/dev/null 2>&1; then
     printf 'ok       %s: %s\n' "$command_name" "$(command -v "$command_name")"
   else
@@ -53,17 +60,37 @@ if command -v hyprland-dialog >/dev/null 2>&1; then
 else
   printf 'missing  hyprland-guiutils (Hyprland dialogs and startup notice; %s)\n' "$(distro_install_hint "$distro" hyprland-guiutils)"
 fi
-if [[ -r /usr/lib64/qt6/plugins/plasmacalendarplugins/pimevents.so && -d /usr/lib64/qt6/qml/org/kde/plasma/PimCalendars ]]; then
+# /usr/lib64 on Fedora and openSUSE, /usr/lib on Arch (where lib64 is a link
+# to it, but the real path reads better in a check).
+qt6_dir=/usr/lib64/qt6
+[[ -d $qt6_dir ]] || qt6_dir=/usr/lib/qt6
+[[ $distro == arch ]] && qt6_dir=/usr/lib/qt6
+if [[ -r $qt6_dir/plugins/plasmacalendarplugins/pimevents.so && -d $qt6_dir/qml/org/kde/plasma/PimCalendars ]]; then
   printf 'ok       KDE calendar plugin (pimevents)\n'
 else
   printf 'missing  KDE calendar plugin (kdepim-addons; dashboard events stay empty)\n'
 fi
-if python3 -c 'import AkonadiCore' >/dev/null 2>&1 && [[ -d /usr/lib64/qt6/qml/org/kde/akonadi ]]; then
-  printf 'ok       Akonadi Python bindings and QML (calendar events)\n'
+# Two different things: services/CalendarService.qml imports org.kde.akonadi
+# (merkuro ships it), and without the module the service fails to load and
+# takes the whole shell with it - required. The Python bindings only write
+# events, and Leap and Arch do not package them - optional.
+if [[ -d $qt6_dir/qml/org/kde/akonadi ]]; then
+  printf 'ok       Akonadi QML module (org.kde.akonadi)\n'
 else
-  printf 'missing  Akonadi Python bindings or Akonadi QML (writing events unavailable; Fedora: python3-kf6-kcoreaddons python3-kf6-kcalendarcore)\n'
+  printf 'missing  Akonadi QML module org.kde.akonadi (the shell does not load without it; %s)\n' "$(distro_install_hint "$distro" merkuro)"
+  status=1
 fi
-if busctl --system status net.hadess.PowerProfiles >/dev/null 2>&1; then
+if python3 -c 'import AkonadiCore' >/dev/null 2>&1; then
+  printf 'ok       Akonadi Python bindings (writing calendar events)\n'
+elif [[ $distro == fedora ]]; then
+  printf 'missing  Akonadi Python bindings (writing events unavailable; Fedora: python3-kf6-kcoreaddons python3-kf6-kcalendarcore)\n'
+else
+  printf 'missing  Akonadi Python bindings (not packaged for %s: events are shown, not written)\n' "$distro"
+fi
+# From the bus's list, not with `busctl status`, which starts the daemon it
+# asks about. An activatable name counts: the shell's first call starts it.
+power_profiles=$(busctl --system --auto-start=no --no-pager list 2>/dev/null) || power_profiles=""
+if awk '$1 == "net.hadess.PowerProfiles" { found = 1 } END { exit !found }' <<<"$power_profiles"; then
   printf 'ok       power profiles D-Bus service\n'
 else
   printf 'missing  power profiles D-Bus service (profile controls hidden)\n'
@@ -94,7 +121,8 @@ else
   printf 'missing  fastfetch (optional)\n'
 fi
 # Terminal extras that follow the shell accent (Settings > Terminal writes
-# their configuration): both from Fedora's repositories, only cava from Leap's.
+# their configuration): both from Fedora's and Arch's repositories, only cava
+# from Leap's.
 for extra in cmatrix cava; do
   if command -v "$extra" >/dev/null 2>&1; then
     printf 'ok       %s: %s\n' "$extra" "$(command -v "$extra")"

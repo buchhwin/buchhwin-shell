@@ -18,7 +18,10 @@ ShellPanel {
     id: root
     panelId: "eventEditor"
     placement: "center"
-    cardWidth: Metrics.eventEditorWidth
+    // The form follows the interface text size, as the settings window does:
+    // at fixed widths the labels and "HH:MM" clipped from a text size of 1.1.
+    cardWidth: Math.round(Metrics.eventEditorWidth * Typography.scale)
+    readonly property int timeFieldWidth: Math.round(Metrics.timeFieldWidth * Typography.scale)
 
     readonly property bool details: openArgs && openArgs.mode === "details"
     readonly property var event: details ? openArgs.event : null
@@ -140,7 +143,7 @@ ShellPanel {
     }
 
     component FieldLabel: ShellText {
-        Layout.preferredWidth: Metrics.formLabelWidth
+        Layout.preferredWidth: Math.round(Metrics.formLabelWidth * Typography.scale)
         role: "small"
         muted: true
     }
@@ -289,7 +292,7 @@ ShellPanel {
                 FieldLabel { text: "Time" }
                 ShellTextField {
                     id: startField
-                    Layout.preferredWidth: Metrics.timeFieldWidth
+                    Layout.preferredWidth: root.timeFieldWidth
                     focusOnTab: true
                     selectAllOnFocus: true
                     placeholder: "HH:MM"
@@ -306,7 +309,7 @@ ShellPanel {
                 ShellText { text: "–"; muted: true }
                 ShellTextField {
                     id: endField
-                    Layout.preferredWidth: Metrics.timeFieldWidth
+                    Layout.preferredWidth: root.timeFieldWidth
                     focusOnTab: true
                     selectAllOnFocus: true
                     placeholder: "HH:MM"
@@ -419,7 +422,7 @@ ShellPanel {
                 FieldLabel { text: "Times" }
                 ShellTextField {
                     id: countField
-                    Layout.preferredWidth: Metrics.timeFieldWidth
+                    Layout.preferredWidth: root.timeFieldWidth
                     focusOnTab: true
                     selectAllOnFocus: true
                     placeholder: "10"

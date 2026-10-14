@@ -90,6 +90,11 @@ Variants {
         }
         Component.onCompleted: if (frame) ColorPickerService.sample(frame.x + width / 2, frame.y + height / 2)
 
+        // Loupe and badge sit above the pointer, and below it when there is no
+        // room above: near the top edge both used to leave the screen.
+        readonly property bool loupeAbove: pointer.mouseY - Metrics.spaceLg - loupe.height
+            - Metrics.spaceSm - hexBadge.height >= Metrics.screenMargin
+
         // ---- the loupe -------------------------------------------------
         // The frozen frame again, scaled up and clipped to a circle, shifted
         // so the sampled pixel sits under the crosshair in its middle.
@@ -99,7 +104,7 @@ Variants {
             width: Metrics.colorLoupeSize
             height: width
             x: pointer.mouseX - width / 2
-            y: pointer.mouseY - height - Metrics.spaceLg
+            y: window.loupeAbove ? pointer.mouseY - height - Metrics.spaceLg : pointer.mouseY + Metrics.spaceLg
 
             Rectangle {
                 anchors.fill: parent
@@ -144,18 +149,21 @@ Variants {
             }
         }
 
-        // The colour under the pointer, its hex, and what to do next.
+        // The colour under the pointer, its hex, and what to do next. On an
+        // opaque surface: it floats over a frozen screenshot, and the 7 %
+        // card tint it had let whatever was below show through the words.
         Rectangle {
+            id: hexBadge
             visible: loupe.visible && ColorPickerService.hovered.length > 0
             x: Math.max(Metrics.screenMargin,
                 Math.min(window.width - width - Metrics.screenMargin, pointer.mouseX - width / 2))
-            y: loupe.y - height - Metrics.spaceSm
+            y: window.loupeAbove ? loupe.y - height - Metrics.spaceSm : loupe.y + loupe.height + Metrics.spaceSm
             implicitWidth: badge.implicitWidth + Metrics.spaceMd * 2
             implicitHeight: badge.implicitHeight + Metrics.spaceSm * 2
             radius: Metrics.radiusInner
-            color: Colors.surface1
+            color: Colors.solidSurface
             border.width: Metrics.borderWidth
-            border.color: Colors.border
+            border.color: Colors.borderStrong
 
             Row {
                 id: badge

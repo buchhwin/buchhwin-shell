@@ -219,7 +219,7 @@ GridLayout {
         Layout.fillWidth: true
         Layout.columnSpan: root.columns
         title: "Panels"
-        description: "Background color and transparency of panels, popups, pills and widgets. A light color switches to the Light theme and a dark one to the Dark theme, so text stays readable."
+        description: "Background color and transparency of panels, popups, pills and widgets. A light color switches to the light theme and a dark one to the dark theme, so text stays readable."
 
         readonly property var choice: Colors.panelColorChoices.find(item => item.value === PanelStyleService.color)
         readonly property int ownCount: PanelStyleService.groups.filter(group => PanelStyleService.hasOwnOpacity(group.key)).length
@@ -325,7 +325,7 @@ GridLayout {
             }
             ShellButton {
                 focusOnTab: true
-                text: PanelStyleService.lightColor ? "Use Light theme" : "Use Dark theme"
+                text: PanelStyleService.lightColor ? "Use light theme" : "Use dark theme"
                 compact: true
                 onClicked: SettingsService.set("appearance.theme", PanelStyleService.lightColor ? "light" : "dark")
             }
@@ -402,7 +402,7 @@ GridLayout {
     SettingsSection {
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignTop
-        title: "Windows & Effects"
+        title: "Windows & effects"
         description: "Blur, corners, borders, gaps and animations"
 
         SettingRow {
@@ -543,10 +543,18 @@ GridLayout {
                 onReleased: value => SettingsService.set("appearance.animationSpeed",
                     Math.round(value * 20) / 20)
             }
+            // As wide as its longest reading, with even digits: "1.00x ·
+            // normal" is more than twice the 36 px the other values here get,
+            // and the slider changed length with every step.
             ShellText {
+                id: paceLabel
                 readonly property real pace: SettingsService.animationSpeed
                 text: pace.toFixed(2) + "x · " + (pace < 0.9 ? "slow" : pace > 1.1 ? "fast" : "normal")
-                role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl
+                role: "small"; muted: true
+                font.features: { "tnum": 1 }
+                horizontalAlignment: Text.AlignRight
+                Layout.minimumWidth: Math.max(Metrics.iconXl, Math.ceil(paceWidest.advanceWidth))
+                TextMetrics { id: paceWidest; font: paceLabel.font; text: "0.00x · normal" }
             }
         }
     }

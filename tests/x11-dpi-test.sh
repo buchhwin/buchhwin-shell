@@ -19,8 +19,10 @@ case "$1" in
   -load) cat > "$DB" ;;
 esac
 Q
-# The cursor script also talks to the compositor and systemd; record and agree.
-for stub in hyprctl systemctl dbus-update-activation-environment; do
+# The cursor script also talks to the compositor, systemd and dconf (through
+# gsettings); record and agree - the real gsettings would change this
+# machine's desktop.
+for stub in hyprctl systemctl dbus-update-activation-environment gsettings; do
   printf '#!/usr/bin/env bash\nprintf "%%s %%s\\n" "%s" "$*" >> "$CALLS"\n' "$stub" > "$SB/bin/$stub"
 done
 chmod +x "$SB/bin/"*
@@ -89,6 +91,8 @@ bash ./scripts/apply-cursor-env.sh macOS 24 36
 check 'grep -q "^Xcursor.size: 36$" "$DB"' 'Xcursor.size is the X11 size'
 check 'grep -q "XCURSOR_SIZE,24\|XCURSOR_SIZE=24" "$CALLS"' 'the compositor and systemd get 24'
 check '! grep -q "36" "$CALLS"' 'and never the X11 size'
+check 'grep -q "^gsettings set org.gnome.desktop.interface cursor-theme macOS$" "$CALLS" && grep -q "^gsettings set org.gnome.desktop.interface cursor-size 24$" "$CALLS"' \
+  'the Settings portal (dconf) gets the theme and the real size, for Flatpak applications'
 : > "$DB"
 bash ./scripts/apply-cursor-env.sh macOS 24
 check 'grep -q "^Xcursor.size: 24$" "$DB"' 'left out, the X11 size is the size'

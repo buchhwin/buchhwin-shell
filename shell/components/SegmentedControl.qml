@@ -25,12 +25,22 @@ Item {
     }
 
     activeFocusOnTab: focusOnTab
-    // One tab stop for the whole control; the arrows move inside it.
+    // One tab stop for the whole control; Left and Right move inside it. Up
+    // and Down are left to the panel, as on the slider: a panel that walks
+    // its controls with the arrows (NavLogic) stepped into the control and
+    // the next Down switched the desktop mode or the power profile.
     Keys.onLeftPressed: root.step(-1)
     Keys.onRightPressed: root.step(1)
-    Keys.onUpPressed: root.step(-1)
-    Keys.onDownPressed: root.step(1)
+    Keys.onUpPressed: event => event.accepted = false
+    Keys.onDownPressed: event => event.accepted = false
     FocusRing { active: root.activeFocus; controlRadius: root.backgroundRadius }
+
+    // Named by its row (SettingRow) or the caller; the chosen segment is the
+    // description.
+    property string accessibleName: ""
+    Accessible.role: root.style === "underline" ? Accessible.PageTabList : Accessible.ComboBox
+    Accessible.name: root.accessibleName
+    Accessible.description: root.currentIndex >= 0 ? (root.options[root.currentIndex].label || "") : ""
 
     // Geometry of the active segment, kept for the sliding indicator.
     property real activeX: 0

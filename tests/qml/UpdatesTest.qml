@@ -92,6 +92,7 @@ ShellRoot {
             "@flatpak-user 0", "", "@end 0"].join("\n"))
         T.eq([offline.offline, offline.packagesCached, offline.flatpaksCached], [true, true, true], "offline uses the cache")
         T.eq(offline.packageError, "Offline: the update servers could not be reached", "offline text")
+        T.ok(U.isOffline("==> ERROR: Cannot fetch updates"), "checkupdates offline (Arch)")
         T.eq(offline.flatpakError, "Offline: the update servers could not be reached", "flatpak offline text")
         T.eq([offline.packages.length, offline.packages[0].from, offline.flatpaks.length], [1, "1-1", 1], "cached data shown")
         T.ok(offline.checked, "user installation answered")
@@ -99,6 +100,18 @@ ShellRoot {
         T.eq([allOffline.checked, allOffline.packagesKnown, allOffline.flatpaksKnown], [false, false, false], "nothing known offline without a cache")
         const missing = U.parseReport("@dnf 127\n@flatpak-system 127\n@flatpak-user 127\n@flatpak-installed 127\n@end 0")
         T.eq([missing.packageError, missing.flatpakError], ["dnf5 is not installed", "Flatpak is not installed"], "missing tools")
+        // Arch: the check names what is missing itself.
+        const noCheckupdates = U.parseReport("@dnf 127\n\n@dnf-stderr 127\ncheckupdates is not installed (package pacman-contrib)\n\n@end 0")
+        T.eq(noCheckupdates.packageError, "checkupdates is not installed (package pacman-contrib)", "Arch: missing checkupdates named")
+        // Arch: pacman-updates.py's JSON and @installed lines, the AUR among them.
+        const arch = U.parseReport(["@dnf 0",
+            '{"upgrades": [{"name": "mesa", "arch": "x86_64", "evr": "1:26.2.5-1", "repository": "extra"},'
+            + ' {"name": "brave-bin", "arch": "x86_64", "evr": "1:1.97.60-1", "repository": "aur"}]}', "",
+            "@installed 0", "mesa.x86_64\t1:26.2.4-1", "brave-bin.x86_64\t1:1.97.56-1", "", "@end 0"].join("\n"))
+        T.eq(arch.packages.map(item => [item.name, item.from, item.to, item.repository]),
+             [["brave-bin", "1:1.97.56-1", "1:1.97.60-1", "aur"], ["mesa", "1:26.2.4-1", "1:26.2.5-1", "extra"]],
+             "Arch: repository and AUR updates with their installed versions")
+        T.ok(arch.packagesKnown && !arch.packageError, "Arch: a clean answer")
         T.eq(U.errorText("dnf", { code: 124 }, ""), "System packages: the check timed out", "timeout")
         T.eq(U.errorText("dnf", { code: 1 }, "Updating and loading repositories:\nerror: Cannot open repository file"), "System packages: check failed (Cannot open repository file)", "generic error")
         T.eq(U.errorText("flatpak", { code: 1 }, ""), "Flatpaks: check failed (exit 1)", "error without text")
@@ -191,6 +204,9 @@ ShellRoot {
         T.eq(U.checkCommand("/s/updates-check.sh", true, false), ["/s/updates-check.sh", "--refresh"], "forced refresh")
         T.eq(U.checkCommand("/s/updates-check.sh", true, true), ["/s/updates-check.sh", "--cache-only"], "cache only never refreshes")
         T.eq(U.discoverCommand(), ["plasma-discover", "--mode", "update"], "Discover update mode")
+        const upgrade = U.terminalUpgradeCommand("/k/launch-kitty.sh")
+        T.eq(upgrade.slice(0, 4), ["/k/launch-kitty.sh", "--hold", "sh", "-c"], "Arch: the upgrade runs in a held terminal")
+        T.ok(/exec paru -Syu/.test(upgrade[4]) && /exec sudo pacman -Syu/.test(upgrade[4]), "an AUR helper first, pacman without one")
         T.eq(U.flatpakUpdateCommand("/s/launch-kitty.sh"), ["/s/launch-kitty.sh", "--hold", "flatpak", "update", "--user", "-y"], "user flatpak update")
         T.finish("UpdatesTest")
     }

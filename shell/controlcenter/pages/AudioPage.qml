@@ -32,8 +32,16 @@ GridLayout {
         RowLayout {
             Layout.fillWidth: true
             ShellButton { toolTip: AudioService.muted ? "Unmute" : "Mute"; icon: AudioService.volumeIcon(AudioService.volume, AudioService.muted); variant: "ghost"; compact: true; onClicked: AudioService.toggleMute(AudioService.sink) }
-            ShellSlider { Layout.fillWidth: true; value: AudioService.volume; onMoved: value => AudioService.setVolume(AudioService.sink, value) }
-            ShellText { text: Math.round(AudioService.volume * 100) + "%"; role: "small"; muted: true }
+            ShellSlider { Layout.fillWidth: true; accessibleName: "Output volume"; value: AudioService.volume; onMoved: value => AudioService.setVolume(AudioService.sink, value) }
+            // A fixed width with even digits, as in the volume popup: the
+            // slider beside it no longer changes length while it is dragged.
+            ShellText {
+                Layout.minimumWidth: Metrics.iconXl
+                horizontalAlignment: Text.AlignRight
+                text: Math.round(AudioService.volume * 100) + "%"
+                role: "small"; muted: true
+                font.features: { "tnum": 1 }
+            }
         }
     }
 
@@ -67,8 +75,14 @@ GridLayout {
         RowLayout {
             Layout.fillWidth: true
             ShellButton { toolTip: AudioService.micMuted ? "Unmute microphone" : "Mute microphone"; icon: AudioService.micMuted ? "󰍭" : "󰍬"; variant: "ghost"; compact: true; onClicked: AudioService.toggleMute(AudioService.source) }
-            ShellSlider { Layout.fillWidth: true; value: AudioService.micVolume; onMoved: value => AudioService.setVolume(AudioService.source, value) }
-            ShellText { text: Math.round(AudioService.micVolume * 100) + "%"; role: "small"; muted: true }
+            ShellSlider { Layout.fillWidth: true; accessibleName: "Input volume"; value: AudioService.micVolume; onMoved: value => AudioService.setVolume(AudioService.source, value) }
+            ShellText {
+                Layout.minimumWidth: Metrics.iconXl
+                horizontalAlignment: Text.AlignRight
+                text: Math.round(AudioService.micVolume * 100) + "%"
+                role: "small"; muted: true
+                font.features: { "tnum": 1 }
+            }
         }
     }
 

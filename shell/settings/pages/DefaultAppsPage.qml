@@ -50,7 +50,16 @@ ColumnLayout {
                 Layout.fillWidth: true
                 spacing: Metrics.spaceMd
 
-                ShellIcon { glyph: root.icons[appRow.modelData.id] || "󰀻"; size: Metrics.iconMd; color: Colors.accentForeground }
+                // Pinned to the row's first line, with the text and the reset
+                // button below: an open select grows the row by its list, and
+                // they slid down to the middle of it.
+                ShellIcon {
+                    Layout.alignment: Qt.AlignTop
+                    Layout.topMargin: (Metrics.controlHeight - implicitHeight) / 2
+                    glyph: root.icons[appRow.modelData.id] || "󰀻"
+                    size: Metrics.iconMd
+                    color: Colors.accentForeground
+                }
                 // The same label column every other settings row has; the
                 // hotkey is the label's explanation, where the choice came
                 // from is state and stays on the row.
@@ -67,12 +76,16 @@ ColumnLayout {
                         onSelected: value => { if (value !== appRow.modelData.current) DefaultAppsService.setDefault(appRow.modelData.id, value) }
                     }
                     ShellText {
+                        Layout.alignment: Qt.AlignTop
+                        Layout.topMargin: (Metrics.controlHeight - implicitHeight) / 2
                         text: appRow.modelData.source === "session" ? "This session"
                             : appRow.modelData.source === "plasma" ? "From Plasma" : "System default"
                         role: "small"
                         muted: true
                     }
                     ShellButton {
+                        Layout.alignment: Qt.AlignTop
+                        Layout.topMargin: (Metrics.controlHeight - implicitHeight) / 2
                         focusOnTab: true
                         icon: Icons.reset
                         compact: true

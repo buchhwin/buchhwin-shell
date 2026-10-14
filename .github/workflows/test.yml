@@ -152,3 +152,35 @@ jobs:
             exit 1
           fi
           printf 'every package for Leap exists\n'
+
+  arch-packages:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: What checkout needs
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@v4
+
+      - name: The package list resolves on a current Arch
+        # Against the official repositories only: the AUR packages
+        # (aur_packages, Brave) are not in --list-packages on purpose.
+        # Captured first, so a failing script is a failure and not an empty,
+        # passing list.
+        shell: bash
+        run: |
+          set -eu
+          packages=$(install/bootstrap.sh --distro arch --list-packages)
+          [ -n "$packages" ] || { echo "the package list came back empty" >&2; exit 1; }
+          missing=0
+          while IFS= read -r package; do
+            if ! pacman -Si -- "$package" >/dev/null 2>&1; then
+              printf 'no such package: %s\n' "$package"
+              missing=$((missing + 1))
+            fi
+          done <<<"$packages"
+          if [ "$missing" -gt 0 ]; then
+            printf '%d package name(s) for Arch resolve to nothing.\n' "$missing" >&2
+            exit 1
+          fi
+          printf 'every package for Arch exists\n'

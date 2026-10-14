@@ -14,8 +14,12 @@ Singleton {
     property string error: ""
     property var pending: []
 
+    // A request while the list is read is kept for one more read after it:
+    // the one after a change would otherwise be dropped behind the page's
+    // first, and the page would show the default from before the change.
+    property bool refreshQueued: false
     function refresh() {
-        if (listProc.running) return
+        if (listProc.running) { refreshQueued = true; return }
         loading = true
         listProc.running = true
     }
@@ -51,6 +55,11 @@ Singleton {
                 }
             }
         }
+        onExited: {
+            if (!root.refreshQueued) return
+            root.refreshQueued = false
+            Qt.callLater(root.refresh)
+        }
     }
 
     Process {
@@ -61,9 +70,11 @@ Singleton {
                 try { root.error = JSON.parse(text).error || "" } catch (error) { root.error = "Default app could not be saved" }
             }
         }
+        // The next action starts outside this exit handler, like
+        // AppThemeService's runner: next() waits while this one still runs.
         onExited: {
             root.refresh()
-            root.next()
+            Qt.callLater(root.next)
         }
     }
 }

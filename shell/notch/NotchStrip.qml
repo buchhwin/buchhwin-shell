@@ -44,6 +44,18 @@ Item {
         return (index >= clockIndex ? symmetry.leftPad / 2 : 0)
              + (index > clockIndex ? symmetry.rightPad / 2 : 0)
     }
+    // Each item with a key that is all of it: the type and id, and the
+    // display and options a widget is loaded with. The recording and timer
+    // chips have no id and differ by type; the count after `#` keeps two
+    // equal items apart.
+    function partKeys(list) {
+        const seen = {}
+        return list.map(item => {
+            const text = JSON.stringify(item)
+            seen[text] = (seen[text] || 0) + 1
+            return Object.assign({ partKey: text + "#" + seen[text] }, item)
+        })
+    }
     // The screen this strip is drawn on. Empty means it reports nothing, which
     // is what the copy inside the expanded notch wants while it is not the one
     // on screen.
@@ -125,7 +137,16 @@ Item {
 
         Repeater {
             id: parts
-            model: root.items
+            // Matched, not rebuilt: `items` is a new list on every write of
+            // the layout (a mode or profile switch, an undo, any edit) and
+            // whenever a recording or the timer starts or stops, and on a
+            // plain array every part on every screen was thrown away and
+            // loaded again. The key is the whole item (`partKeys`), so a part
+            // whose display or options changed is still loaded anew - the
+            // widget reads them once, in `onLoaded` - and a kept one gets the
+            // same values again: nothing in it moves, and no part here has a
+            // spring on its size to start running (pitfall 40).
+            model: ScriptModel { values: root.partKeys(root.items); objectProp: "partKey" }
             Loader {
                 required property var modelData
                 required property int index

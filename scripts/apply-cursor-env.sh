@@ -46,6 +46,16 @@ if [[ -n ${DISPLAY:-} ]] && command -v xrdb >/dev/null 2>&1; then
   xrdb_merge "Xcursor.theme: $theme" "Xcursor.size: $x11size"
 fi
 
+# Flatpak applications (GTK, Electron, Chromium) ask the Settings portal, and
+# its gtk backend answers org.gnome.desktop.interface from dconf - which kept
+# saying breeze_cursors while the session, the X resources and the GTK files
+# said macOS: Discord, Spotify and Steam showed Breeze (Arch, 14.10.). The
+# portal announces the change, so running applications follow too.
+if command -v gsettings >/dev/null 2>&1; then
+  gsettings set org.gnome.desktop.interface cursor-theme "$theme" 2>/dev/null || true
+  gsettings set org.gnome.desktop.interface cursor-size "$size" 2>/dev/null || true
+fi
+
 # Rewrite only the two cursor keys and keep the rest of the file. One backup,
 # `settings.ini.buchhwin-backup`, holds the first version this script changed
 # (the rule scripts/app-scroll.py follows); a fresh timestamped copy per change

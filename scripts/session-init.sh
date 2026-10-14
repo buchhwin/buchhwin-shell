@@ -98,20 +98,25 @@ step "D-Bus activation environment" dbus-update-activation-environment --systemd
 step "session target" systemctl --user start buchhwin-shell-session.target
 
 # KWallet. pam_kwallet5 (in common-auth and common-session on openSUSE, which
-# /etc/pam.d/sddm includes) started `ksecretd --pam-login` with the hashed
-# login password at the SDDM login; that ksecretd waits on
-# /run/user/$UID/kwallet5.socket for the session's environment, and the thing
-# that hands it over is /usr/libexec/pam_kwallet_init, which Plasma runs from
-# plasma-kwallet-pam.service. The unit is `static` and only PartOf
+# /etc/pam.d/sddm includes; directly in /etc/pam.d/sddm on Arch) started
+# `ksecretd --pam-login` with the hashed login password at the SDDM login;
+# that ksecretd waits on /run/user/$UID/kwallet5.socket for the session's
+# environment, and the thing that hands it over is pam_kwallet_init
+# (/usr/libexec on Fedora and openSUSE, /usr/lib on Arch), which Plasma runs
+# from plasma-kwallet-pam.service. The unit is `static` and only PartOf
 # graphical-session.target, so nothing pulls it in outside a Plasma session.
 # Started here, right after the environment import, because the ksecretd it
 # wakes is both the secret service and the Secret portal's backend.
 # Skipped without the unit or the socket.
 #
-# One daemon, one wallet: ksecretd owns org.freedesktop.secrets and
-# org.freedesktop.impl.portal.desktop.kwallet. kwalletd6 is a compatibility
-# shim over that same service (KF 6.16), not a second wallet with its own
-# lock - whatever asks org.kde.kwalletd6 ends up here.
+# One daemon, one wallet: ksecretd owns org.kde.ksecretd, the portal backend
+# org.freedesktop.impl.portal.desktop.kwallet and, on Fedora and openSUSE,
+# org.freedesktop.secrets. On Arch gnome-keyring usually holds that last name
+# (pam_gnome_keyring in /etc/pam.d/sddm); it stays, for what keeps its
+# secrets there, and the wallet is reached through ksecretd's own name
+# (scripts/wallet-unlock.sh). kwalletd6 is a compatibility shim over the same
+# service (KF 6.16), not a second wallet with its own lock - whatever asks
+# org.kde.kwalletd6 ends up here.
 pam_wallet() {
   [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/kwallet5.socket" ]] \
     && systemctl --user cat plasma-kwallet-pam.service >/dev/null 2>&1
@@ -124,10 +129,13 @@ fi
 # to leave the screen black until they were done.
 start_shell
 
-# The portal restart below must find the Secret backend on the bus: the
-# backend's name has no D-Bus service file, so a portal that starts before
-# ksecretd has registered has no Secret portal for the whole session. Up to
-# three seconds, and the mark says how many it took. `busctl list` reads the
+# The portal restart below must find the Secret backend on the bus. On Fedora
+# and openSUSE the backend's name has no D-Bus service file, so a portal that
+# starts before ksecretd has registered has no Secret portal for the whole
+# session; on Arch it has one (Exec=/usr/bin/ksecretd), so the same early
+# restart could activate a second ksecretd that never got the password. Up to
+# three seconds, ten while the ksecretd PAM started is running but has not
+# registered yet, and the mark says how long it took. `busctl list` reads the
 # bus and starts nothing; `status`, or any plain call to an activatable name,
 # would start a second ksecretd without the password
 # (org.kde.secretservicecompat has a service file).
@@ -137,16 +145,20 @@ name_owned() {
 }
 wait_for_secrets() {
   pam_wallet || return 0
-  local waited=0
-  while (( waited < 3000 )); do
-    name_owned org.freedesktop.secrets && name_owned org.freedesktop.impl.portal.desktop.kwallet && break
+  local waited=0 limit=3000
+  while (( waited < limit )); do
+    { name_owned org.kde.ksecretd || name_owned org.freedesktop.secrets; } \
+      && name_owned org.freedesktop.impl.portal.desktop.kwallet && break
     sleep 0.1
     waited=$(( waited + 100 ))
+    if (( waited == 3000 )) && pgrep -u "$(id -u)" -x ksecretd >/dev/null 2>&1; then
+      limit=10000
+    fi
   done
   if name_owned org.freedesktop.impl.portal.desktop.kwallet; then
     mark "secret service and its portal backend on the bus (${waited} ms)"
   else
-    mark "secret service NOT on the bus after 3 s ($(pgrep -c -x ksecretd 2>/dev/null || echo 0) ksecretd running)"
+    mark "secret service NOT on the bus after $(( waited / 1000 )) s ($(pgrep -c -x ksecretd 2>/dev/null || echo 0) ksecretd running)"
   fi
 }
 wait_for_secrets

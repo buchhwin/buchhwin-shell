@@ -132,7 +132,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Removable drives"
-        description: "USB sticks, SD cards, external disks, encrypted volumes and MTP phones. Eject them in the Control Center before unplugging."
+        description: "USB sticks, SD cards, external disks, encrypted volumes and MTP phones. Eject them in the control center before unplugging."
         SettingRow {
             Layout.fillWidth: true
             labelFills: true

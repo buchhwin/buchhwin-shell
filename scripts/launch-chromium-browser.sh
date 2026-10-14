@@ -6,6 +6,10 @@ set -euo pipefail
 # "Chromium Safe Storage"), so the same guard, scripts/launch-chromium.sh.
 # Leap's package installs chromium-browser.desktop, which runs
 # /usr/bin/chromium-browser (/usr/bin/chromium is a link to it); there is no
-# org.chromium.Chromium entry on this system.
+# org.chromium.Chromium entry on this system. Arch's chromium installs
+# /usr/bin/chromium and chromium.desktop, without the -browser name.
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+if ! command -v chromium-browser >/dev/null 2>&1 && command -v chromium >/dev/null 2>&1; then
+  exec "$project_dir/scripts/launch-chromium.sh" chromium chromium "$@"
+fi
 exec "$project_dir/scripts/launch-chromium.sh" chromium-browser chromium-browser "$@"

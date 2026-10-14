@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
@@ -37,6 +38,8 @@ PopupPanel {
                 title: "Ethernet"
                 subtitle: "Connected"
                 active: true
+                // A state, not a button: nothing to do on a click.
+                interactive: false
             }
         }
 
@@ -60,13 +63,20 @@ PopupPanel {
                 maxHeight: Metrics.popupListHeight
                 EmptyState {
                     visible: NetworkService.networks.length === 0
-                    width: parent.width
+                    // Inset like the rows, as in the Bluetooth popup.
+                    x: Metrics.spaceLg
+                    width: parent.width - Metrics.spaceLg * 2
                     row: true
                     icon: Icons.busy
                     title: "Searching for networks …"
                 }
                 Repeater {
-                    model: NetworkService.networks
+                    // A ScriptModel, not the array: `networks` is sorted
+                    // anew on every access-point update (419 in 20 minutes),
+                    // and a Repeater on a plain array rebuilt every row each
+                    // time - hover, tooltip and Tab focus gone with it. The
+                    // WifiNetwork objects stay the same, so rows are kept.
+                    model: ScriptModel { values: NetworkService.networks }
                     ListRow {
                         focusOnTab: true
                         level: 1

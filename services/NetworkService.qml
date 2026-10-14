@@ -314,8 +314,12 @@ Singleton {
         return fields
     }
 
+    // A change reported while nmcli runs gets one more run after it, or the
+    // list could keep the state from before that change.
+    property bool refreshQueued: false
     function refresh() {
-        if (!connectionsProc.running) connectionsProc.running = true
+        if (connectionsProc.running) refreshQueued = true
+        else connectionsProc.running = true
         // Once at start as well, so a hotspot started before this shell, or
         // outside it, shows without a network view having been opened first.
         if (viewOpen || hotspotActive || !hotspotRead) { hotspotRead = true; refreshHotspot() }
@@ -339,22 +343,49 @@ Singleton {
                     if (isActive && shortType === "ethernet") wired = true
                     if (isActive && (shortType === "wifi" || shortType === "ethernet") && !device.length) device = dev
                 }
-                root.connections = result
+                // Only a list that changed is handed on: a new array every
+                // run rebuilt everything bound to the VPNs for nothing.
+                if (JSON.stringify(result) !== JSON.stringify(root.connections)) root.connections = result
                 root.wiredConnected = wired
-                if (device.length) {
-                    addressProc.command = ["nmcli", "-t", "-g", "IP4.ADDRESS", "device", "show", device]
-                    addressProc.running = true
-                } else {
-                    root.address = ""
-                }
+                root.readAddress(device)
             }
         }
+        onExited: {
+            if (!root.refreshQueued) return
+            root.refreshQueued = false
+            Qt.callLater(root.refresh)
+        }
+    }
+
+    // A running Process keeps the command it was started with, so a device
+    // asked for while one runs is read once that run has exited.
+    property string addressDevice: ""
+    property bool addressQueued: false
+    function readAddress(device) {
+        addressDevice = device
+        if (!device.length) {
+            address = ""
+            return
+        }
+        if (addressProc.running) { addressQueued = true; return }
+        addressProc.device = device
+        addressProc.command = ["nmcli", "-t", "-g", "IP4.ADDRESS", "device", "show", device]
+        addressProc.running = true
     }
 
     Process {
         id: addressProc
         stderr: ErrorLog { label: "NetworkService.addressProc" }
-        stdout: StdioCollector { onStreamFinished: root.address = text.split("\n")[0].split(" | ")[0].trim() }
+        // The device this run was started for.
+        property string device: ""
+        stdout: StdioCollector {
+            onStreamFinished: if (addressProc.device === root.addressDevice) root.address = text.split("\n")[0].split(" | ")[0].trim()
+        }
+        onExited: {
+            if (!root.addressQueued) return
+            root.addressQueued = false
+            Qt.callLater(() => root.readAddress(root.addressDevice))
+        }
     }
 
     Process {

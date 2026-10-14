@@ -19,7 +19,14 @@ Item {
     property real maxHeight: 360
     property bool card: true
     property real padding: card ? Metrics.spaceXs : 0
-    readonly property real headHeight: title.length > 0 ? head.implicitHeight + Metrics.spaceSm : 0
+    // The title at the inset every titled card has (CardSection), not at the
+    // rows' padding plus a bit: it sat at 12/8 here and 16/16 there. The rows
+    // keep their place across and start right under the title - a row
+    // carries its own air above its text, and a gap on top of it would cost
+    // the lists sized in rows (the volume popup's outputs) a row's last pixels.
+    readonly property real titleInset: card ? Metrics.spaceLg : 0
+    readonly property real headHeight: title.length > 0
+        ? Math.max(0, titleInset - padding) + head.implicitHeight : 0
     readonly property real contentMax: Math.max(0, maxHeight - padding * 2 - headHeight)
 
     implicitHeight: Math.min(column.implicitHeight, contentMax) + padding * 2 + headHeight
@@ -35,8 +42,8 @@ Item {
         text: root.title
         role: "title"
         elide: Text.ElideRight
-        x: root.padding + Metrics.spaceSm
-        y: root.padding + Metrics.spaceXs
+        x: root.titleInset
+        y: Math.max(root.padding, root.titleInset)
         width: Math.max(0, root.width - x * 2)
     }
 

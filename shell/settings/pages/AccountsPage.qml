@@ -28,6 +28,7 @@ ColumnLayout {
         description: AccountsService.summary
 
         ListRow {
+            interactive: false
             Layout.fillWidth: true
             icon: Icons.settings
             active: AccountsService.serverRunning
@@ -119,6 +120,7 @@ ColumnLayout {
                     spacing: Metrics.spaceXxs
 
                     ListRow {
+                        interactive: false
                         Layout.fillWidth: true
                         icon: AccountsService.icon(accountItem.modelData)
                         // The accent marks activity, not simply being online.

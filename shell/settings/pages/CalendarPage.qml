@@ -14,6 +14,7 @@ ColumnLayout {
         description: "buchhwin-shell only reads the KDE calendars, like the Plasma clock. Google accounts and other calendars are set up in Merkuro (KDE)."
 
         ListRow {
+            interactive: false
             Layout.fillWidth: true
             icon: "󰸗"
             active: CalendarService.status === "ok"

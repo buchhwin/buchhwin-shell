@@ -32,9 +32,9 @@ const PAGES = [
     { id: "defaultApps", subtitle: "Apps for links, files and the app hotkeys", title: "Default Apps", icon: "󰀻", keywords: "default applications browser email file manager terminal text editor images pdf video music archives open with mime standard anwendungen standardprogramme öffnen mit" },
     { id: "autostart", subtitle: "Apps and services that start when you log in", title: "Autostart", icon: "󰒲", keywords: "startup login apps kde connect start anmelden" },
     { id: "accounts", subtitle: "Online accounts for calendars, contacts and mail", title: "Accounts", icon: "󰀉", keywords: "accounts account online google nextcloud caldav carddav dav groupware ical file imap pop3 mail email contacts calendar akonadi kde pim sync add remove wizard konten konto zugang hinzufügen entfernen synchronisieren kalender kontakte e-mail postfach" },
-    { id: "updates", subtitle: "System packages and Flatpaks that can be updated", title: "Updates", icon: "󰚰", keywords: "updates upgrade software packages dnf zypper flatpak discover security check aktualisierungen pakete sicherheit" },
+    { id: "updates", subtitle: "System packages and Flatpaks that can be updated", title: "Updates", icon: "󰚰", keywords: "updates upgrade software packages dnf zypper pacman aur paru flatpak discover security check aktualisierungen pakete sicherheit" },
     { id: "login", subtitle: "How the login screen looks before you are signed in", title: "Login Screen", icon: "󰍂", keywords: "login screen sddm greeter theme background blur accent font date anmeldung anmeldebildschirm hintergrund akzent schrift datum" },
-    { id: "about", subtitle: "This session, the system and the versions it runs on", title: "About", icon: "󰋼", keywords: "system fedora opensuse leap version info" }
+    { id: "about", subtitle: "This session, the system and the versions it runs on", title: "About", icon: "󰋼", keywords: "system fedora opensuse leap arch version info" }
 ]
 
 // Sidebar sections in display order; every page id belongs to exactly one.

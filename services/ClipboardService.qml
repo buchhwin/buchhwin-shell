@@ -96,11 +96,16 @@ Singleton {
         stderr: ErrorLog { label: "ClipboardService.thumbProc" }
         property var pending: []
         // Only the files that came out non-empty are ready; a failed decode
-        // is tried again next time instead of showing a broken image.
-        stdout: StdioCollector { id: thumbOut }
-        onExited: {
+        // is tried again next time instead of showing a broken image. The
+        // list may arrive before or after the exit; it is read once both are
+        // in - read at the exit, it could still be empty.
+        property string output: ""
+        property bool outputDone: false
+        property int exitCode: -1
+        function finish() {
+            if (!outputDone || exitCode < 0) return
             const next = Object.assign({}, root.readyThumbs)
-            const made = thumbOut.text.split("\n")
+            const made = output.split("\n")
             for (const name of pending) if (made.indexOf(name) >= 0) next[name] = true
             root.readyThumbs = next
             if (root.thumbsQueued) {
@@ -108,6 +113,9 @@ Singleton {
                 Qt.callLater(root.decodeThumbnails)
             }
         }
+        stdout: StdioCollector { onStreamFinished: { thumbProc.output = text; thumbProc.outputDone = true; thumbProc.finish() } }
+        onStarted: { output = ""; outputDone = false; exitCode = -1 }
+        onExited: code => { exitCode = code; finish() }
     }
     property var readyThumbs: ({})
 

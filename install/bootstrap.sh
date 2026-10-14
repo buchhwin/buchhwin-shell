@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# One command from a fresh Fedora or openSUSE Leap 16 to a working
-# buchhwin-shell session. The distribution is detected (install/lib/distro.sh)
+# One command from a fresh Fedora, openSUSE Leap 16 or Arch Linux to a
+# working buchhwin-shell session. The distribution is detected (install/lib/distro.sh)
 # and decides the package manager and the list (install/packages/).
 #
 # The other two installers assume the packages the shell talks to are already
@@ -14,18 +14,19 @@
 #   install/bootstrap.sh --apply --skip-fonts   leave fonts alone
 #   install/bootstrap.sh --apply --skip-apps    no browser, no file manager
 #   install/bootstrap.sh --list-packages        every package name, one per line
-#   install/bootstrap.sh --distro NAME ...      fedora | opensuse-leap instead of
-#                                               the detected one (tests, CI)
+#   install/bootstrap.sh --distro NAME ...      fedora | opensuse-leap | arch instead
+#                                               of the detected one (tests, CI)
 #
 # It is run as **you**, not as root. The user step installs into $HOME, and a
 # $HOME owned by root is a worse problem than the one this solves; `sudo` is
 # called for the steps that need it, so expect a password prompt.
 #
-# Re-running it is safe: dnf and zypper skip what is installed, the
+# Re-running it is safe: dnf, zypper and pacman skip what is installed, the
 # repositories are only added when missing, and a default application is only
 # set when the category has none. On openSUSE the package step first asks
 # zypper what it would do and stops if that removes, downgrades or switches the
 # vendor of anything already installed - this runs next to a working desktop.
+# On Arch it first lets pacman resolve every name, then pacman asks itself.
 set -euo pipefail
 
 project_dir=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
@@ -61,7 +62,8 @@ fi
 . "$project_dir/install/lib/distro.sh"
 distro=$(distro_detect) || exit 2
 # bootstrap_packages, repos, brave_repofile, core, packages, extras,
-# app_packages, fetched_binaries
+# app_packages, fetched_binaries; aur_packages only on Arch
+aur_packages=()
 # shellcheck disable=SC1090
 . "$project_dir/install/packages/$distro.sh"
 
@@ -79,7 +81,8 @@ app_defaults=(
   "archives:org.kde.ark.desktop"
 )
 
-# Nerd Fonts neither Fedora nor Leap packages. family|archive|faces|directory:
+# Nerd Fonts neither Fedora nor Leap packages (Arch does; its list installs
+# them, and the font step below then finds them). family|archive|faces|directory:
 # - "FiraCode Nerd Font Propo" is what the shell asks for by name
 #   (theme/Typography.qml); without it every glyph in the interface is an
 #   empty box, so this is not an extra.
@@ -150,11 +153,16 @@ if $apps && ! $minimal; then
         run sudo dnf config-manager addrepo --from-repofile="$brave_repofile"
       fi ;;
     opensuse-leap) repo_add "$distro" "brave-browser|$brave_repofile|99" ;;
+    arch) printf '  Brave: from the AUR, no repository (step 3b)\n' ;;
   esac
 fi
 repos_refresh "$distro"
 
 say "3. Packages (${#to_install[@]} of them; already-installed ones are skipped)"
+# pacman installs against the database it has; one that is days old asks for
+# versions the mirrors no longer carry, and a refresh alone (-Sy) would be a
+# partial upgrade. The system is brought up to date first, by you.
+[[ $distro == arch ]] && printf '  (run sudo pacman -Syu first if the system was not updated today)\n'
 if [[ $distro == opensuse-leap ]]; then
   # Only the repositories this list comes from: another one at the same
   # priority (X11:Wayland, on the machine this was written on) would otherwise
@@ -169,6 +177,31 @@ fi
 pkg_install_safe "$distro" "${to_install[@]}"
 zypper_repo_args=()
 $minimal && printf '  (--minimal: recording, fingerprint, phone, calendar writing and the apps are left out)\n'
+
+if (( ${#aur_packages[@]} )) && $apps && ! $minimal; then
+  say '3b. From the AUR'
+  aur_helper=""
+  for candidate in paru yay; do
+    command -v "$candidate" >/dev/null 2>&1 && { aur_helper=$candidate; break; }
+  done
+  for package in "${aur_packages[@]}"; do
+    if pacman -Q "$package" >/dev/null 2>&1; then
+      printf '  %s is already installed\n' "$package"
+    elif [[ -n $aur_helper ]]; then
+      # As you, not through sudo: an AUR helper builds as the user and asks
+      # for sudo itself when it installs. A declined or failed build costs
+      # that one package, not the steps after it (fonts, the shell, the
+      # session entry), which set -e would otherwise skip.
+      aur_status=0
+      run "$aur_helper" -S --needed "$package" || aur_status=$?
+      if (( aur_status )); then
+        printf '  %s was not installed (%s exited %d); continuing\n' "$package" "$aur_helper" "$aur_status"
+      fi
+    else
+      printf '  %s: no AUR helper (paru or yay) here; install it with one\n' "$package"
+    fi
+  done
+fi
 
 say '4. The fonts and the tools the distribution does not package'
 for entry in "${nerd_fonts[@]}"; do
@@ -231,7 +264,11 @@ say '5. The shell itself, into your home directory'
 run "$project_dir/install/install.sh" --apply
 
 say '6. The session entry, the launcher wrapper and the lock PAM services'
-run sudo "$project_dir/install/system-install.sh"
+# The distribution this run settled on, handed through: sudo starts with a
+# clean environment, and system-install.sh would detect again without a
+# --distro or BUCHHWIN_DISTRO given here (an Arch derivative then reads as
+# nothing it knows).
+run sudo env BUCHHWIN_DISTRO="$distro" "$project_dir/install/system-install.sh"
 
 say '7. Default applications for this session'
 if ! $apps || $minimal; then
@@ -243,6 +280,11 @@ else
     desktop_id=${entry#*:}
     if $apply; then
       current=$("$defaults_tool" get "$category" 2>/dev/null || true)
+      # kitty's package registers kitty-open.desktop for inode/directory, and
+      # without a choice of anyone's that system default wins over Dolphin
+      # (mimeinfo.cache order): Super+E opened a terminal, on Leap and on Arch.
+      # It is kitty's "open here" helper, not a file manager.
+      [[ $category == files && $current == kitty-open.desktop ]] && current=""
       if [[ -n $current ]]; then
         printf '  %-9s keeps %s\n' "$category" "$current"
       else

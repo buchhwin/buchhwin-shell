@@ -41,6 +41,36 @@ Singleton {
         Quickshell.execDetached(["brightnessctl", "-q", "-d", device, "set", String(target)])
     }
 
+    // The brightness keys (`brightness up|down`, a global shortcut from
+    // hypr/hyprland.lua): the brightnessctl call the bind used to run itself,
+    // then the re-read its `ipc call brightness refresh` tail asked for -
+    // amdgpu sends no udev event for it. A held key repeats about 25 times a
+    // second, and every repeat started sh, brightnessctl and the Quickshell
+    // IPC client; now it is brightnessctl alone. Presses that come while one
+    // runs are added up and sent as one step when it is done (two presses up
+    // are `set 10%+`, up and down cancel), so none is lost and the direction
+    // is theirs.
+    property int queuedSteps: 0
+    function step(direction) {
+        queuedSteps += direction > 0 ? 1 : -1
+        if (!stepProc.running) sendSteps()
+    }
+    function sendSteps() {
+        if (queuedSteps === 0) return
+        const steps = queuedSteps
+        queuedSteps = 0
+        stepProc.command = ["brightnessctl", "-q", "-e4", "-n2", "set", Math.abs(steps) * 5 + "%" + (steps > 0 ? "+" : "-")]
+        stepProc.running = true
+    }
+    Process {
+        id: stepProc
+        stderr: ErrorLog { label: "BrightnessService.stepProc" }
+        onExited: {
+            root.refresh()
+            root.sendSteps()
+        }
+    }
+
     Process {
         stderr: ErrorLog { label: "BrightnessService.process" }
         running: true

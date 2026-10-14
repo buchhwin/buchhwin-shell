@@ -66,10 +66,15 @@ def access_point(bus, device, ssid):
     wireless = dbus.Interface(bus.get_object(NM, device), NM + ".Device.Wireless")
     best, best_strength = None, -1
     for path in wireless.GetAllAccessPoints():
-        raw = prop(bus, path, NM + ".AccessPoint", "Ssid")
-        if bytes(bytearray(raw)).decode("utf-8", "replace") != ssid:
+        # An access point can leave between the list and its properties; it
+        # is then simply not a candidate, not an unreachable NetworkManager.
+        try:
+            raw = prop(bus, path, NM + ".AccessPoint", "Ssid")
+            if bytes(bytearray(raw)).decode("utf-8", "replace") != ssid:
+                continue
+            strength = int(prop(bus, path, NM + ".AccessPoint", "Strength"))
+        except dbus.DBusException:
             continue
-        strength = int(prop(bus, path, NM + ".AccessPoint", "Strength"))
         if strength > best_strength:
             best, best_strength = path, strength
     return best
@@ -133,7 +138,11 @@ def cmd_connect(bus, args):
     ap = None if args.hidden else access_point(bus, device, args.ssid)
     if ap is None and not args.hidden:
         return result(ok=False, error="Network is no longer in range")
-    key_mgmt, problem = security_for(bus, ap)
+    try:
+        key_mgmt, problem = security_for(bus, ap)
+    except dbus.DBusException:
+        # The one it chose went away in between.
+        return result(ok=False, error="Network is no longer in range")
     if problem == "enterprise":
         return result(ok=False, error="enterprise", message="Enterprise Wi-Fi: please connect in the KDE dialog")
     secret = read_secret() if key_mgmt else ""

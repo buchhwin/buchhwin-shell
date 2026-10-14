@@ -78,11 +78,13 @@ Singleton {
         "google-chrome": "launch-chrome.sh",
         "com.google.Chrome": "launch-chrome.sh",
         "chromium-browser": "launch-chromium-browser.sh",
+        "chromium": "launch-chromium-browser.sh",
+        "Alacritty": "launch-alacritty.sh",
         "kitty": "launch-kitty.sh"
     })
 
     readonly property var commands: [
-        { title: "Control Center", keywords: "control center audio wifi bluetooth kontrollzentrum wlan", icon: Icons.settings, run: () => PanelService.open("controlCenter") },
+        { title: "Control center", keywords: "control center audio wifi bluetooth kontrollzentrum wlan", icon: Icons.settings, run: () => PanelService.open("controlCenter") },
         { title: "Notifications", keywords: "notifications history benachrichtigungen verlauf", icon: "󰂚", run: () => PanelService.open("notifications") },
         { title: "Dashboard", keywords: "calendar clock weather time kalender uhr wetter", icon: "󰃭", run: () => PanelService.open("dashboard") },
         { title: "Refresh weather", keywords: "weather refresh open-meteo wetter aktualisieren", icon: "󰖐", run: () => { WeatherService.refresh(); PanelService.open("dashboard") } },
@@ -336,41 +338,59 @@ Singleton {
     }
 
     // ---- files -------------------------------------------------------------
+    // Called from the launcher's `results` binding, so it only schedules: a
+    // write to `fileQuery` (or `fileResults`) inside that evaluation is a
+    // binding loop on every keystroke (pitfall 34). Qt.callLater keeps the
+    // last query of a turn; the binding returns the current results.
     function requestFiles(query) {
-        const trimmed = query.trim()
+        Qt.callLater(root.setFileQuery, query.trim())
+    }
+
+    function setFileQuery(trimmed) {
         if (trimmed === fileQuery) return
         fileQuery = trimmed
-        if (trimmed.length < 2) { fileResults = []; fileProc.running = false; return }
+        if (trimmed.length < 2) {
+            fileDebounce.stop()
+            fileResults = []
+            fileSearchRunning = false
+            if (fileProc.running) { fileProc.stale = true; fileProc.running = false }
+            return
+        }
         fileDebounce.restart()
     }
 
     Timer {
         id: fileDebounce
         interval: 250
-        // A run still going is stopped, and the next one starts a turn later:
-        // `running = false; running = true` in one turn may not restart at
-        // all. Each run carries its query, so the output of a stopped one
-        // never lands under the next query.
-        onTriggered: {
-            fileProc.running = false
-            root.fileSearchRunning = true
-            Qt.callLater(root.startFileSearch)
-        }
+        onTriggered: root.startFileSearch()
     }
+    // A run still going is stopped, and the next one starts once it has
+    // exited: `running = false; running = true` in one turn may not restart
+    // at all. Each run carries the query it was started with, so the output
+    // of a stopped one never lands under the next query.
     function startFileSearch() {
+        if (fileProc.running) {
+            fileProc.stale = true
+            fileProc.running = false
+            return
+        }
         if (fileQuery.length < 2) { fileSearchRunning = false; return }
+        fileProc.stale = false
         fileProc.query = fileQuery
         fileProc.command = ["plocate", "-i", "-l", "200", "--", fileQuery]
+        fileSearchRunning = true
         fileProc.running = true
     }
 
     Process {
         id: fileProc
         property string query: ""
+        // Stopped for a newer query, which starts once this run is gone.
+        property bool stale: false
         stderr: ErrorLog { label: "LauncherService.fileProc" }
         stdout: StdioCollector {
             onStreamFinished: {
-                if (fileProc.query !== root.fileQuery) return
+                if (fileProc.stale || fileProc.query !== root.fileQuery) return
                 const home = Paths.home + "/"
                 root.fileResults = text.split("\n")
                     .filter(path => path.startsWith(home) && !path.slice(home.length).split("/").some(part => part.startsWith(".")))
@@ -384,6 +404,9 @@ Singleton {
                 root.fileSearchRunning = false
             }
         }
-        onExited: if (fileProc.query === root.fileQuery) root.fileSearchRunning = false
+        onExited: {
+            if (fileProc.stale) Qt.callLater(root.startFileSearch)
+            else if (fileProc.query === root.fileQuery) root.fileSearchRunning = false
+        }
     }
 }

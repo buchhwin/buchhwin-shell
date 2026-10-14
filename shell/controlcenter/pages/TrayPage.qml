@@ -34,6 +34,26 @@ ColumnLayout {
                 interactive: true
                 hovered: tileMouse.containsMouse
                 pressed: tileMouse.pressed && tileMouse.containsMouse
+                readonly property string name: tile.modelData.tooltipTitle || tile.modelData.title || tile.modelData.id
+                // What a left click does; the menu key does what the right
+                // button does.
+                function activate() {
+                    if (tile.modelData.onlyMenu && tile.modelData.hasMenu) { root.menuItem = tile.modelData; return }
+                    tile.modelData.activate()
+                    PanelService.close()
+                }
+                function openMenu() { if (tile.modelData.hasMenu) root.menuItem = tile.modelData }
+                // A stop for the panel's keys (NavLogic), like every tile.
+                property bool focusOnTab: false
+                activeFocusOnTab: focusOnTab
+                Keys.onReturnPressed: tile.activate()
+                Keys.onEnterPressed: tile.activate()
+                Keys.onSpacePressed: tile.activate()
+                Keys.onMenuPressed: tile.openMenu()
+                Accessible.role: Accessible.Button
+                Accessible.name: tile.name
+                Accessible.onPressAction: tile.activate()
+                FocusRing { active: tile.activeFocus; controlRadius: tile.radius }
                 ColumnLayout {
                     anchors.centerIn: parent
                     width: parent.width - Metrics.spaceSm * 2
@@ -49,7 +69,7 @@ ColumnLayout {
                     ShellText {
                         Layout.fillWidth: true
                         horizontalAlignment: Text.AlignHCenter
-                        text: tile.modelData.tooltipTitle || tile.modelData.title || tile.modelData.id
+                        text: tile.name
                         role: "caption"
                     }
                 }
@@ -60,14 +80,9 @@ ColumnLayout {
                     acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
                     cursorShape: Qt.PointingHandCursor
                     onClicked: event => {
-                        if (event.button === Qt.RightButton || (tile.modelData.onlyMenu && tile.modelData.hasMenu)) {
-                            if (tile.modelData.hasMenu) root.menuItem = tile.modelData
-                        } else if (event.button === Qt.MiddleButton) {
-                            tile.modelData.secondaryActivate()
-                        } else {
-                            tile.modelData.activate()
-                            PanelService.close()
-                        }
+                        if (event.button === Qt.RightButton || (tile.modelData.onlyMenu && tile.modelData.hasMenu)) tile.openMenu()
+                        else if (event.button === Qt.MiddleButton) tile.modelData.secondaryActivate()
+                        else tile.activate()
                     }
                     onWheel: event => tile.modelData.scroll(event.angleDelta.y, false)
                 }

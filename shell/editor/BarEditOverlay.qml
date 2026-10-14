@@ -116,14 +116,27 @@ Item {
             border.color: target ? Colors.accentLine : Colors.border
 
             SectionLabel {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: parent.bottom
-                anchors.topMargin: Metrics.spaceXs
+                // On the screen's side of the zone: below a top bar, above a
+                // bottom one, beside a side bar. Always below put the labels
+                // of a bottom bar, and the last third of a side bar, off the
+                // screen.
+                readonly property string edge: BarLogic.edge(overlay.bar.edge)
+                x: edge === "left" ? parent.width + Metrics.spaceXs
+                    : edge === "right" ? -width - Metrics.spaceXs
+                    : (parent.width - width) / 2
+                y: edge === "top" ? parent.height + Metrics.spaceXs
+                    : edge === "bottom" ? -height - Metrics.spaceXs
+                    : (parent.height - height) / 2
                 // Start and end rather than left and right once the bar runs
                 // down the screen: "Left" on a left-hand bar means nothing.
                 text: overlay.vertical
                     ? (modelData === "left" ? "Top" : modelData === "center" ? "Center" : "Bottom")
                     : (modelData === "left" ? "Left" : modelData === "center" ? "Center" : "Right")
+                // The scrim's ink with the editor's outline: the panel's muted
+                // grey was dark on dark over the light theme's wallpaper.
+                color: Colors.scrimText
+                style: Text.Outline
+                styleColor: Colors.scrimStrong
             }
         }
     }

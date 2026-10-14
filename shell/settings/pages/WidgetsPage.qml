@@ -62,6 +62,7 @@ ColumnLayout {
                     visible: entry !== null
 
                     ListRow {
+                        interactive: false
                         Layout.fillWidth: true
                         icon: row.entry ? page.icon(row.entry) : ""
                         title: row.entry ? page.label(row.entry) : ""
@@ -121,7 +122,7 @@ ColumnLayout {
         title: "Widgets are hidden"
         description: LayoutService.notchShown
             ? "The notch shows the time at the top center. Switch to Widgets to place widgets on the wallpaper again; the current widget layout is kept."
-            : "The bar along the top edge replaces the desktop widgets. Switch to Widgets to place them on the wallpaper again; the current widget layout is kept."
+            : "The bar replaces the desktop widgets. Switch to Widgets to place them on the wallpaper again; the current widget layout is kept."
         ShellButton {
             focusOnTab: true
             icon: "󰘔"; text: "Open Bar & Notch"

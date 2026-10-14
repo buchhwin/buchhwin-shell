@@ -85,6 +85,23 @@ ShellPanel {
         else if (row.y + row.height > sidebarFlick.contentY + sidebarFlick.height)
             sidebarFlick.contentY = Math.min(maxY, row.y + row.height - sidebarFlick.height)
     }
+    // The same for the page: Tab walked to a control below the fold and left
+    // it there, focused and out of sight. Whatever takes the focus inside the
+    // page is scrolled into view, with a little air around it.
+    function revealFocus(item) {
+        let inside = false
+        for (let walk = item; walk; walk = walk.parent)
+            if (walk === contentFlick.contentItem) { inside = true; break }
+        if (!inside || contentFlick.height <= 0) return
+        const top = item.mapToItem(contentFlick.contentItem, 0, 0).y - Metrics.spaceLg
+        const bottom = top + item.height + Metrics.spaceLg * 2
+        const maxY = Math.max(0, contentFlick.contentHeight - contentFlick.height)
+        if (top < contentFlick.contentY) contentFlick.contentY = Math.max(0, top)
+        else if (bottom > contentFlick.contentY + contentFlick.height)
+            contentFlick.contentY = Math.min(maxY, bottom - contentFlick.height)
+    }
+    readonly property Item focusedItem: contentFlick.Window.activeFocusItem
+    onFocusedItemChanged: if (focusedItem) revealFocus(focusedItem)
     Connections {
         target: PanelService
         function onArgsChanged() { if (root.wanted && PanelService.args.page) root.page = PanelService.args.page }

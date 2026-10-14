@@ -88,12 +88,17 @@ check 'grep -q "Updated " <<<"$out"' 'and said so'
 check 'grep -q "quickshell kill" "$work/calls.log"' 'a shell change restarted the shell'
 check '! grep -q "hyprctl reload" "$work/calls.log"' 'and did not reload Hyprland for it'
 check 'grep -q "notify-send" "$work/calls.log"' 'the user was told'
+check '! grep -q "update failed" "$work/calls.log"' 'and not that it failed'
 check '[[ $(readlink -f "$HOME/.local/bin/buchhwin") == "$src/scripts/buchhwin" ]]' 'install.sh re-ran (the links exist)'
 check '[[ $(update apply 2>&1) == "Already up to date." ]]' 'a second apply has nothing to do'
 
-# local changes and local commits are refused
+# local changes and local commits are refused - and said so in a
+# notification: apply runs detached (systemd-run without --wait), so its
+# status reaches nobody
 echo "mine" >> "$src/README.md"
+: > "$work/calls.log"
 check '! update apply >/dev/null 2>&1' 'local changes refuse the update'
+check 'grep -q "^notify-send .*buchhwin-shell update failed.*exit 1" "$work/calls.log"' 'and a refusal is a notification'
 gitc -C "$src" checkout --quiet -- README.md
 gitc -C "$src" commit --quiet --allow-empty -m "local: mine"
 echo "more" >> "$other/README.md"; gitc -C "$other" commit --quiet -am "docs: more"; gitc -C "$other" push --quiet origin HEAD:main

@@ -76,6 +76,17 @@ ShellRoot {
         destructive.enabledState = false
         T.eq(destructive.armed, false, "and a button that stops accepting clicks disarms too")
 
+        // Return and Space go through activate() as the mouse does, and a
+        // focused button that is disabled under the keyboard must not fire.
+        destructive.activate()
+        T.eq(destructive.armed, false, "a disabled button does not arm")
+        plain.enabledState = false
+        plain.activate()
+        T.eq(root.plainFired, 1, "nor fire")
+        plain.enabledState = true
+        plain.activate()
+        T.eq(root.plainFired, 2, "until it is enabled again")
+
         T.finish("ConfirmTest")
     }
 }

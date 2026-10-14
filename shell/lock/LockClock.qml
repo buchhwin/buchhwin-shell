@@ -12,15 +12,29 @@ Item {
     implicitWidth: digits.implicitWidth
     implicitHeight: digits.implicitHeight
 
-    readonly property string text: TimeFormat.time(time, SettingsService.twelveHourClock, ":")
+    // Hour and minute apart, not cut out of the whole time by position: a
+    // 12-hour clock writes "9:05 PM", whose third character is the colon, and
+    // the lock read "9::5" for nine hours a day and dropped the PM. The hour
+    // has one or two digits there, the suffix is its own smaller label.
+    readonly property bool twelve: SettingsService.twelveHourClock
+    readonly property string hour: TimeFormat.hour(time, twelve)
+    readonly property string minute: TimeFormat.minute(time)
+    readonly property string suffix: TimeFormat.suffix(time, twelve)
     readonly property font clockFont: Qt.font({
         family: Typography.family, pixelSize: Typography.lockClockSize, weight: Typography.bold,
         letterSpacing: -Typography.clockTracking * 2, features: { "tnum": 1 }
     })
+    readonly property font suffixFont: Qt.font({
+        family: Typography.family, pixelSize: Typography.lockDateSize, weight: Typography.semibold
+    })
+    FontMetrics { id: clockMetrics; font: root.clockFont }
+    FontMetrics { id: suffixMetrics; font: root.suffixFont }
 
     component Digits: Row {
-        LockDigit { value: root.text.charAt(0); font: root.clockFont }
-        LockDigit { value: root.text.charAt(1); font: root.clockFont }
+        // The tens slot only exists for a two-digit hour: always on a 24-hour
+        // clock, so that one looks exactly as it did.
+        LockDigit { visible: root.hour.length > 1; value: root.hour.length > 1 ? root.hour.charAt(0) : ""; font: root.clockFont }
+        LockDigit { value: root.hour.charAt(root.hour.length - 1); font: root.clockFont }
         Text {
             text: ":"
             font: root.clockFont
@@ -29,8 +43,20 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             anchors.verticalCenterOffset: -Metrics.spaceSm
         }
-        LockDigit { value: root.text.charAt(3); font: root.clockFont }
-        LockDigit { value: root.text.charAt(4); font: root.clockFont }
+        LockDigit { value: root.minute.charAt(0); font: root.clockFont }
+        LockDigit { value: root.minute.charAt(1); font: root.clockFont }
+        // AM/PM on the digits' baseline: both sit on the row's bottom, lifted
+        // by the difference of their descents.
+        Text {
+            visible: root.suffix.length > 0
+            leftPadding: Metrics.spaceSm
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: clockMetrics.descent - suffixMetrics.descent
+            text: root.suffix
+            font: root.suffixFont
+            color: Colors.lockClock
+            renderType: Typography.renderType
+        }
     }
 
     // Glow: a blurred copy of the digits right behind them. The layer renders

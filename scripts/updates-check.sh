@@ -3,7 +3,8 @@ set -uo pipefail
 
 # Read-only update check for Settings > Updates. Never installs, upgrades or
 # removes anything and needs no root: dnf5 keeps a per-user metadata cache
-# ($XDG_CACHE_HOME/libdnf5) and flatpak remote-ls only reads the remotes.
+# ($XDG_CACHE_HOME/libdnf5), checkupdates syncs a copy of pacman's database
+# of its own, and flatpak remote-ls only reads the remotes.
 #   updates-check.sh [--refresh] [--cache-only]
 #     --refresh     force a metadata refresh (the shell passes it at most once
 #                   per check interval); otherwise dnf refreshes only expired
@@ -13,10 +14,12 @@ set -uo pipefail
 # Output: sections "@NAME EXIT" followed by the command's output, parsed by
 # services/updates/UpdatesLogic.js:
 #   @dnf              dnf5 check-upgrade --json (stderr in @dnf-stderr); on
-#                     openSUSE zypper's list in the same JSON (zypper-updates.py)
+#                     openSUSE zypper's list in the same JSON (zypper-updates.py),
+#                     on Arch checkupdates and the AUR's (pacman-updates.py)
 #   @dnf-cached       the same from the cache when the online run failed
 #   @advisories       dnf5 advisory list --json (cache only, after @dnf)
 #   @installed        rpm NAME.ARCH<TAB>EPOCH:VERSION-RELEASE of the upgrades
+#                     (on Arch the old versions checkupdates names)
 #   @flatpak-system / @flatpak-user   remote-ls --updates (+ -stderr, -cached)
 #   @flatpak-installed                flatpak list with the installation
 #   @end
@@ -77,10 +80,108 @@ zypper_updates() {
   return "$code"
 }
 
+# Arch: checkupdates syncs its own copy of pacman's database (no root, the
+# system's database untouched) and lists "name old -> new"; exit 2 means
+# nothing to update. An AUR helper's -Qua adds the AUR's, which pacman does not
+# know about. Both become dnf5's JSON and the @installed lines, so nothing
+# below this branch knows it ran on Arch. --cache-only reads the copy as it
+# is; --refresh changes nothing, checkupdates always syncs otherwise.
+pacman_converter=${BASH_SOURCE[0]%/*}/pacman-updates.py
+# pacman_json DB: $tmp/pacman.txt and $tmp/aur.txt as dnf5's JSON in
+# $tmp/out, each package's repository read from the synced copy DB.
+pacman_json() {
+  LC_ALL=C pacman -Sl --dbpath "$1" >"$tmp/repos.txt" 2>/dev/null || : >"$tmp/repos.txt"
+  python3 "$pacman_converter" json "$tmp/repos.txt" "$tmp/pacman.txt" "$tmp/aur.txt" >"$tmp/out" 2>>"$tmp/err"
+}
+pacman_installed() {
+  printf '@installed 0\n'
+  python3 "$pacman_converter" installed "$tmp/pacman.txt" "$tmp/aur.txt" 2>/dev/null
+  printf '\n'
+}
+pacman_updates() {
+  local code cached db=${CHECKUPDATES_DB:-${XDG_CACHE_HOME:-$HOME/.cache}/buchhwin-shell/checkup-db}
+  local helper="" args=(--nocolor)
+  if ! command -v checkupdates >/dev/null 2>&1; then
+    printf '@dnf 127\n\n@dnf-stderr 127\ncheckupdates is not installed (package pacman-contrib)\n\n'
+    return 127
+  fi
+  mkdir -p -- "$db"
+  (( cache_only )) && args+=(--nosync)
+  CHECKUPDATES_DB=$db LC_ALL=C.UTF-8 timeout 300 checkupdates "${args[@]}" \
+    >"$tmp/pacman.txt" 2>"$tmp/err" </dev/null
+  code=$?
+  (( code == 2 )) && code=0
+  : >"$tmp/aur.txt"
+  for candidate in paru yay; do
+    command -v "$candidate" >/dev/null 2>&1 && { helper=$candidate; break; }
+  done
+  # Not in nested sessions (they never reach the network): the AUR is asked
+  # over the internet every time.
+  if (( code == 0 && !cache_only )) && [[ -n $helper ]]; then
+    # Exits 1 when the AUR has nothing newer; only the lines count.
+    LC_ALL=C.UTF-8 timeout 120 "$helper" -Qua --color=never >"$tmp/aur.txt" 2>/dev/null </dev/null || true
+  fi
+  if (( code == 0 )); then
+    pacman_json "$db" || code=1
+  fi
+  printf '@dnf %d\n' "$code"
+  (( code == 0 )) && cat -- "$tmp/out"
+  if [[ -s $tmp/err ]]; then
+    printf '\n@dnf-stderr %d\n' "$code"
+    tail -n 20 -- "$tmp/err"
+  fi
+  printf '\n'
+  if (( code == 0 )); then
+    pacman_installed
+  elif (( !cache_only )) && [[ -d $db/sync ]]; then
+    # Offline (checkupdates then only says "Cannot fetch updates") or a broken
+    # mirror: the copy the last successful sync left behind still knows what
+    # was pending then - the cached list, as dnf's cache is on Fedora. Without
+    # the AUR, which is only ever asked online; not before a first sync.
+    : >"$tmp/aur.txt"
+    CHECKUPDATES_DB=$db LC_ALL=C.UTF-8 timeout 60 checkupdates --nocolor --nosync \
+      >"$tmp/pacman.txt" 2>/dev/null </dev/null
+    cached=$?
+    (( cached == 2 )) && cached=0
+    if (( cached == 0 )); then pacman_json "$db" || cached=1; fi
+    printf '@dnf-cached %d\n' "$cached"
+    (( cached == 0 )) && cat -- "$tmp/out"
+    printf '\n'
+    (( cached == 0 )) && pacman_installed
+  fi
+  return "$code"
+}
+
+# Arch, or a derivative of it, by its os-release - not by which package
+# managers happen to be on PATH: Arch's extra packages dnf5 and zypper too,
+# and with either installed the check asked a package manager that manages
+# nothing here. BUCHHWIN_OS_RELEASE
+# points at another file (tests), as in install/lib/distro.sh; then the
+# machine's /etc/arch-release does not count either.
+os_release_arch() {
+  local file=${BUCHHWIN_OS_RELEASE:-/etc/os-release} ids=""
+  if [[ -r $file ]]; then
+    # shellcheck disable=SC1090
+    ids=$(. "$file" 2>/dev/null; printf '%s %s' "${ID:-}" "${ID_LIKE:-}") || ids=""
+  fi
+  [[ " $ids " == *" arch "* ]] && return 0
+  [[ -z ${BUCHHWIN_OS_RELEASE:-} && -e /etc/arch-release ]]
+}
+
 names=$tmp/names
 zypper_only=0
-command -v dnf5 >/dev/null 2>&1 || ! command -v zypper >/dev/null 2>&1 || zypper_only=1
-if (( zypper_only )); then
+pacman_only=0
+if os_release_arch; then
+  pacman_only=1
+elif ! command -v dnf5 >/dev/null 2>&1 && ! command -v zypper >/dev/null 2>&1 \
+    && command -v pacman >/dev/null 2>&1; then
+  pacman_only=1
+else
+  command -v dnf5 >/dev/null 2>&1 || ! command -v zypper >/dev/null 2>&1 || zypper_only=1
+fi
+if (( pacman_only )); then
+  pacman_updates
+elif (( zypper_only )); then
   zypper_updates
   (( $? == 0 )) && cp -- "$tmp/out" "$tmp/dnf.json"
 else

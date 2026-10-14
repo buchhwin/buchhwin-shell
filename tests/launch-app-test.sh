@@ -54,10 +54,12 @@ out=$(PATH="$sandbox/min" /bin/bash "$project_dir/scripts/launch-app.sh" kitty p
 check '[[ $out == plain && ! -s $calls ]]' "without systemd-run the command simply runs"
 
 # ---- scripts/launch-brave.sh ----------------------------------------------------
-# Plasma's password store, in its own scope, only with the wallet open.
+# Plasma's password store, in its own scope, only with the wallet open. Every
+# start's status is caught: under set -e a refused start would otherwise end
+# the whole test here, without a FAIL line to say which.
 : > "$calls"
-"$project_dir/scripts/launch-brave.sh" --new-window
-check 'grep -qE "unit=app-buchhwin-com\.brave\.Browser-[0-9]+\.scope -- brave-browser --password-store=kwallet6 --new-window$" "$calls"' \
+status=0; "$project_dir/scripts/launch-brave.sh" --new-window || status=$?
+check '[[ $status -eq 0 ]] && grep -qE "unit=app-buchhwin-com\.brave\.Browser-[0-9]+\.scope -- brave-browser --password-store=kwallet6 --new-window$" "$calls"' \
   "Brave starts with --password-store=kwallet6, the key Plasma's Brave uses ($(grep systemd-run "$calls" | head -1))"
 check 'grep -q "^brave-browser --password-store=kwallet6 --new-window$" "$calls"' "and the arguments reach Brave"
 check 'grep -q -- "--auto-start=no .*get-property org.freedesktop.secrets" "$calls" && ! grep -q Unlock "$calls"' \
@@ -71,13 +73,29 @@ check 'grep -q "^notify-send .*Brave not started" "$calls"' "and the user is tol
 # Shut, prompt offered and answered: Brave starts after the prompt.
 stub busctl "case \"\$*\" in *Unlock*) printf 'ao 0 o \"/org/freedesktop/secrets/prompt/p1\"\n' ;; *\"Secret.Prompt Prompt\"*) touch \"$sandbox/prompted\" ;; *get-property*) if [ -e \"$sandbox/prompted\" ]; then echo 'b false'; else echo 'b true'; fi ;; *) $owned ;; esac"
 rm -f "$sandbox/prompted"; : > "$calls"
-"$project_dir/scripts/launch-brave.sh"
-check 'grep -q "Secret.Prompt Prompt" "$calls" && grep -q "^brave-browser --password-store=kwallet6$" "$calls"' "the prompt is followed and Brave starts once the wallet is open"
+status=0; "$project_dir/scripts/launch-brave.sh" || status=$?
+check '[[ $status -eq 0 ]] && grep -q "Secret.Prompt Prompt" "$calls" && grep -q "^brave-browser --password-store=kwallet6$" "$calls"' "the prompt is followed and Brave starts once the wallet is open (status $status)"
 # Shut, prompt dismissed: no Brave.
 stub busctl "case \"\$*\" in *Unlock*) printf 'ao 0 o \"/org/freedesktop/secrets/prompt/p1\"\n' ;; *\"Secret.Prompt Prompt\"*) touch \"$sandbox/prompted\" ;; *introspect*) if [ -e \"$sandbox/prompted\" ]; then exit 1; fi ;; *get-property*) echo 'b true' ;; *) $owned ;; esac"
 rm -f "$sandbox/prompted"; : > "$calls"
 status=0; "$project_dir/scripts/launch-brave.sh" >/dev/null 2>&1 || status=$?
 check '[[ $status -eq 1 ]] && ! grep -q "^brave-browser" "$calls" && grep -q "^notify-send" "$calls"' "a dismissed prompt means no Brave (status $status)"
+wallet_open
+# Arch: the AUR's brave-bin is /usr/bin/brave, and gnome-keyring holds the
+# generic secret service name while ksecretd answers on its own. Only where
+# this machine has no real brave-browser, which would otherwise be started.
+rm -f "$bin/brave-browser"
+stub brave
+if ! command -v brave-browser >/dev/null 2>&1; then
+  stub busctl "case \"\$*\" in *get-property*) echo 'b false' ;; *) printf 'NAME PID PROCESS\norg.freedesktop.secrets 41 gnome-keyring-d\norg.kde.ksecretd 42 ksecretd\n' ;; esac"
+  : > "$calls"
+  status=0; "$project_dir/scripts/launch-brave.sh" --new-window || status=$?
+  check '[[ $status -eq 0 ]] && grep -qE "unit=app-buchhwin-com\.brave\.Browser-[0-9]+\.scope -- brave --password-store=kwallet6 --new-window$" "$calls"' \
+    "Arch: Brave starts as brave, same id and password store ($(grep systemd-run "$calls" | head -1))"
+  check 'grep -q -- "get-property org.kde.ksecretd" "$calls"' "Arch: the wallet is read from ksecretd, not gnome-keyring"
+fi
+rm -f "$bin/brave"
+stub brave-browser
 wallet_open
 
 # ---- scripts/launch-chrome.sh, launch-chromium-browser.sh ----------------------
@@ -85,12 +103,12 @@ wallet_open
 # share its guard (scripts/launch-chromium.sh): the password store, a scope
 # named after their entries, and no start against a shut wallet.
 : > "$calls"
-"$project_dir/scripts/launch-chrome.sh" --new-window
-check 'grep -qE "unit=app-buchhwin-com\.google\.Chrome-[0-9]+\.scope -- google-chrome-stable --password-store=kwallet6 --new-window$" "$calls"' \
+status=0; "$project_dir/scripts/launch-chrome.sh" --new-window || status=$?
+check '[[ $status -eq 0 ]] && grep -qE "unit=app-buchhwin-com\.google\.Chrome-[0-9]+\.scope -- google-chrome-stable --password-store=kwallet6 --new-window$" "$calls"' \
   "Chrome starts with --password-store=kwallet6 in a scope of its own ($(grep systemd-run "$calls" | head -1))"
 : > "$calls"
-"$project_dir/scripts/launch-chromium-browser.sh"
-check 'grep -qE "unit=app-buchhwin-chromium\\\\x2dbrowser-[0-9]+\.scope -- chromium-browser --password-store=kwallet6$" "$calls"' \
+status=0; "$project_dir/scripts/launch-chromium-browser.sh" || status=$?
+check '[[ $status -eq 0 ]] && grep -qE "unit=app-buchhwin-chromium\\\\x2dbrowser-[0-9]+\.scope -- chromium-browser --password-store=kwallet6$" "$calls"' \
   "Chromium starts with --password-store=kwallet6 in a scope of its own ($(grep systemd-run "$calls" | head -1))"
 : > "$calls"
 status=0; "$project_dir/scripts/launch-chromium.sh" com.google.Chrome >/dev/null 2>&1 || status=$?
@@ -125,6 +143,25 @@ stub xdg-settings 'echo chromium-browser.desktop'
 xdg-open https://example.org/page
 check 'grep -qE "unit=app-buchhwin-chromium\\\\x2dbrowser-[0-9]+\.scope -- chromium-browser --password-store=kwallet6 https://example.org/page$" "$calls" && ! grep -q real-xdg-open "$calls"' \
   "a web link for Chromium goes through launch-chromium-browser.sh"
+# Arch's package names its entry chromium.desktop: the same wrapper, not the
+# plain scope (no password store, no wallet guard).
+stub xdg-settings 'echo chromium.desktop'
+: > "$calls"
+status=0; xdg-open https://example.org/page || status=$?
+check '[[ $status -eq 0 ]] && grep -q "^chromium-browser --password-store=kwallet6 https://example.org/page$" "$calls" && ! grep -q real-xdg-open "$calls"' \
+  "a web link for chromium.desktop goes through launch-chromium-browser.sh too ($(grep systemd-run "$calls" | head -1))"
+# And there it runs as chromium - only where this machine has no real
+# chromium-browser, which would otherwise be started.
+rm -f "$bin/chromium-browser"
+stub chromium
+if ! command -v chromium-browser >/dev/null 2>&1; then
+  : > "$calls"
+  status=0; xdg-open https://example.org/page || status=$?
+  check '[[ $status -eq 0 ]] && grep -qE "unit=app-buchhwin-chromium-[0-9]+\.scope -- chromium --password-store=kwallet6 https://example.org/page$" "$calls"' \
+    "Arch: the link reaches chromium with Plasma's store ($(grep systemd-run "$calls" | head -1))"
+fi
+rm -f "$bin/chromium"
+stub chromium-browser
 stub xdg-settings 'echo com.brave.Browser.desktop'
 : > "$calls"
 xdg-open mailto:someone@example.org
@@ -139,6 +176,29 @@ check '! grep -q systemd-run "$calls" && grep -q "^real-xdg-open $sandbox/does-n
 : > "$calls"
 xdg-open
 check '! grep -q systemd-run "$calls" && grep -q "^real-xdg-open $" "$calls"' "no argument: handed on untouched"
+
+# ---- scripts/launch-alacritty.sh -------------------------------------------------
+# The account's Alacritty with Settings > Terminal's opacity on top, in its own
+# scope; the default without a setting, and nothing but a number in [0, 1]
+# reaches the command line.
+stub alacritty
+cfg="$sandbox/alacritty-cfg"; mkdir -p "$cfg/buchhwin-shell"
+: > "$calls"
+XDG_CONFIG_HOME="$cfg" "$project_dir/scripts/launch-alacritty.sh" -e true
+check 'grep -qE "unit=app-buchhwin-Alacritty-[0-9]+\.scope -- alacritty -o window.opacity=0.8 -e true$" "$calls"' \
+  "Alacritty starts at the default 0.8 in its scope ($(grep systemd-run "$calls" | head -1))"
+if command -v jq >/dev/null 2>&1; then
+  printf '{ "terminal": { "opacity": 0.65 } }\n' > "$cfg/buchhwin-shell/settings.json"
+  : > "$calls"
+  XDG_CONFIG_HOME="$cfg" "$project_dir/scripts/launch-alacritty.sh"
+  check 'grep -q "^alacritty -o window.opacity=0.65$" "$calls"' "the opacity follows Settings > Terminal"
+  printf '{ "terminal": { "opacity": "1; rm -rf ~" } }\n' > "$cfg/buchhwin-shell/settings.json"
+  : > "$calls"
+  XDG_CONFIG_HOME="$cfg" "$project_dir/scripts/launch-alacritty.sh"
+  check 'grep -q "^alacritty -o window.opacity=0.8$" "$calls"' "anything but a number falls back to 0.8"
+fi
+check 'grep -q "Alacritty.desktop) exec \"\$project_dir/scripts/launch-alacritty.sh\"" "$project_dir/scripts/launch-default.sh"' \
+  "the session's default terminal goes through it"
 
 if (( failures )); then printf 'TESTS FAILED launch-app (%d failed)\n' "$failures"; exit 1; fi
 printf 'TESTS PASSED launch-app\n'

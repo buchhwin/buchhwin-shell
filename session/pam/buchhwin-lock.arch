@@ -1,0 +1,7 @@
+#%PAM-1.0
+# buchhwin-shell lock screen (lock.qml) on Arch Linux. system-auth is the
+# stack every login includes there (system-login, sudo, polkit); pam_fprintd
+# comes in when it is added there by hand, which is Arch's way to enable the
+# reader. pam_faillock in it counts wrong passwords here as at any login.
+auth       include      system-auth
+account    required     pam_permit.so

@@ -26,8 +26,10 @@ PopupPanel {
             Layout.fillWidth: true
             title: "Screen"
             padding: Metrics.spaceSm
+            // States, not buttons: nothing happens on a click.
             ListRow {
                 Layout.fillWidth: true
+                interactive: false
                 level: 1
                 icon: "󰹑"
                 title: HyprlandService.screencastActive ? "Screen is being shared" : "Not shared"
@@ -53,6 +55,7 @@ PopupPanel {
                 ListRow {
                     required property var modelData
                     Layout.fillWidth: true
+                    interactive: false
                     level: 1
                     iconSource: AudioService.streamIcon(modelData).length ? Quickshell.iconPath(AudioService.streamIcon(modelData), true) : ""
                     icon: "󰍬"

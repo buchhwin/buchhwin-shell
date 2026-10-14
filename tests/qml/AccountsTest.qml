@@ -40,7 +40,7 @@ ShellRoot {
         T.eq(google.iconName, "account-google", "freedesktop icon name")
         T.eq(google.kinds, ["calendar", "contacts"], "content from the mime types")
         T.eq(A.contentText(google), "Calendar · Contacts", "content text")
-        T.eq(A.statusText(google), "Syncing… 42%", "running with progress")
+        T.eq(A.statusText(google), "Syncing … 42%", "running with progress")
         T.eq(A.statusTone(google), "busy", "running tone")
         T.eq(A.icon(google), "󰸗", "calendar icon")
         T.eq(A.subtitle(google, 0, 0), "Google Groupware · Calendar · Contacts · Fetching calendars", "subtitle without a sync time")
@@ -74,7 +74,7 @@ ShellRoot {
 
         T.eq(A.summary(status), "7 accounts · 1 with an error · 1 offline", "summary counts only")
         T.eq(A.summary(A.parseStatus("@server stopped\n")), "KDE PIM (Akonadi) is not running", "server stopped")
-        T.eq(A.summary(A.parseStatus("")), "Checking accounts…", "unknown before the first run")
+        T.eq(A.summary(A.parseStatus("")), "Checking accounts …", "unknown before the first run")
         T.eq(A.summary(A.parseStatus("@server running\n")), "No accounts yet", "running without accounts")
         T.eq(A.syncing(status.accounts), 1, "one account is syncing")
 
@@ -107,7 +107,7 @@ ShellRoot {
         T.eq(A.addOptions(status.tools).map(item => item.tool), ["kaccounts", "accountwizard"],
              "systemsettings duplicate dropped")
         T.eq(A.addOptions(["systemsettings", "accountwizard"]).map(item => item.label),
-             ["Online accounts…", "Mail & groupware…"], "systemsettings stands in for kcmshell6")
+             ["Online accounts …", "Mail & groupware …"], "systemsettings stands in for kcmshell6")
         T.eq(A.addOptions([]), [], "no wizard installed")
         T.eq(A.addCommand("kaccounts"), ["kcmshell6", "kcm_kaccounts"], "online accounts wizard")
         T.eq(A.addCommand("accountwizard"), ["accountwizard"], "mail and groupware wizard")
@@ -122,7 +122,7 @@ ShellRoot {
         T.eq(A.errorText("sync", "Call failed: Connection timed out"), "KDE PIM (Akonadi) did not answer", "timeout message")
         T.eq(A.errorText("remove", "Call failed: some detail with \"Test Account\""), "The account could not be removed",
              "error messages never repeat the output")
-        T.eq(A.successText("sync"), "Synchronizing…", "success message")
+        T.eq(A.successText("sync"), "Synchronizing …", "success message")
         T.finish("AccountsTest")
     }
 }

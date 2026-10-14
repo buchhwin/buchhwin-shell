@@ -44,7 +44,7 @@ ShellPanel {
             ShellTextField {
                 id: search
                 Layout.fillWidth: true
-                icon: Icons.copy
+                icon: Icons.search
                 placeholder: ClipboardService.enabled ? "Search clipboard …" : "History is turned off in Settings"
                 onAccepted: root.activate(root.filtered[root.currentIndex])
                 Keys.onUpPressed: root.currentIndex = Math.max(0, root.currentIndex - 1)
@@ -57,6 +57,9 @@ ShellPanel {
             ShellButton {
                 icon: Icons.remove; text: "Clear"; variant: "ghost"
                 enabledState: ClipboardService.entries.length > 0
+                // The whole history and its thumbnails, for good: it asks
+                // twice, as "Clear history" in Settings does.
+                confirm: true; confirmText: "Clear all?"
                 onClicked: ClipboardService.wipe()
             }
         }

@@ -356,8 +356,13 @@ hl.bind(keyFor("XF86AudioRaiseVolume"), exec("wpctl set-volume -l 1.0 @DEFAULT_A
 hl.bind(keyFor("XF86AudioLowerVolume"), exec("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"), { locked = true, repeating = true, description = "Volume down" })
 hl.bind(keyFor("XF86AudioMute"), exec("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"), { locked = true, description = "Mute audio" })
 hl.bind(keyFor("XF86AudioMicMute"), exec("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"), { locked = true, description = "Mute microphone" })
-hl.bind(keyFor("XF86MonBrightnessUp"), exec("brightnessctl -e4 -n2 set 5%+ && " .. ipc .. "brightness refresh"), { locked = true, repeating = true, description = "Brightness up" })
-hl.bind(keyFor("XF86MonBrightnessDown"), exec("brightnessctl -e4 -n2 set 5%- && " .. ipc .. "brightness refresh"), { locked = true, repeating = true, description = "Brightness down" })
+-- The backlight keys go through the shell, which runs the same brightnessctl
+-- step and then re-reads the backlight for the OSD (amdgpu sends no udev
+-- event). As `exec("brightnessctl … && " .. ipc .. "brightness refresh")`
+-- every repeat of a held key - about 25 a second - started sh, brightnessctl
+-- and the Quickshell IPC client. Without a shell the key runs brightnessctl.
+hl.bind(keyFor("XF86MonBrightnessUp"), shellOr("brightness up", exec("brightnessctl -e4 -n2 set 5%+")), { locked = true, repeating = true, description = "Brightness up" })
+hl.bind(keyFor("XF86MonBrightnessDown"), shellOr("brightness down", exec("brightnessctl -e4 -n2 set 5%-")), { locked = true, repeating = true, description = "Brightness down" })
 -- The keyboard light goes through the shell rather than running brightnessctl
 -- here: the LED's name carries its driver's prefix (tpacpi on this ThinkPad,
 -- asus or dell elsewhere) and a key binding cannot know it.
@@ -409,6 +414,19 @@ hl.layer_rule({ name = "buchhwin-scrim-noblur", match = { namespace = "^(buchhwi
 -- animate itself. One regex without a comma: the conf parser in
 -- scripts/lib/checks.py splits a layerrule at its first comma.
 hl.layer_rule({ name = "buchhwin-self-animated", match = { namespace = "^(buchhwin-(batteryPopup|bluetoothPopup|clipboard|controlCenter|dashboard|driveUnlock|emoji|eventEditor|eventsPopup|launcher|mediaPopup|networkPopup|notifications|overview|pairing|powerMenu|privacyPopup|profilePopup|settings|shortcutSheet|systemPopup|volumePopup|vpnPopup|wallpaperPicker|weatherPopup|welcome|wifiPassword|switcher|osd))$" }, no_anim = true })
+-- Citrix opens its own dialogs ("disconnect / log off", class Wfica, title
+-- exactly "wfica") on a workspace of its choosing: on 14.10. on 1 while the
+-- session sat on 2, which looked like a hung session. Floating, centred and
+-- pinned, the dialog shows on whatever workspace its monitor has in view, also
+-- over a full-screen session. The session window carries its desktop's name as
+-- its title ("RDS-... (SSL/TLS Secured, ...)") and is not matched.
+hl.window_rule({
+    name = "citrix-dialogs",
+    match = { class = "^(Wfica)$", title = "^(wfica)$" },
+    float = true,
+    center = true,
+    pin = true,
+})
 -- Helper windows that must keep running but never show (list shared with the
 -- shell in services/hypr/HiddenWindows.js). xwaylandvideobridge (KDE autostart)
 -- otherwise opens a black, uncloseable window on workspace 1.

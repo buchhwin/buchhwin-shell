@@ -51,7 +51,7 @@ if command -v Hyprland >/dev/null; then
   grep -q 'config ok' <<<"$lua_output" || { printf '%s\n' "$lua_output"; exit 1; }
   printf 'lua config ok\n'
 else
-  note_skip 'Hyprland configuration parses (Hyprland not installed; package hyprland, or install/build-hyprland-leap.sh on Leap)'
+  note_skip 'Hyprland configuration parses (Hyprland not installed; package hyprland on Fedora and Arch, or install/build-hyprland-leap.sh on Leap)'
 fi
 
 printf '== Style tokens\n'
@@ -87,7 +87,7 @@ if [[ -n $qmllint_bin ]]; then
   [[ -n $lint_shown ]] && printf '%s\n' "$lint_shown"
   printf '%s: %s warnings in all, full report in %s\n' "${qmllint_bin##*/}" "$(grep -c '^Warning' "$lint_log" || true)" "$lint_log"
 else
-  note_skip 'QML lint (qmllint not installed; package qt6-qtdeclarative-devel)'
+  note_skip 'QML lint (qmllint not installed; package qt6-qtdeclarative-devel, qt6-declarative on Arch)'
 fi
 
 printf '== QML/JS unit tests\n'
@@ -130,6 +130,7 @@ printf '== Session actions\n'
 "$project_dir/tests/wallet-unlock-test.sh"
 "$project_dir/tests/x11-dpi-test.sh"
 "$project_dir/tests/shell-update-test.sh"
+"$project_dir/tests/updates-check-test.sh"
 
 printf '== Lid installers\n'
 "$project_dir/tests/fingerprint-lid-install-test.sh"

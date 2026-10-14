@@ -54,7 +54,20 @@ for _ in {1..200}; do
   sleep 0.05
 done
 # start-shell.sh rotates quickshell.log for the new instance.
-start_shell() { nohup "$project_dir/scripts/start-shell.sh" "$config_dir" >/dev/null 2>&1 & }
+#
+# In a scope of its own: run from a terminal or an editor, the shell used to
+# land in that application's scope (app-com.microsoft.VSCode-….scope on 14.10.)
+# and to share its fate when that scope is stopped. The restart key (Hyprland's
+# exec) and session-init.sh start it from the login session anyway. Without a
+# user manager to ask it starts as before.
+start_shell() {
+  if systemd-run --user --scope --quiet --collect true >/dev/null 2>&1; then
+    setsid -f systemd-run --user --scope --quiet --collect --unit "buchhwin-shell-$$-$RANDOM" \
+      -- "$project_dir/scripts/start-shell.sh" "$config_dir" </dev/null >/dev/null 2>&1
+  else
+    nohup "$project_dir/scripts/start-shell.sh" "$config_dir" >/dev/null 2>&1 &
+  fi
+}
 start_shell
 # If the old instance still held the lock, the new one exited; try once more.
 for _ in {1..40}; do

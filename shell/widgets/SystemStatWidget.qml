@@ -12,8 +12,23 @@ WidgetBase {
         : instance && instance.type ? instance.type : "cpu"
     readonly property real usage: SystemStatsService.usage(metric)
 
-    Component.onCompleted: SystemStatsService.track()
-    Component.onDestruction: SystemStatsService.untrack()
+    // Whether this one samples. On the desktop, the bar and the notch it is
+    // always on screen; a host that is not binds this to whether it is shown
+    // (the dashboard, while open). Tracked from creation, a card on a closed
+    // dashboard kept /proc read every 2 s and `df` run every 30 s for the
+    // whole session. The first sync waits a turn: hosts hand over what they
+    // set in the Loader's `onLoaded`, which comes after `onCompleted`.
+    property bool sampling: true
+    property bool tracked: false
+    onSamplingChanged: syncTracking()
+    Component.onCompleted: Qt.callLater(root.syncTracking)
+    Component.onDestruction: if (tracked) SystemStatsService.untrack()
+    function syncTracking() {
+        if (sampling === tracked) return
+        tracked = sampling
+        if (tracked) SystemStatsService.track()
+        else SystemStatsService.untrack()
+    }
 
     icon: metric === "ram" ? "󰍛" : metric === "disk" ? "󰋊" : "󰻠"
     label: SystemStatsService.percent(usage)

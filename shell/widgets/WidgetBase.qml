@@ -60,6 +60,15 @@ GridLayout {
     property real meter: -1
     property color meterColor: Colors.accent
 
+    // Across a vertical bar there is room for a short value - "79%", "21°",
+    // a count, an elapsed "12:34" - and nothing longer: a window title,
+    // "Microphone active" or a hex code kept their 220-640 px cap on a strip
+    // 38 px thick. A longer label gives way to the glyph alone. Counted in
+    // characters rather than measured, so a battery does not lose its number
+    // at 100 % and get it back at 99.
+    readonly property int verticalLabelChars: 5
+    readonly property bool showsLabel: label.length > 0 && !iconOnly
+        && (!vertical || label.length <= verticalLabelChars)
     readonly property bool showsName: !iconOnly && !inGroup
         && (sizeClass === "medium" || sizeClass === "large") && name.length > 0
     readonly property bool showsMeter: !iconOnly && !inGroup
@@ -101,7 +110,7 @@ GridLayout {
         renderType: Typography.renderType
     }
     Text {
-        visible: root.label.length > 0 && !root.iconOnly
+        visible: root.showsLabel
         Layout.alignment: root.vertical ? Qt.AlignHCenter : Qt.AlignVCenter
         Layout.maximumWidth: root.maxLabelWidth * root.scaleFactor
         text: root.label

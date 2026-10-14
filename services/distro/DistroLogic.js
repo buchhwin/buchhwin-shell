@@ -1,18 +1,19 @@
 .pragma library
 
 // The distribution the shell runs on, from /etc/os-release, and the few
-// strings that differ between them. Fedora and openSUSE Leap share every QML
-// file; what a page tells the user to type (the package manager, the PAM
+// strings that differ between them. Fedora, openSUSE Leap and Arch share
+// every QML file; what a page tells the user to type (the package manager, the PAM
 // switch) comes from here and nowhere else. The installer has the same
 // knowledge in install/lib/distro.sh. Unit tested (tests/qml/DistroTest.qml).
 
-var FAMILIES = ["fedora", "opensuse"]
+var FAMILIES = ["fedora", "opensuse", "arch"]
 
 // Package names for the install hints the interface shows. Only what a hint
 // names; the installer keeps the full lists (install/packages/).
 var PACKAGES = {
     fedora: { "wf-recorder": "wf-recorder", "hyprland-guiutils": "hyprland-guiutils" },
-    opensuse: { "wf-recorder": "wf-recorder" }
+    opensuse: { "wf-recorder": "wf-recorder" },
+    arch: { "wf-recorder": "wf-recorder", "hyprland-guiutils": "hyprland-guiutils" }
 }
 
 // KEY=value lines; values may be quoted. Unknown keys are kept, comments and
@@ -29,27 +30,31 @@ function parseOsRelease(text) {
     return result
 }
 
-// "fedora", "opensuse" or "" from the parsed file. ID first, ID_LIKE as the
-// fallback, so a respin that keeps the base's package manager still counts.
+// "fedora", "opensuse", "arch" or "" from the parsed file. ID first, ID_LIKE
+// as the fallback, so a respin that keeps the base's package manager still
+// counts (EndeavourOS, CachyOS: ID_LIKE=arch).
 function family(info) {
     const ids = [String((info || {}).ID || "")].concat(String((info || {}).ID_LIKE || "").split(/\s+/))
     for (const id of ids) {
         if (id === "fedora") return "fedora"
         if (id === "opensuse" || id.indexOf("opensuse-") === 0 || id === "suse") return "opensuse"
+        if (id === "arch") return "arch"
     }
     return ""
 }
 
 function packageTool(family_) {
-    return family_ === "fedora" ? "dnf" : family_ === "opensuse" ? "zypper" : ""
+    return family_ === "fedora" ? "dnf" : family_ === "opensuse" ? "zypper" : family_ === "arch" ? "pacman" : ""
 }
 
-// "sudo dnf install X" / "sudo zypper install X"; "" when the package has no
-// name on this distribution or the distribution is unknown.
+// "sudo dnf install X" / "sudo zypper install X" / "sudo pacman -S X"; ""
+// when the package has no name on this distribution or the distribution is
+// unknown.
 function installCommand(family_, package_) {
     const tool = packageTool(family_)
     const name = (PACKAGES[family_] || {})[package_]
-    return tool && name ? "sudo " + tool + " install " + name : ""
+    if (!tool || !name) return ""
+    return "sudo " + tool + (tool === "pacman" ? " -S " : " install ") + name
 }
 
 // Readable "Install with: …", or a neutral sentence where there is no package.
@@ -59,11 +64,24 @@ function installHint(family_, package_) {
 }
 
 // The one host command that takes pam_fprintd out of the system-wide PAM
-// stack. Fedora generates it with authselect, openSUSE with pam-config.
+// stack. Fedora generates it with authselect, openSUSE with pam-config. Arch
+// has neither: the line was added to system-auth by hand, so the command
+// comments it out there - only an active auth line naming pam_fprintd, the
+// same lines FingerprintLogic.systemFingerprintPam reads as on: indented or
+// not, and not where the name is only in a trailing comment. Taking the #
+// away again is the way back.
 function fingerprintOffCommand(family_) {
     if (family_ === "fedora") return "sudo authselect disable-feature with-fingerprint"
     if (family_ === "opensuse") return "sudo pam-config --delete --fprintd"
+    if (family_ === "arch") return "sudo sed -i '/^\\s*auth\\s[^#]*pam_fprintd\\.so/s/^/#/' /etc/pam.d/system-auth"
     return ""
+}
+
+// Arch upgrades the whole system at once, in a terminal (pacman or an AUR
+// helper); Discover cannot install pacman's packages without PackageKit.
+// Everywhere else system packages go through Discover.
+function upgradesInTerminal(family_) {
+    return family_ === "arch"
 }
 
 // What Settings > Updates calls the system packages.
@@ -71,6 +89,8 @@ function packagesDescription(info) {
     const family_ = family(info)
     const name = String((info || {}).NAME || "").trim() || "System"
     const tool = packageTool(family_)
+    if (upgradesInTerminal(family_))
+        return name + " packages from " + tool + " and the AUR. The upgrade runs in a terminal and asks for the administrator password there."
     return tool ? name + " packages from " + tool + ". Discover asks for the administrator password before installing."
         : "System packages. Discover asks for the administrator password before installing."
 }

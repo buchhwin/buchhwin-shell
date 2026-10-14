@@ -56,7 +56,10 @@ PopupPanel {
 
                 EmptyState {
                     visible: section.modelData.list.length === 0
-                    width: parent.width
+                    // Inset like the rows (ListRow's spaceLg), so its icon lines
+                    // up with theirs instead of sitting at the card's padding.
+                    x: Metrics.spaceLg
+                    width: parent.width - Metrics.spaceLg * 2
                     row: true
                     icon: BluetoothService.discovering ? Icons.busy : "󰂯"
                     title: BluetoothService.discovering ? "Searching …" : "No devices found"

@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
@@ -54,7 +55,8 @@ ColumnLayout {
         }
 
         Repeater {
-            model: NetworkService.wifiEnabled ? NetworkService.networks : []
+            // Kept rows, not rebuilt ones; see NetworkPopup.
+            model: ScriptModel { values: NetworkService.wifiEnabled ? NetworkService.networks : [] }
             ListRow {
                 focusOnTab: true
                 required property var modelData
@@ -153,18 +155,30 @@ ColumnLayout {
                 subtitle: (modelData.active ? "Connected" : "Off") + " · " + (modelData.type === "wireguard" ? "WireGuard" : "VPN")
                 active: modelData.active
                 onClicked: NetworkService.setVpn(modelData.uuid, !modelData.active)
-                ShellToggle { focusOnTab: true; checked: modelData.active; onToggled: value => NetworkService.setVpn(modelData.uuid, value) }
-                // A tunnel goes for good, so the button asks twice.
-                ShellButton {
-                    focusOnTab: true
-                    visible: modelData.type === "wireguard"
-                    compact: true
-                    variant: "ghost"
-                    icon: Icons.remove
-                    toolTip: "Delete this tunnel"
-                    confirm: true
-                    confirmText: "Delete"
-                    onClicked: NetworkService.wgDelete(modelData.uuid)
+                // One item in the row's trailing slot, as the Wi-Fi rows have:
+                // the slot is a plain Item, and two children of it both sat
+                // at its origin, the switch on top of the delete button.
+                Row {
+                    spacing: Metrics.spaceSm
+                    // A tunnel goes for good, so the button asks twice.
+                    ShellButton {
+                        focusOnTab: true
+                        visible: modelData.type === "wireguard"
+                        compact: true
+                        variant: "ghost"
+                        icon: Icons.remove
+                        toolTip: "Delete this tunnel"
+                        confirm: true
+                        confirmText: "Delete"
+                        onClicked: NetworkService.wgDelete(modelData.uuid)
+                    }
+                    ShellToggle {
+                        focusOnTab: true
+                        anchors.verticalCenter: parent.verticalCenter
+                        accessibleName: modelData.name
+                        checked: modelData.active
+                        onToggled: value => NetworkService.setVpn(modelData.uuid, value)
+                    }
                 }
             }
         }

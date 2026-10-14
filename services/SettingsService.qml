@@ -538,14 +538,40 @@ Singleton {
         const choices = allowed[path]
         if (choices && choices.indexOf(newValue) < 0) return false
         const next = sanitized()
-        const parts = path.split(".")
-        let node = next
-        for (let i = 0; i < parts.length - 1; ++i) node = node[parts[i]]
-        node[parts[parts.length - 1]] = newValue
+        put(next, path, newValue)
         data = next
-        scheduleWrite(next)
+        if (loaded) scheduleWrite(next)
+        else keepEarly(path, newValue)
         settingChanged(path, newValue)
         return true
+    }
+
+    function put(doc, path, newValue) {
+        const parts = path.split(".")
+        let node = doc
+        for (let i = 0; i < parts.length - 1; ++i) node = node[parts[i]]
+        node[parts[parts.length - 1]] = newValue
+    }
+
+    // Changes asked for before settings.json has been read - an IPC call or
+    // a key at login, a mode's settings - are live at once and kept here,
+    // then put on top of the file once it is in. Written straight away they
+    // were the defaults plus that one change, over the user's whole file.
+    property var earlyValues: ({})
+    function keepEarly(path, newValue) {
+        const next = Object.assign({}, earlyValues)
+        next[path] = newValue
+        earlyValues = next
+    }
+    // From the load, so the write goes through the timer (pitfall 3).
+    function applyEarly() {
+        const paths = Object.keys(earlyValues)
+        if (!paths.length) return
+        const next = sanitized()
+        for (const path of paths) put(next, path, earlyValues[path])
+        earlyValues = ({})
+        data = next
+        scheduleWrite(next)
     }
 
     // One write per turn of the event loop, and never from inside the load
@@ -585,16 +611,14 @@ Singleton {
             }
             const choices = allowed[path]
             if (choices && choices.indexOf(newValue) < 0) continue
-            const parts = path.split(".")
-            let node = next
-            for (let i = 0; i < parts.length - 1; ++i) node = node[parts[i]]
-            node[parts[parts.length - 1]] = newValue
+            put(next, path, newValue)
             written.push(path)
             changed = true
         }
         if (!changed) return false
         data = next
-        scheduleWrite(next)
+        if (loaded) scheduleWrite(next)
+        else written.forEach(path => keepEarly(path, lookup(next, path)))
         for (const path of written) settingChanged(path, lookup(next, path))
         return true
     }
@@ -641,6 +665,7 @@ Singleton {
             unreadableBackup.running = true
             data = defaults
         }
+        applyEarly()
         loaded = true
     }
 
@@ -651,7 +676,7 @@ Singleton {
         watchChanges: true
         printErrors: false
         onLoaded: root.load()
-        onLoadFailed: root.loaded = true
+        onLoadFailed: { root.applyEarly(); root.loaded = true }
         onFileChanged: reload()
     }
 }

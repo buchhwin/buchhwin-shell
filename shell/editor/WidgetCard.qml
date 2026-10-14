@@ -69,7 +69,12 @@ Item {
         visible: !frame.hasContent
         text: card.entry ? (WidgetRegistry.type(card.entry.type) || { label: card.entry.type }).label + " (empty)" : ""
         role: "small"
-        muted: true
+        // Straight on the wallpaper under the editor's scrim, with nothing
+        // drawn behind it: the scrim's muted ink and the editor's outline, as
+        // the hint lines have. The panel's muted grey vanished on a dark image.
+        color: Colors.scrimMutedText
+        style: Text.Outline
+        styleColor: Colors.scrimStrong
     }
 
     Rectangle {

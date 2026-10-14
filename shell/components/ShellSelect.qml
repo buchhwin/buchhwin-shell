@@ -15,8 +15,20 @@ ColumnLayout {
     property bool previewFonts: false
     property string placeholder: ""
     property bool focusOnTab: false
+    property string accessibleName: ""
     signal selected(string value)
     spacing: Metrics.spaceXs
+
+    // The keys and the ring live on the header, not on this column, and a
+    // panel that walks its controls (NavLogic) focuses the column it finds:
+    // the focus landed where nothing drew it and nothing read a key. A panel
+    // calls focusInput() when a control has one (ShellPanel.navigateKey).
+    function focusInput(reason) {
+        header.forceActiveFocus(reason === undefined ? Qt.OtherFocusReason : reason)
+    }
+    // The closed control's height: the line a row's label centres on, while
+    // the open list below it grows the select (SettingRow).
+    readonly property real firstLineHeight: header.height
 
     readonly property int currentIndex: options.findIndex(option => option.value === root.current)
     function step(delta) {
@@ -66,6 +78,9 @@ ColumnLayout {
         Keys.onSpacePressed: { root.expanded = !root.expanded; root.filter = "" }
         Keys.onEscapePressed: event => { if (root.expanded) root.expanded = false; else event.accepted = false }
         FocusRing { active: header.activeFocus; controlRadius: header.radius }
+        Accessible.role: Accessible.ComboBox
+        Accessible.name: root.accessibleName
+        Accessible.description: root.currentOption ? root.currentOption.label : root.current
         Layout.fillWidth: true
         implicitHeight: Metrics.controlHeight
         radius: Metrics.pillRadius(height)
@@ -131,11 +146,16 @@ ColumnLayout {
                     anchors.leftMargin: Metrics.spaceMd
                     anchors.rightMargin: Metrics.spaceMd
                     verticalAlignment: TextInput.AlignVCenter
+                    // A long filter scrolls inside the capsule instead of
+                    // running out of it.
+                    clip: true
                     color: Colors.text
                     font.family: Typography.family
                     font.pixelSize: Typography.smallSize
                     onTextChanged: root.filter = text
-                    ShellText { visible: parent.text.length === 0; anchors.verticalCenter: parent.verticalCenter; text: "Filter …"; role: "small"; color: Colors.subtleText }
+                    Accessible.name: "Filter"
+                    // Read like text (4.5:1); subtleText is for marks, not words.
+                    ShellText { visible: parent.text.length === 0; anchors.verticalCenter: parent.verticalCenter; text: "Filter …"; role: "small"; color: Colors.mutedText }
                 }
             }
 

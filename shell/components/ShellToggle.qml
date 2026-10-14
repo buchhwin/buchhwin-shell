@@ -44,9 +44,12 @@ Item {
 
     FocusRing { active: root.activeFocus; controlRadius: Metrics.pillRadius(root.height) }
 
-    Keys.onReturnPressed: root.toggled(!root.checked)
-    Keys.onEnterPressed: root.toggled(!root.checked)
-    Keys.onSpacePressed: root.toggled(!root.checked)
+    // Every way in asks `enabledState`, not only the mouse: a switch that is
+    // disabled while it has the focus flipped on Return and Space anyway.
+    function flip() { if (root.enabledState) root.toggled(!root.checked) }
+    Keys.onReturnPressed: root.flip()
+    Keys.onEnterPressed: root.flip()
+    Keys.onSpacePressed: root.flip()
 
     // The row's label names it; set `accessibleName` where there is none.
     property string accessibleName: ""
@@ -54,7 +57,7 @@ Item {
     Accessible.name: root.accessibleName
     Accessible.checkable: true
     Accessible.checked: root.checked
-    Accessible.onToggleAction: root.toggled(!root.checked)
+    Accessible.onToggleAction: root.flip()
 
     MouseArea {
         id: mouse

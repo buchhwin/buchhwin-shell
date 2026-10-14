@@ -224,17 +224,25 @@ Singleton {
     Process {
         id: runner
         environment: ({ XDG_CONFIG_DIRS: root.kdeConfigDirs })
-        stderr: StdioCollector { id: runnerErr }
-        onExited: (exitCode, exitStatus) => {
+        // The error text may arrive before or after the exit; judged once
+        // both are in - read at the exit, it could still be empty.
+        property string errorText: ""
+        property bool errorDone: false
+        property int exitCode: -1
+        function finish() {
+            if (!errorDone || exitCode < 0) return
             // Without a session bus the palette notification fails; the
             // colours are written all the same.
-            if (exitCode !== 0 && runner.command[0] !== "dbus-send") {
-                root.lastError = runner.command[0] + " failed (" + exitCode + "): " + runnerErr.text.trim()
+            if (exitCode !== 0 && command[0] !== "dbus-send") {
+                root.lastError = command[0] + " failed (" + exitCode + "): " + errorText.trim()
                 console.warn("buchhwin-shell: appTheme", root.lastError)
             }
-            // Start the next command outside this process's exit handler.
+            // Start the next command outside this process's handlers.
             Qt.callLater(root.runNext)
         }
+        stderr: StdioCollector { onStreamFinished: { runner.errorText = text; runner.errorDone = true; runner.finish() } }
+        onStarted: { errorText = ""; errorDone = false; exitCode = -1 }
+        onExited: code => { exitCode = code; finish() }
     }
 
     Process {

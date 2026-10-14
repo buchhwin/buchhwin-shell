@@ -52,7 +52,7 @@ nested_guard_fail() {
 # nested_guard [OUTPUT]  (default BUCHTEST)
 nested_guard() {
   local base=${BUCHHWIN_NESTED_DIR:-"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/buchhwin-nested"}
-  local output=${1:-BUCHTEST} signature display pid
+  local output=${1:-BUCHTEST} signature display pid environment
   [[ -r $base/instance && -r $base/wayland-display && -r $base/hyprland.pid ]] \
     || { nested_guard_fail "no nested session files in $base"; return 1; }
   signature=$(<"$base/instance") display=$(<"$base/wayland-display") pid=$(<"$base/hyprland.pid")
@@ -63,7 +63,10 @@ nested_guard() {
   [[ $pid =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null \
     || { nested_guard_fail "nested Hyprland (pid $pid) is not running"; return 1; }
   # The process must really be the nested compositor, not a reused pid.
-  tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | grep -qx 'BUCHHWIN_NESTED=1' \
+  # Captured, then searched: `| grep -qx` quits at its match, tr gets SIGPIPE,
+  # and under a caller's pipefail the nested compositor read as not nested.
+  environment=$({ tr '\0' '\n' <"/proc/$pid/environ"; } 2>/dev/null) || environment=""
+  grep -qx 'BUCHHWIN_NESTED=1' <<<"$environment" \
     || { nested_guard_fail "pid $pid is not a nested buchhwin Hyprland"; return 1; }
   hyprctl -j instances 2>/dev/null | jq -e --arg s "$signature" --arg d "$display" --argjson p "$pid" \
     'any(.[]; .instance == $s and .wl_socket == $d and .pid == $p)' >/dev/null \

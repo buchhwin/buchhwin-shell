@@ -43,7 +43,10 @@ ShellPanel {
     // widget that is not either.
     readonly property var missing: LayoutService.tileChoices(
         Dash.missing(LayoutService.dashboardTypes), LayoutService.dashboardTypes)
-    property date selectedDay: clock.date
+    // Set on every open (`onWantedChanged`). Not bound to the clock: until
+    // the first open that binding moved the day every minute, and the hidden
+    // events card built its list again each time.
+    property date selectedDay: new Date()
     readonly property bool selectedIsToday: selectedDay.toDateString() === clock.date.toDateString()
     // Dialogs opened from here (new event, event details) return to this day.
     readonly property var returnArgs: ({ day: SettingsService.locale.toString(selectedDay, "yyyy-MM-dd") })
@@ -367,8 +370,22 @@ ShellPanel {
             readonly property bool shown: true
             // Sampling runs only while something is watching. Without this
             // pair the meters sit at zero and look broken rather than idle.
-            Component.onCompleted: SystemStatsService.track()
-            Component.onDestruction: SystemStatsService.untrack()
+            // While the dashboard is open, not while the card exists: the
+            // card is built with the panel at start, and a track on creation
+            // kept /proc read every 2 s and `df` run every 30 s for the whole
+            // session behind a closed panel. Opening samples at once, like
+            // the system popup.
+            readonly property bool sampling: root.shown
+            property bool tracked: false
+            onSamplingChanged: syncTracking()
+            Component.onCompleted: syncTracking()
+            Component.onDestruction: if (tracked) SystemStatsService.untrack()
+            function syncTracking() {
+                if (sampling === tracked) return
+                tracked = sampling
+                if (tracked) SystemStatsService.track()
+                else SystemStatsService.untrack()
+            }
 
             // A meter is a glyph, a name, a figure and a bar. How many fit is
             // a question about pixels, not about grid steps - the same
@@ -468,11 +485,19 @@ ShellPanel {
             readonly property bool hasData: widget.item ? widget.item.hasData !== false : false
             readonly property bool shown: true
 
-            CardSection {
+            // A plain card with the widget inset by the card padding, not a
+            // CardSection: that one stacks its content from the top at its
+            // implicit height, so a `fillHeight` item in it was 0 px tall and
+            // the widget sat centred on the top padding line, clipped, with a
+            // click area of nothing.
+            ShellCard {
                 anchors.fill: parent
+                interactive: widgetBody.action.length > 0
+                hovered: widgetMouse.containsMouse
+                pressed: widgetMouse.pressed && widgetMouse.containsMouse
                 Item {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    anchors.fill: parent
+                    anchors.margins: Metrics.spaceLg
 
                     Loader {
                         id: widget
@@ -489,6 +514,9 @@ ShellPanel {
                                 screen: PanelService.screen ? PanelService.screen.name : "",
                                 options: widgetBody.entry && widgetBody.entry.options
                                     ? widgetBody.entry.options : {} }))
+                            // A readout samples while the dashboard is open,
+                            // not for as long as the card exists.
+                            if (item.sampling !== undefined) item.sampling = Qt.binding(() => root.shown)
                         }
                     }
                     // A binding, not a line in `onLoaded`: the cell keeps
@@ -518,7 +546,9 @@ ShellPanel {
                     }
 
                     MouseArea {
+                        id: widgetMouse
                         anchors.fill: parent
+                        anchors.margins: -Metrics.spaceLg
                         hoverEnabled: true
                         enabled: widgetBody.action.length > 0
                         cursorShape: Qt.PointingHandCursor

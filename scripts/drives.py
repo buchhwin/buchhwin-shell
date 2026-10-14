@@ -48,8 +48,9 @@ HOTPLUG_BUSES = {"usb", "sdio", "ieee1394"}
 SYSTEM_MOUNTS = {"/", "/boot", "/boot/efi", "/efi", "/home", "/usr", "/var", "/sysroot", "/etc", "/opt", "/srv"}
 DEBOUNCE_MS = 400
 # gvfs' MTP backend; without it phones cannot be listed or mounted at all.
+# Arch builds with libexecdir=/usr/lib, so its backend sits there directly.
 MTP_BACKENDS = ("/usr/libexec/gvfsd-mtp", "/usr/libexec/gvfs/gvfsd-mtp", "/usr/lib/gvfs/gvfsd-mtp",
-                "/usr/lib64/gvfs/gvfsd-mtp", "/usr/lib/gvfs/1.0/gvfsd-mtp")
+                "/usr/lib64/gvfs/gvfsd-mtp", "/usr/lib/gvfs/1.0/gvfsd-mtp", "/usr/lib/gvfsd-mtp")
 
 
 def emit(**values):

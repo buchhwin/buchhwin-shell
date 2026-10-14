@@ -35,7 +35,10 @@ Singleton {
 
     function localPath(url) {
         const text = String(url || "")
-        return text.indexOf("file://") === 0 ? decodeURIComponent(text.slice(7)) : ""
+        if (text.indexOf("file://") !== 0) return ""
+        // A bare "%" in a file name is a malformed escape and throws; the
+        // undecoded path is the better guess then.
+        try { return decodeURIComponent(text.slice(7)) } catch (error) { return text.slice(7) }
     }
 
     // Remote art is fetched by curl into the cache and consumers load the file.
@@ -44,8 +47,9 @@ Singleton {
     // Image bound to the url shows nothing and the record has no label);
     // curl is told --http1.1 and never sees the problem. One fetch per track
     // change, here, not one per Image. Covers older than 30 days are swept
-    // from the directory on each fetch.
+    // from the directory with the first fetch of a session.
     readonly property string coverDir: Paths.cacheDir + "/covers"
+    property bool coversSwept: false
     function remote(url) { return /^https?:\/\//.test(String(url || "")) }
 
     function checkArt() {
@@ -54,27 +58,35 @@ Singleton {
         // caught up, which this project has already paid for once.
         const url = rawArtUrl
         const path = localPath(url)
-        artCheck.running = false
-        if (remote(url)) {
-            artUrl = ""
-            artCheck.pending = url
-            const file = coverDir + "/" + Qt.md5(url) + ".img"
-            artCheck.command = ["sh", "-c",
-                'mkdir -p -- "$1" && find "$1" -type f -mtime +30 -delete 2>/dev/null; '
-                + 'test -s "$2" || { curl -fsSL --http1.1 --max-time 15 -o "$2.part" -- "$3" && mv -f -- "$2.part" "$2"; }',
-                "sh", coverDir, file, url]
-            artCheck.file = file
-            artCheck.running = true
-            return
-        }
-        if (!path.length) {
+        if (!remote(url) && !path.length) {
             artUrl = url
             return
         }
         artUrl = ""
+        // A check still running belongs to an older track: it is stopped and
+        // this one starts once it has exited. Stopped and started in the same
+        // turn, the new run could be lost, and the stopped curl's failure was
+        // judged as the new track's - no cover after a skip.
+        if (artCheck.running) {
+            artCheck.stale = true
+            artCheck.running = false
+            return
+        }
+        artCheck.stale = false
         artCheck.pending = url
-        artCheck.file = ""
-        artCheck.command = ["test", "-r", path]
+        if (remote(url)) {
+            const file = coverDir + "/" + Qt.md5(url) + ".img"
+            const sweep = coversSwept ? "" : 'find "$1" -type f -mtime +30 -delete 2>/dev/null; '
+            coversSwept = true
+            artCheck.command = ["sh", "-c",
+                'mkdir -p -- "$1" && ' + sweep
+                + '{ test -s "$2" || { curl -fsSL --http1.1 --max-time 15 -o "$2.part" -- "$3" && mv -f -- "$2.part" "$2"; }; }',
+                "sh", coverDir, file, url]
+            artCheck.file = file
+        } else {
+            artCheck.file = ""
+            artCheck.command = ["test", "-r", path]
+        }
         artCheck.running = true
     }
     onRawArtUrlChanged: checkArt()
@@ -82,12 +94,18 @@ Singleton {
 
     Process {
         id: artCheck
-        // Which url this answer belongs to; a slow answer must not overwrite
-        // the art of a track that has already started.
+        // Which url this answer belongs to, taken when the run starts; a slow
+        // answer must not overwrite the art of a track that has already started.
         property string pending: ""
         // The cached file a remote url was fetched to; empty for a local path.
         property string file: ""
+        // Stopped for a newer track, which starts once this run is gone.
+        property bool stale: false
         onExited: code => {
+            if (artCheck.stale) {
+                Qt.callLater(root.checkArt)
+                return
+            }
             if (root.rawArtUrl !== artCheck.pending) return
             if (artCheck.file.length) {
                 // Fetched: the file. Not fetched (offline, odd CDN): no

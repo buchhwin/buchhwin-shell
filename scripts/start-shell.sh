@@ -222,10 +222,20 @@ fi
 # sat in 94 such arenas, mostly fragmented free space. Two are plenty for a
 # program whose work happens on the GUI thread. An exported value wins (A/B).
 malloc_arenas=${MALLOC_ARENA_MAX:-2}
+# Mesa gives every GL context a marshalling thread (glthread) and a driver
+# thread (Gallium's threaded context), for applications that are limited by
+# GL calls on one thread. The shell draws a handful of light scene graphs,
+# one context per mapped window: in a nested session (two outputs) that was
+# 36 of its 94 threads and ~30 MB, for no frame it drew faster (14.10.,
+# measured nested and live). The shell only; applications keep both. An
+# exported value wins (A/B).
+mesa_glthread_value=${mesa_glthread:-false}
+gallium_thread=${GALLIUM_THREAD:-0}
 
 while true; do
   status=0
   env -u QT_QPA_PLATFORMTHEME QS_ICON_THEME="$icon_theme" MALLOC_ARENA_MAX="$malloc_arenas" \
+    mesa_glthread="$mesa_glthread_value" GALLIUM_THREAD="$gallium_thread" \
     quickshell --no-duplicate --path "$config_dir" >>"$log_file" 2>&1 &
   child=$!
   # `wait` returns as soon as a trapped signal arrives, before the shell has
@@ -273,6 +283,18 @@ while true; do
     instance_running || break
     sleep 0.05
   done
+  # A SIGTERM during that pause found no shell to forward to (`child` is
+  # empty) and only set `stopping`: the session is ending, and a shell started
+  # now would start into it. The same for a compositor that went meanwhile.
+  # The EXIT trap still ends the dead shell's helpers.
+  if (( stopping )); then
+    note "asked to stop while waiting to restart the shell - not restarting it"
+    exit 0
+  fi
+  if ! compositor_alive; then
+    note "the compositor went away while waiting to restart the shell - not restarting it"
+    exit "$status"
+  fi
   # Its helpers outlived it (reap_helpers above): ended now, before the
   # replacement starts its own, or two of each run side by side. Not while
   # the instance is still listed - then the helpers may still be its.

@@ -19,9 +19,11 @@ expected_targets=(desktop editor welcome emoji launcher controlCenter notificati
 # name in nested tests, PipeWire nodes without a channel map, the KDE calendar
 # plugin reading an empty settings key, a running playerctld without players
 # (its MPRIS proxy answers with errors), Quickshell's own Wrapper* types
-# overriding implicitWidth (qt.qml.propertyCache.append) and installed icons
-# Qt's SVG reader cannot parse (qt.svg; btop's, once the launcher opens).
-known_warnings='quickshell\.desktopentry|Could not register notification server|Registration will be attempted again|channelVolumes and channelMap are not the same size|QSettings::value: Empty key passed|playerctld|qt\.qml\.propertyCache\.append|qt\.svg: '
+# overriding implicitWidth (qt.qml.propertyCache.append), installed icons
+# Qt's SVG reader cannot parse (qt.svg; btop's, once the launcher opens), and
+# Qt 6.12's text-input plugin (Arch) noting that a field gave up a focus no
+# surface had any more - only that exact message, not the category.
+known_warnings='quickshell\.desktopentry|Could not register notification server|Registration will be attempted again|channelVolumes and channelMap are not the same size|QSettings::value: Empty key passed|playerctld|qt\.qml\.propertyCache\.append|qt\.svg: |QWaylandTextInputv3::disableSurface.*but 0x0 is focused'
 
 if [[ ${1:-} == --nested ]]; then
   # The trap comes first: a start that fails half-way (set -e ends this script

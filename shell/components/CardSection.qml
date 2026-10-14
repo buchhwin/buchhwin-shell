@@ -13,6 +13,12 @@ ShellCard {
     property string description: ""
     property real padding: Metrics.spaceLg
     property real spacing: Metrics.spaceMd
+    // Where the title sits from the card's edges: one inset for every titled
+    // card, whatever its content padding. A card of rows pads by spaceSm or
+    // less because ListRow brings its own inset, and its title sat at 8/8
+    // beside the 16/16 of every other card (the privacy popup). A card padded
+    // for plain content keeps the title on that content's edge.
+    property real titleInset: padding < Metrics.spaceMd ? Metrics.spaceLg : padding
     default property alias content: body.data
     implicitHeight: column.implicitHeight + root.padding * 2
 
@@ -28,6 +34,9 @@ ShellCard {
             spacing: Metrics.spaceXxs
             visible: root.title.length > 0
             Layout.fillWidth: true
+            Layout.leftMargin: Math.max(0, root.titleInset - root.padding)
+            Layout.rightMargin: Math.max(0, root.titleInset - root.padding)
+            Layout.topMargin: Math.max(0, root.titleInset - root.padding)
             ShellText { text: root.title; role: "title"; Layout.fillWidth: true }
             ShellText { text: root.description; muted: true; visible: text.length > 0; Layout.fillWidth: true; wrapMode: Text.Wrap }
         }

@@ -36,14 +36,21 @@ def monitors():
     for item in json.loads(output):
         if item.get("disabled"):
             continue
+        scale = float(item.get("scale", 1) or 1)
+        width, height = int(item["width"]), int(item["height"])
+        # The mode is the panel's, unrotated. A monitor on its side (an odd
+        # transform) is as wide as its mode is high, and grim's frame of it
+        # is upright too.
+        if int(item.get("transform", 0) or 0) % 2:
+            width, height = height, width
         found.append({
             "name": item["name"],
             "x": int(item.get("x", 0)),
             "y": int(item.get("y", 0)),
             # Logical size, which is what a global coordinate is in.
-            "width": round(int(item["width"]) / float(item.get("scale", 1) or 1)),
-            "height": round(int(item["height"]) / float(item.get("scale", 1) or 1)),
-            "scale": float(item.get("scale", 1) or 1),
+            "width": round(width / scale),
+            "height": round(height / scale),
+            "scale": scale,
         })
     return found
 
@@ -61,7 +68,9 @@ def pixel_at(monitor, image, gx, gy):
     # A global coordinate is logical; the captured frame is in real pixels.
     px = min(image.width - 1, max(0, round(local_x * monitor["scale"])))
     py = min(image.height - 1, max(0, round(local_y * monitor["scale"])))
-    red, green, blue = image.convert("RGB").getpixel((px, py))
+    # The frames are RGB from the capture on; a convert() here would copy the
+    # whole frame on every pointer move.
+    red, green, blue = image.getpixel((px, py))
     return "#%02x%02x%02x" % (red, green, blue)
 
 

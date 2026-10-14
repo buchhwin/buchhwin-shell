@@ -4,7 +4,6 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
-import "../../services/color/ColorLogic.js" as Logic
 
 // The colour picker's own window: what has been picked, and the way to pick
 // again. A click on a swatch copies it back to the clipboard - the history is
@@ -69,15 +68,30 @@ PopupPanel {
                     border.width: swatchMouse.containsMouse ? Metrics.focusBorderWidth : Metrics.borderWidth
                     border.color: swatchMouse.containsMouse ? Colors.accentLine : Colors.border
 
+                    // A stop for the panel's keys (NavLogic) like every other
+                    // control here, and Return or Space copies as a click does.
+                    property bool focusOnTab: true
+                    activeFocusOnTab: focusOnTab
+                    Keys.onReturnPressed: ColorPickerService.copy(swatch.modelData)
+                    Keys.onEnterPressed: ColorPickerService.copy(swatch.modelData)
+                    Keys.onSpacePressed: ColorPickerService.copy(swatch.modelData)
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Copy " + swatch.modelData.toUpperCase()
+                    Accessible.onPressAction: ColorPickerService.copy(swatch.modelData)
+                    FocusRing { active: swatch.activeFocus; controlRadius: swatch.radius }
+
                     // In whichever ink reads on it: a fixed one disappears
-                    // into half the colours anybody picks.
+                    // into half the colours anybody picks. `overviewText`
+                    // never existed, so every dark swatch had no ink at all,
+                    // and the theme's text was the wrong one on light ones in
+                    // the dark theme.
                     ShellText {
                         id: hex
                         anchors.centerIn: parent
                         text: swatch.modelData.slice(1).toUpperCase()
                         role: "small"
                         font.features: { "tnum": 1 }
-                        color: Logic.isLight(swatch.modelData) ? Colors.text : Colors.overviewText
+                        color: Colors.textOn(swatch.modelData)
                     }
 
                     MouseArea {

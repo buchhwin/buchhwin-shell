@@ -105,9 +105,15 @@ function resolutions(monitor) {
         .map(mode => ({ value: mode.width + "x" + mode.height, label: mode.width + " × " + mode.height }))
 }
 
+// Whole hertz reads best, but a screen that offers 59.94 and 60.00 at the same
+// resolution would show two segments both saying "60 Hz". Only the rates
+// whose whole-hertz labels collide get their two decimals back.
 function refreshRates(monitor, width, height) {
-    return monitor.modes.filter(mode => mode.width === width && mode.height === height)
-        .map(mode => ({ value: mode.refresh.toFixed(2), label: Math.round(mode.refresh) + " Hz" }))
+    const modes = monitor.modes.filter(mode => mode.width === width && mode.height === height)
+    const count = {}
+    modes.forEach(mode => { count[Math.round(mode.refresh)] = (count[Math.round(mode.refresh)] || 0) + 1 })
+    return modes.map(mode => ({ value: mode.refresh.toFixed(2),
+        label: (count[Math.round(mode.refresh)] > 1 ? mode.refresh.toFixed(2) : String(Math.round(mode.refresh))) + " Hz" }))
 }
 
 function scaleChoices(current) {

@@ -59,6 +59,17 @@ is_checkout() {
   [[ $(readlink -f -- "$top") == "$dir" ]]
 }
 upstream_of() { g rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true; }
+# `apply` runs inside systemd-run without --wait: nobody reads its status, and
+# the Updates page keeps saying "Updating the shell ..." whatever happened. A
+# refusal, or a fetch, merge or install that fails under set -e, is told the
+# way success is - a notification - with the place the reason went to.
+notify_failure() {
+  local code=$1
+  (( code != 0 )) || return 0
+  command -v notify-send >/dev/null 2>&1 || return 0
+  notify-send --app-name=Updates --icon=dialog-error -- "buchhwin-shell update failed" \
+    "It stopped with exit $code; journalctl --user -u buchhwin-shell-update says why." 2>/dev/null || true
+}
 
 case "$action" in
   check)
@@ -89,6 +100,7 @@ case "$action" in
     if nested_environment; then
       printf 'shell-update: refusing to update the host from a nested test session\n' >&2; exit 1
     fi
+    trap 'notify_failure $?' EXIT
     is_checkout || { printf 'shell-update: %s is not a git checkout\n' "$installed" >&2; exit 1; }
     upstream=$(upstream_of)
     [[ -n $upstream ]] || { printf 'shell-update: %s follows no remote\n' "$dir" >&2; exit 1; }

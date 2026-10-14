@@ -42,43 +42,45 @@ ColumnLayout {
             // it had started.
             { label: "Nearby", list: BluetoothService.nearby, always: true }
         ]
-        ColumnLayout {
+        // The title inside the card, as the popup has it (ScrollList: a label
+        // above a card reads as two things), and the popup's height for the
+        // same lists.
+        ScrollList {
             id: section
             required property var modelData
             Layout.fillWidth: true
             visible: BluetoothService.enabled && (modelData.list.length > 0 || modelData.always)
-            spacing: Metrics.spaceXxs
-            SectionLabel { text: modelData.label; Layout.leftMargin: Metrics.spaceSm }
-            ScrollList {
-                Layout.fillWidth: true
-                maxHeight: 200
-                EmptyState {
-                    visible: section.modelData.list.length === 0
+            title: section.modelData.label
+            maxHeight: Metrics.popupListHeight / 2 + Metrics.rowHeight
+            EmptyState {
+                visible: section.modelData.list.length === 0
+                // Inset like the rows (ListRow's spaceLg), so its icon lines
+                // up with theirs instead of sitting at the card's padding.
+                x: Metrics.spaceLg
+                width: parent.width - Metrics.spaceLg * 2
+                row: true
+                icon: BluetoothService.discovering ? Icons.busy : "󰂯"
+                title: BluetoothService.discovering ? "Searching …" : "No devices found"
+            }
+            Repeater {
+                model: section.modelData.list
+                ListRow {
+                    level: 1
+                    required property var modelData
                     width: parent.width
-                    row: true
-                    icon: BluetoothService.discovering ? Icons.busy : "󰂯"
-                    title: BluetoothService.discovering ? "Searching …" : "No devices found"
-                }
-                Repeater {
-                    model: section.modelData.list
-                    ListRow {
-                        level: 1
-                        required property var modelData
-                        width: parent.width
-                        icon: BluetoothService.deviceIcon(modelData)
-                        title: modelData.name || modelData.address
-                        subtitle: BluetoothService.deviceStatus(modelData)
-                        active: modelData.connected
-                        onClicked: BluetoothService.toggleConnection(modelData)
-                        ShellButton {
-                            visible: modelData.paired || modelData.bonded
-                            icon: Icons.remove; variant: "ghost"; compact: true
-                            // The pairing is gone for good, as in Settings.
-                            confirm: true
-                            confirmText: "Remove"
-                            toolTip: "Remove device"
-                            onClicked: BluetoothService.forget(modelData)
-                        }
+                    icon: BluetoothService.deviceIcon(modelData)
+                    title: modelData.name || modelData.address
+                    subtitle: BluetoothService.deviceStatus(modelData)
+                    active: modelData.connected
+                    onClicked: BluetoothService.toggleConnection(modelData)
+                    ShellButton {
+                        visible: modelData.paired || modelData.bonded
+                        icon: Icons.remove; variant: "ghost"; compact: true
+                        // The pairing is gone for good, as in Settings.
+                        confirm: true
+                        confirmText: "Remove"
+                        toolTip: "Remove device"
+                        onClicked: BluetoothService.forget(modelData)
                     }
                 }
             }

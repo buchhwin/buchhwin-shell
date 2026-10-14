@@ -321,8 +321,11 @@ Singleton {
             : action === "lock" ? "Locking …" : "Unmounting …"
     }
 
+    // Called once the output is in and once the process is gone, which come
+    // in either order: from the output alone, a process not yet reaped made
+    // this return, and the rest of an ejection never ran.
     function next() {
-        if (actionProc.running) return
+        if (actionProc.running || actionProc.job) return
         while (pending.length) {
             const job = pending[0]
             pending = pending.slice(1)
@@ -398,7 +401,10 @@ Singleton {
             actionProc.job.secret = ""
             stdinEnabled = false
         }
-        onExited: stdinEnabled = true
+        onExited: {
+            stdinEnabled = true
+            Qt.callLater(root.next)
+        }
         stdout: StdioCollector {
             onStreamFinished: {
                 const job = actionProc.job

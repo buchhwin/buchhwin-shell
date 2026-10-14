@@ -57,11 +57,15 @@ Singleton {
         if (!enabled || !hasLocation) return
         if (fetchProc.running) {
             if (fetchProc.requestKey === locationKey) return
-            // The stopped request still reports its end; ignore it.
-            fetchProc.superseded += 1
+            // A request for another place is stopped, and this one starts
+            // once it has exited: stopped and started in the same turn, the
+            // new run could be lost, with `loading` left on for good.
+            fetchProc.stale = true
             fetchProc.running = false
+            return
         }
         loading = true
+        fetchProc.stale = false
         fetchProc.requestKey = locationKey
         fetchProc.command = ["curl", "-fsS", "--max-time", "15", Logic.forecastUrl(lat, lon, unit)]
         fetchProc.running = true
@@ -102,12 +106,15 @@ Singleton {
     Process {
         id: fetchProc
         stderr: ErrorLog { label: "WeatherService.fetchProc" }
+        // The place this run was started for.
         property string requestKey: ""
-        property int superseded: 0
+        // Stopped for another place, which is fetched once this run is gone.
+        property bool stale: false
         stdout: StdioCollector {
             onStreamFinished: {
-                // Failed requests (offline) produce no output; onExited flags them.
-                if (fetchProc.requestKey !== root.locationKey || !text.trim().length) return
+                // Failed requests (offline) produce no output; onExited flags
+                // them. A stopped request's output may be cut off.
+                if (fetchProc.stale || fetchProc.requestKey !== root.locationKey || !text.trim().length) return
                 try {
                     const parsed = Logic.parseForecast(text)
                     const now = new Date()
@@ -117,20 +124,17 @@ Singleton {
                     root.failed = false
                     cacheFile.setText(Logic.toCache(parsed, now, fetchProc.requestKey) + "\n")
                 } catch (error) {
-                    // Output of a stopped request may be cut off; only a
-                    // completed request counts as a failure.
-                    if (fetchProc.superseded > 0) return
                     root.failed = true
                     console.warn("buchhwin-shell: weather response unusable")
                 }
             }
         }
         onExited: (exitCode, exitStatus) => {
-            if (fetchProc.superseded > 0) {
-                fetchProc.superseded -= 1
+            root.loading = false
+            if (fetchProc.stale) {
+                Qt.callLater(root.refresh)
                 return
             }
-            root.loading = false
             if (exitCode !== 0) root.failed = true
         }
     }

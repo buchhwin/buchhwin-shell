@@ -26,6 +26,7 @@ ColumnLayout {
             ListRow {
                 required property var modelData
                 readonly property string id: modelData.id
+                interactive: false
                 Layout.fillWidth: true
                 compact: true
                 level: 1
@@ -109,6 +110,7 @@ ColumnLayout {
             ListRow {
                 required property var modelData
                 readonly property string id: modelData.id
+                interactive: false
                 Layout.fillWidth: true
                 compact: true
                 level: 1

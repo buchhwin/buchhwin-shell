@@ -57,11 +57,56 @@ GridLayout {
     columnSpacing: Metrics.spaceMd
     rowSpacing: Metrics.spaceXs
 
+    // The height the label centres on: the control's first line, not the
+    // whole slot. A select that opens inline grows the slot by its list, and
+    // a label centred on the slot slid down to the middle of the list with
+    // its mark. A control that grows says where its first line ends
+    // (`firstLineHeight`, ShellSelect); for every other one it is the slot,
+    // which is the centring a closed row always had.
+    readonly property bool controlGrown: !stacked && controlLine < slot.height
+    readonly property real controlLine: {
+        const kids = slot.children
+        let line = 0, grows = false
+        for (let i = 0; i < kids.length; ++i) {
+            const kid = kids[i]
+            if (!kid.visible) continue
+            if (kid.firstLineHeight !== undefined) {
+                grows = true
+                line = Math.max(line, kid.firstLineHeight)
+            } else {
+                line = Math.max(line, kid.height)
+            }
+        }
+        return grows ? line : slot.height
+    }
+
+    // The row's label is the control's name for a screen reader: every
+    // control that has an `accessibleName` and was not given one gets it.
+    property string namedAs: ""
+    function nameControls() {
+        const kids = slot.children
+        for (let i = 0; i < kids.length; ++i) {
+            const kid = kids[i]
+            if (kid.accessibleName === undefined) continue
+            if (kid.accessibleName === root.label) continue
+            if (kid.accessibleName === "" || kid.accessibleName === root.namedAs) kid.accessibleName = root.label
+        }
+        root.namedAs = root.label
+    }
+    onLabelChanged: nameControls()
+    Component.onCompleted: nameControls()
+
     ShellText {
         id: name
         readonly property real lineHeight: lineCount > 0 ? contentHeight / lineCount : implicitHeight
         Layout.fillWidth: root.stacked || root.labelFills
         Layout.preferredWidth: root.stacked ? root.width : root.labelWidth
+        // While the control is grown, pinned to the top and centred on its
+        // first line - the place the closed row had it. Closed, the layout's
+        // own centring (0 is its default alignment), so a row that never
+        // grows is laid out exactly as it always was.
+        Layout.alignment: root.controlGrown ? Qt.AlignLeft | Qt.AlignTop : 0
+        Layout.topMargin: root.controlGrown ? Math.max(0, (root.controlLine - name.height) / 2) : 0
         text: root.label
         wrapMode: Text.Wrap
 
@@ -97,5 +142,7 @@ GridLayout {
         Layout.fillWidth: !root.labelFills
         Layout.alignment: root.labelFills ? Qt.AlignRight | Qt.AlignVCenter : Qt.AlignVCenter
         spacing: Metrics.spaceSm
+        // A control added later (a Repeater, a Loader) is named too.
+        onChildrenChanged: root.nameControls()
     }
 }

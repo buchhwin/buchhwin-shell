@@ -47,7 +47,8 @@ ShellCard {
                     Layout.alignment: Qt.AlignHCenter
                     text: modelData.precipitation === null ? " " : modelData.precipitation + "%"
                     role: "caption"
-                    color: modelData.precipitation !== null && modelData.precipitation >= 40 ? Colors.accentForeground : Colors.subtleText
+                    // A figure to read, so mutedText: subtleText is for marks.
+                    color: modelData.precipitation !== null && modelData.precipitation >= 40 ? Colors.accentForeground : Colors.mutedText
                     font.features: { "tnum": 1 }
                 }
             }

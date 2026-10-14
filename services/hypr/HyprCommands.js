@@ -279,16 +279,23 @@ function gestureSlot(fingers, direction) {
 
 // { fingers, direction, action } for a Hyprland action, or
 // { fingers, direction, command } for a shell command run when the swipe ends.
+// With a `shortcut` as well (`buchhwin:gestures.run.overview`), the Lua
+// variant sends that global shortcut instead of running the command; the
+// legacy keyword keeps the command.
 function gestureEntry(entry) {
     const slot = gestureSlot(entry.fingers, entry.direction)
     if (entry.command !== undefined) {
         const text = String(entry.command).trim()
         // Commas would split the dispatcher arguments of the legacy keyword.
         if (/,/.test(text)) throw new Error("invalid gesture command")
+        const shortcut = entry.shortcut ? String(entry.shortcut) : ""
+        if (shortcut.length && !/^[A-Za-z0-9_-]+:[A-Za-z0-9_.-]+$/.test(shortcut)) throw new Error("invalid gesture shortcut")
         return {
             legacy: "keyword gesture " + slot.fingers + ", " + slot.direction + ", dispatcher, exec, " + legacyExec(text),
             lua: "hl.gesture({ fingers = " + slot.fingers + ", direction = " + luaString(slot.direction)
-                + ", action = function() hl.exec_cmd(" + luaString(text) + ") end })"
+                + ", action = function() "
+                + (shortcut.length ? "hl.dispatch(hl.dsp.global(" + luaString(shortcut) + "))" : "hl.exec_cmd(" + luaString(text) + ")")
+                + " end })"
         }
     }
     if (gestureActions.indexOf(entry.action) < 0) throw new Error("invalid gesture action: " + entry.action)

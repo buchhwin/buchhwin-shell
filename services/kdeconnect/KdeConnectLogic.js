@@ -309,8 +309,11 @@ var MPRIS = "org.kde.kdeconnect.device.mprisremote"
 var REMOTE_COMMANDS = "org.kde.kdeconnect.device.remotecommands"
 var SFTP = "org.kde.kdeconnect.device.sftp"
 
+// busctl's getopt permutes: an argument that starts with "-" anywhere on the
+// line is read as an option, so a reply like "-)" was refused, not sent. The
+// "--" ends the options; everything after it is the call itself.
 function busArgs(verb, path, iface) {
-    return ["busctl", "--user", "--auto-start=no", verb, "org.kde.kdeconnect", path, iface]
+    return ["busctl", "--user", "--auto-start=no", "--", verb, "org.kde.kdeconnect", path, iface]
 }
 
 // Commands for one device action; null for unknown actions or invalid input.

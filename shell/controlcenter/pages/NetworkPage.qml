@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
@@ -37,21 +38,24 @@ ColumnLayout {
         }
     }
 
-    SectionLabel { text: "Networks"; visible: NetworkService.wifiEnabled; Layout.leftMargin: Metrics.spaceSm }
-
+    // The title inside the card and the popup's list height, as on the
+    // Bluetooth page and in the network popup.
     ScrollList {
         Layout.fillWidth: true
         visible: NetworkService.wifiEnabled
-        maxHeight: 300
+        title: "Networks"
+        maxHeight: Metrics.popupListHeight
         EmptyState {
             visible: NetworkService.networks.length === 0
-            width: parent.width
+            x: Metrics.spaceLg
+            width: parent.width - Metrics.spaceLg * 2
             row: true
             icon: Icons.busy
             title: "Searching for networks …"
         }
         Repeater {
-            model: NetworkService.networks
+            // Kept rows, not rebuilt ones; see NetworkPopup.
+            model: ScriptModel { values: NetworkService.networks }
             ListRow {
                 level: 1
                 required property var modelData
@@ -94,7 +98,7 @@ ColumnLayout {
             title: modelData.name
             subtitle: modelData.active ? "Connected" : "Off"
             active: modelData.active
-            ShellToggle { checked: modelData.active; onToggled: value => NetworkService.setVpn(modelData.uuid, value) }
+            ShellToggle { checked: modelData.active; accessibleName: modelData.name; onToggled: value => NetworkService.setVpn(modelData.uuid, value) }
             onClicked: NetworkService.setVpn(modelData.uuid, !modelData.active)
         }
     }

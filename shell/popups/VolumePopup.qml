@@ -78,7 +78,10 @@ PopupPanel {
             maxHeight: Metrics.popupListHeight
             EmptyState {
                 visible: AudioService.playbackStreams.length === 0
-                width: parent.width
+                // Inset like the rows (ListRow's spaceLg), so its icon lines
+                // up with theirs instead of sitting at the card's padding.
+                x: Metrics.spaceLg
+                width: parent.width - Metrics.spaceLg * 2
                 row: true
                 icon: "󰝛"
                 title: "No app is playing audio"

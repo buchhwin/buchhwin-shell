@@ -31,6 +31,12 @@ ShellCard {
     signal clicked()
     property bool clickOpens: false
 
+    // Each transport button says for itself whether it can act, as the media
+    // popup's do. The row used to fade as a whole with no player while its
+    // buttons still hovered, took the focus and clicked.
+    readonly property bool canPrevious: MprisService.hasPlayer && MprisService.active.canGoPrevious
+    readonly property bool canNext: MprisService.hasPlayer && MprisService.active.canGoNext
+
     MouseArea {
         anchors.fill: parent
         enabled: root.clickOpens
@@ -95,6 +101,7 @@ ShellCard {
                 toolTip: "Previous"
                 visible: root.tight && root.roomForTransport
                 icon: Icons.previous; variant: "ghost"; iconSize: Metrics.iconSm
+                enabledState: root.canPrevious
                 onClicked: MprisService.previous()
             }
             ShellButton {
@@ -109,6 +116,7 @@ ShellCard {
                 toolTip: "Next"
                 visible: root.tight && root.roomForTransport
                 icon: Icons.next; variant: "ghost"; iconSize: Metrics.iconSm
+                enabledState: root.canNext
                 onClicked: MprisService.next()
             }
         }
@@ -126,11 +134,10 @@ ShellCard {
             Layout.alignment: Qt.AlignHCenter
             spacing: Metrics.spaceLg
             visible: !root.tight
-            opacity: MprisService.hasPlayer ? 1 : Effects.disabledOpacity
             Item { Layout.fillWidth: true }
-            ShellButton { toolTip: "Previous"; icon: Icons.previous; variant: "ghost"; iconSize: Metrics.iconMd; onClicked: MprisService.previous() }
-            ShellButton { toolTip: MprisService.playing ? "Pause" : "Play"; icon: MprisService.playing ? Icons.pause : Icons.play; variant: "ghost"; iconSize: Metrics.iconLg; onClicked: MprisService.togglePlaying() }
-            ShellButton { toolTip: "Next"; icon: Icons.next; variant: "ghost"; iconSize: Metrics.iconMd; onClicked: MprisService.next() }
+            ShellButton { toolTip: "Previous"; icon: Icons.previous; variant: "ghost"; iconSize: Metrics.iconMd; enabledState: root.canPrevious; onClicked: MprisService.previous() }
+            ShellButton { toolTip: MprisService.playing ? "Pause" : "Play"; icon: MprisService.playing ? Icons.pause : Icons.play; variant: "ghost"; iconSize: Metrics.iconLg; enabledState: MprisService.hasPlayer; onClicked: MprisService.togglePlaying() }
+            ShellButton { toolTip: "Next"; icon: Icons.next; variant: "ghost"; iconSize: Metrics.iconMd; enabledState: root.canNext; onClicked: MprisService.next() }
             Item { Layout.fillWidth: true }
         }
 

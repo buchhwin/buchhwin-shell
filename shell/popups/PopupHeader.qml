@@ -44,6 +44,8 @@ ColumnLayout {
 
         ShellToggle {
             focusOnTab: true
+            // The popup's own name is what the switch turns on and off.
+            accessibleName: root.heading
             visible: root.hasToggle
             checked: root.checked
             enabledState: root.toggleEnabled

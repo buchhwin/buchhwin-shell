@@ -27,6 +27,7 @@ Rectangle {
     // surface is open (the launcher): an outline that never goes away marks
     // nothing and reads as a stuck border. The fill still lightens on focus.
     property bool focusOutline: true
+    property string accessibleName: ""
     signal accepted()
     signal escapePressed()
     // Delete with an empty field (TextInput would swallow the key otherwise).
@@ -76,6 +77,10 @@ Rectangle {
             selectedTextColor: Colors.text
             clip: true
             activeFocusOnTab: root.focusOnTab
+            // The field is named by its row (SettingRow), by the caller, or
+            // by what its placeholder asks for.
+            Accessible.role: Accessible.EditableText
+            Accessible.name: root.accessibleName || root.placeholder
             onActiveFocusChanged: {
                 if (!activeFocus) root.quietFocus = false
                 else if (root.selectAllOnFocus) selectAll()
@@ -100,7 +105,9 @@ Rectangle {
                 visible: parent.text.length === 0
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.placeholder
-                role: root.large ? "bodyLarge" : "body"
+                // The size of what is typed in its place, or the text grew
+                // on the first keystroke (the emoji field: 15 px, then 17).
+                font.pixelSize: input.font.pixelSize
                 // Read like text (4.5:1); subtleText is for marks, not words.
                 color: Colors.mutedText
             }

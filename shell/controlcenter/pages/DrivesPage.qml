@@ -12,6 +12,64 @@ ColumnLayout {
     spacing: Metrics.panelGap
 
     readonly property bool empty: DrivesService.drives.length === 0 && DrivesService.phones.length === 0
+    // At the control center's narrowest (360) Unmount, Lock and Open beside
+    // a volume left its name one "…" wide. Below the compact width the
+    // actions go under the name, where they have the row to themselves.
+    readonly property bool narrow: width < Metrics.compactWidth
+    // Under the name: the row's own inset, its icon column and the gap after
+    // it (ListRow), so the buttons start where the title does.
+    readonly property real underNameInset: Metrics.spaceLg + Metrics.iconLg + Metrics.spaceMd
+
+    component VolumeActions: RowLayout {
+        id: volumeActions
+        required property var drive
+        required property var volume
+        property bool busy: false
+        readonly property bool isMounted: DrivesService.mounted(volume)
+        readonly property bool isLocked: DrivesService.locked(volume)
+        spacing: Metrics.spaceXs
+        ShellButton {
+            visible: !volumeActions.isLocked
+            text: volumeActions.isMounted ? "Unmount" : "Mount"
+            compact: true; variant: "ghost"
+            enabledState: !volumeActions.busy
+            onClicked: volumeActions.isMounted ? DrivesService.unmountVolume(volumeActions.drive, volumeActions.volume)
+                : DrivesService.mountVolume(volumeActions.drive, volumeActions.volume)
+        }
+        ShellButton {
+            visible: volumeActions.volume.encrypted && !volumeActions.isLocked
+            text: "Lock"
+            compact: true; variant: "ghost"
+            enabledState: !volumeActions.busy
+            toolTip: "Unmount and close the encrypted volume"
+            onClicked: DrivesService.lockVolume(volumeActions.drive, volumeActions.volume)
+        }
+        ShellButton {
+            icon: volumeActions.isLocked ? "󰌿" : "󰝰"
+            text: volumeActions.isLocked ? "Unlock …" : "Open"
+            compact: true; variant: "accent"
+            enabledState: !volumeActions.busy
+            onClicked: DrivesService.openVolume(volumeActions.drive, volumeActions.volume)
+        }
+    }
+
+    component PhoneActions: RowLayout {
+        id: phoneActions
+        required property var phone
+        property bool busy: false
+        spacing: Metrics.spaceXs
+        ShellButton {
+            visible: phoneActions.phone.mounted
+            text: "Unmount"; compact: true; variant: "ghost"
+            enabledState: !phoneActions.busy
+            onClicked: DrivesService.unmountPhone(phoneActions.phone)
+        }
+        ShellButton {
+            icon: "󰝰"; text: "Open"; compact: true; variant: "accent"
+            enabledState: !phoneActions.busy
+            onClicked: DrivesService.openPhone(phoneActions.phone)
+        }
+    }
 
     ShellCard {
         Layout.fillWidth: true
@@ -77,43 +135,41 @@ ColumnLayout {
 
                     Repeater {
                         model: card.modelData.volumes
-                        ListRow {
-                            id: row
+                        ColumnLayout {
+                            id: volumeEntry
                             required property var modelData
-                            readonly property bool isMounted: DrivesService.mounted(modelData)
-                            readonly property bool isLocked: DrivesService.locked(modelData)
                             Layout.fillWidth: true
-                            icon: row.isLocked ? "󰌾" : isMounted ? "󰉖" : Icons.folder
-                            active: isMounted
-                            title: DrivesService.volumeTitle(modelData)
-                            subtitle: DrivesService.volumeSubtitle(modelData)
-                            onClicked: DrivesService.openVolume(card.modelData, modelData)
+                            spacing: 0
+                            ListRow {
+                                id: row
+                                readonly property bool isMounted: DrivesService.mounted(volumeEntry.modelData)
+                                readonly property bool isLocked: DrivesService.locked(volumeEntry.modelData)
+                                Layout.fillWidth: true
+                                icon: row.isLocked ? "󰌾" : isMounted ? "󰉖" : Icons.folder
+                                active: isMounted
+                                title: DrivesService.volumeTitle(volumeEntry.modelData)
+                                subtitle: DrivesService.volumeSubtitle(volumeEntry.modelData)
+                                onClicked: DrivesService.openVolume(card.modelData, volumeEntry.modelData)
 
-                            RowLayout {
-                                spacing: Metrics.spaceXs
-                                ShellButton {
-                                    visible: !row.isLocked
-                                    text: row.isMounted ? "Unmount" : "Mount"
-                                    compact: true; variant: "ghost"
-                                    enabledState: !card.busy
-                                    onClicked: row.isMounted ? DrivesService.unmountVolume(card.modelData, row.modelData)
-                                        : DrivesService.mountVolume(card.modelData, row.modelData)
+                                // Loaded rather than hidden: a hidden child
+                                // still counts in the row's trailing width
+                                // (childrenRect) and kept the name squeezed.
+                                Loader {
+                                    active: !root.narrow
+                                    sourceComponent: VolumeActions {
+                                        drive: card.modelData
+                                        volume: volumeEntry.modelData
+                                        busy: card.busy
+                                    }
                                 }
-                                ShellButton {
-                                    visible: row.modelData.encrypted && !row.isLocked
-                                    text: "Lock"
-                                    compact: true; variant: "ghost"
-                                    enabledState: !card.busy
-                                    toolTip: "Unmount and close the encrypted volume"
-                                    onClicked: DrivesService.lockVolume(card.modelData, row.modelData)
-                                }
-                                ShellButton {
-                                    icon: row.isLocked ? "󰌿" : "󰝰"
-                                    text: row.isLocked ? "Unlock …" : "Open"
-                                    compact: true; variant: "accent"
-                                    enabledState: !card.busy
-                                    onClicked: DrivesService.openVolume(card.modelData, row.modelData)
-                                }
+                            }
+                            VolumeActions {
+                                visible: root.narrow
+                                Layout.leftMargin: root.underNameInset
+                                Layout.bottomMargin: Metrics.spaceXs
+                                drive: card.modelData
+                                volume: volumeEntry.modelData
+                                busy: card.busy
                             }
                         }
                     }
@@ -131,37 +187,37 @@ ColumnLayout {
                 width: parent.width
                 implicitHeight: phoneRow.implicitHeight + Metrics.spaceMd * 2
 
-                RowLayout {
+                ColumnLayout {
                     id: phoneRow
                     anchors.fill: parent
                     anchors.margins: Metrics.spaceMd
                     anchors.leftMargin: Metrics.spaceMd + Metrics.spaceXs
-                    spacing: Metrics.spaceMd
-                    ShellIcon {
-                        glyph: DrivesService.phoneIcon()
-                        size: Metrics.iconLg
-                        color: phoneCard.modelData.mounted ? Colors.accentForeground : Colors.mutedText
-                    }
-                    ColumnLayout {
+                    spacing: Metrics.spaceSm
+                    RowLayout {
                         Layout.fillWidth: true
-                        spacing: 0
-                        ShellText { Layout.fillWidth: true; text: DrivesService.phoneTitle(phoneCard.modelData); role: "bodyLarge" }
-                        ShellText {
-                            Layout.fillWidth: true
-                            text: DrivesService.phoneSubtitle(phoneCard.modelData)
-                            role: "small"; muted: true; wrapMode: Text.Wrap
+                        spacing: Metrics.spaceMd
+                        ShellIcon {
+                            glyph: DrivesService.phoneIcon()
+                            size: Metrics.iconLg
+                            color: phoneCard.modelData.mounted ? Colors.accentForeground : Colors.mutedText
                         }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            ShellText { Layout.fillWidth: true; text: DrivesService.phoneTitle(phoneCard.modelData); role: "bodyLarge" }
+                            ShellText {
+                                Layout.fillWidth: true
+                                text: DrivesService.phoneSubtitle(phoneCard.modelData)
+                                role: "small"; muted: true; wrapMode: Text.Wrap
+                            }
+                        }
+                        PhoneActions { visible: !root.narrow; phone: phoneCard.modelData; busy: phoneCard.busy }
                     }
-                    ShellButton {
-                        visible: phoneCard.modelData.mounted
-                        text: "Unmount"; compact: true; variant: "ghost"
-                        enabledState: !phoneCard.busy
-                        onClicked: DrivesService.unmountPhone(phoneCard.modelData)
-                    }
-                    ShellButton {
-                        icon: "󰝰"; text: "Open"; compact: true; variant: "accent"
-                        enabledState: !phoneCard.busy
-                        onClicked: DrivesService.openPhone(phoneCard.modelData)
+                    PhoneActions {
+                        visible: root.narrow
+                        Layout.leftMargin: Metrics.iconLg + Metrics.spaceMd
+                        phone: phoneCard.modelData
+                        busy: phoneCard.busy
                     }
                 }
             }

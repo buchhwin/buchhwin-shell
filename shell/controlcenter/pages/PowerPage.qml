@@ -37,6 +37,7 @@ ColumnLayout {
     SectionLabel { text: "Power profile"; Layout.leftMargin: Metrics.spaceSm }
     SegmentedControl {
         Layout.fillWidth: true
+        accessibleName: "Power profile"
         current: String(PowerService.profile)
         options: [
             { value: String(PowerProfile.PowerSaver), label: "Power saver", icon: "󰌪" },

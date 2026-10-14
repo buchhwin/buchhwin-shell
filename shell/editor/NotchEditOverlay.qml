@@ -280,6 +280,11 @@ Item {
                 anchors.top: parent.bottom
                 anchors.topMargin: Metrics.spaceXs
                 text: modelData === "collapsed" ? "Always visible" : "On hover"
+                // Below the notch, on the scrim: its ink with the editor's
+                // outline, as the hint lines have.
+                color: Colors.scrimText
+                style: Text.Outline
+                styleColor: Colors.scrimStrong
             }
         }
     }

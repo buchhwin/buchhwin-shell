@@ -21,6 +21,14 @@ ShellRoot {
         T.eq([edp.vrr, dp.vrr], [1, 0], "vrr normalised")
         T.eq(D.resolutions(dp).map(r => r.value), ["2560x1440", "1920x1080"], "unique resolutions, largest first")
         T.eq(D.refreshRates(dp, 2560, 1440).map(r => r.label), ["144 Hz", "60 Hz"], "refresh rates per resolution")
+        // 59.94 and 60.00 both round to 60: two segments saying "60 Hz" would
+        // be a choice nobody can make, so those two keep their decimals while
+        // a rate of its own stays whole - and only within the one resolution.
+        const ntsc = D.parseMonitors(JSON.stringify([{ name: "HDMI-A-1", width: 1920, height: 1080, refreshRate: 60, x: 0, y: 0, scale: 1,
+            availableModes: ["1920x1080@60.00Hz", "1920x1080@59.94Hz", "1920x1080@50.00Hz", "1280x720@60.00Hz"] }]))[0]
+        T.eq(D.refreshRates(ntsc, 1920, 1080).map(r => r.label), ["60.00 Hz", "59.94 Hz", "50 Hz"], "colliding whole-hertz labels keep their decimals")
+        T.eq(D.refreshRates(ntsc, 1920, 1080).map(r => r.value), ["60.00", "59.94", "50.00"], "values stay two-decimal")
+        T.eq(D.refreshRates(ntsc, 1280, 720).map(r => r.label), ["60 Hz"], "a rate alone at its resolution stays whole")
         T.eq(D.scaleChoices(1.6), [1, 1.25, 1.5, 1.6, 1.75, 2], "custom scale kept in choices")
         T.eq(D.logicalSize(edp), { width: 1920, height: 1200 }, "logical size uses scale")
         T.eq(D.logicalSize(Object.assign({}, dp, { transform: 1 })), { width: 1440, height: 2560 }, "rotation swaps size")

@@ -90,6 +90,7 @@ ColumnLayout {
         Repeater {
             model: ShortcutService.custom
             ListRow {
+                interactive: false
                 id: customRow
                 required property var modelData
                 readonly property string combo: ShortcutService.comboOf(modelData)
@@ -164,7 +165,8 @@ ColumnLayout {
                         Layout.fillWidth: true
                         text: root.recording ? (root.heldMods.length ? "…" : "Press a key combination · Esc cancels")
                             : root.captured ? "" : "Click and press a key combination"
-                        color: root.recording ? Colors.accentForeground : Colors.subtleText
+                        // Words, so mutedText: subtleText is for marks.
+                        color: root.recording ? Colors.accentForeground : Colors.mutedText
                     }
                     ShellButton {
                         focusOnTab: true

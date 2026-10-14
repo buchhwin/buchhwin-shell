@@ -18,7 +18,9 @@ ColumnLayout {
             "echo \"kernel=$(uname -r)\"",
             "echo \"host=$(cat /etc/hostname 2>/dev/null || uname -n)\"",
             "echo \"hyprland=$(Hyprland --version 2>/dev/null | head -n1 | cut -d' ' -f2)\"",
-            "echo \"quickshell=$(quickshell --version 2>/dev/null | head -n1 | sed 's/^quickshell //; s/,.*//')\"",
+            // "quickshell 0.2.1, revision …" (Fedora, Leap) and "Quickshell
+            // 0.3.2 (revision , distributed by Arch Linux)": the number alone.
+            "echo \"quickshell=$(quickshell --version 2>/dev/null | head -n1 | sed -E 's/^[Qq]uickshell //; s/ \\(.*//; s/,.*//')\"",
             "echo \"cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ //')\"",
             "echo \"gpu=$(lspci 2>/dev/null | grep -Ei 'vga|3d|display' | head -n1 | cut -d: -f3- | sed 's/^ //')\"",
             "echo \"ram=$(awk '/MemTotal/ {printf \"%.1f GiB\", $2/1048576}' /proc/meminfo)\"",
@@ -39,7 +41,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "buchhwin-shell"
-        description: "Custom desktop shell on Fedora, Hyprland and Quickshell"
+        description: "Custom desktop shell on Hyprland and Quickshell, for Fedora, openSUSE Leap and Arch Linux"
 
         SettingRow {
             Layout.fillWidth: true

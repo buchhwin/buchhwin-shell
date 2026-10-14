@@ -1,4 +1,5 @@
 .pragma library
+.import "../input/GestureLogic.js" as Gestures
 
 // The shell's keyboard shortcuts as Hyprland global shortcuts: what
 // hypr/hyprland.lua's `shell("launcher toggle")` sends as
@@ -17,9 +18,16 @@ var ACTIONS = [
     "dashboard toggle", "powerMenu toggle", "overview toggle", "wallpaperPicker toggle",
     "colorPicker pick", "switcher next", "switcher previous", "switcher confirm",
     "clipboard toggle", "emoji toggle", "recording toggle region", "recording toggle screen",
-    "kbdBacklight up", "kbdBacklight down", "kbdBacklight toggle"
+    "kbdBacklight up", "kbdBacklight down", "kbdBacklight toggle", "brightness up", "brightness down"
 ].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "workspaces switchTo " + n))
  .concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "workspaces move " + n))
+
+// The touchpad swipes that open a panel (Settings > Input): in a Lua session
+// a swipe's action sends `buchhwin:gestures.run.<name>` (GestureLogic.shortcut)
+// instead of starting the Quickshell IPC client at the end of every swipe.
+// Not bound to a key, so not in ACTIONS, which checks.py reads.
+var GESTURES = Gestures.actions.filter(action => Gestures.shellAction(action.value) !== null)
+    .map(action => "gestures run " + action.value)
 
 // The shortcuts that act when the key is let go (`release = true` in the
 // bind): Hyprland sends "released" for them, and "pressed" for the rest.
@@ -42,6 +50,15 @@ function onRelease(name) {
     return ON_RELEASE.map(nameOf).indexOf(String(name)) >= 0
 }
 
+// Whether a shortcut acts on this event (`pressed` true, or false for the
+// release). A swipe's shortcut comes from a gesture's Lua function, where no
+// key is held down for Hyprland to report on, and one dispatch sends exactly
+// one of the two events: it acts on whichever arrives.
+function runsOn(name, pressed) {
+    if (GESTURES.map(nameOf).indexOf(String(name)) >= 0) return true
+    return onRelease(name) !== pressed
+}
+
 function names() {
-    return ACTIONS.map(nameOf)
+    return ACTIONS.concat(GESTURES).map(nameOf)
 }

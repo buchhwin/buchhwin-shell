@@ -144,15 +144,19 @@ function lastLine(text) {
     return line.length > 160 ? line.slice(0, 157) + "…" : line
 }
 
+// checkupdates (Arch) says only "Cannot fetch updates" when its private
+// `pacman -Sy` cannot reach a mirror.
 function isOffline(stderr) {
-    return /Curl error|Could not resolve|Couldn't resolve|Could not connect|Network is unreachable|Temporary failure in name resolution|No route to host|Failed to download metadata|Unable to load summary|Timeout was reached/i.test(String(stderr || ""))
+    return /Cannot fetch updates|Curl error|Could not resolve|Couldn't resolve|Could not connect|Network is unreachable|Temporary failure in name resolution|No route to host|Failed to download metadata|Unable to load summary|Timeout was reached/i.test(String(stderr || ""))
 }
 
 // Readable text for a failed section. tool: "dnf" or "flatpak".
 function errorText(tool, section, stderr) {
     const label = tool === "dnf" ? "System packages" : "Flatpaks"
     if (!section) return label + ": no result"
-    if (section.code === 127) return tool === "dnf" ? "dnf5 is not installed" : "Flatpak is not installed"
+    // The check names what is missing where it knows better (Arch:
+    // checkupdates and its package); dnf5 and flatpak are the defaults.
+    if (section.code === 127) return lastLine(stderr) || (tool === "dnf" ? "dnf5 is not installed" : "Flatpak is not installed")
     if (section.code === 124) return label + ": the check timed out"
     if (isOffline(stderr)) return "Offline: the update servers could not be reached"
     const detail = lastLine(stderr)
@@ -467,6 +471,17 @@ function checkCommand(script, refresh, cacheOnly) {
 
 function discoverCommand() {
     return ["plasma-discover", "--mode", "update"]
+}
+
+// Arch: Discover cannot install pacman's updates without PackageKit, and an
+// upgrade on Arch is the whole system at once, in a terminal, by its user.
+// An AUR helper upgrades the repositories and the AUR together; without one
+// pacman asks for the password itself.
+function terminalUpgradeCommand(kittyScript) {
+    return [kittyScript, "--hold", "sh", "-c",
+            "if command -v paru >/dev/null 2>&1; then exec paru -Syu; "
+            + "elif command -v yay >/dev/null 2>&1; then exec yay -Syu; "
+            + "else exec sudo pacman -Syu; fi"]
 }
 
 // User installation only: system Flatpaks and packages go through Discover

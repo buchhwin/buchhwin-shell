@@ -6,7 +6,10 @@ import qs.services
 import qs.shell.components
 
 // Settings > Terminal: Kitty appearance, Starship prompt with a live preview
-// and the Fastfetch greeting. Applies to terminals started in this session.
+// and the Fastfetch greeting. Applies to the terminals the shell opens itself
+// (kitty: updates, the default terminal); Super+Enter opens Alacritty, which
+// keeps its own configuration and takes only the opacity from here
+// (scripts/launch-alacritty.sh).
 ColumnLayout {
     id: root
     spacing: Metrics.spaceLg
@@ -28,7 +31,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Shell"
-        description: "Which zsh configuration Kitty starts with"
+        description: "Which zsh configuration the shell's own terminals (kitty) start with"
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
@@ -42,7 +45,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Preview"
-        description: "New Kitty windows use these settings; open windows update font, opacity and cursor right away."
+        description: "New kitty windows use these settings; open windows update font, opacity and cursor right away."
 
         // The Starship preview, the Git sample and the greeting are the
         // session's own zsh; with the account's ~/.zshrc they say nothing.
@@ -159,7 +162,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Kitty"
-        description: "Font, transparency, spacing and cursor"
+        description: "Font, transparency, spacing and cursor of the shell's own terminals"
 
         SettingRow {
             label: "Font"
@@ -185,6 +188,7 @@ ColumnLayout {
         }
         SettingRow {
             label: "Opacity"
+            hint: "Also applies to Alacritty, the session terminal (Super+Enter)"
             ShellSlider {
                 focusOnTab: true
                 Layout.fillWidth: true

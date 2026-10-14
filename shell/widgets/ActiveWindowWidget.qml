@@ -27,6 +27,7 @@ WidgetBase {
     // to say. At `large` the application goes underneath, because a title
     // alone often does not name it ("Inbox (3)").
     maxLabelWidth: sizeClass === "small" ? 320 : sizeClass === "medium" ? 480 : 640
-    detail: appOnly ? "" : HyprlandService.activeAppId
+    // The application's name, worked out above, not its raw id.
+    detail: appOnly ? "" : appName
     hasData: HyprlandService.activeTitle.length > 0
 }

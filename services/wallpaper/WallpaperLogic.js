@@ -251,6 +251,15 @@ function defaultFolder(pictures, home) {
     return (pictures || String(home || "") + "/Pictures") + "/Desktop"
 }
 
+// A local path as a file: url for FolderListModel. Each segment is encoded:
+// a folder named "a#b", "x?y" or "50%2F" read as a fragment, a query or an
+// escape, and the picker showed nothing.
+function folderUrl(path) {
+    const value = String(path || "")
+    if (!value.length) return ""
+    return "file://" + value.split("/").map(encodeURIComponent).join("/")
+}
+
 // "/home/a/x" → "~/x", so the setting survives a renamed home.
 function contractHome(path, home) {
     const value = String(path || "")

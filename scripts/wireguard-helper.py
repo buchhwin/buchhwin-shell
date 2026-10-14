@@ -50,6 +50,13 @@ def is_address(text):
         return False
 
 
+def keepalive_of(peer):
+    """A peer's PersistentKeepalive, "" when there is none: wg(8) also
+    spells that "off"."""
+    value = peer.get("persistentkeepalive", "")
+    return "" if value.lower() == "off" else value
+
+
 def parse_conf(text):
     """A wg-quick configuration as {"interface": {...}, "peers": [{...}]}.
 
@@ -122,7 +129,7 @@ def check(conf):
                 ipaddress.ip_network(network, strict=False)
             except ValueError:
                 errors.append("%s is not a network" % network)
-        keepalive = peer.get("persistentkeepalive", "")
+        keepalive = keepalive_of(peer)
         if keepalive and not (keepalive.isdigit() and int(keepalive) <= 65535):
             errors.append("PersistentKeepalive is not a number of seconds")
     return errors
@@ -140,8 +147,8 @@ def settings(conf, name, ifname, user, connection_uuid=None):
                  "allowed-ips": split_list(peer.get("allowedips"))}
         if peer.get("endpoint"):
             entry["endpoint"] = peer["endpoint"]
-        if peer.get("persistentkeepalive"):
-            entry["persistent-keepalive"] = int(peer["persistentkeepalive"])
+        if keepalive_of(peer):
+            entry["persistent-keepalive"] = int(keepalive_of(peer))
         if peer.get("presharedkey"):
             entry["preshared-key"] = peer["presharedkey"]
             entry["preshared-key-flags"] = 0

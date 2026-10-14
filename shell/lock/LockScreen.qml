@@ -77,6 +77,8 @@ Scope {
     // waits. Submitting meanwhile aborts and checks the password alone.
     property string fingerprint: ""
     property bool fingerprintStage: false
+    // What PAM said during the current attempt, for Logic.lockoutNotice.
+    property var pamMessages: []
     property int fingerprintMisses: 0
     property bool passwordOnly: false
     property bool passwordServiceInstalled: false
@@ -194,6 +196,7 @@ Scope {
         if (pam.active || unlocking) return
         root.passwordOnly = passwordOnly === true
         fingerprintStage = false
+        pamMessages = []
         if (!pam.start()) {
             busy = false
             submitPending = false
@@ -256,6 +259,7 @@ Scope {
             } else if (message.length) {
                 root.status = message
                 root.statusIsError = messageIsError
+                root.pamMessages = root.pamMessages.concat([message])
             }
         }
         onCompleted: result => {
@@ -263,7 +267,8 @@ Scope {
             root.submitPending = false
             root.fingerprintStage = false
             root.fingerprint = ""
-            const next = Logic.afterPam(result, { Success: PamResult.Success, Failed: PamResult.Failed, Error: PamResult.Error, MaxTries: PamResult.MaxTries })
+            const next = Logic.afterPam(result, { Success: PamResult.Success, Failed: PamResult.Failed, Error: PamResult.Error, MaxTries: PamResult.MaxTries },
+                                        Logic.lockoutNotice(root.pamMessages))
             if (next.shake) root.shakes += 1
             if (next.action === "unlock") {
                 root.unlock()

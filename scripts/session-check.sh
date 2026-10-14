@@ -23,10 +23,13 @@ section() { printf '\n%s\n' "$*"; }
 setting() { jq -r "$1" "$settings" 2>/dev/null; }
 # running NAME PATTERN: a process with executable NAME whose command line
 # matches PATTERN (exact names avoid matching shells that mention the text).
+# The command line is captured, then searched: `| grep -q` quits at its match
+# and leaves tr with SIGPIPE, which pipefail reads as "not running" (pitfall 15).
 running() {
-  local pid
+  local pid cmdline
   for pid in $(pgrep -u "$(id -u)" -x "$1" 2>/dev/null); do
-    tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -qE -- "${2:-.}" && return 0
+    cmdline=$({ tr '\0' ' ' <"/proc/$pid/cmdline"; } 2>/dev/null) || continue
+    grep -qE -- "${2:-.}" <<<"$cmdline" && return 0
   done
   return 1
 }
@@ -86,6 +89,12 @@ case "$dialect" in
   unknown) warn "shell has not worked out which Hyprland dialect to speak" ;;
   *)       warn "could not read the shell's Hyprland dialect" ;;
 esac
+# Who owns what on the session bus, read once from the bus's list: `busctl
+# status` on an activatable name starts what it asks about (the portal; on
+# Arch, Plasma's notification server for org.freedesktop.Notifications).
+bus_names=$(busctl --user --auto-start=no --no-pager list 2>/dev/null) || bus_names=""
+# bus_owner NAME: the owning process's name, nothing when the name has no owner.
+bus_owner() { awk -v name="$1" '$1 == name && $2 != "-" { print $3; exit }' <<<"$bus_names"; }
 # The running instance's log (quickshell.log starts fresh with every shell
 # start; the previous one is quickshell.log.old).
 log=$(quickshell log --path "$shell_path" 2>/dev/null)
@@ -96,9 +105,9 @@ if [[ -n $log ]]; then
   [[ -z $problems ]] && ok "shell log has no errors" || warn "shell log: $problems"
   # The shell starts before the portal work on purpose (a slow portal used to
   # keep the screen black), so Qt's registration attempt can fail once. Only a
-  # portal that stays unreachable is a problem.
+  # portal that stays unreachable (no owner now) is a problem.
   if grep -q 'Failed to register with host portal' <<<"$log"; then
-    busctl --user --timeout=3 status org.freedesktop.portal.Desktop >/dev/null 2>&1 \
+    [[ -n $(bus_owner org.freedesktop.portal.Desktop) ]] \
       && ok "portal registration retried after the shell started" \
       || warn "the portal is not reachable (the shell could not register with it)"
   fi
@@ -125,7 +134,8 @@ layout_current=$(sed -n 's/^var CURRENT_VERSION = \([0-9]\+\).*/\1/p' "$project_
 layout_current=${layout_current:-3}
 [[ $layout_version == "$layout_current" ]] && ok "layout.json uses format v$layout_current" \
     || warn "layout.json not migrated yet (version '${layout_version:-missing}', the shell writes v$layout_current)"
-owner=$(busctl --user --timeout=3 status org.freedesktop.Notifications 2>/dev/null | sed -n 's/^Comm=//p')
+# Process names are cut to 15 characters (.quickshell-wrapped).
+owner=$(bus_owner org.freedesktop.Notifications)
 [[ $owner == quickshell || $owner == .quickshell* ]] && ok "notifications are handled by the shell" || warn "notification service is owned by '${owner:-nobody}'"
 
 section "Keyring and portals"
@@ -142,7 +152,7 @@ if [[ $portal_interfaces == *org.freedesktop.portal.Secret* ]]; then ok "Secret 
 # that starts a second ksecretd would be worse than no check).
 wallet_state=$("$project_dir/scripts/wallet-unlock.sh" status 2>/dev/null)
 case "$wallet_state" in
-  open)       ok "the KDE wallet is open (ksecretd, org.freedesktop.secrets)" ;;
+  open)       ok "the KDE wallet is open (ksecretd)" ;;
   locked)     warn "the KDE wallet is locked: applications that store secrets will ask for the password, and Brave, Chrome and Chromium refuse to start until it is open (scripts/launch-chromium.sh)" ;;
   "no service") warn "no secret service on the bus: the login did not hand ksecretd the password (startup.log says what happened)" ;;
   *)          warn "the secret service is running; its lock state could not be read" ;;
@@ -178,19 +188,28 @@ section "Power and hardware"
 if [[ $(setting '.power.lockBeforeSleep') != false ]]; then
   running swayidle 'before-sleep' && ok "lock before sleep is active" || fail "swayidle (lock before sleep) is not running"
 fi
-# Installed is not enough: the file includes the distribution's stack
-# (system-auth on Fedora, common-auth on openSUSE), and an include that names
-# a stack this system does not have is a lock screen that never unlocks.
-if [[ ! -r /etc/pam.d/buchhwin-lock ]]; then
-  fail "/etc/pam.d/buchhwin-lock is missing (sudo install/system-install.sh)"
-else
-  pam_include=$(awk '$1 == "auth" && $2 == "include" { print $3; exit }' /etc/pam.d/buchhwin-lock)
-  if [[ -z $pam_include || -e /etc/pam.d/$pam_include || -e /usr/lib/pam.d/$pam_include ]]; then
-    ok "lock screen PAM service installed${pam_include:+ (uses $pam_include)}"
-  else
-    fail "/etc/pam.d/buchhwin-lock includes $pam_include, which this system does not have; remove the file and run sudo install/system-install.sh again"
+# Installed is not enough: the files include the distribution's stack
+# (system-auth on Fedora and Arch, common-auth on openSUSE, password-auth on
+# Fedora only), and an include that names a stack this system does not have
+# is a lock screen that never unlocks. Both services: the lock switches to the
+# password one when fingerprint is off or the lid is closed. Without the
+# password one it keeps the main service (LockLogic.passwordService), so a
+# missing file there is a warning, not an error.
+for pam_service in buchhwin-lock buchhwin-lock-password; do
+  if [[ ! -r /etc/pam.d/$pam_service && $pam_service == buchhwin-lock-password ]]; then
+    warn "/etc/pam.d/$pam_service is missing: the lock keeps buchhwin-lock, where a password is checked only after the fingerprint reader gives up (sudo install/system-install.sh)"
+    continue
+  elif [[ ! -r /etc/pam.d/$pam_service ]]; then
+    fail "/etc/pam.d/$pam_service is missing (sudo install/system-install.sh)"
+    continue
   fi
-fi
+  pam_include=$(awk '$1 == "auth" && $2 == "include" { print $3; exit }' "/etc/pam.d/$pam_service")
+  if [[ -z $pam_include || -e /etc/pam.d/$pam_include || -e /usr/lib/pam.d/$pam_include ]]; then
+    ok "lock screen PAM service $pam_service installed${pam_include:+ (uses $pam_include)}"
+  else
+    fail "/etc/pam.d/$pam_service includes $pam_include, which this system does not have; remove the file and run sudo install/system-install.sh again"
+  fi
+done
 # 0.55 answers "bool: true", 0.56 "int: 1".
 lock_restore=$(hyprctl getoption misc:allow_session_lock_restore 2>/dev/null | head -1)
 [[ $lock_restore == *1 || $lock_restore == *true ]] && ok "a crashed lock screen can be restarted" || warn "misc:allow_session_lock_restore is off"

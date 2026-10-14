@@ -75,6 +75,12 @@ Singleton {
     // they are cut with an ellipsis instead of pushing the row apart.
     readonly property int buttonTextMax: 260
     readonly property int trailingTextMax: 160
+    // The widest a tooltip bubble gets before its words wrap: a hint is a
+    // sentence or two, and one line of it ran past the window's edge.
+    readonly property int toolTipMaxWidth: 320
+    // The widest a named workspace's capsule gets before its name elides:
+    // a word ("web", "mail") fits, a sentence does not push the strip apart.
+    readonly property int workspaceLabelMax: 96
     readonly property int controlHeightSm: 30
     readonly property int rowHeight: 48
     readonly property int tileHeight: 72

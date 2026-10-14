@@ -42,10 +42,15 @@ sandbox_pids() {
   done
 }
 stop_nested() {
-  local pid leftovers
+  local pid leftovers environment=""
   if [[ -r "$base/hyprland.pid" ]]; then
     pid=$(<"$base/hyprland.pid")
-    if [[ $pid =~ ^[0-9]+$ ]] && tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | grep -qx 'BUCHHWIN_NESTED=1'; then
+    # Captured, then searched, as in sandbox_pids: `| grep -qx` would leave tr
+    # with SIGPIPE, and pipefail then reads the nested Hyprland as not nested.
+    if [[ $pid =~ ^[0-9]+$ ]]; then
+      environment=$({ tr '\0' '\n' <"/proc/$pid/environ"; } 2>/dev/null) || environment=""
+    fi
+    if [[ $pid =~ ^[0-9]+$ ]] && grep -qx 'BUCHHWIN_NESTED=1' <<<"$environment"; then
       kill "$pid" 2>/dev/null || true
       for _ in {1..60}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.05; done
     elif [[ $pid =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then

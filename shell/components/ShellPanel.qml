@@ -213,6 +213,10 @@ PanelWindow {
     }
     default property alias content: body.data
     readonly property alias card: card
+    // The open/close progress, for what lives in a Loader below: inside one,
+    // a bare `progress` is the Loader's own loading progress, a number, and
+    // `progress.value` was undefined (smoke test, 14.10.).
+    readonly property real openProgress: progress.value
     readonly property real cardTargetWidth: card.targetWidth
     // The height the card was granted, for content that sizes itself to it
     // (the control center's and the dashboard's lists). Worked out from the
@@ -265,12 +269,41 @@ PanelWindow {
     // takes; its anchors (top and left) never do.
     readonly property bool fullSurface: !compactSurface || gripShown || sizing
         || LayoutService.arrangeDragging.length > 0
+    // A panel whose card changes height while it stays open - the control
+    // center going from its overview to a detail page - keeps a surface as
+    // tall as the screen and only as wide as the card. Resizing the mapped
+    // layer surface on such a switch let one more frame at the old size reach
+    // the screen (measured nested: 868 -> 785 -> 868 -> 785 px within 40 ms),
+    // and the overview flashed back after the network page had appeared.
+    property bool stableSurfaceHeight: false
     // How far the shadow reaches past the card: its blur plus how far it is
     // dropped. Tooltips under the last row fit in it too.
     readonly property int surfacePad: elevationMax + elevationOffset
+    // What the surface covers: the whole screen while `fullSurface`, else the
+    // card's rect, held while the panel stays open (`heldRect`).
+    readonly property rect surfaceRect: fullSurface || screenW <= 0 ? Qt.rect(0, 0, screenW, screenH) : heldRect
+    // While the panel is open its surface only grows. A card that gets shorter
+    // with the panel still open - a list filtering down, a page switch, a scan
+    // dropping a network - keeps the surface it had: resizing the mapped layer
+    // surface let one more frame at the old size reach the screen (pitfall 57,
+    // the control center flash). Growing resizes, once. Let go when the panel
+    // has closed (`shown` false, the surface is unmapped) or changes screen.
+    property rect heldRect
+    function holdRect() {
+        const r = compactRect, h = heldRect
+        if (!shown || h.width <= 0 || h.height <= 0) { heldRect = r; return }
+        const x0 = Math.min(h.x, r.x), y0 = Math.min(h.y, r.y)
+        const x1 = Math.max(h.x + h.width, r.x + r.width), y1 = Math.max(h.y + h.height, r.y + r.height)
+        if (x0 !== h.x || y0 !== h.y || x1 !== h.x + h.width || y1 !== h.y + h.height)
+            heldRect = Qt.rect(x0, y0, x1 - x0, y1 - y0)
+    }
+    onCompactRectChanged: holdRect()
+    onShownChanged: holdRect()
+    onScreenChanged: heldRect = compactRect
+    Component.onCompleted: holdRect()
     // Origin and target together, so the morph is never cut off.
-    readonly property rect surfaceRect: {
-        if (fullSurface || screenW <= 0) return Qt.rect(0, 0, screenW, screenH)
+    readonly property rect compactRect: {
+        if (screenW <= 0) return Qt.rect(0, 0, screenW, screenH)
         let x0 = card.placedX, y0 = card.placedY
         let x1 = card.placedX + card.targetWidth, y1 = card.placedY + card.targetHeight
         if (hasOrigin) {
@@ -281,6 +314,7 @@ PanelWindow {
         y0 = Math.max(0, Math.floor(y0 - surfacePad))
         x1 = Math.min(screenW, Math.ceil(x1 + surfacePad))
         y1 = Math.min(screenH, Math.ceil(y1 + surfacePad))
+        if (stableSurfaceHeight) { y0 = 0; y1 = screenH }
         return Qt.rect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0))
     }
 
@@ -450,61 +484,71 @@ PanelWindow {
         // under a fading opacity. At rest the scale is 1 and the offset 0, so the
         // picture is the one drawn before. A panel without an origin never
         // morphs and keeps the live bindings.
-        Rectangle {
-            id: shadowCaster
-            visible: false
-            x: window.shadowFromTarget ? card.placedX : card.x
-            y: window.shadowFromTarget ? card.placedY : card.y
-            width: window.shadowFromTarget ? card.targetWidth : card.width
-            height: window.shadowFromTarget ? card.targetHeight : card.height
-            radius: card.radius
-            topLeftRadius: window.fromNotch ? 0 : card.radius
-            topRightRadius: window.fromNotch ? 0 : card.radius
-            color: Colors.shadow
-            layer.enabled: true
-        }
-        MultiEffect {
-            source: shadowCaster
-            // The caster's size, whatever the card's: the effect's own textures
-            // are allocated for this size and must not be resized per frame
-            // either. Following the card is the transform's job.
-            anchors.fill: shadowCaster
-            visible: window.showCard && window.shadow
-            opacity: progress.value
-            shadowEnabled: true
-            shadowColor: Colors.shadow
-            blurMax: window.elevationMax
-            shadowBlur: window.elevationBlur
-            shadowOpacity: window.elevationOpacity
-            shadowVerticalOffset: window.elevationOffset
-            // The caster is painted too, and the panel is translucent, so an
-            // unmasked shadow would darken the panel from underneath. Masked by
-            // the caster itself, inverted, only what falls outside the card is
-            // drawn. autoPadding stays on, or the shadow is clipped to the rect it
-            // is supposed to spread beyond.
-            maskEnabled: true
-            maskSource: shadowCaster
-            maskInverted: true
-            // A Scale about the top-left corner and then a Translate, not the
-            // `scale` property: that one works from the centre, and with the
-            // padding the shadow spreads into, the item's centre is not the
-            // card's. Scaled from the corner, the caster's picture lands exactly
-            // on the card's rect: the caster is `targetWidth` wide and the card
-            // `width`, so the ratio maps one onto the other, and the offset is
-            // where the card is relative to where the caster is. The mask scales
-            // with it, so the cut-out stays under the card.
-            transform: [
-                Scale {
-                    origin.x: 0
-                    origin.y: 0
-                    xScale: window.shadowFromTarget ? card.width / Math.max(1, card.targetWidth) : 1
-                    yScale: window.shadowFromTarget ? card.height / Math.max(1, card.targetHeight) : 1
-                },
-                Translate {
-                    x: window.shadowFromTarget ? card.x - shadowCaster.x : 0
-                    y: window.shadowFromTarget ? card.y - shadowCaster.y : 0
+        // Created while the panel is shown, not for each of the ~28 panels at
+        // start: the caster, the effect and its blur chain are a few hundred
+        // objects per panel that a closed panel never draws. Synchronous, so
+        // the first frame of an open has its shadow as before.
+        Loader {
+            anchors.fill: parent
+            active: window.shown
+            sourceComponent: Item {
+                Rectangle {
+                    id: shadowCaster
+                    visible: false
+                    x: window.shadowFromTarget ? card.placedX : card.x
+                    y: window.shadowFromTarget ? card.placedY : card.y
+                    width: window.shadowFromTarget ? card.targetWidth : card.width
+                    height: window.shadowFromTarget ? card.targetHeight : card.height
+                    radius: card.radius
+                    topLeftRadius: window.fromNotch ? 0 : card.radius
+                    topRightRadius: window.fromNotch ? 0 : card.radius
+                    color: Colors.shadow
+                    layer.enabled: true
                 }
-            ]
+                MultiEffect {
+                    source: shadowCaster
+                    // The caster's size, whatever the card's: the effect's own textures
+                    // are allocated for this size and must not be resized per frame
+                    // either. Following the card is the transform's job.
+                    anchors.fill: shadowCaster
+                    visible: window.showCard && window.shadow
+                    opacity: window.openProgress
+                    shadowEnabled: true
+                    shadowColor: Colors.shadow
+                    blurMax: window.elevationMax
+                    shadowBlur: window.elevationBlur
+                    shadowOpacity: window.elevationOpacity
+                    shadowVerticalOffset: window.elevationOffset
+                    // The caster is painted too, and the panel is translucent, so an
+                    // unmasked shadow would darken the panel from underneath. Masked by
+                    // the caster itself, inverted, only what falls outside the card is
+                    // drawn. autoPadding stays on, or the shadow is clipped to the rect it
+                    // is supposed to spread beyond.
+                    maskEnabled: true
+                    maskSource: shadowCaster
+                    maskInverted: true
+                    // A Scale about the top-left corner and then a Translate, not the
+                    // `scale` property: that one works from the centre, and with the
+                    // padding the shadow spreads into, the item's centre is not the
+                    // card's. Scaled from the corner, the caster's picture lands exactly
+                    // on the card's rect: the caster is `targetWidth` wide and the card
+                    // `width`, so the ratio maps one onto the other, and the offset is
+                    // where the card is relative to where the caster is. The mask scales
+                    // with it, so the cut-out stays under the card.
+                    transform: [
+                        Scale {
+                            origin.x: 0
+                            origin.y: 0
+                            xScale: window.shadowFromTarget ? card.width / Math.max(1, card.targetWidth) : 1
+                            yScale: window.shadowFromTarget ? card.height / Math.max(1, card.targetHeight) : 1
+                        },
+                        Translate {
+                            x: window.shadowFromTarget ? card.x - shadowCaster.x : 0
+                            y: window.shadowFromTarget ? card.y - shadowCaster.y : 0
+                        }
+                    ]
+                }
+            }
         }
 
         Rectangle {
@@ -673,36 +717,43 @@ PanelWindow {
 
         // The notch's ears, on the card's two top corners while it stands in
         // for the notch: concave cuts that join the card to the top edge.
-        Shape {
-            visible: window.fromNotch && window.showCard
-            x: card.x - window.earSize
-            y: 0
-            width: window.earSize
-            height: window.earSize
-            opacity: progress.value
-            preferredRendererType: Shape.CurveRenderer
-            ShapePath {
-                fillColor: window.topColor
-                strokeWidth: -1
-                startX: 0; startY: 0
-                PathArc { x: window.earSize; y: window.earSize; radiusX: window.earSize; radiusY: window.earSize; direction: PathArc.Clockwise }
-                PathLine { x: window.earSize; y: 0 }
-            }
-        }
-        Shape {
-            visible: window.fromNotch && window.showCard
-            x: card.x + card.width
-            y: 0
-            width: window.earSize
-            height: window.earSize
-            opacity: progress.value
-            preferredRendererType: Shape.CurveRenderer
-            ShapePath {
-                fillColor: window.topColor
-                strokeWidth: -1
-                startX: 0; startY: window.earSize
-                PathArc { x: window.earSize; y: 0; radiusX: window.earSize; radiusY: window.earSize; direction: PathArc.Clockwise }
-                PathLine { x: 0; y: 0 }
+        // Only made for a panel that comes out of the notch, while shown.
+        Loader {
+            anchors.fill: parent
+            active: window.shown && window.fromNotch && window.showCard
+            sourceComponent: Item {
+                Shape {
+                    visible: window.fromNotch && window.showCard
+                    x: card.x - window.earSize
+                    y: 0
+                    width: window.earSize
+                    height: window.earSize
+                    opacity: window.openProgress
+                    preferredRendererType: Shape.CurveRenderer
+                    ShapePath {
+                        fillColor: window.topColor
+                        strokeWidth: -1
+                        startX: 0; startY: 0
+                        PathArc { x: window.earSize; y: window.earSize; radiusX: window.earSize; radiusY: window.earSize; direction: PathArc.Clockwise }
+                        PathLine { x: window.earSize; y: 0 }
+                    }
+                }
+                Shape {
+                    visible: window.fromNotch && window.showCard
+                    x: card.x + card.width
+                    y: 0
+                    width: window.earSize
+                    height: window.earSize
+                    opacity: window.openProgress
+                    preferredRendererType: Shape.CurveRenderer
+                    ShapePath {
+                        fillColor: window.topColor
+                        strokeWidth: -1
+                        startX: 0; startY: window.earSize
+                        PathArc { x: window.earSize; y: 0; radiusX: window.earSize; radiusY: window.earSize; direction: PathArc.Clockwise }
+                        PathLine { x: 0; y: 0 }
+                    }
+                }
             }
         }
 

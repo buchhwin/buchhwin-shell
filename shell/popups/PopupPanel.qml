@@ -40,45 +40,54 @@ ShellPanel {
     // which, with the record turning in the media popup, is every frame.
     // The body is a sibling with its own z, so nothing that animates is in
     // here. Taking the two `layer.` lines out is the way back.
-    Item {
+    //
+    // Built only while shown and only for a popup that has a backdrop, which
+    // is the media popup alone: every one of the twelve popups carried the
+    // three layered items and the blur all session for it. Synchronous, so
+    // it exists from the frame `shown` turns on, as it did; the image was
+    // only ever asked for then.
+    Loader {
         parent: root.card
         anchors.fill: parent
-        visible: root.shown && root.backdropSource.length > 0 && backdropImage.status === Image.Ready
-        opacity: Effects.mediaBackdropOpacity
-        layer.enabled: true
-        layer.smooth: true
-
-        Image {
-            id: backdropImage
-            anchors.fill: parent
-            source: root.shown ? root.backdropSource : ""
-            fillMode: Image.PreserveAspectCrop
-            sourceSize.width: 256
-            asynchronous: true
-            visible: false
-            layer.enabled: true
-        }
-        Rectangle {
-            id: backdropMask
-            anchors.fill: parent
-            radius: root.card.radius
-            visible: false
+        active: root.shown && root.backdropSource.length > 0
+        sourceComponent: Item {
+            visible: root.shown && root.backdropSource.length > 0 && backdropImage.status === Image.Ready
+            opacity: Effects.mediaBackdropOpacity
             layer.enabled: true
             layer.smooth: true
-        }
-        MultiEffect {
-            anchors.fill: parent
-            source: backdropImage
-            blurEnabled: true
-            blur: 1
-            blurMax: Effects.mediaBackdropBlur
-            // Padding would stretch the mask beyond the card corners.
-            autoPaddingEnabled: false
-            saturation: 0.2
-            maskEnabled: true
-            maskSource: backdropMask
-            maskThresholdMin: 0.5
-            maskSpreadAtMin: 1.0
+
+            Image {
+                id: backdropImage
+                anchors.fill: parent
+                source: root.shown ? root.backdropSource : ""
+                fillMode: Image.PreserveAspectCrop
+                sourceSize.width: 256
+                asynchronous: true
+                visible: false
+                layer.enabled: true
+            }
+            Rectangle {
+                id: backdropMask
+                anchors.fill: parent
+                radius: root.card.radius
+                visible: false
+                layer.enabled: true
+                layer.smooth: true
+            }
+            MultiEffect {
+                anchors.fill: parent
+                source: backdropImage
+                blurEnabled: true
+                blur: 1
+                blurMax: Effects.mediaBackdropBlur
+                // Padding would stretch the mask beyond the card corners.
+                autoPaddingEnabled: false
+                saturation: 0.2
+                maskEnabled: true
+                maskSource: backdropMask
+                maskThresholdMin: 0.5
+                maskSpreadAtMin: 1.0
+            }
         }
     }
 

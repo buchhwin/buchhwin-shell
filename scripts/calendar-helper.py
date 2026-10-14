@@ -105,7 +105,7 @@ try:
 except ImportError as error:  # pragma: no cover - environment check
     print(json.dumps({"ok": False,
                       "error": "the Akonadi Python bindings are missing (Fedora: python3-kf6-kcoreaddons "
-                               "and python3-kf6-kcalendarcore; openSUSE Leap does not package them)",
+                               "and python3-kf6-kcalendarcore; openSUSE Leap and Arch do not package them)",
                       "detail": str(error)}))
     sys.exit(1)
 
@@ -490,7 +490,9 @@ def command_exclude(request, args):
     """Delete one occurrence: an EXDATE on the series.
 
     An occurrence that had been moved is its own incidence, so it is removed as
-    well - excluding the day alone would leave the moved copy behind.
+    well - excluding the day alone would leave the moved copy behind. The
+    series is written first: if that fails (another client changed it), the
+    moved copy is still there, rather than gone with the day back in its place.
     """
     master = yield from fetch_item(request.get("item"))
     if master is None:
@@ -502,11 +504,12 @@ def command_exclude(request, args):
     if args.dry_run:
         return result(ok=True, dryRun=True, ical=text)
     exception = request.get("exception") or 0
+    stale = None
     if exception:
         stale = yield from fetch_item(exception)
-        if stale is not None:
-            yield from remove(stale)
     yield from modify(master, text)
+    if stale is not None:
+        yield from remove(stale)
     return result(ok=True)
 
 

@@ -5,11 +5,15 @@ import qs.services
 import "Harness.js" as T
 
 // SettingsService itself, against the runner's sandboxed XDG_CONFIG_HOME:
-// what `set` refuses, that two sets in one turn of the event loop are one
-// pending text and one write, and that the write lands in settings.json.
+// that a change asked for before settings.json has been read lands on top of
+// the user's file instead of replacing it with the defaults, what `set`
+// refuses, that two sets in one turn of the event loop are one pending text
+// and one write, and that the write lands in settings.json.
 ShellRoot {
     id: root
     property int tries: 0
+    // 1: waiting for the early change in the file, 2: for the later two.
+    property int phase: 0
 
     FileView {
         id: written
@@ -18,20 +22,45 @@ ShellRoot {
         printErrors: false
     }
 
-    Component.onCompleted: {
+    // The user's own file is in place before SettingsService is first
+    // touched, so its read is still out when the early change is asked for.
+    Process {
+        id: seed
+        running: true
+        command: ["sh", "-c", "mkdir -p -- \"$1\" && printf '%s\\n' \"$2\" > \"$1/settings.json\"", "sh",
+                  Paths.configDir, JSON.stringify({ appearance: { clockFormat: "12" } })]
+        onExited: root.early()
+    }
+
+    function early() {
+        T.eq(SettingsService.loaded, false, "the file is still being read")
+        T.eq(SettingsService.set("workspaces.count", 7), true, "a change before the file is read is taken")
+        T.eq(SettingsService.value("workspaces.count"), 7, "and live at once")
+        T.eq(SettingsService.pendingText, "", "but nothing is written over a file not read yet")
+        phase = 1
+        settle.start()
+    }
+
+    function later() {
+        T.eq(SettingsService.value("appearance.clockFormat"), "12", "the user's file was read")
+        T.eq(SettingsService.value("workspaces.count"), 7, "with the early change on top")
+
         T.eq(SettingsService.set("appearance.theme", 5), false, "a value of the wrong type is refused")
         T.eq(SettingsService.value("appearance.theme"), "dark", "and the setting keeps its default")
         T.eq(SettingsService.set("appearance.theme", "purple"), false, "a value outside the allowed list is refused")
         T.eq(SettingsService.value("appearance.theme"), "dark", "and the setting still keeps its default")
+        const before = SettingsService.pendingText
         T.eq(SettingsService.set("nothing.here", 1), false, "an unknown key is refused")
-        T.eq(SettingsService.pendingText, "", "nothing refused is written")
+        T.eq(SettingsService.pendingText, before, "nothing refused is written")
 
         T.eq(SettingsService.set("appearance.theme", "light"), true, "an allowed value is taken")
-        T.eq(SettingsService.set("workspaces.count", 7), true, "and a second one in the same turn")
+        T.eq(SettingsService.set("workspaces.count", 5), true, "and a second one in the same turn")
         const pending = JSON.parse(SettingsService.pendingText)
         T.eq(pending.appearance.theme, "light", "one pending text holds the first")
-        T.eq(pending.workspaces.count, 7, "and the second")
-        T.eq(SettingsService.value("workspaces.count"), 7, "the value is live before the write")
+        T.eq(pending.workspaces.count, 5, "and the second")
+        T.eq(SettingsService.value("workspaces.count"), 5, "the value is live before the write")
+        phase = 2
+        tries = 0
         settle.start()
     }
 
@@ -46,13 +75,25 @@ ShellRoot {
             written.reload()
             let parsed = null
             try { parsed = JSON.parse(written.text()) } catch (error) { parsed = null }
-            if (parsed === null && root.tries < 50) return
+            const count = root.phase === 1 ? 7 : 5
+            const done = SettingsService.loaded && parsed !== null && parsed.workspaces
+                && parsed.workspaces.count === count
+            if (!done && root.tries < 50) return
             stop()
             T.ok(parsed !== null, "settings.json was written in the sandbox (" + Paths.configDir + ")")
-            if (parsed !== null) {
-                T.eq(parsed.appearance.theme, "light", "the file holds the first key")
-                T.eq(parsed.workspaces.count, 7, "and the second")
+            if (parsed === null) {
+                T.finish("SettingsService")
+                return
             }
+            if (root.phase === 1) {
+                T.eq(parsed.workspaces.count, 7, "the file holds the early change")
+                T.eq(parsed.appearance.clockFormat, "12", "and still the user's own setting")
+                root.later()
+                return
+            }
+            T.eq(parsed.appearance.theme, "light", "the file holds the first key")
+            T.eq(parsed.workspaces.count, 5, "and the second")
+            T.eq(parsed.appearance.clockFormat, "12", "and the user's own setting")
             T.finish("SettingsService")
         }
     }

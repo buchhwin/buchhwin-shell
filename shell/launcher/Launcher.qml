@@ -246,6 +246,10 @@ ShellPanel {
                     variant: "ghost"
                     compact: true
                     toolTip: "Reset the launcher's layout"
+                    // Like the dashboard's and the control center's resets:
+                    // the arrangement goes, so it asks twice.
+                    confirm: true
+                    confirmText: "Reset"
                     onClicked: LayoutService.launcherReset()
                 }
                 ShellButton {
@@ -421,7 +425,11 @@ ShellPanel {
             spacing: Metrics.spaceSm
 
             Repeater {
-                model: root.pinnedShown || root.editing ? LauncherService.pinnedApps : []
+                // Hidden, no tiles: DesktopEntries rescans on any file made or
+                // removed in $HOME (19 times in 8 minutes, measured), and each
+                // rescan is a new list. `shown` turns on before the first
+                // frame of the open, so the row is there when it is drawn.
+                model: root.shown && (root.pinnedShown || root.editing) ? LauncherService.pinnedApps : []
 
                 ShellCard {
                     id: tile
@@ -502,7 +510,8 @@ ShellPanel {
                     width: categoryFlick.width
                     spacing: Metrics.spaceXxs
                     Repeater {
-                        model: LauncherService.availableCategories
+                        // Hidden, no rows; see the pinned row.
+                        model: root.shown ? LauncherService.availableCategories : []
                         ListRow {
                             required property var modelData
                             Layout.fillWidth: true
@@ -541,7 +550,8 @@ ShellPanel {
             spacing: Metrics.spaceXs
 
             Repeater {
-                model: LauncherService.availableCategories
+                // Hidden, no chips; see the pinned row.
+                model: root.shown ? LauncherService.availableCategories : []
                 ChipButton {
                     required property var modelData
                     title: modelData.name + "  " + modelData.count
@@ -615,16 +625,19 @@ ShellPanel {
                             color: Colors.accentForeground
                         }
                     }
-
-                    EmptyState {
-                        anchors.centerIn: parent
-                        visible: root.results.length === 0
-                        icon: root.mode.id === "files" && LauncherService.fileSearchRunning ? Icons.busy : root.mode.icon
-                        title: root.mode.id === "files" ? (root.query.length < 3 ? "Type a file name" : LauncherService.fileSearchRunning ? "Searching …" : "No files found")
-                            : root.mode.id === "calculator" ? "Calculator"
-                            : "No results"
-                        description: root.mode.id === "calculator" ? "Type an expression, e.g. = 12 * (3 + 4)" : ""
-                    }
+                }
+                // Beside the list, not in it: a ListView hands its children to
+                // its content item, which is 0 px tall while there are no
+                // results, so the hint was centred on the list's top edge and
+                // its upper half clipped away.
+                EmptyState {
+                    anchors.centerIn: list
+                    visible: root.results.length === 0
+                    icon: root.mode.id === "files" && LauncherService.fileSearchRunning ? Icons.busy : root.mode.icon
+                    title: root.mode.id === "files" ? (root.query.length < 3 ? "Type a file name" : LauncherService.fileSearchRunning ? "Searching …" : "No files found")
+                        : root.mode.id === "calculator" ? "Calculator"
+                        : "No results"
+                    description: root.mode.id === "calculator" ? "Type an expression, e.g. = 12 * (3 + 4)" : ""
                 }
             }
         }

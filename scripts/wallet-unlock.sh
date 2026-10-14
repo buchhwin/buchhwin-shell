@@ -6,8 +6,8 @@
 #       One line, exit 0 open, 1 locked, 2 no secret service on the bus,
 #       3 lock state unreadable. Starts nothing.
 #   wallet-unlock.sh ensure [--prompt] [--wait S] [--timeout S]
-#       Waits up to --wait seconds (default 0) for org.freedesktop.secrets to
-#       have an owner. If the collection is locked, calls Secret.Service.Unlock:
+#       Waits up to --wait seconds (default 0) for the wallet's service (below)
+#       to have an owner. If the collection is locked, calls Secret.Service.Unlock:
 #       a ksecretd that holds the login password (pam_kwallet5) answers with
 #       the wallet open, one that does not answers with a prompt path. With
 #       --prompt that prompt is followed (Secret.Prompt.Prompt), ksecretd shows
@@ -30,18 +30,31 @@
 # activatable name, would start a second ksecretd without the password
 # (org.kde.secretservicecompat has a D-Bus service file). `busctl list` only
 # reads the bus.
+#
+# Which name: on Fedora and openSUSE ksecretd owns org.freedesktop.secrets. On
+# Arch gnome-keyring usually does - pam_gnome_keyring in /etc/pam.d/sddm and a
+# socket unit start it at every login - and it has no kdewallet collection, so
+# the generic name would report a wallet that is not this one. ksecretd's own
+# name, org.kde.ksecretd, is the same connection and serves the same Secret
+# Service objects on every distribution; the generic name only counts when the
+# KDE daemon is the one holding it.
 set -uo pipefail
 
 collection=/org/freedesktop/secrets/collection/kdewallet
 busctl_q() { busctl --user --auto-start=no --no-pager --timeout=3 "$@" 2>/dev/null; }
 
+# The name to talk to, set by owned().
+bus=""
 owned() {
-  busctl --user --no-pager list 2>/dev/null \
-    | awk '$1 == "org.freedesktop.secrets" && $2 != "-" { found = 1 } END { exit !found }'
+  bus=$(busctl --user --no-pager list 2>/dev/null | awk '
+    $1 == "org.kde.ksecretd" && $2 != "-" { own = 1 }
+    $1 == "org.freedesktop.secrets" && $2 != "-" && $3 ~ /^(ksecretd|kwalletd)/ { generic = 1 }
+    END { if (own) print "org.kde.ksecretd"; else if (generic) print "org.freedesktop.secrets" }')
+  [[ -n $bus ]]
 }
 # true, false, or nothing when the property cannot be read.
 locked() {
-  busctl_q get-property org.freedesktop.secrets "$collection" org.freedesktop.Secret.Collection Locked \
+  busctl_q get-property "$bus" "$collection" org.freedesktop.Secret.Collection Locked \
     | awk '{ print $2 }'
 }
 # Asks for the collection to be unlocked. Prints the prompt path from the
@@ -49,7 +62,7 @@ locked() {
 # ended in anything that is not an object path.
 unlock() {
   local path
-  path=$(busctl_q call org.freedesktop.secrets /org/freedesktop/secrets org.freedesktop.Secret.Service \
+  path=$(busctl_q call "$bus" /org/freedesktop/secrets org.freedesktop.Secret.Service \
     Unlock ao 1 "$collection" | tail -n 1 | awk '{ print $NF }' | tr -d '"')
   [[ $path == /* ]] && printf '%s\n' "$path"
 }
@@ -57,9 +70,9 @@ unlock() {
 # outcome shows in the lock state, and the prompt object goes away when the
 # dialog is answered or dismissed.
 follow() {
-  busctl_q call org.freedesktop.secrets "$1" org.freedesktop.Secret.Prompt Prompt s "" >/dev/null
+  busctl_q call "$bus" "$1" org.freedesktop.Secret.Prompt Prompt s "" >/dev/null
 }
-prompt_alive() { busctl_q introspect org.freedesktop.secrets "$1" >/dev/null; }
+prompt_alive() { busctl_q introspect "$bus" "$1" >/dev/null; }
 
 report() { printf '%s\n' "$1"; exit "$2"; }
 

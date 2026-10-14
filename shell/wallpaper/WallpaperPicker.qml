@@ -175,8 +175,12 @@ ShellPanel {
             onSelected: value => root.target = value
         }
 
+        // Takes the grid's height while the grid is hidden: with no item
+        // left to fill it, the column spread the spare height between its
+        // rows and the search field drifted down the card.
         EmptyState {
             Layout.fillWidth: true
+            Layout.fillHeight: true
             visible: root.items.length === 0
             icon: "󰋩"
             title: WallpaperService.images.length === 0

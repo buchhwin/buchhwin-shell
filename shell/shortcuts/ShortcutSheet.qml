@@ -48,8 +48,12 @@ ShellPanel {
             onTextChanged: root.query = text
         }
 
+        // Takes the sheet's height while the sheet is hidden: with no item
+        // left to fill it, the column spread the spare height between its
+        // rows and the search field drifted down the card.
         EmptyState {
             Layout.fillWidth: true
+            Layout.fillHeight: true
             visible: root.groups.length === 0
             icon: ShortcutService.binds.length ? Icons.search : Icons.busy
             title: ShortcutService.binds.length ? "No shortcut matches" : "Loading …"

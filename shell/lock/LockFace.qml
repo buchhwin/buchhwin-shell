@@ -125,11 +125,11 @@ Item {
             opacity: root.topIn
             visible: root.lockState.showStatus
             spacing: Metrics.spaceLg
-            ShellText { visible: root.lockState.layout.length > 0; text: root.lockState.layout; color: Colors.lockText; font.weight: Typography.medium }
+            LockLabel { visible: root.lockState.layout.length > 0; text: root.lockState.layout; font.weight: Typography.medium }
             RowLayout {
                 visible: PowerService.hasBattery
                 spacing: Metrics.spaceXs
-                ShellText { text: PowerService.percent + "%"; color: Colors.lockText }
+                LockLabel { text: PowerService.percent + "%" }
                 ShellIcon { glyph: PowerService.icon; size: Metrics.iconMd; color: PowerService.charging ? Colors.successOnDark : Colors.lockText }
             }
         }
@@ -186,10 +186,11 @@ Item {
                     visible: status === Image.Ready
                 }
             }
-            ShellText {
+            // The words on the capture take LockLabel's shadow, as the grid's
+            // do: plain light text washed out over a bright wallpaper.
+            LockLabel {
                 Layout.alignment: Qt.AlignHCenter
                 text: root.lockState.displayName
-                color: Colors.lockText
                 font.pixelSize: Typography.lockNameSize
                 font.weight: Typography.semibold
             }
@@ -198,7 +199,7 @@ Item {
                 lockState: root.lockState
             }
             // Status: errors and Caps Lock, or the fingerprint hint (pam_fprintd).
-            ShellText {
+            LockLabel {
                 Layout.alignment: Qt.AlignHCenter
                 Layout.maximumWidth: Metrics.lockMediaWidth
                 visible: root.lockState.fingerprint.length === 0
@@ -231,7 +232,7 @@ Item {
                         onClicked: root.lockState.retryFingerprint()
                     }
                 }
-                ShellText {
+                LockLabel {
                     Layout.maximumWidth: Metrics.lockMediaWidth - Metrics.fingerprintLockGlyph * 2
                     elide: Text.ElideRight
                     text: root.lockState.status
@@ -279,7 +280,7 @@ Item {
                             }
                         }
                     }
-                    ShellText {
+                    LockLabel {
                         Layout.alignment: Qt.AlignHCenter
                         text: powerButton.confirming ? "Click again" : powerButton.modelData.label
                         color: Colors.lockMuted

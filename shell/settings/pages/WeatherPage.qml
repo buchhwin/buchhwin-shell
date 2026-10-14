@@ -14,6 +14,7 @@ ColumnLayout {
             + "Detecting it automatically asks ipinfo.io once, which sees this connection's IP address."
 
         ListRow {
+            interactive: false
             Layout.fillWidth: true
             icon: Icons.location
             active: WeatherService.hasLocation

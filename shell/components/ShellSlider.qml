@@ -47,7 +47,13 @@ Item {
         event.accepted = true
         root.released(target)
     }
+    // Named by the row it sits in (SettingRow hands its label over) or by
+    // the caller; the value is the item's own `value`, which Qt's slider
+    // role reads. The text says it as a share of the range.
+    property string accessibleName: ""
     Accessible.role: Accessible.Slider
+    Accessible.name: root.accessibleName
+    Accessible.description: Math.round(root.ratio * 100) + "%"
     implicitWidth: Metrics.sliderWidth
     implicitHeight: Metrics.sliderHandle + Metrics.spaceXs
     opacity: enabledState ? 1 : Effects.disabledOpacity

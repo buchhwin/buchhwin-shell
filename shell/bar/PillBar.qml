@@ -100,6 +100,23 @@ Variants {
         readonly property bool hasRecordingPill: ["left", "center", "right"].some(zone =>
             bar[zone].some(pill => pill.items.some(item => item.type === "recording")))
         readonly property var recordingPill: ({ id: "recording-auto", items: [{ type: "recording", display: "full", options: {} }] })
+        // The zones' pills, each keyed by all of itself and by the bar's
+        // options a pill is drawn with. `bar` is a new object on every write
+        // of the layout, and a Repeater on its plain arrays rebuilt every
+        // pill and every widget in it, on every screen. With the key a pill
+        // is kept only while nothing it shows or measures changed, so its
+        // width spring cannot start for a change that used to arrive in a
+        // fresh pill (pitfall 40): a pill that changed, and every pill when
+        // the scale, style or edge does, is built anew as before.
+        function pillKeys(list) {
+            const options = JSON.stringify([scaleFactor, flat, vertical, barRadius, barSpan])
+            const seen = {}
+            return (list || []).map(pill => {
+                const text = JSON.stringify(pill) + options
+                seen[text] = (seen[text] || 0) + 1
+                return Object.assign({ pillKey: text + "#" + seen[text] }, pill)
+            })
+        }
 
         screen: modelData
         visible: active && !remapping
@@ -380,7 +397,7 @@ Variants {
             spacing: window.zoneGap
             Repeater {
                 id: leftRepeater
-                model: window.bar.left
+                model: ScriptModel { values: window.pillKeys(window.bar.left); objectProp: "pillKey" }
                 Pill {
                     required property var modelData
                     required property int index
@@ -420,7 +437,7 @@ Variants {
             spacing: window.zoneGap
             Repeater {
                 id: centerRepeater
-                model: window.bar.center
+                model: ScriptModel { values: window.pillKeys(window.bar.center); objectProp: "pillKey" }
                 Pill {
                     required property var modelData
                     required property int index
@@ -458,7 +475,7 @@ Variants {
             }
             Repeater {
                 id: rightRepeater
-                model: window.bar.right
+                model: ScriptModel { values: window.pillKeys(window.bar.right); objectProp: "pillKey" }
                 Pill {
                     required property var modelData
                     required property int index

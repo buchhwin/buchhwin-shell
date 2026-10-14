@@ -3,7 +3,7 @@
 // Accounts (Settings > Accounts): parses the sections of read-only busctl JSON
 // that scripts/accounts-status.sh prints from Akonadi's AgentManager, turns
 // the agent instances that are resources into account rows and builds the argv
-// lists for Sync now / Settings… / Remove and for the KDE account wizards.
+// lists for Sync now / Settings … / Remove and for the KDE account wizards.
 // Instance and type ids are validated before they reach a command line.
 // Account names live in the shell UI only: they never reach a log or the IPC
 // output, which carries counts, ids and states.
@@ -178,7 +178,7 @@ function groups(accounts) {
 function statusText(item) {
     if (!item) return ""
     if (!item.online) return "Offline"
-    if (item.status === STATUS_RUNNING) return item.progress > 0 ? "Syncing… " + item.progress + "%" : "Syncing…"
+    if (item.status === STATUS_RUNNING) return item.progress > 0 ? "Syncing … " + item.progress + "%" : "Syncing …"
     if (item.status === STATUS_BROKEN) return "Error"
     if (item.status === STATUS_NOT_CONFIGURED) return "Not configured"
     return "Ready"
@@ -232,7 +232,7 @@ function subtitle(item, lastSync, now) {
 }
 
 function summary(status) {
-    if (!status || !status.known) return "Checking accounts…"
+    if (!status || !status.known) return "Checking accounts …"
     if (!status.server) return "KDE PIM (Akonadi) is not running"
     const accounts = status.accounts || []
     if (!accounts.length) return "No accounts yet"
@@ -264,11 +264,11 @@ function command(action, id) {
 
 // KDE's own wizards; the shell never asks for credentials itself.
 var TOOLS = {
-    kaccounts: { label: "Online accounts…", hint: "Google, Nextcloud and other providers",
+    kaccounts: { label: "Online accounts …", hint: "Google, Nextcloud and other providers",
                  argv: ["kcmshell6", "kcm_kaccounts"] },
-    systemsettings: { label: "Online accounts…", hint: "Google, Nextcloud and other providers",
+    systemsettings: { label: "Online accounts …", hint: "Google, Nextcloud and other providers",
                       argv: ["systemsettings", "kcm_kaccounts"] },
-    accountwizard: { label: "Mail & groupware…", hint: "IMAP, POP3, CalDAV, CardDAV and iCal files",
+    accountwizard: { label: "Mail & groupware …", hint: "IMAP, POP3, CalDAV, CardDAV and iCal files",
                      argv: ["accountwizard"] }
 }
 var TOOL_ORDER = ["kaccounts", "systemsettings", "accountwizard"]
@@ -325,7 +325,7 @@ function errorText(action, output) {
 }
 
 function successText(action) {
-    return action === "sync" ? "Synchronizing…"
-        : action === "configure" ? "The settings dialog is opening…"
+    return action === "sync" ? "Synchronizing …"
+        : action === "configure" ? "The settings dialog is opening …"
         : action === "remove" ? "The account was removed" : ""
 }

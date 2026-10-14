@@ -41,7 +41,10 @@ if [[ ${1:-} == hold ]]; then
 fi
 n=$(cat "$COUNT" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$COUNT"
 echo "run $n"
-if (( n <= ${CRASHES:-0} )); then kill -SEGV $$; fi
+# exit 139 is what the supervisor's wait sees from a shell killed by
+# SIGSEGV (128 + 11), without a real crash: a real one is a coredump, and
+# on a Plasma desktop DrKonqi reports every one of them as a crash of bash.
+if (( n <= ${CRASHES:-0} )); then exit 139; fi
 exit ${FINAL_EXIT:-0}
 Q
 chmod +x "$SB/bin/quickshell"
@@ -155,7 +158,7 @@ cat > "$SB/bin/quickshell" <<'Q'
 #!/usr/bin/env bash
 [[ ${1:-} == list ]] && exit 1
 n=$(cat "$COUNT" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$COUNT"
-kill -SEGV $$
+exit 139
 Q
 chmod +x "$SB/bin/quickshell"
 echo 0 > "$COUNT"; timeout 60 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
@@ -167,7 +170,7 @@ cat > "$SB/bin/quickshell" <<'Q'
 #!/usr/bin/env bash
 [[ ${1:-} == list ]] && exit 1
 n=$(cat "$COUNT" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$COUNT"
-kill -SEGV $$
+exit 139
 Q
 chmod +x "$SB/bin/quickshell"
 mkdir -p "$SB/run/hypr/sig-gone"
@@ -182,7 +185,7 @@ cat > "$SB/bin/quickshell" <<'Q'
 #!/usr/bin/env bash
 [[ ${1:-} == list ]] && exit 1
 n=$(cat "$COUNT" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$COUNT"
-if (( n <= 1 )); then kill -SEGV $$; fi
+if (( n <= 1 )); then exit 139; fi
 exit 0
 Q
 chmod +x "$SB/bin/quickshell"
@@ -195,7 +198,7 @@ cat > "$SB/bin/quickshell" <<'Q'
 #!/usr/bin/env bash
 [[ ${1:-} == list ]] && exit 1
 n=$(cat "$COUNT" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$COUNT"
-trap 'kill -SEGV $$' TERM
+trap 'exit 139' TERM
 while true; do sleep 0.1; done
 Q
 chmod +x "$SB/bin/quickshell"
@@ -209,6 +212,39 @@ check '! kill -0 "$sup" 2>/dev/null' 'the supervisor ends on SIGTERM'
 check '[[ $(cat "$COUNT") == 1 ]]' "and does not restart the shell it was told to stop (got $(cat "$COUNT"))"
 check 'grep -q "asked to stop" "$SB/state/buchhwin-shell/quickshell.log"' 'and the log says it was asked'
 "$real_pkill" -f "$SB/bin/quickshell" 2>/dev/null || true
+
+# a SIGTERM while the supervisor waits to restart a crashed shell - the pause,
+# then the wait for the dead instance, with no child to forward it to - ends
+# the watching too: no fresh shell into a session that is ending. The second
+# run would loop until killed, so a supervisor that restarts never ends.
+cat > "$SB/bin/quickshell" <<'Q'
+#!/usr/bin/env bash
+if [[ ${1:-} == list ]]; then
+  l=$(cat "$LINGER" 2>/dev/null || echo 0)
+  (( l > 0 )) || exit 1
+  echo $((l-1)) > "$LINGER"
+  echo '[{"id":"stale"}]'
+  exit 0
+fi
+n=$(cat "$COUNT" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$COUNT"
+if (( n <= 1 )); then exit 139; fi
+while true; do sleep 0.1; done
+Q
+chmod +x "$SB/bin/quickshell"
+log="$SB/state/buchhwin-shell/quickshell.log"
+: > "$log"; echo 0 > "$COUNT"; echo 40 > "$LINGER"
+bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1 &
+sup=$!
+# Signalled once the crash is noted, i.e. inside the pause before the restart.
+for _ in {1..100}; do grep -q "restarting (1 of 5)" "$log" && break; sleep 0.05; done
+kill -TERM "$sup"
+for _ in {1..100}; do kill -0 "$sup" 2>/dev/null || break; sleep 0.1; done
+check '! kill -0 "$sup" 2>/dev/null' 'a SIGTERM during the restart pause ends the supervisor'
+check '[[ $(cat "$COUNT") == 1 ]]' "and no shell is started after it (got $(cat "$COUNT") runs)"
+check 'grep -q "asked to stop while waiting to restart" "$log"' 'and the log says why'
+kill "$sup" 2>/dev/null; wait "$sup" 2>/dev/null
+"$real_pkill" -f "$SB/bin/quickshell" 2>/dev/null || true
+echo 0 > "$LINGER"
 
 (( fail )) && exit 1
 echo "TESTS PASSED start-shell supervision"

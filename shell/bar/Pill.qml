@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
@@ -134,6 +135,17 @@ Rectangle {
         reportTimer.restart()
     }
 
+    // Each item with a key that is all of it; the count after `#` keeps two
+    // equal items (two clocks) apart.
+    function itemKeys(list) {
+        const seen = {}
+        return (list || []).map(item => {
+            const text = JSON.stringify(item)
+            seen[text] = (seen[text] || 0) + 1
+            return Object.assign({ itemKey: text + "#" + seen[text] }, item)
+        })
+    }
+
     // A round cover at either end sits concentric in that end of the pill.
     readonly property bool coverFirst: edgeCover(0, false)
     readonly property bool coverLast: edgeCover(itemRepeater.count - 1, true)
@@ -193,6 +205,29 @@ Rectangle {
 
     HoverHandler { id: hover }
 
+    // The capsule lights up as a whole, so all of it answers a click: the
+    // padding at its round ends and across it lies outside every item's own
+    // area, and a click there - inside the highlight - did nothing. It goes to
+    // the nearest item that opens something. Below the items, which take
+    // their own clicks first.
+    MouseArea {
+        anchors.fill: parent
+        enabled: !root.flat && root.clickable && !root.editing
+        acceptedButtons: Qt.LeftButton
+        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+        onClicked: mouse => {
+            let best = null, bestDistance = Infinity
+            for (let i = 0; i < itemRepeater.count; ++i) {
+                const item = itemRepeater.itemAt(i)
+                if (!item || !item.visible || !item.clickable) continue
+                const centre = item.mapToItem(root, item.width / 2, item.height / 2)
+                const distance = root.vertical ? Math.abs(centre.y - mouse.y) : Math.abs(centre.x - mouse.x)
+                if (distance < bestDistance) { best = item; bestDistance = distance }
+            }
+            if (best) best.open()
+        }
+    }
+
     // Line between groups in the bar, centred in the gap before this group. It
     // crosses the bar, so it turns with it: a hairline down a horizontal bar,
     // across a vertical one.
@@ -225,7 +260,10 @@ Rectangle {
 
         Repeater {
             id: itemRepeater
-            model: root.pill.items
+            // Matched, not rebuilt: a pill PillBar keeps is handed a new but
+            // equal `pill` on every write of the layout, and a plain array
+            // would load all of its widgets again. Kept only while equal.
+            model: ScriptModel { values: root.itemKeys(root.pill.items); objectProp: "itemKey" }
             onItemAdded: root.recount()
             onItemRemoved: Qt.callLater(root.recount)
 
@@ -294,27 +332,28 @@ Rectangle {
                     acceptedButtons: Qt.LeftButton
                     enabled: segment.clickable && !root.editing
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: {
-                        const box = root.flat ? segment : root
-                        const mapped = box.mapToItem(null, 0, 0)
-                        // On the screen, not in the bar's own surface.
-                        const topLeft = { x: mapped.x + root.reportOrigin.x,
-                                          y: mapped.y + root.reportOrigin.y }
-                        // The place along the bar the panel centres on: x when
-                        // the bar runs across the screen, y when it runs down
-                        // it. A vertical bar sends `anchorY` instead, which
-                        // ShellPanel reads as "beside me, centred here".
-                        const along = root.vertical
-                            ? (root.flat ? BarLogic.anchorAlong(topLeft.y, segment.height)
-                                         : root.mapToItem(null, 0, root.height / 2).y + root.reportOrigin.y)
-                            : (root.flat ? BarLogic.anchorAlong(topLeft.x, segment.width)
-                                         : root.mapToItem(null, root.width / 2, 0).x + root.reportOrigin.x)
-                        const anchor = root.vertical ? { anchorY: along } : { anchorX: along }
-                        PanelService.toggle(segment.entry.action, Object.assign(anchor, {
-                            originX: topLeft.x, originY: topLeft.y,
-                            originWidth: box.width, originHeight: box.height
-                        }, segment.entry.actionArgs || {}))
-                    }
+                    onClicked: segment.open()
+                }
+                function open() {
+                    const box = root.flat ? segment : root
+                    const mapped = box.mapToItem(null, 0, 0)
+                    // On the screen, not in the bar's own surface.
+                    const topLeft = { x: mapped.x + root.reportOrigin.x,
+                                      y: mapped.y + root.reportOrigin.y }
+                    // The place along the bar the panel centres on: x when
+                    // the bar runs across the screen, y when it runs down
+                    // it. A vertical bar sends `anchorY` instead, which
+                    // ShellPanel reads as "beside me, centred here".
+                    const along = root.vertical
+                        ? (root.flat ? BarLogic.anchorAlong(topLeft.y, segment.height)
+                                     : root.mapToItem(null, 0, root.height / 2).y + root.reportOrigin.y)
+                        : (root.flat ? BarLogic.anchorAlong(topLeft.x, segment.width)
+                                     : root.mapToItem(null, root.width / 2, 0).x + root.reportOrigin.x)
+                    const anchor = root.vertical ? { anchorY: along } : { anchorX: along }
+                    PanelService.toggle(segment.entry.action, Object.assign(anchor, {
+                        originX: topLeft.x, originY: topLeft.y,
+                        originWidth: box.width, originHeight: box.height
+                    }, segment.entry.actionArgs || {}))
                 }
 
                 // Each item carries its own size on top of the bar's scale, so

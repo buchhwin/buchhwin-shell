@@ -48,6 +48,12 @@ ShellRoot {
         T.eq(gesture.legacy, "keyword gesture 3, horizontal, unset ; keyword gesture 4, pinchin, unset ; keyword gesture 3, horizontal, workspace ; keyword gesture 4, pinchin, dispatcher, exec, notify-send hi", "legacy gestures replace their slots")
         T.eq(gesture.lua.split("\n").slice(4), ["hl.gesture({ fingers = 4, direction = \"pinchin\", action = function() hl.exec_cmd(\"notify-send hi\") end })",
                                                 "table.insert(buchhwin_gestures, { 4, \"pinchin\" })"], "Lua gesture with a command")
+        T.eq(H.gestures([{ fingers: 3, direction: "up", command: "notify-send hi", shortcut: "buchhwin:gestures.run.overview" }], []).lua.split("\n").slice(2),
+             ["hl.gesture({ fingers = 3, direction = \"up\", action = function() hl.dispatch(hl.dsp.global(\"buchhwin:gestures.run.overview\")) end })",
+              "table.insert(buchhwin_gestures, { 3, \"up\" })"], "Lua gesture with a global shortcut")
+        T.eq(H.gestures([{ fingers: 3, direction: "up", command: "notify-send hi", shortcut: "buchhwin:gestures.run.overview" }], []).legacy,
+             "keyword gesture 3, up, dispatcher, exec, notify-send hi", "legacy gesture keeps the command")
+        T.throwsError(() => H.gestures([{ fingers: 3, direction: "up", command: "a", shortcut: "buchhwin:x\") end" }], []), "shortcut validated")
         T.eq(H.gestures([], []).lua, "for _, slot in ipairs(buchhwin_gestures or {}) do hl.gesture({ fingers = slot[1], direction = slot[2], action = \"unset\" }) end\nbuchhwin_gestures = {}", "Lua removal only")
         T.eq(H.gestures([{ fingers: 3, direction: "up", command: "echo $HOME # x" }], []).legacy, "keyword gesture 3, up, dispatcher, exec, echo ${HOME} ## x", "legacy command escaped")
         T.throwsError(() => H.gestures([{ fingers: 3, direction: "diagonal", action: "workspace" }], []), "invalid direction")
