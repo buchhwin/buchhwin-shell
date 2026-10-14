@@ -347,19 +347,30 @@ Singleton {
     Timer {
         id: fileDebounce
         interval: 250
+        // A run still going is stopped, and the next one starts a turn later:
+        // `running = false; running = true` in one turn may not restart at
+        // all. Each run carries its query, so the output of a stopped one
+        // never lands under the next query.
         onTriggered: {
             fileProc.running = false
-            fileProc.command = ["plocate", "-i", "-l", "200", "--", root.fileQuery]
             root.fileSearchRunning = true
-            fileProc.running = true
+            Qt.callLater(root.startFileSearch)
         }
+    }
+    function startFileSearch() {
+        if (fileQuery.length < 2) { fileSearchRunning = false; return }
+        fileProc.query = fileQuery
+        fileProc.command = ["plocate", "-i", "-l", "200", "--", fileQuery]
+        fileProc.running = true
     }
 
     Process {
         id: fileProc
+        property string query: ""
         stderr: ErrorLog { label: "LauncherService.fileProc" }
         stdout: StdioCollector {
             onStreamFinished: {
+                if (fileProc.query !== root.fileQuery) return
                 const home = Paths.home + "/"
                 root.fileResults = text.split("\n")
                     .filter(path => path.startsWith(home) && !path.slice(home.length).split("/").some(part => part.startsWith(".")))
@@ -373,6 +384,6 @@ Singleton {
                 root.fileSearchRunning = false
             }
         }
-        onExited: root.fileSearchRunning = false
+        onExited: if (fileProc.query === root.fileQuery) root.fileSearchRunning = false
     }
 }

@@ -561,7 +561,13 @@ Singleton {
         pendingText = JSON.stringify(next, null, 2) + "\n"
         writeTimer.restart()
     }
-    Timer { id: writeTimer; interval: 0; onTriggered: settingsFile.setText(root.pendingText) }
+    Timer { id: writeTimer; interval: 0; onTriggered: if (!unreadableBackup.running) settingsFile.setText(root.pendingText) }
+    Process {
+        id: unreadableBackup
+        command: ["cp", "-f", "--", settingsFile.path, settingsFile.path + ".bad"]
+        stderr: ErrorLog { label: "SettingsService.unreadableBackup" }
+        onExited: if (root.pendingText.length) writeTimer.restart()
+    }
 
     // Several keys in one write - they used to be one write each, which is
     // the race above; now it is one `settingChanged` per key and one write.
@@ -627,7 +633,12 @@ Singleton {
                 console.warn("buchhwin-shell: settings file unreadable, keeping current settings:", error)
                 return
             }
-            console.warn("buchhwin-shell: settings unreadable, using defaults:", error)
+            // A file that never parsed (a typo from a hand edit) is the
+            // user's settings all the same: copied aside first, so the next
+            // change - which writes the defaults plus that change - does not
+            // overwrite the only copy.
+            console.warn("buchhwin-shell: settings unreadable, using defaults (kept as settings.json.bad):", error)
+            unreadableBackup.running = true
             data = defaults
         }
         loaded = true

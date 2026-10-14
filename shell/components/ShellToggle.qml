@@ -22,7 +22,8 @@ Item {
         id: track
         anchors.fill: parent
         radius: Metrics.pillRadius(height)
-        color: root.checked ? (root.down ? Colors.accentPressed : Colors.accent) : Colors.track
+        color: root.checked ? (root.down ? Colors.accentPressed : mouse.containsMouse ? Colors.accentHover : Colors.accent)
+            : mouse.containsMouse ? Colors.trackHover : Colors.track
         Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
 
         Rectangle {
@@ -44,7 +45,16 @@ Item {
     FocusRing { active: root.activeFocus; controlRadius: Metrics.pillRadius(root.height) }
 
     Keys.onReturnPressed: root.toggled(!root.checked)
+    Keys.onEnterPressed: root.toggled(!root.checked)
     Keys.onSpacePressed: root.toggled(!root.checked)
+
+    // The row's label names it; set `accessibleName` where there is none.
+    property string accessibleName: ""
+    Accessible.role: Accessible.CheckBox
+    Accessible.name: root.accessibleName
+    Accessible.checkable: true
+    Accessible.checked: root.checked
+    Accessible.onToggleAction: root.toggled(!root.checked)
 
     MouseArea {
         id: mouse

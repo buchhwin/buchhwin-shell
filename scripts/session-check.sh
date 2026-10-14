@@ -133,7 +133,8 @@ section "Keyring and portals"
 # nothing: `org.freedesktop.portal.Desktop` is an activatable name, so a plain
 # introspect *starts* the portal on a session where it is down. The same guard
 # accounts-status.sh and kdeconnect-status.sh already use.
-if busctl --user --timeout=3 --auto-start=no introspect org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop 2>/dev/null | grep -q 'org.freedesktop.portal.Secret'; then ok "Secret portal available (Brave sync through KWallet)"; else fail "Secret portal is missing or not running"; fi
+portal_interfaces=$(busctl --user --timeout=3 --auto-start=no introspect org.freedesktop.portal.Desktop /org/freedesktop/portal/desktop 2>/dev/null) || portal_interfaces=""
+if [[ $portal_interfaces == *org.freedesktop.portal.Secret* ]]; then ok "Secret portal available (Brave sync through KWallet)"; else fail "Secret portal is missing or not running"; fi
 # ksecretd, started by pam_kwallet5 at login, is the secret service *and* the
 # Secret portal's backend; kwalletd6 is a shim over it (KF 6.16), not a second
 # wallet. Whether the wallet is *open* is asked, not assumed from the process
@@ -198,7 +199,8 @@ command -v systemd-run >/dev/null 2>&1 && ok "lock screen launcher available" ||
 # files from before the split still have the single power.lidAction.
 power_source=ac
 if command -v upower >/dev/null 2>&1; then
-  upower -d 2>/dev/null | grep -qE '^[[:space:]]*on-battery:[[:space:]]*yes' && power_source=battery
+  upower_dump=$(upower -d 2>/dev/null) || upower_dump=""
+  grep -qE '^[[:space:]]*on-battery:[[:space:]]*yes' <<<"$upower_dump" && power_source=battery
 else
   online=0
   for supply in /sys/class/power_supply/*; do
@@ -211,7 +213,8 @@ lid=$(setting ".power.$power_source.lidAction // .power.lidAction // \"suspend\"
 profile=$(setting ".power.$power_source.profile // \"keep\"")
 ok "power source: $source_label (automatic profile: $profile)"
 if [[ $lid != suspend ]]; then
-  systemd-inhibit --list 2>/dev/null | grep -q buchhwin-shell && ok "lid ($source_label): $lid (logind inhibited)" || fail "lid setting '$lid' ($source_label) without a logind inhibitor"
+  inhibitors=$(systemd-inhibit --list 2>/dev/null) || inhibitors=""
+  [[ $inhibitors == *buchhwin-shell* ]] && ok "lid ($source_label): $lid (logind inhibited)" || fail "lid setting '$lid' ($source_label) without a logind inhibitor"
 else
   ok "lid ($source_label): sleep (system default)"
 fi

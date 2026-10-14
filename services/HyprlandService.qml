@@ -39,10 +39,6 @@ Singleton {
     readonly property var workspaces: Hyprland.workspaces.values.filter(workspace => workspace.id > 0)
         .sort((a, b) => a.id - b.id)
 
-    function workspacesOn(screenName) {
-        return workspaces.filter(workspace => workspace.monitor && workspace.monitor.name === screenName)
-    }
-
     // ---- Workspaces per monitor ---------------------------------------------
     //
     // Hyprland keeps one global set and hands each workspace a monitor, so a

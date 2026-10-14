@@ -27,6 +27,9 @@ ShellCard {
     Keys.onSpacePressed: root.clicked()
     Keys.onReturnPressed: root.clicked()
     Keys.onEnterPressed: root.clicked()
+    Accessible.role: Accessible.Button
+    Accessible.name: root.title
+    Accessible.onPressAction: root.clicked()
     FocusRing { active: root.activeFocus; controlRadius: root.radius }
 
     interactive: true
@@ -42,7 +45,7 @@ ShellCard {
         id: chipRow
         anchors.fill: parent
         anchors.leftMargin: root.compact ? Metrics.spaceMd : Metrics.spaceLg
-        anchors.rightMargin: root.compact ? Metrics.spaceMd : Metrics.spaceMd
+        anchors.rightMargin: Metrics.spaceMd
         spacing: Metrics.spaceSm
         ShellIcon { glyph: root.icon; size: Metrics.iconMd; color: root.active ? Colors.accentForeground : Colors.mutedText }
         ColumnLayout {

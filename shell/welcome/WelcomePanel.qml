@@ -43,7 +43,7 @@ ShellPanel {
         },
         {
             icon: "󰃭", title: "Time and weather",
-            text: "The dashboard has the month, the week, the day and your KDE calendars. “+” creates an event, and a series can be changed one occurrence at a time.",
+            text: "The dashboard has the month, the weather and the events of your KDE calendars. “+” creates an event, and a series can be changed one occurrence at a time.",
             keys: ["Super", "K"], action: "dashboard"
         },
         {

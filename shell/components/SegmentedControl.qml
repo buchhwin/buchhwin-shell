@@ -42,14 +42,14 @@ Item {
         indicatorReady = activeWidth > 0
     }
 
-    implicitHeight: style === "underline" ? Metrics.controlHeight + Metrics.spaceXs : Metrics.controlHeight + Metrics.spaceSm
+    implicitHeight: style === "underline" ? Metrics.controlHeight + Metrics.spaceXs : Metrics.controlHeightLg
     implicitWidth: row.implicitWidth
 
     Rectangle {
         anchors.fill: parent
         visible: root.style === "pill"
         radius: root.backgroundRadius
-        color: Colors.controlTrough
+        color: Colors.sunken
         border.width: Metrics.borderWidth
         border.color: Colors.border
     }
@@ -115,7 +115,7 @@ Item {
                     anchors.topMargin: root.style === "pill" ? 0 : Metrics.spaceXs
                     anchors.bottomMargin: root.style === "pill" ? 0 : Metrics.spaceXs
                     radius: Metrics.pillRadius(height)
-                    color: segmentMouse.pressed && segmentMouse.containsMouse ? Colors.ghostPressed
+                    color: segmentMouse.pressed && segmentMouse.containsMouse ? Colors.pressed
                         : segmentMouse.containsMouse && !segment.active ? Colors.hover : "transparent"
                     Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
                 }
@@ -154,7 +154,7 @@ Item {
                         Layout.preferredWidth: badgeText.implicitWidth + Metrics.spaceSm * 2
                         Layout.preferredHeight: badgeText.implicitHeight + Metrics.spaceXxs * 2
                         radius: Metrics.pillRadius(height)
-                        color: segment.active ? Colors.accent : Colors.elevatedSurface
+                        color: segment.active ? Colors.accent : Colors.surface2
                         ShellText {
                             id: badgeText
                             anchors.centerIn: parent

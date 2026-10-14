@@ -67,7 +67,7 @@ PopupPanel {
                     radius: Metrics.radiusInner
                     color: swatch.modelData
                     border.width: swatchMouse.containsMouse ? Metrics.focusBorderWidth : Metrics.borderWidth
-                    border.color: swatchMouse.containsMouse ? Colors.accent : Colors.border
+                    border.color: swatchMouse.containsMouse ? Colors.accentLine : Colors.border
 
                     // In whichever ink reads on it: a fixed one disappears
                     // into half the colours anybody picks.

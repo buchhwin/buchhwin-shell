@@ -38,7 +38,9 @@ current_state() {
   [[ -s $state_file ]] || return 1
   local supervisor
   supervisor=$(jq -r '.supervisor // 0' "$state_file" 2>/dev/null || printf 0)
-  if alive "$supervisor"; then
+  # Alive and still this script: after a reboot or a long time the pid can
+  # belong to anything, and the recording would read as running for good.
+  if alive "$supervisor" && tr '\0' ' ' <"/proc/$supervisor/cmdline" 2>/dev/null | grep -q 'record\.sh'; then
     cat -- "$state_file"
     return 0
   fi

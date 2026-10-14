@@ -61,6 +61,7 @@ ShellCard {
                 Layout.fillWidth: true
                 spacing: Metrics.spaceSm
                 ShellButton {
+                    toolTip: AudioService.muted ? "Unmute" : "Mute"
                     icon: AudioService.volumeIcon(AudioService.volume, AudioService.muted)
                     variant: "ghost"; compact: true; iconSize: Metrics.iconMd
                     onClicked: AudioService.toggleMute(AudioService.sink)

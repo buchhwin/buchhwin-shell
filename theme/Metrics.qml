@@ -22,7 +22,6 @@ Singleton {
     readonly property int radiusSm: Math.round(10 * cornerScale)
     readonly property int radiusMd: Math.round(12 * cornerScale)
     readonly property int radiusLg: Math.round(16 * cornerScale)
-    readonly property int radiusXl: Math.round(20 * cornerScale)
     readonly property int radiusPill: 999
     // Semantic radii. Every surface picks one of these, so a hover highlight
     // can never end up rounder or squarer than the thing it sits in, and a
@@ -69,6 +68,13 @@ Singleton {
     readonly property int focusRingWidth: 2
     readonly property int focusRingGap: 2
     readonly property int controlHeight: 40
+    // A control that is a trough around 40-high parts (the segmented control):
+    // the trough is this tall so what sits in it stays a full control.
+    readonly property int controlHeightLg: controlHeight + spaceSm
+    // The widest a button's words or a row's trailing note may get before
+    // they are cut with an ellipsis instead of pushing the row apart.
+    readonly property int buttonTextMax: 260
+    readonly property int trailingTextMax: 160
     readonly property int controlHeightSm: 30
     readonly property int rowHeight: 48
     readonly property int tileHeight: 72
@@ -183,7 +189,6 @@ Singleton {
     readonly property int launcherMinWidth: 520
     readonly property int launcherMaxWidth: 1400
     readonly property int launcherMinHeight: 320
-    readonly property int launcherSidebarWidth: 190
     readonly property int launcherHeight: 600
     // The height a launcher that was never resized opens at (2026-10-13:
     // compact by default - one row for the search, the rest for results).
@@ -234,19 +239,12 @@ Singleton {
     readonly property int dashboardGridUnit: 64
     readonly property int dashboardGridCell: 420
     readonly property int dashboardGridColumns: 3
-    readonly property int weekHourHeight: 32
-    readonly property int weekGridHeight: 272
-    readonly property int weekGutter: 48
-    readonly property int weekAllDayHeight: 20
-    readonly property int weekBlockGap: 2
-    readonly property int weekNowLine: 2
     // New-event dialog.
     readonly property int eventEditorWidth: 460
     readonly property int formLabelWidth: 64
     readonly property int timeFieldWidth: 84
     // Small popups opened from a pill or widget (Wi-Fi, Bluetooth, media …).
     readonly property int popupWidth: 380
-    readonly property int popupWideWidth: 420
     // A popup that puts two columns side by side (weather).
     readonly property int popupSplitWidth: 660
     readonly property int popupListHeight: 270
@@ -426,4 +424,18 @@ Singleton {
     // Widget content inside a pill is drawn slightly smaller than on the desktop.
     readonly property real pillContentScale: 0.88
 
+    // Sizes that were written as a multiple of an unrelated token where they
+    // are used; named here so they can be found and changed in one place.
+    readonly property int settingLabelWidth: 150
+    readonly property real clipboardThumbWidth: coverSize * 1.6
+    readonly property real trayIconCell: tileHeight * 1.3
+    readonly property real forecastNarrowWidth: iconXl * 11
+    readonly property real forecastDayWidth: iconXl * 1.4
+    readonly property real forecastTempWidth: iconXl * 2
+    readonly property real weatherNowIcon: iconXl * 1.5
+    readonly property real weatherNowColumn: iconXl * 4
+    readonly property real notificationImageSize: iconXl * 2
+    readonly property real coverFallbackGlyph: iconXl * 2
+    readonly property real statColumnWidth: iconXl * 1.5
+    readonly property real overviewSearchWidth: launcherWidth * 0.7
 }

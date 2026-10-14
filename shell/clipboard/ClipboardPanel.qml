@@ -71,7 +71,8 @@ ShellPanel {
                 Layout.fillWidth: true
                 implicitHeight: Math.min(contentHeight, Metrics.launcherHeight - Metrics.controlHeight * 3)
                 clip: true
-                model: root.filtered
+                // Rows (and their decoded images) only while the panel shows.
+                model: root.shown ? root.filtered : []
                 currentIndex: root.currentIndex
                 boundsBehavior: Flickable.StopAtBounds
                 highlightMoveDuration: Animations.hover
@@ -113,16 +114,20 @@ ShellPanel {
                         }
                         Rectangle {
                             visible: row.modelData.image
-                            Layout.preferredWidth: Metrics.coverSize * 1.6
+                            Layout.preferredWidth: Metrics.clipboardThumbWidth
                             Layout.preferredHeight: Metrics.coverSize
                             radius: Metrics.radiusTiny
-                            color: Colors.elevatedSurface
+                            color: Colors.surface2
                             clip: true
                             Image {
                                 anchors.fill: parent
                                 fillMode: Image.PreserveAspectCrop
                                 asynchronous: true
                                 cache: false
+                                // Decoded at the row's size: the "thumb" is the
+                                // whole clipboard image, a screenshot 33 MB.
+                                sourceSize.width: Math.ceil(Metrics.clipboardThumbWidth * 2)
+                                sourceSize.height: Math.ceil(Metrics.coverSize * 2)
                                 source: ClipboardService.thumbnail(row.modelData)
                             }
                         }
@@ -132,6 +137,7 @@ ShellPanel {
                             muted: row.modelData.image
                         }
                         ShellButton {
+                            toolTip: "Remove from history"
                             icon: Icons.close; variant: "ghost"; compact: true
                             onClicked: ClipboardService.remove(row.modelData)
                         }

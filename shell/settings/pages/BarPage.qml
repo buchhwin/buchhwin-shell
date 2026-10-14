@@ -53,7 +53,7 @@ ColumnLayout {
         description: "Widgets mode shows the widgets on the wallpaper instead of the bar. The pills below are kept and come back with the Bar mode."
         ShellButton {
             focusOnTab: true
-            icon: Icons.edit; text: "Open Widgets"
+            icon: Icons.edit; text: "Open widgets"
             onClicked: PanelService.open("settings", { page: "widgets" })
         }
     }

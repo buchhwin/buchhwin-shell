@@ -17,13 +17,6 @@ function normalize(text) {
     return String(text || "").replace(/\s+/g, " ").trim()
 }
 
-// The dashboard shows empty titles as "(No title)".
-function sameTitle(eventTitle, summary) {
-    const wanted = normalize(eventTitle)
-    const actual = normalize(summary)
-    return actual === wanted || (actual === "" && wanted === "(No title)")
-}
-
 // Local day keys the event covers (the Plasma event end is exclusive).
 function lastDay(event) {
     const start = event.start

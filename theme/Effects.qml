@@ -79,13 +79,9 @@ Singleton {
     readonly property real vinylGrooveBase: 0.6
     readonly property real vinylGrooveSwing: 0.4
     readonly property real vinylSheenLower: 0.6
-    // An event is drawn in its calendar's colour, tinted down so the text on it
-    // stays readable: a block in the grid, a full-day bar, and the editor's
-    // preview swatch.
-    readonly property real eventFill: 0.32
-    readonly property real eventFillHover: 0.5
+    // A full-day event is drawn in its calendar's colour, tinted down so the
+    // text on it stays readable.
     readonly property real eventAllDayFill: 0.55
-    readonly property real eventSwatchFill: 0.25
     // A shadow under a small surface (a desktop widget, the lock clock's text).
     readonly property int shadowOffsetSm: 1
     readonly property real shadowBlurSm: 1

@@ -102,6 +102,8 @@ static const struct named_key named[] = {
   {"CTRL", KEY_LEFTCTRL, XKB_MOD_NAME_CTRL}, {"TAB", KEY_TAB, NULL},
   {"RETURN", KEY_ENTER, NULL},               {"ESCAPE", KEY_ESC, NULL},
   {"PERIOD", KEY_DOT, NULL},                 {"SPACE", KEY_SPACE, NULL},
+  {"UP", KEY_UP, NULL},                      {"DOWN", KEY_DOWN, NULL},
+  {"LEFT", KEY_LEFT, NULL},                  {"RIGHT", KEY_RIGHT, NULL},
 };
 
 static int key_code(const char *name, const char **mod) {

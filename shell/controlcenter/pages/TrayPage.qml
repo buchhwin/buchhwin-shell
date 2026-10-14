@@ -29,8 +29,8 @@ ColumnLayout {
             ShellCard {
                 id: tile
                 required property var modelData
-                width: Metrics.tileHeight * 1.3
-                height: Metrics.tileHeight * 1.3
+                width: Metrics.trayIconCell
+                height: Metrics.trayIconCell
                 interactive: true
                 hovered: tileMouse.containsMouse
                 pressed: tileMouse.pressed && tileMouse.containsMouse

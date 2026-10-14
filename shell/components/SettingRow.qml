@@ -23,7 +23,7 @@ GridLayout {
     // overlay and moves nothing. (`hintOnHover` used to switch the first
     // behaviour off and was never set anywhere, so it is gone.)
     property string hint: ""
-    property real labelWidth: 150
+    property real labelWidth: Metrics.settingLabelWidth
     // And the other half of it: the bubble opens under the pointer, which
     // meant fifty-nine explanations no keyboard could ever reach. The answer
     // is not to put the mark in the tab order - that is fifty-nine new stops

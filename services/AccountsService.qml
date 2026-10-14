@@ -174,11 +174,6 @@ Singleton {
         run("remove", item)
     }
 
-    function cancelRemove() {
-        confirmRemoveId = ""
-        message = ""
-    }
-
     function finish(text) {
         const action = actionProc.action
         const id = actionProc.accountId

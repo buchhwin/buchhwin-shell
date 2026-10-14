@@ -210,19 +210,23 @@ ColumnLayout {
     }
 
     // One switch for the tunnels: off takes every active one down, on brings
-    // up the first. Hidden while there are none to switch.
+    // up the first. Without a tunnel it stays, as the way to add one: hidden,
+    // a tile the user placed looked broken, and there was no way to find
+    // where tunnels come from.
     Component {
         id: vpnTile
         QuickTile {
             shape: fitClass
-            readonly property bool shown: NetworkService.vpns.length > 0
+            readonly property bool shown: true
             icon: "󰖂"
             title: "VPN"
-            subtitle: NetworkService.activeVpns.length ? NetworkService.activeVpns[0].name : "Off"
+            subtitle: !NetworkService.vpns.length ? "Add a tunnel"
+                : NetworkService.activeVpns.length ? NetworkService.activeVpns[0].name : "Off"
             checked: NetworkService.activeVpns.length > 0
             showChevron: true
             onToggled: value => {
-                if (value && NetworkService.vpns.length) NetworkService.setVpn(NetworkService.vpns[0].uuid, true)
+                if (!NetworkService.vpns.length) PanelService.open("settings", { page: "network" })
+                else if (value) NetworkService.setVpn(NetworkService.vpns[0].uuid, true)
                 else for (const tunnel of NetworkService.activeVpns) NetworkService.setVpn(tunnel.uuid, false)
             }
             onDetailsRequested: root.openPage("network")

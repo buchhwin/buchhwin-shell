@@ -13,7 +13,7 @@ ShellRoot {
     Component.onCompleted: {
         // ---- defaults ------------------------------------------------------
         const fresh = L.defaultQuick()
-        T.eq(types(fresh).length, 12, "every tile is on a fresh panel")
+        T.eq(types(fresh).length, 13, "every tile is on a fresh panel")
         T.eq(types(fresh)[0], "wifi", "Wi-Fi comes first")
         T.ok(types(fresh).every(type => Q.isKnown(type)), "every default tile is in the catalogue")
         T.eq(fresh.quick.map(pill => pill.items.length), types(fresh).map(() => 1), "one tile per pill")

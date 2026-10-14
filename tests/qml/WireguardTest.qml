@@ -23,6 +23,7 @@ ShellRoot {
              + key + "\nEndpoint = vpn.example.org:51820\nAllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 25\n",
              "the form as a wg-quick file")
         T.eq([W.nameFromPath("/home/x/office-vpn.conf"), W.nameFromPath("")], ["office-vpn", "WireGuard"], "a file's name")
+        T.eq(W.nameFromPath("/home/x/home.config"), "home", "a .config file loses its extension too")
         T.finish("WireguardTest")
     }
 }

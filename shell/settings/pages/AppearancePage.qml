@@ -248,9 +248,9 @@ GridLayout {
                     width: Metrics.controlHeight
                     height: width
                     radius: width / 2
-                    color: isAuto ? Colors.surface : modelData.value
+                    color: isAuto ? Colors.surface1 : modelData.value
                     border.width: active ? Metrics.focusBorderWidth + 1 : panelMouse.containsMouse ? Metrics.focusBorderWidth : Metrics.borderWidth
-                    border.color: active ? Colors.accent : panelMouse.containsMouse ? Colors.text : Colors.borderStrong
+                    border.color: active ? Colors.accentLine : panelMouse.containsMouse ? Colors.text : Colors.borderStrong
                     scale: panelMouse.pressed ? Effects.pressScale : 1
                     Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
                     ShellIcon {
@@ -340,7 +340,7 @@ GridLayout {
             onCommit: value => PanelStyleService.setDefaultOpacity(value)
         }
 
-        Rectangle { Layout.fillWidth: true; implicitHeight: Metrics.borderWidth; color: Colors.border }
+        Divider {}
 
         // The row that folds the per-window sliders away: a list row on the
         // card, like the expandable rows on the Updates page.

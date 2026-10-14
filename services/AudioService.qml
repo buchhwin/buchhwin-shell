@@ -121,7 +121,7 @@ Singleton {
         id: metadataMonitor
         stderr: ErrorLog { label: "AudioService.metadataMonitor" }
         running: root.routingTrackers > 0 && root.ready && !root.routingPaused
-        command: ["pw-metadata", "-m", "-n", "default"]
+        command: Paths.bound(["pw-metadata", "-m", "-n", "default"])
         stdout: SplitParser { onRead: data => root.routes = Routing.applyLine(root.routes, data) }
         onRunningChanged: {
             if (running) return

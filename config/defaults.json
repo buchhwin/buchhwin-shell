@@ -1,5 +1,0 @@
-{
-  "configVersion": 2,
-  "activeProfile": "minimal",
-  "profiles": ["minimal", "work", "gaming", "laptop", "docked"]
-}

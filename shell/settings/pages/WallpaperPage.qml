@@ -43,7 +43,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 implicitHeight: width * 9 / 16
                 radius: Metrics.radiusCard
-                color: Colors.elevatedSurface
+                color: Colors.surface2
                 RoundedImage {
                     anchors.fill: parent
                     radius: parent.radius
@@ -288,7 +288,7 @@ ColumnLayout {
                     Layout.fillWidth: true
                     implicitHeight: (grid.width / grid.columns) * 10 / 16
                     radius: Metrics.radiusInner
-                    color: Colors.elevatedSurface
+                    color: Colors.surface2
                     RoundedImage {
                         anchors.fill: parent
                         anchors.margins: thumb.active ? Metrics.focusBorderWidth + 1 : 0
@@ -305,7 +305,7 @@ ColumnLayout {
                         color: "transparent"
                         border.width: thumb.active ? Metrics.focusBorderWidth + 1
                             : thumbMouse.containsMouse ? Metrics.borderWidth : 0
-                        border.color: thumb.active ? Colors.accent : Colors.borderStrong
+                        border.color: thumb.active ? Colors.accentLine : Colors.borderStrong
                     }
                     Rectangle {
                         visible: thumb.active

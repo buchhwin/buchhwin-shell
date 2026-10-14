@@ -3,8 +3,7 @@ import QtQuick.Layouts
 import qs.theme
 
 // One UI input: a filled capsule with an icon, placeholder and optional busy
-// indicator. Focus shows the accent outline (the same marker the focus ring
-// draws around the other controls).
+// indicator. Focus shows the focus ring every other control shows.
 Rectangle {
     id: root
     property alias text: input.text
@@ -37,15 +36,24 @@ Rectangle {
     // the arrows before TextInput takes them.
     signal keyPressed(var event)
 
-    function focusInput() { input.forceActiveFocus() }
+    // Focus a panel hands the field as it opens is quiet: no ring (below).
+    property bool quietFocus: false
+    function focusInput(reason) {
+        quietFocus = reason === undefined
+        input.forceActiveFocus(reason === undefined ? Qt.OtherFocusReason : reason)
+    }
 
     implicitHeight: large ? Metrics.controlHeight + Metrics.spaceLg : Metrics.controlHeight
     radius: large ? Metrics.radiusCard : Metrics.pillRadius(height)
     color: input.activeFocus ? Colors.controlFillHover : Colors.controlFill
     border.width: Metrics.borderWidth
-    border.color: input.activeFocus && focusOutline ? Colors.accentBorder : large ? Colors.border : "transparent"
+    border.color: large ? Colors.border : "transparent"
     Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
-    Behavior on border.color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
+
+    // Not for the focus a panel hands its search field as it opens: the field
+    // holds it all along, and a ring there marks nothing (it was reported as
+    // a stuck border on the launcher). Tabbed or clicked into, it shows.
+    FocusRing { active: input.activeFocus && root.focusOutline && !root.quietFocus; controlRadius: root.radius }
 
     RowLayout {
         anchors.fill: parent
@@ -68,7 +76,10 @@ Rectangle {
             selectedTextColor: Colors.text
             clip: true
             activeFocusOnTab: root.focusOnTab
-            onActiveFocusChanged: if (activeFocus && root.selectAllOnFocus) selectAll()
+            onActiveFocusChanged: {
+                if (!activeFocus) root.quietFocus = false
+                else if (root.selectAllOnFocus) selectAll()
+            }
             onAccepted: { root.edited = false; root.accepted() }
             onTextEdited: root.edited = true
             Keys.onPressed: event => root.keyPressed(event)
@@ -90,7 +101,8 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.placeholder
                 role: root.large ? "bodyLarge" : "body"
-                color: Colors.subtleText
+                // Read like text (4.5:1); subtleText is for marks, not words.
+                color: Colors.mutedText
             }
         }
         ShellIcon {

@@ -169,6 +169,16 @@ check 'said "^systemctl reboot"' 'a display and signature that are not the neste
 # Recognised by its files, the lock uses the nested unit and directory too.
 lock STUB_STATES=inactive BUCHHWIN_NESTED_DIR="$nested" WAYLAND_DISPLAY=wayland-9
 check 'said "unit=buchhwin-shell-lock-nested"' 'the lock from a nested environment takes the nested unit name'
+# The files of a nested Hyprland that is gone are stale and name nothing: a
+# real session that got the same wayland-N still suspends.
+sh -c 'exit 0' & dead=$!; wait "$dead"
+printf '%s\n' "$dead" > "$nested/hyprland.pid"
+action poweroff BUCHHWIN_NESTED_DIR="$nested" WAYLAND_DISPLAY=wayland-9
+check 'said "^systemctl poweroff"' 'stale nested files (their Hyprland gone) do not skip poweroff'
+printf '%s\n' "$$" > "$nested/hyprland.pid"
+action poweroff BUCHHWIN_NESTED_DIR="$nested" WAYLAND_DISPLAY=wayland-9
+check '! said "poweroff"' 'with the pid alive the files still name a nested session'
+rm -f "$nested/hyprland.pid"
 
 if (( failures )); then
   printf 'session-action: %d check(s) failed\n' "$failures" >&2

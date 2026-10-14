@@ -104,7 +104,7 @@ Variants {
             Rectangle {
                 anchors.fill: parent
                 radius: width / 2
-                color: Colors.surface
+                color: Colors.surface1
                 border.width: Metrics.focusBorderWidth
                 border.color: Colors.border
                 clip: true
@@ -153,7 +153,7 @@ Variants {
             implicitWidth: badge.implicitWidth + Metrics.spaceMd * 2
             implicitHeight: badge.implicitHeight + Metrics.spaceSm * 2
             radius: Metrics.radiusInner
-            color: Colors.surface
+            color: Colors.surface1
             border.width: Metrics.borderWidth
             border.color: Colors.border
 

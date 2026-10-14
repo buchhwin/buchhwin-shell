@@ -66,6 +66,12 @@ try:
 finally:
     shutil.rmtree(root)
 
+# An icon-only button needs a tip: it is the button's only name.
+check(checks.unnamed_buttons('ShellButton { icon: Icons.close; onClicked: x() }\n') == [1], "a bare glyph button is unnamed")
+check(checks.unnamed_buttons('Item {\n    ShellButton {\n        icon: Icons.close\n        toolTip: "Close"\n    }\n}\n') == [], "a tip names it")
+check(checks.unnamed_buttons('ShellButton { icon: Icons.add; text: "Add" }\n') == [], "words name it")
+check(checks.unnamed_buttons('ShellButton { icon: Icons.add; Rectangle { toolTip: "no" } }\n') == [1], "a tip on a child does not count")
+
 if failures:
     for failure in failures:
         print("FAIL checks_json_icons: " + failure)

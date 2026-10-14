@@ -10,7 +10,7 @@ package_tool=dnf5
 # shellcheck source=lib/hyprland-prefix.sh
 if [[ -r "$project_dir/scripts/lib/hyprland-prefix.sh" ]]; then . "$project_dir/scripts/lib/hyprland-prefix.sh"; fi
 status=0
-for command_name in Hyprland hyprctl quickshell kitty zsh brave-browser dolphin; do
+for command_name in Hyprland hyprctl quickshell setpriv kitty zsh brave-browser dolphin; do
   if command -v "$command_name" >/dev/null 2>&1; then
     printf 'ok       %s: %s\n' "$command_name" "$(command -v "$command_name")"
   else

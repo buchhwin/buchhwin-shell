@@ -16,7 +16,7 @@ RowLayout {
             implicitHeight: Metrics.controlHeightSm - Metrics.spaceXs
             implicitWidth: Math.max(implicitHeight, label.implicitWidth + Metrics.spaceSm * 2)
             radius: Metrics.radiusTiny
-            color: root.accent ? Colors.accentSoft : Colors.elevatedSurface
+            color: root.accent ? Colors.accentSoft : Colors.surface2
             border.width: Metrics.borderWidth
             border.color: Colors.border
             ShellText {

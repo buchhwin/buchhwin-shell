@@ -18,7 +18,7 @@ CardSection {
 
     // Beside the hourly strip the forecast is half as wide, and the rain
     // chance is the one column that can go: the bar carries the day's shape.
-    readonly property bool narrow: width > 0 && width < Metrics.iconXl * 11
+    readonly property bool narrow: width > 0 && width < Metrics.forecastNarrowWidth
 
     Repeater {
         model: root.days
@@ -30,7 +30,7 @@ CardSection {
             spacing: Metrics.spaceSm
 
             ShellText {
-                Layout.minimumWidth: Metrics.iconXl * 1.4
+                Layout.minimumWidth: Metrics.forecastDayWidth
                 text: dayRow.index === 0 ? "Today" : SettingsService.locale.toString(dayRow.modelData.date, "ddd")
                 role: "small"
             }
@@ -53,7 +53,7 @@ CardSection {
             }
             Item {
                 Layout.fillWidth: true
-                Layout.minimumWidth: Metrics.iconXl * 2
+                Layout.minimumWidth: Metrics.forecastTempWidth
                 implicitHeight: Metrics.progressTrack
                 Rectangle {
                     anchors.fill: parent

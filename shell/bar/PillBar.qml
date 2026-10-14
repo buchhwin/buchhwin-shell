@@ -25,7 +25,12 @@ Variants {
     // An empty list means every screen, which is what a bar always did, so
     // nothing changes for a configuration written before this and a monitor
     // plugged in later is included rather than left bare.
+    //
+    // No bar shown (notch or widgets mode), no windows: every pill used to be
+    // built on every screen anyway, with its workspace lists, weather and
+    // cover art bindings live behind a hidden surface.
     model: {
+        if (!LayoutService.barShown) return []
         const wanted = LayoutService.bar.screens || []
         if (!wanted.length) return Quickshell.screens
         const shown = Quickshell.screens.filter(screen => wanted.indexOf(screen.name) >= 0)

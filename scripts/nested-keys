@@ -8,6 +8,7 @@ set -euo pipefail
 # BUCHHWIN_NESTED_DIR), and the tool refuses without the BUCHTEST output.
 #
 #   scripts/nested-keys combo SUPER+D | down KEY | up KEY | sleep MS
+# Keys: letters, digits, F1-F12, TAB, RETURN, ESCAPE, SPACE, PERIOD, UP/DOWN/LEFT/RIGHT
 #   scripts/nested-keys --build          only build the helper (exit 3: cannot build)
 # Several commands can follow each other in one call. Layout us.
 # BUCHHWIN_KEYS_OUTPUT picks another nested output (default BUCHTEST).

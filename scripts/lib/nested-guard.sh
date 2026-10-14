@@ -17,9 +17,21 @@
 # shellcheck source=hyprland-prefix.sh
 if [[ -r "$(dirname -- "${BASH_SOURCE[0]}")/hyprland-prefix.sh" ]]; then source "$(dirname -- "${BASH_SOURCE[0]}")/hyprland-prefix.sh"; fi
 nested_environment() {
-  local base=${BUCHHWIN_NESTED_DIR:-"${TMPDIR:-/tmp}/buchhwin-nested"}
+  local base=${BUCHHWIN_NESTED_DIR:-"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/buchhwin-nested"}
+  local pid
   if [[ ${BUCHHWIN_NESTED:-0} == 1 ]]; then
     return 0
+  fi
+  # Files of a nested Hyprland that is gone (crashed, never stopped) are
+  # stale: a later real session can get the same wayland-N, and then its
+  # suspend, reboot and lock fallback were skipped as "nested".
+  if [[ -r $base/hyprland.pid ]]; then
+    pid=$(<"$base/hyprland.pid")
+    # /proc rather than kill -0, which says "no" for a living process of
+    # another user (EPERM).
+    if [[ ! $pid =~ ^[0-9]+$ || ! -d /proc/$pid ]]; then
+      return 1
+    fi
   fi
   if [[ -r $base/wayland-display && -n ${WAYLAND_DISPLAY:-} ]] \
      && [[ ${WAYLAND_DISPLAY} == "$(<"$base/wayland-display")" ]]; then
@@ -39,7 +51,7 @@ nested_guard_fail() {
 
 # nested_guard [OUTPUT]  (default BUCHTEST)
 nested_guard() {
-  local base=${BUCHHWIN_NESTED_DIR:-"${TMPDIR:-/tmp}/buchhwin-nested"}
+  local base=${BUCHHWIN_NESTED_DIR:-"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/buchhwin-nested"}
   local output=${1:-BUCHTEST} signature display pid
   [[ -r $base/instance && -r $base/wayland-display && -r $base/hyprland.pid ]] \
     || { nested_guard_fail "no nested session files in $base"; return 1; }

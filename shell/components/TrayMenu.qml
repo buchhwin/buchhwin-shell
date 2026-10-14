@@ -21,6 +21,7 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         ShellButton {
+            toolTip: "Back"
             icon: Icons.back; variant: "ghost"; compact: true
             onClicked: root.stack.length ? root.stack = root.stack.slice(0, -1) : root.done()
         }

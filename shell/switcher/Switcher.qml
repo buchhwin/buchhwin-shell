@@ -182,7 +182,7 @@ PanelWindow {
                     width: Math.min(card.boxWidth, Metrics.switcherPreviewHeight * card.aspect)
                     height: Math.min(Metrics.switcherPreviewHeight, card.boxWidth / card.aspect)
                     radius: Metrics.radiusInner
-                    color: Colors.elevatedSurface
+                    color: Colors.surface2
                     border.width: Metrics.borderWidth
                     border.color: Colors.border
                     clip: true

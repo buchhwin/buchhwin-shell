@@ -72,14 +72,23 @@ Singleton {
         }
     }
 
+    // Restarted after a pause if it ever exits, like NetworkService's
+    // monitor: without it the slider and the OSD stop following the keys.
+    property bool monitorPaused: false
     Process {
         stderr: ErrorLog { label: "BrightnessService.process" }
-        running: root.device.length > 0
-        command: ["udevadm", "monitor", "--udev", "--subsystem-match=backlight"]
+        running: root.device.length > 0 && !root.monitorPaused
+        command: Paths.bound(["udevadm", "monitor", "--udev", "--subsystem-match=backlight"])
         stdout: SplitParser {
             onRead: line => { if (line.indexOf("backlight") >= 0) reloadTimer.restart() }
         }
+        onRunningChanged: {
+            if (running || root.device.length === 0 || root.monitorPaused) return
+            root.monitorPaused = true
+            monitorRestart.restart()
+        }
     }
+    Timer { id: monitorRestart; interval: 5000; onTriggered: root.monitorPaused = false }
 
     Timer { id: reloadTimer; interval: 50; onTriggered: root.refresh() }
 }

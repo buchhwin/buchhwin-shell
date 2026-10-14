@@ -6,6 +6,7 @@ import QtQuick.Shapes
 import qs.theme
 import qs.services
 import "../../services/arrange/ArrangeLogic.js" as Arrange
+import "NavLogic.js" as Nav
 
 // An overlay hosting one floating panel card. Handles focus, scrim, Escape,
 // click-outside and the open/close transition.
@@ -190,6 +191,26 @@ PanelWindow {
     // aside instead of racing it, and Escape still closes because the card
     // carries the same handler and *is* an ancestor of the content.
     property Item keyForward: null
+    // Tab, Shift+Tab and the arrow keys move between the panel's controls
+    // (NavLogic.js). For panels without a form of their own; a key a control
+    // uses itself (a field's Left/Right, a slider's) never gets here.
+    property bool keyNavigation: false
+    function navigateKey(event) {
+        if (!keyNavigation) return
+        const back = event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))
+        const step = { [Qt.Key_Left]: [-1, 0], [Qt.Key_Right]: [1, 0], [Qt.Key_Up]: [0, -1], [Qt.Key_Down]: [0, 1] }[event.key]
+        let target = null
+        if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)
+            target = Nav.tabStep(body, body.Window.activeFocusItem, back)
+        else if (step)
+            target = Nav.arrowStep(body, body.Window.activeFocusItem, step[0], step[1])
+        else
+            return
+        event.accepted = true
+        if (!target) return
+        if (typeof target.focusInput === "function") target.focusInput(Qt.TabFocusReason)
+        else target.forceActiveFocus(Qt.TabFocusReason)
+    }
     default property alias content: body.data
     readonly property alias card: card
     readonly property real cardTargetWidth: card.targetWidth
@@ -409,6 +430,7 @@ PanelWindow {
             anchors.fill: parent
             focus: window.wanted && !window.keyForward
             Keys.onEscapePressed: window.escapeKey()
+            Keys.onPressed: event => window.navigateKey(event)
         }
 
         // The shadow is cast by an invisible twin of the card, not by putting the
@@ -554,6 +576,7 @@ PanelWindow {
             // Escape from inside the panel: the card is an ancestor of the content,
             // so a key the content did not take arrives here.
             Keys.onEscapePressed: window.escapeKey()
+            Keys.onPressed: event => window.navigateKey(event)
             color: "transparent"
             clip: window.showCard
             opacity: progress.value
@@ -718,7 +741,7 @@ PanelWindow {
                 // it vanished on a light panel.
                 color: grip.pulling || grip.containsMouse ? Colors.accentHover : Colors.accent
                 border.width: Metrics.borderWidth
-                border.color: Colors.accent
+                border.color: Colors.accentLine
 
                 MouseArea {
                     id: grip

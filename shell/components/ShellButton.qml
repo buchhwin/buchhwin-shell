@@ -51,7 +51,7 @@ Rectangle {
     color: shownVariant === "accent"
         ? (down ? Colors.accentPressed : hovered ? Colors.accentHover : Colors.accent)
         : shownVariant === "ghost"
-            ? (down ? Colors.ghostPressed : hovered ? Colors.ghostHover : "transparent")
+            ? (down ? Colors.pressed : hovered ? Colors.hover : "transparent")
             : shownVariant === "danger"
                 ? (down ? Colors.dangerSoftPressed : hovered ? Colors.dangerSoftHover : Colors.dangerSoft)
                 : (down ? Colors.controlFillPressed : hovered ? Colors.controlFillHover : Colors.controlFill)
@@ -73,6 +73,7 @@ Rectangle {
         }
         ShellText {
             visible: root.shownText.length > 0
+            Layout.maximumWidth: Metrics.buttonTextMax
             text: root.shownText
             role: root.compact ? "small" : "body"
             color: root.foreground
@@ -95,7 +96,13 @@ Rectangle {
     }
 
     Keys.onReturnPressed: root.activate()
+    Keys.onEnterPressed: root.activate()
     Keys.onSpacePressed: root.activate()
+
+    // Named for screen readers by its words, or by its tip when it is an icon.
+    Accessible.role: Accessible.Button
+    Accessible.name: root.shownText || root.toolTip
+    Accessible.onPressAction: root.activate()
 
     MouseArea {
         id: mouse

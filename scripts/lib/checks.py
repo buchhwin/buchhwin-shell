@@ -349,6 +349,11 @@ STYLE_PATTERNS = [
     ("numeric border width", re.compile(r"\bborder\.width:\s*\d*[1-9]")),
     ("shadow literal", re.compile(r"\b(shadowBlur|shadowVerticalOffset|shadowHorizontalOffset|blurMax):\s*[\d.]")),
     ("letter spacing literal", re.compile(r"font\.letterSpacing:\s*[\d.-]")),
+    # A size made from an unrelated token times a fraction (`iconXl * 1.5` as
+    # a column width): it belongs in Metrics under its own name. Doubling for
+    # a HiDPI decode and scaling by a widget's own factor are fine.
+    ("size as a fraction of another token", re.compile(r"Metrics\.\w+ \* \d+\.\d+(?![\d.])(?!\s*\*\s*[\w.]*[Ss]cale)")),
+    ("label width literal", re.compile(r"\blabelWidth:\s*\d")),
 ]
 
 # "transparent" is a real value, not a colour choice, and 0 spacing or margins
@@ -392,9 +397,42 @@ def named_icons():
     return {match.group(2): match.group(1) for match in ICON_NAME.finditer(text)}
 
 
+# A ShellButton that is only a glyph has no name unless it has a tip: the tip
+# is what the pointer shows and what a screen reader reads (ShellButton's
+# Accessible.name). Seventeen of them had neither on 2026-10-13.
+SHELL_BUTTON = re.compile(r"\bShellButton\s*\{")
+
+
+def _top_level(body):
+    while True:
+        flat = re.sub(r"\{[^{}]*\}", "{}", body)
+        if flat == body:
+            return body
+        body = flat
+
+
+def unnamed_buttons(text):
+    """Line numbers of icon-only ShellButtons without a toolTip."""
+    found = []
+    for match in SHELL_BUTTON.finditer(text):
+        index, depth = match.end(), 1
+        while depth and index < len(text):
+            depth += {"{": 1, "}": -1}.get(text[index], 0)
+            index += 1
+        top = _top_level(text[match.end():index - 1])
+        has = lambda key: re.search(r"(^|[\s;])%s\s*:" % key, top) is not None
+        if has("icon") and not has("text") and not has("toolTip"):
+            found.append(text.count("\n", 0, match.start()) + 1)
+    return found
+
+
 def check_icons():
     icons = named_icons()
     failed = 0
+    for path in sorted((ROOT / "shell").rglob("*.qml")):
+        for number in unnamed_buttons(path.read_text()):
+            print("%s:%d: an icon-only ShellButton needs a toolTip (its name)" % (path.relative_to(ROOT), number))
+            failed += 1
     for path in sorted(list((ROOT / "shell").rglob("*.qml")) + list((ROOT / "services").rglob("*.qml"))):
         for number, line in enumerate(path.read_text().splitlines(), 1):
             # Only the allowed token is taken out, not the line around it:

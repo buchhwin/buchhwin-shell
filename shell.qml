@@ -278,7 +278,6 @@ ShellRoot {
         function rects(): string { return JSON.stringify(LayoutService.dashboardCells) }
         function open(): void { PanelService.open("dashboard") }
         function close(): void { PanelService.close("dashboard") }
-        // Calendar view: month | week | day.
     }
 
     IpcHandler {
@@ -343,7 +342,7 @@ ShellRoot {
             CalendarService.editorPreview = true
             CalendarService.openEditor(new Date())
         }
-        // Synthetic events around today in eventsFor() (week view, event list).
+        // Synthetic events around today in eventsFor() (month, event list).
         function preview(): void {
             const choices = Colors.accentChoices
             CalendarService.startPreview([choices[0], choices[6], choices[4], choices[1]])

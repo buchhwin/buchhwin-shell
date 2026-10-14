@@ -86,7 +86,7 @@ Singleton {
         if (!images.length) return
         thumbProc.pending = images.map(entry => entry.thumb)
         thumbProc.command = ["sh", "-c",
-            "mkdir -p \"$1\" && dir=\"$1\" && db=\"$2\" && shift 2 && while [ $# -gt 1 ]; do [ -s \"$dir/$2\" ] || cliphist -db-path \"$db\" decode \"$1\" > \"$dir/$2\"; shift 2; done",
+            "mkdir -p \"$1\" && dir=\"$1\" && db=\"$2\" && shift 2 && while [ $# -gt 1 ]; do [ -s \"$dir/$2\" ] || cliphist -db-path \"$db\" decode \"$1\" > \"$dir/$2\"; if [ -s \"$dir/$2\" ]; then echo \"$2\"; else rm -f \"$dir/$2\"; fi; shift 2; done",
             "sh", thumbDir, dbPath].concat(images.reduce((list, entry) => list.concat([entry.id, entry.thumb]), []))
         thumbProc.running = true
     }
@@ -95,9 +95,13 @@ Singleton {
         id: thumbProc
         stderr: ErrorLog { label: "ClipboardService.thumbProc" }
         property var pending: []
+        // Only the files that came out non-empty are ready; a failed decode
+        // is tried again next time instead of showing a broken image.
+        stdout: StdioCollector { id: thumbOut }
         onExited: {
             const next = Object.assign({}, root.readyThumbs)
-            for (const name of pending) next[name] = true
+            const made = thumbOut.text.split("\n")
+            for (const name of pending) if (made.indexOf(name) >= 0) next[name] = true
             root.readyThumbs = next
             if (root.thumbsQueued) {
                 root.thumbsQueued = false
@@ -122,11 +126,11 @@ Singleton {
     Process {
         stderr: ErrorLog { label: "ClipboardService.process" }
         running: root.enabled && !root.recordersRestarting
-        command: ["wl-paste", "--type", "text", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"]
+        command: Paths.bound(["wl-paste", "--type", "text", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"])
     }
     Process {
         stderr: ErrorLog { label: "ClipboardService.process" }
         running: root.enabled && !root.recordersRestarting
-        command: ["wl-paste", "--type", "image", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"]
+        command: Paths.bound(["wl-paste", "--type", "image", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"])
     }
 }

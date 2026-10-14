@@ -31,7 +31,7 @@ GridLayout {
         }
         RowLayout {
             Layout.fillWidth: true
-            ShellButton { icon: AudioService.volumeIcon(AudioService.volume, AudioService.muted); variant: "ghost"; compact: true; onClicked: AudioService.toggleMute(AudioService.sink) }
+            ShellButton { toolTip: AudioService.muted ? "Unmute" : "Mute"; icon: AudioService.volumeIcon(AudioService.volume, AudioService.muted); variant: "ghost"; compact: true; onClicked: AudioService.toggleMute(AudioService.sink) }
             ShellSlider { Layout.fillWidth: true; value: AudioService.volume; onMoved: value => AudioService.setVolume(AudioService.sink, value) }
             ShellText { text: Math.round(AudioService.volume * 100) + "%"; role: "small"; muted: true }
         }
@@ -66,7 +66,7 @@ GridLayout {
         }
         RowLayout {
             Layout.fillWidth: true
-            ShellButton { icon: AudioService.micMuted ? "󰍭" : "󰍬"; variant: "ghost"; compact: true; onClicked: AudioService.toggleMute(AudioService.source) }
+            ShellButton { toolTip: AudioService.micMuted ? "Unmute microphone" : "Mute microphone"; icon: AudioService.micMuted ? "󰍭" : "󰍬"; variant: "ghost"; compact: true; onClicked: AudioService.toggleMute(AudioService.source) }
             ShellSlider { Layout.fillWidth: true; value: AudioService.micVolume; onMoved: value => AudioService.setVolume(AudioService.source, value) }
             ShellText { text: Math.round(AudioService.micVolume * 100) + "%"; role: "small"; muted: true }
         }

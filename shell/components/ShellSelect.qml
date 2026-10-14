@@ -84,7 +84,7 @@ ColumnLayout {
             ShellText {
                 Layout.fillWidth: true
                 text: root.currentOption ? root.currentOption.label : root.current.length ? root.current : root.placeholder
-                color: root.currentOption || root.current.length ? Colors.text : Colors.subtleText
+                color: root.currentOption || root.current.length ? Colors.text : Colors.mutedText
                 font.family: root.previewFonts && root.current.length ? root.current : Typography.family
             }
             ShellIcon {

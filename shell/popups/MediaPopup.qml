@@ -54,7 +54,7 @@ PopupPanel {
                     anchors.centerIn: parent
                     visible: cover.status !== Image.Ready
                     glyph: "󰎆"
-                    size: Metrics.iconXl * 2
+                    size: Metrics.coverFallbackGlyph
                     color: Colors.subtleText
                 }
             }

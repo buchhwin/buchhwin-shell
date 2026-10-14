@@ -12,6 +12,7 @@ import "../../services/arrange/ArrangeLogic.js" as Arrange
 // The pencil in the header arranges the tiles in place (see OverviewPage).
 ShellPanel {
     id: root
+    keyNavigation: true
     panelId: "controlCenter"
     placement: "top-right"
     // The panel's own size is dragged from its corner while the tiles are

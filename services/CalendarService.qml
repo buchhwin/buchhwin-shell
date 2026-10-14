@@ -93,7 +93,7 @@ Singleton {
     }
 
     // Synthetic events (IPC `calendar preview`) replace the real ones in
-    // eventsFor(), for screenshots of the week view without private data.
+    // eventsFor(), for screenshots of the calendar without private data.
     property var previewEvents: null
     function startPreview(colors) { previewEvents = Week.sampleEvents(new Date(), colors) }
 
@@ -113,7 +113,6 @@ Singleton {
     }
     function formatRange(event) { return Logic.formatRange(event) }
 
-    function isCalendarVisible(id) { return hiddenIds.indexOf(id) < 0 }
     function setCalendarVisible(id, visible) {
         SettingsService.set("calendar.hiddenCalendars", Logic.formatIdList(Logic.withId(hiddenIds, id, !visible)))
     }
@@ -321,7 +320,9 @@ Singleton {
             write(request + "\n")
             stdinEnabled = false
         }
-        onExited: code => { exitCode = code; root.finishResolve() }
+        // Opened again for the next run: closed, the next request would go
+        // nowhere and the helper would read an empty one.
+        onExited: code => { stdinEnabled = true; exitCode = code; root.finishResolve() }
         stdout: StdioCollector {
             id: resolverOut
             onStreamFinished: { resolver.outDone = true; root.finishResolve() }
@@ -353,7 +354,7 @@ Singleton {
             write(request + "\n")
             stdinEnabled = false
         }
-        onExited: code => { exitCode = code; root.finishWrite() }
+        onExited: code => { stdinEnabled = true; exitCode = code; root.finishWrite() }
         stdout: StdioCollector {
             id: writerOut
             onStreamFinished: { writer.outDone = true; root.finishWrite() }

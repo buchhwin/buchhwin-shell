@@ -54,7 +54,7 @@ def nested_environment():
     """The rule of scripts/lib/nested-guard.sh, ported: a nested test session.
 
     BUCHHWIN_NESTED=1 says so outright, and the session's files in
-    BUCHHWIN_NESTED_DIR (default $TMPDIR/buchhwin-nested) say so when they name
+    BUCHHWIN_NESTED_DIR (default $XDG_RUNTIME_DIR/buchhwin-nested) say so when they name
     this process's WAYLAND_DISPLAY or HYPRLAND_INSTANCE_SIGNATURE. The second
     half matters: the testing recipe exports the nested display and signature
     and says nothing about the flag, and this script writes the host's
@@ -63,7 +63,8 @@ def nested_environment():
     if os.environ.get("BUCHHWIN_NESTED") == "1":
         return True
     base = pathlib.Path(os.environ.get("BUCHHWIN_NESTED_DIR")
-                        or os.path.join(os.environ.get("TMPDIR") or "/tmp", "buchhwin-nested"))
+                        or os.path.join(os.environ.get("XDG_RUNTIME_DIR") or os.environ.get("TMPDIR") or "/tmp",
+                                        "buchhwin-nested"))
     for name, variable in (("wayland-display", "WAYLAND_DISPLAY"), ("instance", "HYPRLAND_INSTANCE_SIGNATURE")):
         value = os.environ.get(variable)
         if not value:

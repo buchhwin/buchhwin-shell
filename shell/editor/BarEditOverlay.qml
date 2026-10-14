@@ -113,7 +113,7 @@ Item {
             radius: Metrics.radiusCard
             color: target ? Colors.accentSoft : Colors.scrim
             border.width: target ? Metrics.focusBorderWidth : Metrics.borderWidth
-            border.color: target ? Colors.accent : Colors.border
+            border.color: target ? Colors.accentLine : Colors.border
 
             SectionLabel {
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -156,7 +156,7 @@ Item {
                 radius: Metrics.radiusCard
                 color: "transparent"
                 border.width: frame.selected ? Metrics.focusBorderWidth : Metrics.borderWidth
-                border.color: frame.selected ? Colors.accent : Colors.border
+                border.color: frame.selected ? Colors.accentLine : Colors.border
             }
 
             MouseArea {
@@ -235,7 +235,7 @@ Item {
         radius: Metrics.radiusInner
         color: "transparent"
         border.width: Metrics.focusBorderWidth
-        border.color: Colors.accent
+        border.color: Colors.accentLine
     }
 
     // Insertion marker at the gap the dragged pill would take: a hairline
@@ -264,7 +264,7 @@ Item {
         radius: height / 2
         color: Colors.pill
         border.width: Metrics.focusBorderWidth
-        border.color: Colors.accent
+        border.color: Colors.accentLine
 
         ShellText {
             id: ghostLabel

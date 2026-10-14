@@ -39,13 +39,25 @@ def split_list(value):
     return [item.strip() for item in str(value or "").split(",") if item.strip()]
 
 
+DOMAIN = re.compile(r"^(?=.{1,253}$)([A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?\.?)+$")
+
+
+def is_address(text):
+    try:
+        ipaddress.ip_address(text)
+        return True
+    except ValueError:
+        return False
+
+
 def parse_conf(text):
     """A wg-quick configuration as {"interface": {...}, "peers": [{...}]}.
 
     Keys are case-insensitive, comments (# and ;) and blank lines are skipped,
-    and anything wg-quick itself runs (PostUp, PreDown, Table, SaveConfig) is
-    refused rather than silently dropped: NetworkManager would not run it, and
-    a tunnel that depends on it would look set up and not work.
+    and the scripts wg-quick itself runs (PostUp, PreDown, SaveConfig) are
+    refused rather than silently dropped: NetworkManager would not run them,
+    and a tunnel that depends on them would look set up and not work. Table
+    has a NetworkManager meaning and is kept (see `settings`).
     """
     interface, peers, section = {}, [], None
     for raw in str(text).splitlines():
@@ -66,7 +78,7 @@ def parse_conf(text):
             raise ValueError("not a WireGuard line: %s" % line)
         key, value = line.split("=", 1)
         key, value = key.strip().lower(), value.strip()
-        if key in ("postup", "postdown", "preup", "predown", "table", "saveconfig"):
+        if key in ("postup", "postdown", "preup", "predown", "saveconfig"):
             raise ValueError("%s is a wg-quick script setting that NetworkManager does not run" % key)
         if key in ("address", "dns", "allowedips") and key in section:
             section[key] = section[key] + ", " + value
@@ -89,11 +101,13 @@ def check(conf):
             ipaddress.ip_interface(address)
         except ValueError:
             errors.append("%s is not an address" % address)
-    for server in split_list(interface.get("dns")):
-        try:
-            ipaddress.ip_address(server)
-        except ValueError:
-            errors.append("%s is not a DNS server address" % server)
+    # wg-quick reads a DNS entry that is not an address as a search domain.
+    for entry in split_list(interface.get("dns")):
+        if not is_address(entry) and not DOMAIN.match(entry):
+            errors.append("%s is neither a DNS server address nor a search domain" % entry)
+    table = interface.get("table", "auto").lower()
+    if table not in ("auto", "off") and not (table.isdigit() and 0 < int(table) < 2 ** 32):
+        errors.append("Table = %s is not auto, off or a table number" % interface.get("table"))
     if not conf.get("peers"):
         errors.append("there is no [Peer]")
     for peer in conf.get("peers", []):
@@ -133,25 +147,36 @@ def settings(conf, name, ifname, user, connection_uuid=None):
             entry["preshared-key-flags"] = 0
         peers.append(entry)
     wireguard = {"private-key": interface["privatekey"], "private-key-flags": 0, "peers": peers}
+    # Table = off: wg-quick adds no routes for AllowedIPs; NetworkManager's
+    # word for that is peer-routes. A number is the routing table to use.
+    table = interface.get("table", "auto").lower()
+    if table == "off":
+        wireguard["peer-routes"] = False
     if interface.get("listenport", "").isdigit():
         wireguard["listen-port"] = int(interface["listenport"])
     if interface.get("mtu", "").isdigit():
         wireguard["mtu"] = int(interface["mtu"])
+    routing = {"route-table": int(table)} if table.isdigit() else {}
     return {
         "connection": {"id": name, "uuid": connection_uuid or str(uuidlib.uuid4()), "type": "wireguard",
                        "interface-name": ifname, "autoconnect": False, "permissions": ["user:" + user]},
         "wireguard": wireguard,
-        "ipv4": {"method": "manual" if v4 else "disabled",
-                 "address-data": [{"address": str(a.ip), "prefix": a.network.prefixlen} for a in v4]},
-        "ipv6": {"method": "manual" if v6 else "disabled",
-                 "address-data": [{"address": str(a.ip), "prefix": a.network.prefixlen} for a in v6]},
+        "ipv4": dict({"method": "manual" if v4 else "disabled",
+                      "address-data": [{"address": str(a.ip), "prefix": a.network.prefixlen} for a in v4]}, **routing),
+        "ipv6": dict({"method": "manual" if v6 else "disabled",
+                      "address-data": [{"address": str(a.ip), "prefix": a.network.prefixlen} for a in v6]}, **routing),
     }
 
 
 def dns_of(conf):
-    servers = split_list(conf["interface"].get("dns"))
+    servers = [s for s in split_list(conf["interface"].get("dns")) if is_address(s)]
     return ([s for s in servers if ipaddress.ip_address(s).version == 4],
             [s for s in servers if ipaddress.ip_address(s).version == 6])
+
+
+def search_of(conf):
+    """The DNS entries that are search domains, not servers."""
+    return [s for s in split_list(conf["interface"].get("dns")) if not is_address(s)]
 
 
 def masked(value):
@@ -210,8 +235,9 @@ def command_add(options):
     user = getpass.getuser()
     wanted = settings(conf, name, options.ifname, user)
     v4, v6 = dns_of(conf)
+    search = search_of(conf)
     if options.dry_run:
-        return answer(ok=True, settings=masked(wanted), dns4=v4, dns6=v6)
+        return answer(ok=True, settings=masked(wanted), dns4=v4, dns6=v6, search=search)
     try:
         import dbus
     except ImportError:
@@ -228,12 +254,14 @@ def command_add(options):
     # DNS through nmcli: the D-Bus form of a server list differs between
     # NetworkManager versions, the command line's does not. The tunnel is the
     # user's own, so this needs no password either.
-    if v4 or v6:
+    if v4 or v6 or search:
         args = [nmcli(), "connection", "modify", "uuid", uuid]
         if v4:
             args += ["ipv4.dns", ",".join(v4), "ipv4.dns-priority", "-50"]
         if v6:
             args += ["ipv6.dns", ",".join(v6), "ipv6.dns-priority", "-50"]
+        if search:
+            args += ["ipv4.dns-search" if v4 or not v6 else "ipv6.dns-search", ",".join(search)]
         result = subprocess.run(args, capture_output=True, text=True)
         if result.returncode != 0:
             return answer(ok=True, uuid=uuid, warning="added, but its DNS servers were not set: " + result.stderr.strip())

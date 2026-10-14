@@ -18,6 +18,13 @@ else
 fi
 mkdir -p -- "$target_dir"
 file="$target_dir/Screenshot_$(date +%Y-%m-%d_%H-%M-%S).png"
+# Two shots in the same second: the second gets a number instead of
+# replacing the first.
+n=2
+while [[ -e $file ]]; do
+  file="$target_dir/Screenshot_$(date +%Y-%m-%d_%H-%M-%S)-$n.png"
+  n=$(( n + 1 ))
+done
 
 case "$mode" in
   region)

@@ -58,7 +58,7 @@ ColumnLayout {
             Layout.fillWidth: true
             implicitHeight: Metrics.tileHeight * 3
             radius: Metrics.radiusCard
-            color: Colors.surface
+            color: Colors.surface1
             clip: true
 
             readonly property var layoutBox: root.box()
@@ -101,9 +101,9 @@ ColumnLayout {
                     // mark the screen Hyprland had focused, and two markings
                     // competing for one colour means neither can be read.
                     readonly property bool chosen: modelData !== null && modelData.name === root.chosen
-                    color: chosen ? Colors.accentSoft : Colors.elevatedSurface
+                    color: chosen ? Colors.accentSoft : Colors.surface2
                     border.width: dragArea.drag.active || chosen ? Metrics.focusBorderWidth : Metrics.borderWidth
-                    border.color: dragArea.drag.active || chosen ? Colors.accent : Colors.border
+                    border.color: dragArea.drag.active || chosen ? Colors.accentLine : Colors.border
                     z: dragArea.drag.active ? 2 : 1
 
                     // One tab stop per monitor, and the arrows move it. The

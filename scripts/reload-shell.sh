@@ -40,9 +40,14 @@ quickshell kill --path "$config_dir" 2>/dev/null || true
 # character that means something to an ERE is escaped first (a checkout under
 # `.claude/worktrees/agent-x+y` used to match the wrong thing, or nothing).
 config_pattern=$(printf '%s' "$config_dir" | sed 's,[][\.*^$+?(){}|\\],\\&,g')
+# The list is captured before it is matched: `| grep -q` quits at the first
+# match and leaves quickshell with SIGPIPE, which pipefail reads as "gone"
+# (pitfall 15, as in start-shell.sh).
 instance_running() {
-  pgrep -f "^quickshell .*--path ${config_pattern}$" >/dev/null 2>&1 \
-    || quickshell list --path "$config_dir" --json 2>/dev/null | grep -q '"id"'
+  local listed
+  pgrep -f "^quickshell .*--path ${config_pattern}$" >/dev/null 2>&1 && return 0
+  listed=$(quickshell list --path "$config_dir" --json 2>/dev/null) || listed=""
+  [[ $listed == *'"id"'* ]]
 }
 for _ in {1..200}; do
   instance_running || break

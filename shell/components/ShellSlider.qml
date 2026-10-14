@@ -33,6 +33,21 @@ Item {
     activeFocusOnTab: focusOnTab && enabledState
     Keys.onLeftPressed: if (enabledState) root.released(Math.max(from, value - (to - from) / 20))
     Keys.onRightPressed: if (enabledState) root.released(Math.min(to, value + (to - from) / 20))
+    // Up and Down are left to the panel, which moves between controls with
+    // them; the bigger steps and the ends are here.
+    Keys.onPressed: event => {
+        if (!enabledState) return
+        const span = to - from
+        const target = event.key === Qt.Key_Home ? from
+            : event.key === Qt.Key_End ? to
+            : event.key === Qt.Key_PageUp ? Math.min(to, value + span / 5)
+            : event.key === Qt.Key_PageDown ? Math.max(from, value - span / 5)
+            : NaN
+        if (isNaN(target)) return
+        event.accepted = true
+        root.released(target)
+    }
+    Accessible.role: Accessible.Slider
     implicitWidth: Metrics.sliderWidth
     implicitHeight: Metrics.sliderHandle + Metrics.spaceXs
     opacity: enabledState ? 1 : Effects.disabledOpacity
@@ -44,14 +59,16 @@ Item {
         width: parent.width - Metrics.sliderHandle
         height: Metrics.sliderTrack
         radius: height / 2
-        color: Colors.track
+        color: mouse.containsMouse && root.enabledState ? Colors.trackHover : Colors.track
+        Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
 
         Rectangle {
             id: fill
             width: parent.width * root.shownRatio
             height: parent.height
             radius: parent.radius
-            color: Colors.accent
+            color: mouse.containsMouse && root.enabledState ? Colors.accentHover : Colors.accent
+            Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
         }
     }
 

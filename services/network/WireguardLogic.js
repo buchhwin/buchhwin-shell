@@ -81,5 +81,5 @@ function config(form) {
 // A file's name as the tunnel's: "office-vpn.conf" -> "office-vpn".
 function nameFromPath(path) {
     const base = String(path || "").split("/").pop()
-    return base.replace(/\.conf$/i, "") || "WireGuard"
+    return base.replace(/\.(conf|config)$/i, "") || "WireGuard"
 }

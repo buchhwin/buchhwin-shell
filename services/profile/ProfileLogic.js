@@ -52,10 +52,6 @@ function modeScopedPath(leaf) {
     return MODE_SCOPED_GROUP + "." + String(leaf || "")
 }
 
-function modeScopedPaths() {
-    return MODE_SCOPED.map(modeScopedPath)
-}
-
 // The leaf a full setting path names, or "" when the path is not mode-scoped.
 function modeScopedLeaf(path) {
     const text = String(path || "")

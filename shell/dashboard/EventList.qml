@@ -59,8 +59,8 @@ ColumnLayout {
         // change how a list the user reads every day looks.
         //
         // What it *was* missing is the part that has nothing to do with the
-        // shape: the same event in WeekView lights up under the pointer and
-        // here it did not, so one of the two felt dead. The tokens are
+        // shape: the same event in the old week view lit up under the pointer
+        // and here it did not, so one of the two felt dead. The tokens are
         // ListRow's own, and a row that does nothing on click (there is always
         // an event to open) gets no exception.
         Rectangle {

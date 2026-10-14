@@ -121,9 +121,8 @@ Singleton {
     // pause before a remapped notch shows again and the pill bar's own hover.
     // Editing: a tile wiggles so you can see it can be picked up. Each one
     // starts at a slightly different point of the cycle - all in step looks
-    // mechanical - and a tile that moves to a new place glides there.
+    // mechanical.
     readonly property int wiggle: 1400
-    readonly property int reorder: travel(220)
     // One step of the scroll a drag near a list's edge pulls. Not scaled by
     // the animation mode: it is a rate, not a transition, and a session with
     // motion off still has to be able to reach the bottom of the list.

@@ -97,15 +97,20 @@ Singleton {
         delete next[fromCombo]
         writeKeys(next)
     }
-    function resetAllKeys() { writeKeys({}) }
 
     function writeKeys(map) {
         keyOverrides = map
         keysFile.setText(Logic.serializeKeyOverrides(map))
         // A reload re-reads the whole configuration, which is the price of the
         // overrides being configuration rather than runtime binds. It is a
-        // deliberate, occasional action; nothing here loops.
-        reloadProc.running = true
+        // deliberate, occasional action; nothing here loops. It runs once the
+        // file is on disk (`onSaved`), or Hyprland reads the previous keys;
+        // a change made while a reload runs gets one more.
+    }
+    property bool reloadQueued: false
+    function requestReload() {
+        if (reloadProc.running) reloadQueued = true
+        else reloadProc.running = true
     }
     function keyParts(entry) { return Logic.keyParts(Logic.modmask(entry.mods), entry.key) }
     function grouped(query) { return Logic.grouped(rows, query) }
@@ -191,7 +196,14 @@ Singleton {
         id: reloadProc
         stderr: ErrorLog { label: "ShortcutService.reloadProc" }
         command: ["hyprctl", "reload"]
-        onExited: root.refresh()
+        onExited: {
+            if (root.reloadQueued) {
+                root.reloadQueued = false
+                Qt.callLater(root.requestReload)
+                return
+            }
+            root.refresh()
+        }
     }
 
     // The configuration is the only record of what a shortcut does and where
@@ -209,6 +221,7 @@ Singleton {
         watchChanges: true
         printErrors: false
         onLoaded: root.keyOverrides = Logic.parseKeyOverrides(text())
+        onSaved: root.requestReload()
     }
 
     Process {

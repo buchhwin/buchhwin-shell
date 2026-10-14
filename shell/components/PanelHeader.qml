@@ -31,6 +31,7 @@ RowLayout {
         color: root.iconColor
     }
     ShellButton {
+        toolTip: "Back"
         visible: root.showBack
         icon: Icons.back
         variant: "ghost"

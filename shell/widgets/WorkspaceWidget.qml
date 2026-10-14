@@ -93,7 +93,7 @@ Grid {
                 // A bare dot takes the muted ink the surface hands over: the
                 // theme's surface tint vanished on the notch's black.
                 color: slot.current ? Colors.accent : pipMouse.containsMouse ? Colors.surface2Hover
-                    : slot.labelled ? Colors.elevatedSurface : root.mutedTextColor
+                    : slot.labelled ? Colors.surface2 : root.mutedTextColor
                 opacity: slot.current || slot.modelData.occupied ? 1 : Effects.mutedOpacity
                 // No spring on the width. It never ran while the pips were
                 // rebuilt on every switch, and once they were kept it did -

@@ -35,6 +35,9 @@ Rectangle {
     Keys.onSpacePressed: root.clicked()
     Keys.onReturnPressed: root.clicked()
     Keys.onEnterPressed: root.clicked()
+    Accessible.role: Accessible.Button
+    Accessible.name: root.title
+    Accessible.onPressAction: root.clicked()
     FocusRing { active: root.activeFocus; controlRadius: root.radius }
 
     readonly property bool down: rowMouse.pressed && rowMouse.containsMouse
@@ -90,7 +93,11 @@ Rectangle {
             ShellText { Layout.fillWidth: true; text: root.title; color: root.active ? Colors.accentForeground : Colors.text }
             ShellText { Layout.fillWidth: true; text: root.subtitle; role: "small"; muted: true; visible: text.length > 0 }
         }
-        ShellText { visible: root.trailingText.length > 0; text: root.trailingText; role: "small"; muted: true }
+        ShellText {
+            visible: root.trailingText.length > 0
+            Layout.maximumWidth: Metrics.trailingTextMax
+            text: root.trailingText; role: "small"; muted: true
+        }
         Item {
             id: trailingSlot
             implicitWidth: childrenRect.width

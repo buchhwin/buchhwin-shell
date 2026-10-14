@@ -28,6 +28,8 @@ packages=(
   brightnessctl wireplumber pipewire-tools playerctl NetworkManager
   plocate jq curl grim slurp swappy wl-clipboard gammastep
   swaylock swayidle kdialog udisks2 wireguard-tools
+  # setpriv: the shell's long-running helpers die with it (--pdeathsig)
+  util-linux
   # the helper scripts in scripts/ are Python
   python313-dbus-python python313-gobject python313-Pillow
   # KDE pieces the session reuses instead of carrying its own

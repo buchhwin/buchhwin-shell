@@ -152,15 +152,20 @@ Singleton {
     // logind delay inhibitor so the lock screen is up before the system sleeps.
     // A crashed helper restarts after a growing pause; toggling `paused`
     // keeps the `running` binding intact so the setting can still stop it.
+    // A helper that has run for a minute counts as healthy again, so five
+    // exits spread over a long session do not switch the lock off for good.
+    // swayidle runs its command through sh, hence the quoted path.
     property bool beforeSleepPaused: false
     property int beforeSleepFailures: 0
     Process {
         id: beforeSleep
         stderr: ErrorLog { label: "IdleService.beforeSleep" }
         running: root.realSession && root.lockBeforeSleep && !root.beforeSleepPaused
-        command: ["swayidle", "-w", "before-sleep", Paths.script("session-action.sh") + " lock"]
+        command: Paths.bound(["swayidle", "-w", "before-sleep", "'" + Paths.script("session-action.sh").replace(/'/g, "'\\''") + "' lock"])
         onRunningChanged: {
-            if (running || !root.realSession || !root.lockBeforeSleep || root.beforeSleepPaused) return
+            if (running) { beforeSleepHealthy.restart(); return }
+            beforeSleepHealthy.stop()
+            if (!root.realSession || !root.lockBeforeSleep || root.beforeSleepPaused) return
             root.beforeSleepFailures += 1
             if (root.beforeSleepFailures > 5) return
             root.beforeSleepPaused = true
@@ -172,6 +177,7 @@ Singleton {
         id: restartBeforeSleep
         onTriggered: root.beforeSleepPaused = false
     }
+    Timer { id: beforeSleepHealthy; interval: 60000; onTriggered: root.beforeSleepFailures = 0 }
 
     // Keep logind's hands off the lid **always**, because the shell handles
     // every action itself now. It used to be conditional, which meant the
@@ -182,10 +188,21 @@ Singleton {
     // This cannot cover the moment before the shell runs; only
     // `/etc/systemd/logind.conf.d/50-buchhwin.conf` can, and
     // `install/system-install.sh --lid` writes it (see docs/system.md).
+    //
+    // Taken again after a pause if it ever ends (logind restarted, the
+    // inhibitor killed), or logind would own the lid for the rest of the
+    // session. The inner `sleep` is bound too, so it ends with the inhibitor.
+    property bool lidInhibitPaused: false
     Process {
         stderr: ErrorLog { label: "IdleService.process" }
-        running: root.realSession
-        command: ["systemd-inhibit", "--what=handle-lid-switch", "--who=buchhwin-shell",
-                  "--why=Lid setting in buchhwin-shell", "--mode=block", "sleep", "infinity"]
+        running: root.realSession && !root.lidInhibitPaused
+        command: Paths.bound(["systemd-inhibit", "--what=handle-lid-switch", "--who=buchhwin-shell",
+                  "--why=Lid setting in buchhwin-shell", "--mode=block"].concat(Paths.bound(["sleep", "infinity"])))
+        onRunningChanged: {
+            if (running || !root.realSession || root.lidInhibitPaused) return
+            root.lidInhibitPaused = true
+            lidInhibitRestart.restart()
+        }
     }
+    Timer { id: lidInhibitRestart; interval: 5000; onTriggered: root.lidInhibitPaused = false }
 }

@@ -391,7 +391,9 @@ Singleton {
         stdinEnabled: true
         onStarted: {
             const secret = actionProc.job ? actionProc.job.secret : ""
-            if (!secret.length) return
+            // Closed for every other job too: a `gio mount` that wants a
+            // password would otherwise wait on stdin for good.
+            if (!secret.length) { stdinEnabled = false; return }
             write(secret)
             actionProc.job.secret = ""
             stdinEnabled = false

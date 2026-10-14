@@ -11,6 +11,7 @@ import qs.shell.components
 // discovery and sampling stop when it closes; optional footer link.
 ShellPanel {
     id: root
+    keyNavigation: true
     property string heading: ""
     property string detail: ""
     property string glyph: ""

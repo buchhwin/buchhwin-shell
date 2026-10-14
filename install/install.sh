@@ -87,7 +87,8 @@ if [[ -r "$HOME/.zshrc" ]] && ! grep -q 'buchhwin-shell/shell.zsh' "$HOME/.zshrc
 fi
 
 completion_dir="$data_home/zsh/site-functions"
-if ! zsh -c "print -l \$fpath" 2>/dev/null | grep -qx -- "$completion_dir"; then
+zsh_fpath=$(zsh -c "print -l \$fpath" 2>/dev/null) || zsh_fpath=""
+if ! grep -qx -- "$completion_dir" <<<"$zsh_fpath"; then
   printf 'For "buchhwin" completion, add this line to ~/.zshrc before compinit:\n  fpath=(%s $fpath)\n' \
     "$completion_dir"
 fi

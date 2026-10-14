@@ -31,7 +31,7 @@ Rectangle {
 
     implicitHeight: Metrics.barPreviewHeight
     radius: Metrics.radiusCard
-    color: Colors.surface
+    color: Colors.surface1
     border.width: Metrics.borderWidth
     border.color: Colors.border
 
@@ -55,7 +55,7 @@ Rectangle {
             Behavior on x { enabled: Animations.motionEnabled; SpringMotion {} }
             Behavior on width { enabled: Animations.motionEnabled; SpringMotion {} }
             radius: Metrics.radiusInner
-            color: Colors.elevatedSurface
+            color: Colors.surface2
             border.width: Metrics.borderWidth
             border.color: Colors.border
             Behavior on y { enabled: Animations.motionEnabled; SpringMotion {} }

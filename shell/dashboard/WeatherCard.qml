@@ -88,7 +88,7 @@ ColumnLayout {
                 ShellIcon {
                     Layout.alignment: Qt.AlignTop
                     glyph: root.current ? root.current.icon : ""
-                    size: Metrics.iconXl * 1.5
+                    size: Metrics.weatherNowIcon
                     color: Colors.text
                 }
 
@@ -117,7 +117,7 @@ ColumnLayout {
 
                 ColumnLayout {
                     Layout.alignment: Qt.AlignTop
-                    Layout.preferredWidth: Metrics.iconXl * 4
+                    Layout.preferredWidth: Metrics.weatherNowColumn
                     spacing: Metrics.spaceXs
 
                     Repeater {
@@ -160,7 +160,7 @@ ColumnLayout {
             ShellText {
                 text: (WeatherService.status === "stale" ? "Offline · updated " : "Updated ") + WeatherService.updatedText
                 role: "small"
-                color: WeatherService.status === "stale" ? Colors.warning : Colors.subtleText
+                color: WeatherService.status === "stale" ? Colors.warning : Colors.mutedText
             }
         }
     }

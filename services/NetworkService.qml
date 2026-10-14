@@ -250,7 +250,7 @@ Singleton {
     Process {
         id: wgPick
         command: ["kdialog", "--title", "Import a WireGuard tunnel", "--getopenfilename",
-                  Quickshell.env("HOME") || "/", "WireGuard (*.conf)"]
+                  Quickshell.env("HOME") || "/", "*.conf *.config|WireGuard tunnel\n*|All files"]
         stdout: StdioCollector {
             onStreamFinished: {
                 const path = text.trim()
@@ -361,7 +361,7 @@ Singleton {
         id: monitorProc
         stderr: ErrorLog { label: "NetworkService.monitorProc" }
         running: true
-        command: ["nmcli", "monitor"]
+        command: Paths.bound(["nmcli", "monitor"])
         stdout: SplitParser { onRead: debounce.restart() }
         onRunningChanged: if (!running) restartTimer.start()
     }

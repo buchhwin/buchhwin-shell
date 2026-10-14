@@ -57,7 +57,7 @@ ColumnLayout {
 
     RowLayout {
         Layout.fillWidth: true
-        ShellButton { icon: Icons.back; variant: "ghost"; compact: true; onClicked: root.shift(-1) }
+        ShellButton { toolTip: "Previous month"; icon: Icons.back; variant: "ghost"; compact: true; onClicked: root.shift(-1) }
         ShellText {
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
@@ -70,7 +70,7 @@ ColumnLayout {
                 onClicked: { root.reset(); root.daySelected(root.today) }
             }
         }
-        ShellButton { icon: Icons.forward; variant: "ghost"; compact: true; onClicked: root.shift(1) }
+        ShellButton { toolTip: "Next month"; icon: Icons.forward; variant: "ghost"; compact: true; onClicked: root.shift(1) }
     }
 
     GridLayout {

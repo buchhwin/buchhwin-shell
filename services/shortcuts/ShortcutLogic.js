@@ -34,7 +34,7 @@ var titleGroups = {
     "Terminal": "apps", "Web browser": "apps", "File manager": "apps",
     "Launcher": "panels", "Control center": "panels", "Settings": "panels", "Notification center": "panels",
     "Emoji picker": "panels", "Wallpaper picker": "panels", "Profiles and modes": "panels",
-    "All keyboard shortcuts": "panels", "Pick a colour off the screen": "panels",
+    "All keyboard shortcuts": "panels", "Pick a color off the screen": "panels",
     "Desktop mode: widgets, bar, notch": "workspaces", "Mode: minimal, work, gaming, laptop, docked": "workspaces",
     "Dashboard": "panels", "Session menu": "panels", "Overview": "panels", "Clipboard history": "panels",
     "Layout editor": "panels",
@@ -132,7 +132,7 @@ function describeExec(arg) {
         if (match[1] === "recording") return titleOf(/ toggle screen\b/.test(text) ? "Record the screen" : "Record a region")
         if (match[1] === "kbdBacklight") return titleOf(match[2] === "up" ? "Keyboard light up"
             : match[2] === "down" ? "Keyboard light down" : "Keyboard light on or off")
-        if (match[1] === "colorPicker") return titleOf("Pick a colour off the screen")
+        if (match[1] === "colorPicker") return titleOf("Pick a color off the screen")
         if (match[1] === "desktop") return titleOf("Desktop mode: widgets, bar, notch")
         if (match[1] === "mode") return titleOf("Mode: minimal, work, gaming, laptop, docked")
         if (panelTitles[match[1]]) return titleOf(panelTitles[match[1]])

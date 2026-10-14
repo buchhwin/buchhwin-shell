@@ -75,7 +75,7 @@ Singleton {
         "ram": { label: "RAM", icon: "󰍛", category: "optional", file: "SystemStatWidget.qml",
                  sizes: ["small", "medium", "large"], action: "systemPopup", available: true, options: { metric: "ram" },
                  defaults: { anchorX: "left", x: 0.08, y: 0.95, style: "capsule" } },
-        "colorPicker": { label: "Colour picker", icon: "󰈊", category: "optional", file: "ColorPickerWidget.qml",
+        "colorPicker": { label: "Color picker", icon: "󰈊", category: "optional", file: "ColorPickerWidget.qml",
                          sizes: ["small", "medium", "large"], action: "colorPicker", available: true,
                          defaults: { anchorX: "left", x: 0.22, y: 0.95, style: "capsule" } },
         "disk": { label: "Disk", icon: "󰋊", category: "optional", file: "SystemStatWidget.qml",

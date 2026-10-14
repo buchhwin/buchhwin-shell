@@ -13,22 +13,50 @@ set -euo pipefail
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
 # shellcheck source=lib/hyprland-prefix.sh
 if [[ -r "$project_dir/scripts/lib/hyprland-prefix.sh" ]]; then source "$project_dir/scripts/lib/hyprland-prefix.sh"; fi
-base=${BUCHHWIN_NESTED_DIR:-"${TMPDIR:-/tmp}/buchhwin-nested"}
+# In the runtime directory (this user's, mode 0700) rather than a fixed name
+# in /tmp that anyone could create first and fill with symlinks.
+base=${BUCHHWIN_NESTED_DIR:-"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/buchhwin-nested"}
 
 # The only process this ever kills is a Hyprland that was started here: the pid
 # in the file may have been reused by anything since it was written, and the
 # nested compositor is the one process on the machine whose environment says
 # BUCHHWIN_NESTED=1 (the same check scripts/lib/nested-guard.sh makes).
+#
+# Once it is gone, whatever of this sandbox is still running goes too: the
+# nested shell dies of the lost compositor without running a destructor, and
+# its helpers used to live on under PID 1 (13 pairs of `nmcli monitor` and
+# `udevadm monitor` after one day of smoke runs). A process belongs to the
+# sandbox when its environment says BUCHHWIN_NESTED=1 and names this
+# sandbox's XDG_CONFIG_HOME; nothing of the real session carries both.
+sandbox_pids() {
+  local env_file pid environment
+  for env_file in /proc/[0-9]*/environ; do
+    pid=${env_file#/proc/}; pid=${pid%/environ}
+    [[ -O $env_file ]] || continue
+    # A process of this user can still refuse its environ (a set-id one).
+    environment=$({ tr '\0' '\n' <"$env_file"; } 2>/dev/null) || continue
+    if grep -qx 'BUCHHWIN_NESTED=1' <<<"$environment" \
+       && grep -qxF "XDG_CONFIG_HOME=$base/config" <<<"$environment"; then
+      printf '%s\n' "$pid"
+    fi
+  done
+}
 stop_nested() {
-  local pid
+  local pid leftovers
   if [[ -r "$base/hyprland.pid" ]]; then
     pid=$(<"$base/hyprland.pid")
     if [[ $pid =~ ^[0-9]+$ ]] && tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | grep -qx 'BUCHHWIN_NESTED=1'; then
       kill "$pid" 2>/dev/null || true
+      for _ in {1..60}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.05; done
     elif [[ $pid =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
       printf 'nested-session: pid %s is not a nested Hyprland; not killed\n' "$pid" >&2
     fi
     rm -f -- "$base/hyprland.pid"
+  fi
+  leftovers=$(sandbox_pids | grep -vx "$$" || true)
+  if [[ -n $leftovers ]]; then
+    # shellcheck disable=SC2086 # one pid per word
+    kill $leftovers 2>/dev/null || true
   fi
   rm -f -- "$base/instance" "$base/wayland-display"
 }
@@ -54,6 +82,11 @@ runtime_dir=${XDG_RUNTIME_DIR:?nested-session: XDG_RUNTIME_DIR is not set}
 resolution=${2:-1920x1200}
 scale=${3:-1}
 stop_nested
+mkdir -p -m 700 -- "$base"
+if [[ ! -O $base || -L $base ]]; then
+  printf 'nested-session: %s is not a directory of this user; not using it\n' "$base" >&2
+  exit 1
+fi
 mkdir -p -- "$base/config" "$base/state" "$base/cache" "$base/hypr"
 # Never share the host's Akonadi configuration with the sandbox: an Akonadi
 # client that cannot reach the server starts its own akonadi_control with the

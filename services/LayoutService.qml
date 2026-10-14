@@ -248,7 +248,6 @@ Singleton {
         return true
     }
 
-    function quickMove(tileId, delta) { return changeQuick(Logic.moveQuickTile, tileId, delta) }
     function quickMoveTo(tileId, index) { return changeQuick(Logic.moveQuickTileTo, tileId, index) }
     function quickSetSize(tileId, w, h) { return changeQuick(Logic.setQuickTileSize, tileId, w, h) }
     function quickRemove(tileId) { return changeQuick(Logic.removeQuickTile, tileId) }
@@ -305,7 +304,6 @@ Singleton {
     function launcherAdd(type) { return changeLauncher(Logic.addLauncherBlock, type) }
     function launcherReset() { return changeLauncher(() => Logic.defaultLauncher()) }
 
-    function launcherHas(type) { return launcherTypes.indexOf(String(type)) >= 0 }
     function launcherLabel(type) { return LauncherCatalogue.label(type) }
     function launcherMinSize(type) { return Logic.launcherBlockMinSize(type) }
     // What the picker offers - the blocks that are not on the launcher. No
@@ -521,11 +519,6 @@ Singleton {
         const target = group(groupId)
         if (!target) return []
         return target.members.map(id => widget(id)).filter(entry => entry && isKnownType(entry.type))
-    }
-
-    function screenWidgets(screenName) {
-        const unused = revision
-        return modeConfig().widgets.filter(item => item.screen === screenName)
     }
 
     // ---- persistence -------------------------------------------------------

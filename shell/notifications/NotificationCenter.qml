@@ -9,6 +9,7 @@ import "../../services/notifications/NotificationLogic.js" as Logic
 // Super+N notification history with Do Not Disturb.
 ShellPanel {
     id: root
+    keyNavigation: true
     keyForward: search
     panelId: "notifications"
     placement: "top-right"
@@ -85,8 +86,10 @@ ShellPanel {
                     width: list.width
                     spacing: Metrics.spaceLg
 
+                    // Built while shown: every notification that arrived re-created
+                    // every group and card behind the hidden panel.
                     Repeater {
-                        model: root.groups
+                        model: root.shown ? root.groups : []
 
                         ColumnLayout {
                             id: groupItem

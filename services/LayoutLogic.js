@@ -719,10 +719,6 @@ function setNotchItemSize(notch, id, w, h) {
     return sanitizeNotch(next)
 }
 
-function resetNotch() {
-    return defaultNotch()
-}
-
 // The big time and the long date used to be a header the overview always drew,
 // above whatever the list said. They are an item now, so a notch stored before
 // that gets one - once, at the front, where the header was.
@@ -784,7 +780,7 @@ const LAUNCHER = {
 // A tile that is not in the list is simply not shown; the picker adds it back.
 const QUICK = {
     zone: "quick",
-    defaults: ["wifi", "bluetooth", "dnd", "microphone", "fingerprint", "brightness",
+    defaults: ["wifi", "bluetooth", "vpn", "dnd", "microphone", "fingerprint", "brightness",
                "battery", "media", "audio", "drives", "phone", "shortcuts"],
     sizeOf: QuickLogic.size,
     leastOf: QuickLogic.minSize,
@@ -1017,7 +1013,6 @@ function moveQuickTileTo(quick, id, index) { return moveTileTo(QUICK, quick, id,
 function removeQuickTile(quick, id) { return removeTile(QUICK, quick, id) }
 function addQuickTile(quick, type, alsoKnown) { return addTile(QUICK, quick, type, alsoKnown) }
 function adoptQuickSizes(quick) { return adoptTileSizes(QUICK, quick) }
-function quickMinSize(type) { return tileMinSize(QUICK, type) }
 
 function defaultDashboard() { return defaultTiles(DASHBOARD) }
 function sanitizeDashboard(dashboard) { return sanitizeTiles(DASHBOARD, dashboard) }
@@ -1027,7 +1022,6 @@ function setDashboardCardSize(dashboard, id, w, h) { return setTileSize(DASHBOAR
 function moveDashboardCardTo(dashboard, id, index) { return moveTileTo(DASHBOARD, dashboard, id, index) }
 function removeDashboardCard(dashboard, id) { return removeTile(DASHBOARD, dashboard, id) }
 function addDashboardCard(dashboard, type, alsoKnown) { return addTile(DASHBOARD, dashboard, type, alsoKnown) }
-function dashboardMinSize(type) { return tileMinSize(DASHBOARD, type) }
 
 function defaultLock() { return defaultTiles(LOCK) }
 function sanitizeLock(lock) { return sanitizeTiles(LOCK, lock) }
@@ -1037,7 +1031,6 @@ function setLockItemSize(lock, id, w, h) { return setTileSize(LOCK, lock, id, w,
 function moveLockItemTo(lock, id, index) { return moveTileTo(LOCK, lock, id, index) }
 function removeLockItem(lock, id) { return removeTile(LOCK, lock, id) }
 function addLockItem(lock, type) { return addTile(LOCK, lock, type) }
-function lockMinSize(type) { return tileMinSize(LOCK, type) }
 
 function sanitizeBar(bar) {
     if (!bar || typeof bar !== "object") return defaultBar()

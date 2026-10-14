@@ -230,10 +230,10 @@ ShellPanel {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         radius: Metrics.radiusInner
-                        color: Colors.elevatedSurface
+                        color: Colors.surface2
                         clip: true
                         border.width: tile.selected || tile.active ? Metrics.focusBorderWidth : Metrics.borderWidth
-                        border.color: tile.selected ? Colors.accent
+                        border.color: tile.selected ? Colors.accentLine
                             : tile.active ? Colors.accentBorder : Colors.border
                         // The one under the hand lifts, the same way a dragged
                         // tile does, so the two surfaces agree.

@@ -66,7 +66,7 @@ ShellRoot {
               S.describeExec("quickshell --path /opt/b ipc call desktop cycleMode").title,
               S.describeExec("quickshell --path /opt/b ipc call mode cycle").title],
             ["All keyboard shortcuts", "Profiles and modes", "Wallpaper picker",
-             "Pick a colour off the screen", "Desktop mode: widgets, bar, notch",
+             "Pick a color off the screen", "Desktop mode: widgets, bar, notch",
              "Mode: minimal, work, gaming, laptop, docked"],
             "and the six surfaces that had no pattern at all")
         T.eq(S.describeExec("quickshell --path /opt/b ipc call shortcuts toggleSheet").group, "panels",

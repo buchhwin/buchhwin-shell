@@ -11,14 +11,26 @@ ColumnLayout {
     signal clicked()
     spacing: Metrics.spaceXs
 
-    Rectangle { Layout.fillWidth: true; implicitHeight: Metrics.borderWidth; color: Colors.border }
+    Divider {}
 
+    // A control like every other: the panel's keys reach it (focusOnTab is
+    // what NavLogic looks for), Return/Enter/Space follow it, a press dips.
     Rectangle {
+        id: link
+        property bool focusOnTab: false
         Layout.fillWidth: true
         implicitHeight: Metrics.controlHeight
         radius: Metrics.radiusCard
-        color: mouse.containsMouse ? Colors.hover : "transparent"
-        Behavior on color { ColorAnimation { duration: Animations.hover } }
+        activeFocusOnTab: focusOnTab
+        color: mouse.pressed && mouse.containsMouse ? Colors.pressed : mouse.containsMouse ? Colors.hover : "transparent"
+        Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
+        Keys.onReturnPressed: root.clicked()
+        Keys.onEnterPressed: root.clicked()
+        Keys.onSpacePressed: root.clicked()
+        Accessible.role: Accessible.Link
+        Accessible.name: root.text
+        Accessible.onPressAction: root.clicked()
+        FocusRing { active: link.activeFocus; controlRadius: link.radius }
 
         RowLayout {
             anchors.fill: parent

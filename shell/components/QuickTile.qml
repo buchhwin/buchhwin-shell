@@ -50,6 +50,12 @@ ShellCard {
     Keys.onSpacePressed: root.showToggle ? root.toggled(!root.checked) : root.activated()
     Keys.onReturnPressed: root.showChevron && !root.iconOnly ? root.detailsRequested() : root.activated()
     Keys.onEnterPressed: root.showChevron && !root.iconOnly ? root.detailsRequested() : root.activated()
+    Accessible.role: root.showToggle ? Accessible.CheckBox : Accessible.Button
+    Accessible.name: root.title
+    Accessible.checkable: root.showToggle
+    Accessible.checked: root.checked
+    Accessible.onToggleAction: root.toggled(!root.checked)
+    Accessible.onPressAction: root.activated()
     FocusRing { active: root.activeFocus; controlRadius: root.radius }
 
     interactive: true

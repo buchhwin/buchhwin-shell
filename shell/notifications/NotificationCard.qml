@@ -77,8 +77,8 @@ ShellCard {
                     id: image
                     anchors.fill: parent
                     source: NotificationLogic.picture(root.notification, name => Quickshell.iconPath(name, true))
-                    sourceSize.width: Metrics.iconXl * 2
-                    sourceSize.height: Metrics.iconXl * 2
+                    sourceSize.width: Metrics.notificationImageSize
+                    sourceSize.height: Metrics.notificationImageSize
                     fillMode: Image.PreserveAspectFit
                     asynchronous: !String(source).startsWith("image://")
                     visible: status === Image.Ready
@@ -93,6 +93,7 @@ ShellCard {
                     Layout.fillWidth: true
                     ShellText { Layout.fillWidth: true; text: root.notification.appName || "Notification"; role: "caption" }
                     ShellButton {
+                        toolTip: "Dismiss"
                         icon: Icons.close; variant: "ghost"; compact: true
                         implicitHeight: Metrics.controlHeightSm - Metrics.spaceXs
                         onClicked: { const card = root; card.notification.dismiss(); if (card) card.closed() }

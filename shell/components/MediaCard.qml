@@ -65,7 +65,7 @@ ShellCard {
                 Layout.preferredWidth: Metrics.coverSize
                 Layout.preferredHeight: Metrics.coverSize
                 radius: Metrics.radiusInner
-                color: Colors.elevatedSurface
+                color: Colors.surface2
                 RoundedImage {
                     id: cover
                     anchors.fill: parent
@@ -92,11 +92,13 @@ ShellCard {
             // The transport comes up into this row when there is no room for
             // a row of its own.
             ShellButton {
+                toolTip: "Previous"
                 visible: root.tight && root.roomForTransport
                 icon: Icons.previous; variant: "ghost"; iconSize: Metrics.iconSm
                 onClicked: MprisService.previous()
             }
             ShellButton {
+                toolTip: MprisService.playing ? "Pause" : "Play"
                 visible: root.tight
                 icon: MprisService.playing ? Icons.pause : Icons.play
                 variant: "ghost"; iconSize: Metrics.iconMd
@@ -104,6 +106,7 @@ ShellCard {
                 onClicked: MprisService.togglePlaying()
             }
             ShellButton {
+                toolTip: "Next"
                 visible: root.tight && root.roomForTransport
                 icon: Icons.next; variant: "ghost"; iconSize: Metrics.iconSm
                 onClicked: MprisService.next()
@@ -125,9 +128,9 @@ ShellCard {
             visible: !root.tight
             opacity: MprisService.hasPlayer ? 1 : Effects.disabledOpacity
             Item { Layout.fillWidth: true }
-            ShellButton { icon: Icons.previous; variant: "ghost"; iconSize: Metrics.iconMd; onClicked: MprisService.previous() }
-            ShellButton { icon: MprisService.playing ? Icons.pause : Icons.play; variant: "ghost"; iconSize: Metrics.iconLg; onClicked: MprisService.togglePlaying() }
-            ShellButton { icon: Icons.next; variant: "ghost"; iconSize: Metrics.iconMd; onClicked: MprisService.next() }
+            ShellButton { toolTip: "Previous"; icon: Icons.previous; variant: "ghost"; iconSize: Metrics.iconMd; onClicked: MprisService.previous() }
+            ShellButton { toolTip: MprisService.playing ? "Pause" : "Play"; icon: MprisService.playing ? Icons.pause : Icons.play; variant: "ghost"; iconSize: Metrics.iconLg; onClicked: MprisService.togglePlaying() }
+            ShellButton { toolTip: "Next"; icon: Icons.next; variant: "ghost"; iconSize: Metrics.iconMd; onClicked: MprisService.next() }
             Item { Layout.fillWidth: true }
         }
 

@@ -169,7 +169,7 @@ ShellPanel {
             }
         }
 
-        Rectangle { Layout.fillWidth: true; implicitHeight: Metrics.borderWidth; color: Colors.border }
+        Divider {}
 
         // ---- details of an existing event -------------------------------
         ColumnLayout {
@@ -532,7 +532,7 @@ ShellPanel {
             visible: root.saveState === "preview"
             implicitHeight: commandText.implicitHeight + Metrics.spaceSm * 2
             radius: Metrics.radiusInner
-            color: Colors.surface
+            color: Colors.surface1
             border.width: Metrics.borderWidth
             border.color: Colors.border
             Text {

@@ -95,7 +95,7 @@ Item {
         // neutral read as a hole punched in the tile.
         color: item.sizing || resize.containsMouse ? Colors.accentHover : Colors.accent
         border.width: Metrics.borderWidth
-        border.color: Colors.accent
+        border.color: Colors.accentLine
 
         MouseArea {
             id: resize

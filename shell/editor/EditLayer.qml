@@ -12,8 +12,11 @@ import "../../services/profile/ProfileLogic.js" as Profile
 // move, scale, group, style, show or hide them, move them between monitors.
 // Bar: drag pills between the left, centre and right zone, add, remove and
 // set their display. Notch: its options. Plus profiles and undo.
+//
+// Built only while editing: the overlays, both editor panels and the picker
+// over every widget type existed on every screen all session long, hidden.
 Variants {
-    model: Quickshell.screens
+    model: LayoutService.editMode ? Quickshell.screens : []
 
     PanelWindow {
         id: window
@@ -137,6 +140,13 @@ Variants {
                 LayoutService.barSetDisplay(barPill, barItem, options[(options.indexOf(item.display) + 1) % options.length])
             }
 
+            // Created by edit mode itself now, so the change has already
+            // happened when this exists.
+            Component.onCompleted: if (LayoutService.editMode) {
+                PanelService.close()
+                PanelService.useFocusedScreen()
+                editorRoot.forceActiveFocus()
+            }
             Connections {
                 target: LayoutService
                 function onEditModeChanged() {
@@ -332,7 +342,7 @@ Variants {
                 model: editorRoot.guides
                 Rectangle {
                     required property var modelData
-                    color: Colors.guide
+                    color: Colors.accent
                     x: modelData.orientation === "vertical" ? modelData.position : 0
                     y: modelData.orientation === "horizontal" ? modelData.position : 0
                     width: modelData.orientation === "vertical" ? Metrics.guideWidth : editorRoot.width
@@ -616,9 +626,9 @@ Variants {
                             title: (WidgetRegistry.type(modelData.type) || { label: modelData.type }).label
                             RowLayout {
                                 spacing: Metrics.spaceXxs
-                                ShellButton { icon: Icons.back; compact: true; variant: "ghost"
+                                ShellButton { toolTip: "Move left in the group"; icon: Icons.back; compact: true; variant: "ghost"
                                     onClicked: editorRoot.change(() => LayoutService.moveMember(editorRoot.primary.id, modelData.id, -1)) }
-                                ShellButton { icon: Icons.forward; compact: true; variant: "ghost"
+                                ShellButton { toolTip: "Move right in the group"; icon: Icons.forward; compact: true; variant: "ghost"
                                     onClicked: editorRoot.change(() => LayoutService.moveMember(editorRoot.primary.id, modelData.id, 1)) }
                             }
                         }

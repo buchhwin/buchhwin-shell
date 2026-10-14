@@ -103,13 +103,20 @@ expect_inhibit="-u $uid -P $$ -f ^(\\S*/)?systemd-inhibit --what=handle-lid-swit
 : > "$PKILLS"
 echo 0 > "$COUNT"; echo 3 > "$LINGER"; ORPHANS="$SB/orphans" CRASHES=1 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
 check '[[ $(cat "$COUNT") == 2 ]]' "the restart still happens (got $(cat "$COUNT") runs, wanted 2)"
-check '[[ $(grep -c . "$PKILLS") == 6 ]]' "one pkill per helper ($(grep -c . "$PKILLS") calls, wanted 6)"
-check '[[ $(grep -c "^run=1 " "$PKILLS") == 6 ]]' "all of them after the crash and before the replacement"
+check '[[ $(grep -c "^run=1 " "$PKILLS") == 6 ]]' "one pkill per helper after the crash and before the replacement ($(grep -c "^run=1 " "$PKILLS") calls, wanted 6)"
+check '[[ $(grep -c "^run=2 " "$PKILLS") == 6 ]]' "and once more on the way out ($(grep -c "^run=2 " "$PKILLS") calls, wanted 6)"
 for expected in "$expect_nmcli" "$expect_drives" "$expect_agent" "$expect_paste" "$expect_udev" "$expect_inhibit"; do
   check 'grep -qF -- "$expected" "$PKILLS"' "this user, the orphan's parent, the exact command line: $expected"
 done
 check '! grep -qw -- "$held_shell" "$PKILLS"' "a helper whose parent is a living quickshell is left alone"
 check 'grep -q "ended 6 helper(s) left behind" "$SB/state/buchhwin-shell/quickshell.log"' 'and the log says what was ended'
+
+# a shell that ends without a crash - SIGTERM, the compositor gone (how every
+# nested test session ends) - is not restarted, but its leftovers are ended
+: > "$PKILLS"
+echo 0 > "$COUNT"; ORPHANS="$SB/orphans" CRASHES=0 FINAL_EXIT=143 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
+check '[[ $(cat "$COUNT") == 1 ]]' "a SIGTERM status is not restarted (got $(cat "$COUNT") runs)"
+check '[[ $(grep -c "^run=1 " "$PKILLS") == 6 ]]' "but its helpers are ended on the way out ($(grep -c . "$PKILLS") pkill calls)"
 
 # the session launcher asks for the same at logout, with --reap: no shell is
 # started, the log is not rotated, and the helpers go only once the instance

@@ -254,7 +254,7 @@ PanelWindow {
                             height: track.height
                             radius: height / 2
                             color: index < KbdBacklightService.current ? Colors.accent : Colors.track
-                            Behavior on color { ColorAnimation { duration: Animations.hover } }
+                            Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
                         }
                     }
                 }

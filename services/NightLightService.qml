@@ -44,7 +44,7 @@ Singleton {
     Timer {
         id: restartTimer
         interval: 300
-        onTriggered: if (root.active) { gammastep.command = root.command; gammastep.running = true }
+        onTriggered: if (root.active) { gammastep.command = Paths.bound(root.command); gammastep.running = true }
     }
 
     // Crash restarts back off (10 s, 20 s, …) and stop after five failures,

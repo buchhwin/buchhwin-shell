@@ -178,7 +178,7 @@ Rectangle {
     border.width: flat ? 0 : Metrics.borderWidth
     border.color: Colors.pillBorder
     visible: hasContent
-    Behavior on color { ColorAnimation { duration: Animations.hover } }
+    Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
     // A spring rather than a duration: a pill whose text changes again
     // half-way (a clock, a title) is redirected from where it is instead of
     // restarting a fixed-length glide from there.

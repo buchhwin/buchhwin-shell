@@ -20,4 +20,14 @@ Singleton {
     function shellFile(relativePath) {
         return Quickshell.shellPath(relativePath)
     }
+
+    // A long-running helper that must end with the shell. A shell killed by a
+    // signal (a nested test session torn down with its compositor, a crash)
+    // runs no destructors, and `nmcli monitor` or `udevadm monitor` - which
+    // never read stdin and ignore SIGPIPE - lived on under PID 1, one pair per
+    // nested smoke run. The kernel sends TERM when the forking thread dies;
+    // QProcess forks on the GUI thread, so that is the shell itself.
+    function bound(command) {
+        return ["setpriv", "--pdeathsig", "TERM", "--"].concat(command)
+    }
 }

@@ -276,7 +276,7 @@ hl.bind(keyFor("SUPER + K"), shell("dashboard toggle"), { description = "Dashboa
 hl.bind(keyFor("SUPER + M"), shell("powerMenu toggle"), { description = "Session menu" })
 hl.bind(keyFor("SUPER + W"), shell("overview toggle"), { description = "Overview" })
 hl.bind(keyFor("SUPER + SHIFT + W"), shell("wallpaperPicker toggle"), { description = "Wallpaper picker" })
-hl.bind(keyFor("SUPER + SHIFT + C"), shell("colorPicker pick"), { description = "Pick a colour off the screen" })
+hl.bind(keyFor("SUPER + SHIFT + C"), shell("colorPicker pick"), { description = "Pick a color off the screen" })
 -- Alt+Tab switcher: releasing Alt focuses the selection (transparent, so apps
 -- still see the release; a confirm without an open switcher does nothing).
 hl.bind(keyFor("ALT + TAB"), shell("switcher next"), { description = "Next window" })

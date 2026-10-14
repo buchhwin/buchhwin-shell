@@ -25,8 +25,8 @@ ColumnLayout {
             Layout.preferredWidth: Metrics.popupIconTile
             Layout.preferredHeight: Metrics.popupIconTile
             radius: width / 2
-            color: root.active ? Colors.accent : Colors.elevatedSurface
-            Behavior on color { ColorAnimation { duration: Animations.hover } }
+            color: root.active ? Colors.accent : Colors.surface2
+            Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
             ShellIcon {
                 anchors.centerIn: parent
                 glyph: root.glyph
@@ -51,5 +51,5 @@ ColumnLayout {
         }
     }
 
-    Rectangle { Layout.fillWidth: true; implicitHeight: Metrics.borderWidth; color: Colors.border }
+    Divider {}
 }

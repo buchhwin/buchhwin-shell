@@ -128,6 +128,13 @@ if (( reap_only )); then
   exit 0
 fi
 
+# Every other way out ends what the shell left behind too: a SIGTERM that the
+# shell dies of, a status that is not a crash, the compositor gone (how every
+# nested test session ends) and the restart limit. Only once the instance is
+# no longer listed, as above; helpers now carry --pdeathsig (Paths.bound),
+# this is the net for anything that does not.
+trap 'instance_running || reap_helpers' EXIT
+
 # One log per shell start; the previous one is kept as quickshell.log.old. A
 # start that finds a running instance (--no-duplicate exits at once) keeps the
 # log, because that instance still writes to it.
@@ -209,9 +216,16 @@ if [[ -z $icon_theme ]]; then
   fi
 fi
 
+# glibc gives every thread that allocates its own malloc arena (up to 8 per
+# core). The shell runs ~150 threads - a render thread per mapped window and
+# Mesa's workers per GL context - and on 2026-10-13 about 410 of its 770 MB
+# sat in 94 such arenas, mostly fragmented free space. Two are plenty for a
+# program whose work happens on the GUI thread. An exported value wins (A/B).
+malloc_arenas=${MALLOC_ARENA_MAX:-2}
+
 while true; do
   status=0
-  env -u QT_QPA_PLATFORMTHEME QS_ICON_THEME="$icon_theme" \
+  env -u QT_QPA_PLATFORMTHEME QS_ICON_THEME="$icon_theme" MALLOC_ARENA_MAX="$malloc_arenas" \
     quickshell --no-duplicate --path "$config_dir" >>"$log_file" 2>&1 &
   child=$!
   # `wait` returns as soon as a trapped signal arrives, before the shell has

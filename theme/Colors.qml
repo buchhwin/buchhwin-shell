@@ -67,14 +67,15 @@ Singleton {
     //   sunken    a recessed trough or grid the content sits in
     readonly property color surface1: dark ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(0, 0, 0, 0.05)
     readonly property color surface2: dark ? Qt.rgba(1, 1, 1, 0.115) : Qt.rgba(0, 0, 0, 0.085)
+    // Also the groove a segmented control, a slider or a switch sits in: it
+    // is recessed, not raised - a lighter groove made the control read as
+    // another card on the panel instead of a well the selection slides in.
     readonly property color sunken: dark ? Qt.rgba(0, 0, 0, 0.16) : Qt.rgba(0, 0, 0, 0.045)
     // Hover and press for each step, so a card never borrows a control's state.
     readonly property color surface1Hover: dark ? Qt.rgba(1, 1, 1, 0.105) : Qt.rgba(0, 0, 0, 0.08)
     readonly property color surface1Pressed: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.11)
     readonly property color surface2Hover: dark ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(0, 0, 0, 0.115)
     readonly property color surface2Pressed: dark ? Qt.rgba(1, 1, 1, 0.185) : Qt.rgba(0, 0, 0, 0.145)
-    // Kept so the existing call sites read the first step by its old name.
-    readonly property color surface: surface1
     // Terminal preview box (Settings > Terminal), close to the Kitty background.
     readonly property color terminalBackground: "#0d0f14"
     readonly property color terminalForeground: "#eceef2"
@@ -95,11 +96,12 @@ Singleton {
     // A bare glyph on the lock screen (media controls, the retry target).
     readonly property color lockGlyphHover: Qt.rgba(1, 1, 1, 0.12)
     readonly property color lockError: "#ffb4ab"
-    readonly property color elevatedSurface: surface2
     readonly property color solidSurface: dark ? "#1a1d25" : "#ffffff"
     readonly property color hover: dark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.06)
     readonly property color pressed: dark ? Qt.rgba(1, 1, 1, 0.1) : Qt.rgba(0, 0, 0, 0.09)
     readonly property color track: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.17)
+    // A track under the pointer: one step up, as a button's fill steps.
+    readonly property color trackHover: dark ? Qt.rgba(1, 1, 1, 0.2) : Qt.rgba(0, 0, 0, 0.23)
     // The bar that says a list has more below it. A slider's track is too
     // faint for a three-pixel hint at the edge of a translucent panel.
     readonly property color scrollHint: dark ? Qt.rgba(1, 1, 1, 0.3) : Qt.rgba(0, 0, 0, 0.26)
@@ -113,16 +115,9 @@ Singleton {
     readonly property color controlFill: dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.055)
     readonly property color controlFillHover: dark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.09)
     readonly property color controlFillPressed: dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.13)
-    // Ghost buttons only gain a fill on hover and press.
-    readonly property color ghostHover: hover
-    readonly property color ghostPressed: pressed
     // Accent fills darken on press instead of lightening, like One UI.
     readonly property color accentPressed: Qt.darker(accent, dark ? 1.18 : 1.12)
     readonly property color accentHover: Qt.lighter(accent, dark ? 1.12 : 1.08)
-    // The groove a segmented control, a slider or a switch sits in. It is
-    // recessed, not raised: a lighter groove made the control read as another
-    // card on the panel instead of a well the selection slides in.
-    readonly property color controlTrough: sunken
     // Selected segment: a solid capsule that lifts off the trough.
     readonly property color segmentSelected: dark ? Qt.rgba(1, 1, 1, 0.16) : "#ffffff"
     // Focus ring: the accent line plus a soft halo, visible in both themes.
@@ -131,8 +126,9 @@ Singleton {
 
     readonly property color text: dark ? "#eceef2" : "#1b1e25"
     readonly property color mutedText: dark ? "#9ba2ae" : "#5b6270"
-    // Light: about 4:1 on panels (the former #8a909c had 3:1 and faded on
-    // translucent panels).
+    // For marks, not words: about 3.5:1 dark and 3.8:1 light on panels (less
+    // on translucent ones) - enough for a glyph or a dot (3:1), short of the
+    // 4.5:1 text needs. Text and placeholders take mutedText.
     readonly property color subtleText: dark ? "#6c7380" : "#717784"
 
     // Dark lines on light surfaces read weaker than light lines on dark ones,
@@ -167,7 +163,6 @@ Singleton {
     // Text directly on the dark overview scrim, in both themes.
     readonly property color scrimText: "#f5f6f8"
     readonly property color scrimMutedText: Qt.rgba(1, 1, 1, 0.7)
-    readonly property color scrimAccent: Contrast.readable(String(accent), String(contrastBase))
     // Soft halo behind minimal widgets on the wallpaper: dark behind light
     // text, light behind the dark text of the light theme (a dark shadow
     // there only smudged the glyphs).
@@ -228,6 +223,4 @@ Singleton {
     readonly property color notchFieldBorder: Qt.rgba(1, 1, 1, 0.08)
     readonly property color notchButton: Qt.rgba(1, 1, 1, 0.14)
     readonly property color notchCoverFallback: Qt.rgba(1, 1, 1, 0.1)
-    readonly property color guide: accent
-    readonly property color selection: accentSoft
 }

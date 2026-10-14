@@ -88,7 +88,16 @@ Singleton {
     // reboot should, and the two are otherwise indistinguishable from in here.
     readonly property string bootId: bootFile.text().trim()
 
+    // A change that comes before the file has been read (Do Not Disturb over
+    // IPC at startup) is held and applied over what the file says, instead
+    // of writing `appRules: {}` over the stored rules.
+    property bool stateLoaded: false
+    property var earlyState: null
     function saveState() {
+        if (!stateLoaded) {
+            earlyState = { mode: dndMode, until: dndUntil, rules: Object.assign({}, appRules) }
+            return
+        }
         stateFile.setText(JSON.stringify({ dnd: { mode: dndMode, until: dndUntil, boot: bootId },
                                            appRules: appRules }, null, 2) + "\n")
     }
@@ -127,6 +136,15 @@ Singleton {
         } catch (error) {
             dndMode = "off"
             appRules = ({})
+        }
+        stateLoaded = true
+        if (earlyState) {
+            dndMode = earlyState.mode
+            dndUntil = earlyState.until
+            appRules = Object.assign({}, appRules, earlyState.rules)
+            earlyState = null
+            // Not from inside the load that is finishing (pitfall 3).
+            Qt.callLater(saveState)
         }
         now = Date.now()
         scheduleExpiry()

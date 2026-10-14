@@ -76,9 +76,9 @@ Item {
         anchors.fill: parent
         anchors.margins: -Metrics.spaceXs
         radius: Metrics.radiusCard
-        color: card.selected ? Colors.selection : "transparent"
+        color: card.selected ? Colors.accentSoft : "transparent"
         border.width: card.selected ? Metrics.focusBorderWidth : Metrics.borderWidth
-        border.color: card.selected ? Colors.accent : dragArea.containsMouse ? Colors.borderStrong : Colors.border
+        border.color: card.selected ? Colors.accentLine : dragArea.containsMouse ? Colors.borderStrong : Colors.border
         z: -1
     }
 

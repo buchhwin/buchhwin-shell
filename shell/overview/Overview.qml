@@ -157,7 +157,7 @@ ShellPanel {
         ShellTextField {
             id: search
             Layout.alignment: Qt.AlignHCenter
-            Layout.preferredWidth: Metrics.launcherWidth * 0.7
+            Layout.preferredWidth: Metrics.overviewSearchWidth
             icon: Icons.search
             placeholder: "Search windows …"
             color: Colors.panelFor("overview")
@@ -207,8 +207,10 @@ ShellPanel {
                 width: Math.min(content.width, window.columns * (window.workspaceWidth + Metrics.spaceXl) - Metrics.spaceXl)
                 spacing: Metrics.spaceXl
 
+                // Cards (with a rounded image each) only while shown; the
+                // captures were already let go on close, the cards were not.
                 Repeater {
-                    model: window.groups
+                    model: window.shown ? window.groups : []
 
                     ColumnLayout {
                         id: row
@@ -222,7 +224,7 @@ ShellPanel {
                             visible: window.groups.length > 1 && row.modelData.monitor.length > 0
                             text: "Monitor " + row.modelData.number + " \u00b7 " + row.modelData.monitor
                             role: "label"
-                            color: row.modelData.focused ? Colors.scrimAccent : Colors.scrimMutedText
+                            color: row.modelData.focused ? Colors.accentForeground : Colors.scrimMutedText
                         }
 
                         Flow {
@@ -253,7 +255,7 @@ ShellPanel {
                                         // be 23 while the card is that
                                         // monitor's third.
                                         text: card.placeholder ? "New workspace" : "Workspace " + card.modelData.label
-                                        color: card.modelData.active ? Colors.scrimAccent : Colors.scrimText
+                                        color: card.modelData.active ? Colors.accentForeground : Colors.scrimText
                                     }
                                     Item { Layout.fillWidth: true }
                                     // The monitor's name is the row's heading
@@ -274,7 +276,7 @@ ShellPanel {
                                     radius: Metrics.radiusCard
                                     color: card.dropHover ? Colors.accentSoft : Colors.panelFor("overview")
                                     border.width: card.modelData.active || card.dropHover ? Metrics.focusBorderWidth : Metrics.borderWidth
-                                    border.color: card.modelData.active || card.dropHover ? Colors.scrimAccent : Colors.panelBorder
+                                    border.color: card.modelData.active || card.dropHover ? Colors.accentForeground : Colors.panelBorder
                                     clip: true
 
                                     // The wallpaper of the monitor this workspace is
@@ -367,9 +369,9 @@ ShellPanel {
                                             height: Math.max(Metrics.iconXl, modelData.height * frame.height - Metrics.spaceXxs * 2)
                                             z: dragArea.drag.active ? 10 : isSelected ? 2 : 1
                                             radius: Metrics.radiusInner
-                                            color: Colors.elevatedSurface
+                                            color: Colors.surface2
                                             border.width: isSelected || hover.hovered ? Metrics.focusBorderWidth : Metrics.borderWidth
-                                            border.color: isSelected ? Colors.scrimAccent : hover.hovered ? Colors.borderStrong : Colors.border
+                                            border.color: isSelected ? Colors.accentForeground : hover.hovered ? Colors.borderStrong : Colors.border
                                             clip: true
                                             Drag.active: dragArea.drag.active
                                             Drag.keys: ["buchhwin-window"]

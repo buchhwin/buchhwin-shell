@@ -62,7 +62,7 @@ ShellRoot {
         // tiles, three of them wide, in the two-column panel.
         const quick = L.quickItems(L.defaultQuick()).map(item => ({ id: item.id, w: item.w, h: item.h }))
         const panel = A.gridLayout(quick, 2, 410, 10, 30)
-        T.eq(panel.cells.length, 12, "every default tile is placed")
+        T.eq(panel.cells.length, 13, "every default tile is placed")
         T.ok(panel.cells.every(cell => cell.width === 200 || cell.width === 410),
              "a tile is one column or both, never something between")
         T.eq(panel.cells[0].height, 70, "a plain tile is two rows of the panel's grid")

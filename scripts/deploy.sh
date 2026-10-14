@@ -154,7 +154,7 @@ if $run_tests; then
     exit 1
   fi
   printf 'Running scripts/test.sh --session …\n'
-  if ! BUCHHWIN_NESTED_DIR=${BUCHHWIN_NESTED_DIR:-/tmp/buchhwin-nested-deploy} "$project_dir/scripts/test.sh" --session; then
+  if ! BUCHHWIN_NESTED_DIR=${BUCHHWIN_NESTED_DIR:-"${XDG_RUNTIME_DIR:-/tmp}/buchhwin-nested-deploy"} "$project_dir/scripts/test.sh" --session; then
     printf 'deploy: tests failed; stable stays at %s\n' "$(git_dev rev-parse --short "$previous")" >&2
     exit 1
   fi

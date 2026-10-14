@@ -115,7 +115,7 @@ Item {
             anchors.fill: parent
             radius: Metrics.notchFieldRadius
             color: fillButton.hovered && fillButton.interactive ? Colors.notchHover : "transparent"
-            Behavior on color { ColorAnimation { duration: Animations.hover } }
+            Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
         }
         // Under the content, not over it: a control inside the block - the
         // player's own buttons - must get the click it was aimed at, and this
@@ -145,7 +145,7 @@ Item {
             anchors.fill: parent
             radius: Metrics.notchFieldRadius
             color: rowButton.hovered && rowButton.interactive ? Colors.notchHover : "transparent"
-            Behavior on color { ColorAnimation { duration: Animations.hover } }
+            Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
         }
         MouseArea {
             id: rowMouse
@@ -171,7 +171,7 @@ Item {
         color: primary ? (controlMouse.containsMouse && available ? Colors.notchHover : Colors.notchButton)
             : controlMouse.containsMouse && available ? Colors.notchHover : "transparent"
         opacity: available ? 1 : Effects.disabledOpacity
-        Behavior on color { ColorAnimation { duration: Animations.hover } }
+        Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
         NotchGlyph { anchors.centerIn: parent; text: control.glyph; size: control.primary ? Metrics.iconMd : Metrics.iconSm + Metrics.spaceXxs }
         MouseArea {
             id: controlMouse
@@ -706,7 +706,7 @@ Item {
                 anchors.margins: Metrics.borderWidth
                 radius: widgetBox.radius
                 color: widgetMouse.containsMouse && widgetBox.action.length ? Colors.notchHover : "transparent"
-                Behavior on color { ColorAnimation { duration: Animations.hover } }
+                Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
             }
             Loader {
                 id: widget

@@ -35,8 +35,8 @@ PopupPanel {
                 Layout.leftMargin: Metrics.spaceSm
                 Layout.rightMargin: Metrics.spaceSm
                 SectionLabel { Layout.fillWidth: true; text: "Top processes" }
-                SectionLabel { Layout.preferredWidth: Metrics.iconXl * 1.5; horizontalAlignment: Text.AlignRight; text: "CPU" }
-                SectionLabel { Layout.preferredWidth: Metrics.iconXl * 1.5; horizontalAlignment: Text.AlignRight; text: "Mem" }
+                SectionLabel { Layout.preferredWidth: Metrics.statColumnWidth; horizontalAlignment: Text.AlignRight; text: "CPU" }
+                SectionLabel { Layout.preferredWidth: Metrics.statColumnWidth; horizontalAlignment: Text.AlignRight; text: "Mem" }
             }
             EmptyState {
                 Layout.fillWidth: true
@@ -56,14 +56,14 @@ PopupPanel {
                     Layout.preferredHeight: Metrics.controlHeightSm
                     ShellText { Layout.fillWidth: true; text: modelData.name; role: "small" }
                     ShellText {
-                        Layout.minimumWidth: Metrics.iconXl * 1.5
+                        Layout.minimumWidth: Metrics.statColumnWidth
                         horizontalAlignment: Text.AlignRight
                         text: modelData.cpu.toFixed(1) + "%"
                         role: "small"; muted: true
                         font.features: { "tnum": 1 }
                     }
                     ShellText {
-                        Layout.minimumWidth: Metrics.iconXl * 1.5
+                        Layout.minimumWidth: Metrics.statColumnWidth
                         horizontalAlignment: Text.AlignRight
                         text: modelData.memory.toFixed(1) + "%"
                         role: "small"; muted: true

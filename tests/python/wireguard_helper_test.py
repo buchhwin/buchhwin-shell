@@ -55,7 +55,18 @@ bad = module.parse_conf("[Interface]\nPrivateKey = nope\nAddress = 10.0.0.300/32
 errors = module.check(bad)
 check(any("private key" in e for e in errors) and any("10.0.0.300" in e for e in errors) and any("[Peer]" in e for e in errors),
       "a broken configuration says what is wrong: %s" % errors)
-for script in ("PostUp = iptables -A x", "Table = off"):
+# What a real export carries: search domains among the DNS entries, a routing
+# table. Both have a NetworkManager meaning and are kept, not refused.
+extra = module.parse_conf(CONF.replace("[Interface]", "[Interface]\nTable = off\nDNS = corp.example, 10.0.0.53"))
+check(module.check(extra) == [], "search domains and Table = off are accepted: %s" % module.check(extra))
+check(module.search_of(extra) == ["corp.example"], "a DNS entry that is no address is a search domain")
+check("corp.example" not in module.dns_of(extra)[0], "and is not a DNS server")
+check(module.settings(extra, "x", "wg-x", "someone")["wireguard"]["peer-routes"] is False, "Table = off: no routes for AllowedIPs")
+numbered = module.parse_conf(CONF.replace("[Interface]", "[Interface]\nTable = 1234"))
+check(module.settings(numbered, "x", "wg-x", "someone")["ipv4"]["route-table"] == 1234, "Table = N: that routing table")
+odd = module.parse_conf(CONF.replace("[Interface]", "[Interface]\nTable = main-ish\nDNS = not a domain!"))
+check(len(module.check(odd)) == 2, "a Table word or a DNS entry that means nothing is still an error: %s" % module.check(odd))
+for script in ("PostUp = iptables -A x", "SaveConfig = true"):
     try:
         module.parse_conf("[Interface]\n" + script + "\n")
         check(False, "%s is refused" % script)

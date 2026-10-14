@@ -6,9 +6,8 @@
 // this is only what they are called, what they look like in a list, and how
 // big they start.
 //
-// A card that has nothing to show hides itself (the month grid while the week
-// view is chosen, the week grid while the month view is). That is not the same
-// as being removed here, which is the user saying they never want to see it.
+// A card that has nothing to show hides itself. That is not the same as being
+// removed here, which is the user saying they never want to see it.
 //
 // Deliberately its own table rather than the control center's: `clock` here is
 // a large time over a long date, not a pill, and the two surfaces have

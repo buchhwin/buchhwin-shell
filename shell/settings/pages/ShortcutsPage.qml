@@ -119,7 +119,7 @@ ColumnLayout {
             title: "No shortcuts of your own yet"
         }
 
-        Rectangle { Layout.fillWidth: true; implicitHeight: Metrics.borderWidth; color: Colors.border }
+        Divider {}
 
         SettingRow {
             Layout.fillWidth: true
@@ -130,9 +130,9 @@ ColumnLayout {
                 implicitWidth: Metrics.thumbnailSize
                 implicitHeight: Metrics.controlHeight
                 radius: Metrics.radiusInner
-                color: captureMouse.containsMouse && !root.recording ? Colors.elevatedSurface : Colors.surface
+                color: captureMouse.containsMouse && !root.recording ? Colors.surface1Hover : Colors.surface1
                 border.width: root.recording ? Metrics.focusBorderWidth : Metrics.borderWidth
-                border.color: root.recording ? Colors.accent : Colors.border
+                border.color: root.recording ? Colors.accentLine : Colors.border
                 activeFocusOnTab: true
                 onActiveFocusChanged: if (!activeFocus) root.recording = false
                 // The same ring every other control shows: the accent border
