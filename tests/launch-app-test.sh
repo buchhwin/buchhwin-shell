@@ -178,24 +178,24 @@ xdg-open
 check '! grep -q systemd-run "$calls" && grep -q "^real-xdg-open $" "$calls"' "no argument: handed on untouched"
 
 # ---- scripts/launch-alacritty.sh -------------------------------------------------
-# The account's Alacritty with Settings > Terminal's opacity on top, in its own
-# scope; the default without a setting, and nothing but a number in [0, 1]
+# The account's Alacritty with Settings > Terminal's opacity on top (for every
+# cell background, not only the default one), in its own scope; the default without a setting, and nothing but a number in [0, 1]
 # reaches the command line.
 stub alacritty
 cfg="$sandbox/alacritty-cfg"; mkdir -p "$cfg/buchhwin-shell"
 : > "$calls"
 XDG_CONFIG_HOME="$cfg" "$project_dir/scripts/launch-alacritty.sh" -e true
-check 'grep -qE "unit=app-buchhwin-Alacritty-[0-9]+\.scope -- alacritty -o window.opacity=0.8 -e true$" "$calls"' \
+check 'grep -qE "unit=app-buchhwin-Alacritty-[0-9]+\.scope -- alacritty -o window.opacity=0.8 -o colors.transparent_background_colors=true -e true$" "$calls"' \
   "Alacritty starts at the default 0.8 in its scope ($(grep systemd-run "$calls" | head -1))"
 if command -v jq >/dev/null 2>&1; then
   printf '{ "terminal": { "opacity": 0.65 } }\n' > "$cfg/buchhwin-shell/settings.json"
   : > "$calls"
   XDG_CONFIG_HOME="$cfg" "$project_dir/scripts/launch-alacritty.sh"
-  check 'grep -q "^alacritty -o window.opacity=0.65$" "$calls"' "the opacity follows Settings > Terminal"
+  check 'grep -q "^alacritty -o window.opacity=0.65 -o colors.transparent_background_colors=true$" "$calls"' "the opacity follows Settings > Terminal"
   printf '{ "terminal": { "opacity": "1; rm -rf ~" } }\n' > "$cfg/buchhwin-shell/settings.json"
   : > "$calls"
   XDG_CONFIG_HOME="$cfg" "$project_dir/scripts/launch-alacritty.sh"
-  check 'grep -q "^alacritty -o window.opacity=0.8$" "$calls"' "anything but a number falls back to 0.8"
+  check 'grep -q "^alacritty -o window.opacity=0.8 -o colors.transparent_background_colors=true$" "$calls"' "anything but a number falls back to 0.8"
 fi
 check 'grep -q "Alacritty.desktop) exec \"\$project_dir/scripts/launch-alacritty.sh\"" "$project_dir/scripts/launch-default.sh"' \
   "the session's default terminal goes through it"

@@ -5,7 +5,10 @@ set -euo pipefail
 # reads too - with the transparency of Settings > Terminal on top
 # (terminal.opacity, the value kitty uses), so the window is translucent here,
 # where Hyprland blurs what lies behind it, and stays as the file says under
-# Plasma. Only window.opacity is overridden; the rest is the user's.
+# Plasma. Only window.opacity is overridden, plus transparent_background_colors:
+# without it the opacity reaches the default background only, and anything
+# that paints its cells black itself (cmatrix, Arch's build has no
+# use_default_colors) stays an opaque block. The rest is the user's.
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
 settings="${XDG_CONFIG_HOME:-$HOME/.config}/buchhwin-shell/settings.json"
 opacity=0.8
@@ -15,4 +18,5 @@ if command -v jq >/dev/null 2>&1 && [[ -r $settings ]]; then
   # reaches Alacritty's command line.
   if [[ $value =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]]; then opacity=$value; fi
 fi
-exec "$project_dir/scripts/launch-app.sh" Alacritty alacritty -o "window.opacity=$opacity" "$@"
+exec "$project_dir/scripts/launch-app.sh" Alacritty alacritty -o "window.opacity=$opacity" \
+  -o colors.transparent_background_colors=true "$@"
