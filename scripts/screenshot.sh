@@ -10,6 +10,14 @@ set -euo pipefail
 # shellcheck source=lib/nested-guard.sh
 source "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/lib/nested-guard.sh"
 mode=${1:-region}
+# One screenshot at a time: Super+S (or Print) pressed again while the
+# selection is up stacked another selection overlay on top of it, as often as
+# it was pressed (15.10.). A second press now does nothing. The lock is this
+# script's open file and goes with it; the notification below lets it go
+# before it waits for an answer, so the next screenshot never waits on it.
+lock_file="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/buchhwin-screenshot.lock"
+exec 9>"$lock_file"
+flock -n 9 || exit 0
 if nested_environment; then
   target_dir="${XDG_STATE_HOME:-$HOME/.local/state}/buchhwin-shell/screenshots"
 else
@@ -47,7 +55,11 @@ case "$mode" in
     ;;
 esac
 
-wl-copy --type image/png < "$file"
+# Not handed to wl-copy: it stays behind to serve the clipboard and would
+# hold the lock until something else is copied.
+wl-copy --type image/png < "$file" 9>&-
+# The picture is taken: the next one may start now.
+exec 9>&-
 
 # Actions are handled in the background so the key binding returns at once.
 (

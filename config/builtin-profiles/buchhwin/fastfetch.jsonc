@@ -1,0 +1,95 @@
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+
+  // Saturn: the planet in sky blue ($1), its ring in pale blue ($2). The block on
+  // the right is one orbit line in the ring's colour with the planet's blue
+  // on the labels, as tall as the logo.
+  "logo": {
+    "type": "file",
+    "source": "~/.config/buchhwin-shell/saturn.txt",
+    "color": {
+      "1": "38;5;75",
+      "2": "38;5;153"
+    },
+    "padding": {
+      "top": 0,
+      "left": 0,
+      "right": 3
+    }
+  },
+
+  "display": {
+    "separator": " ",
+    "color": {
+      "keys": "38;5;75",
+      "title": "38;5;75",
+      "output": "default"
+    }
+  },
+
+  "modules": [
+    {
+      "type": "title",
+      "format": "\u001b[1;38;5;75m{user-name}\u001b[0;38;5;153m · \u001b[1;38;5;75m{host-name}\u001b[0m"
+    },
+    {
+      "type": "custom",
+      "format": "\u001b[38;5;153m──────────── \u001b[38;5;75m✦\u001b[38;5;153m ────────────\u001b[0m"
+    },
+    {
+      "type": "os",
+      "key": "\u001b[38;5;153m╭─\u001b[38;5;75m 󰣇  os      ",
+      "format": "{pretty-name} {arch}"
+    },
+    {
+      "type": "kernel",
+      "key": "\u001b[38;5;153m├─\u001b[38;5;75m 󰒋  kernel  "
+    },
+    {
+      "type": "uptime",
+      "key": "\u001b[38;5;153m├─\u001b[38;5;75m 󰔛  uptime  "
+    },
+    {
+      "type": "packages",
+      "key": "\u001b[38;5;153m├─\u001b[38;5;75m 󰏖  pkgs    "
+    },
+    {
+      "type": "shell",
+      "key": "\u001b[38;5;153m├─\u001b[38;5;75m \ue795  shell   "
+    },
+    {
+      "type": "de",
+      "key": "\u001b[38;5;153m├─\u001b[38;5;75m 󰇄  desktop "
+    },
+    {
+      "type": "terminal",
+      "key": "\u001b[38;5;153m├─\u001b[38;5;75m 󰆍  term    "
+    },
+    {
+      "type": "cpu",
+      "key": "\u001b[38;5;153m├─\u001b[38;5;75m 󰻠  cpu     ",
+      "format": "{name} ({cores-logical})"
+    },
+    {
+      "type": "gpu",
+      "key": "\u001b[38;5;153m├─\u001b[38;5;75m 󰢮  gpu     ",
+      "format": "{name}"
+    },
+    {
+      "type": "memory",
+      "key": "\u001b[38;5;153m├─\u001b[38;5;75m 󰍛  memory  "
+    },
+    {
+      "type": "disk",
+      "key": "\u001b[38;5;153m╰─\u001b[38;5;75m 󰋊  disk    ",
+      "folders": "/",
+      "format": "{size-used} / {size-total} ({size-percentage})"
+    },
+    "break",
+    {
+      "type": "colors",
+      "symbol": "circle",
+      "paddingLeft": 3
+    }
+  ]
+}

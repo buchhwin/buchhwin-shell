@@ -296,7 +296,8 @@ ColumnLayout {
                         // ring needs a radius smaller by the same amount, or
                         // the two curves cross.
                         radius: thumb.radius - anchors.margins
-                        source: "file://" + thumb.modelData
+                        // The picker's cached thumbnail, the same file.
+                        source: WallpaperService.thumbFor(thumb.modelData) || Logic.folderUrl(thumb.modelData)
                         sourceWidth: 320
                     }
                     Rectangle {

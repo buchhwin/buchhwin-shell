@@ -69,6 +69,14 @@ Singleton {
         const item = entryFor(modmask, key)
         return item ? item.combo : ""
     }
+    // Where a built-in shortcut sits now, by the combination hyprland.lua
+    // starts it on ("SUPER + K"), and that as a hint names it ("Super + K",
+    // or "Super+K" compact). Hints that name a key ask here rather than
+    // spelling it out, so a move in Settings > Shortcuts reaches them too;
+    // with nothing moved they read as they always did.
+    function keyFor(defaultCombo) { return Logic.currentCombo(keyOverrides, defaultCombo) }
+    function keyHint(defaultCombo, compact) { return Logic.comboLabel(keyFor(defaultCombo), compact === true) }
+    function keyHintParts(defaultCombo) { return Logic.comboParts(keyFor(defaultCombo)) }
     function movable(modmask, key) { return entryFor(modmask, key) !== null }
     function movedFrom(modmask, key) {
         const item = entryFor(modmask, key)

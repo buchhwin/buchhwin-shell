@@ -16,6 +16,7 @@ Singleton {
     readonly property string name: info.NAME || ""
     readonly property string packageTool: Logic.packageTool(family)
     readonly property string fingerprintOffCommand: Logic.fingerprintOffCommand(family)
+    readonly property string fingerprintOnCommand: Logic.fingerprintOnCommand(family)
     readonly property string packagesDescription: Logic.packagesDescription(info)
     readonly property bool upgradesInTerminal: Logic.upgradesInTerminal(family)
 

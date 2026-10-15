@@ -56,24 +56,47 @@ Singleton {
 
     // Whether PAM offers the reader to the *whole system* (authselect's
     // `with-fingerprint` on Fedora, pam-config's pam_fprintd line in
-    // common-auth on openSUSE): null while unknown. With the shell's own mode off
-    // but this true, the login screen, sudo and polkit still ask for a finger,
-    // which is exactly the "the off button does not work" the user reported -
-    // the button works, it just governs the lock screen.
+    // common-auth on openSUSE, a hand-made line in system-auth on Arch): null
+    // while unknown. With the shell's own mode off but this true, the login
+    // screen, sudo and polkit still ask for a finger, which is exactly the
+    // "the off button does not work" the user reported - the button works, it
+    // just governs the lock screen.
     property var systemEnabled: null
     readonly property bool systemOnly: systemEnabled === true && mode === "off"
+    // Whether the PAM stack the lock goes through offers it: the same answer
+    // on Fedora and openSUSE, where the lock includes the system stack; on
+    // Arch the lock's own /etc/pam.d/buchhwin-lock counts too, which is where
+    // the reader belongs there (FingerprintLogic, "Arch").
+    property var lockEnabled: null
 
     // Waits for DistroService: the question is asked differently per
-    // distribution, and asking Fedora's tool on openSUSE only fails.
+    // distribution, and asking Fedora's tool on openSUSE only fails. Read
+    // again with every refresh (the page opening): the line is added or
+    // commented out with sudo outside the shell, and an answer kept from the
+    // shell's start would go on offering the command just run.
     readonly property var systemCommand: Logic.systemFingerprintCommand(DistroService.family)
+    onSystemCommandChanged: readSystemPam()
+    Component.onCompleted: readSystemPam()
+    function readSystemPam() {
+        if (!realSession || preview || systemCommand.length === 0 || systemProc.running) return
+        systemProc.command = systemCommand
+        systemProc.running = true
+    }
     Process {
+        id: systemProc
         stderr: ErrorLog { label: "FingerprintService.systemPam" }
-        running: root.realSession && !root.preview && root.systemCommand.length > 0
-        command: root.systemCommand
-        stdout: StdioCollector {
-            onStreamFinished: root.systemEnabled = Logic.parseSystemFingerprint(DistroService.family, text, 0)
+        // The output may arrive before or after the exit; parse once both are in.
+        property string output: ""
+        property bool outputDone: false
+        property int exitCode: -1
+        function finish() {
+            if (!outputDone || exitCode < 0) return
+            root.systemEnabled = Logic.parseSystemFingerprint(DistroService.family, output, exitCode)
+            root.lockEnabled = Logic.parseLockFingerprint(DistroService.family, output, exitCode)
         }
-        onExited: code => { if (code !== 0) root.systemEnabled = null }
+        stdout: StdioCollector { onStreamFinished: { systemProc.output = text; systemProc.outputDone = true; systemProc.finish() } }
+        onStarted: { output = ""; outputDone = false; exitCode = -1 }
+        onExited: code => { exitCode = code; finish() }
     }
 
     // Lid state from UPower (read-only); the preview keeps its synthetic value.
@@ -117,6 +140,7 @@ Singleton {
     property bool refreshQueued: false
     function refresh() {
         if (preview) return
+        readSystemPam()
         const argv = Logic.listCommand(user)
         if (!argv) return
         if (listProc.running) { refreshQueued = true; return }

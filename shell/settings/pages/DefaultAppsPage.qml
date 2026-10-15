@@ -16,7 +16,9 @@ ColumnLayout {
         images: "󰋩", pdf: "󰈦", video: "󰕧", music: "󰝚", archives: "󰀼"
     })
     readonly property var hints: ({
-        browser: "Links · Super+B", files: "Folders · Super+E", terminal: "Super+Enter"
+        browser: "Links · " + ShortcutService.keyHint("SUPER + B", true),
+        files: "Folders · " + ShortcutService.keyHint("SUPER + E", true),
+        terminal: ShortcutService.keyHint("SUPER + RETURN", true)
     })
 
     PageActivity { onOpened: DefaultAppsService.refresh() }

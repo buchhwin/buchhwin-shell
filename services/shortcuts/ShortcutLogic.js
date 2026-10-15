@@ -499,6 +499,28 @@ function parseKeyOverrides(text) {
     return result
 }
 
+// Where a built-in shortcut sits now, by the combination hyprland.lua starts
+// it on: the user's move if there is one - the same lookup as keyFor() there.
+function currentCombo(overrides, combo) {
+    const wanted = (overrides || {})[combo]
+    return typeof wanted === "string" && wanted.trim().length ? wanted.trim() : String(combo || "")
+}
+
+// A combination as the configuration writes it ("SUPER + SHIFT + C"), in the
+// words hints use: ["Super", "Shift", "C"], modifiers in display order and
+// keys named as on the sheet (keyParts).
+function comboParts(combo) {
+    const parts = String(combo || "").split("+").map(part => part.trim()).filter(part => part.length)
+    const mods = parts.filter(part => MOD_NAMES.indexOf(part.toUpperCase()) >= 0).map(part => part.toUpperCase())
+    const keys = parts.filter(part => MOD_NAMES.indexOf(part.toUpperCase()) < 0)
+    return keys.length ? keyParts(modmask(mods), keys.join("+")) : []
+}
+
+// The same as one hint: "Super + Shift + C", or "Super+Shift+C" compact.
+function comboLabel(combo, compact) {
+    return comboParts(combo).join(compact ? "+" : " + ")
+}
+
 function serializeKeyOverrides(map) {
     const lines = ["# buchhwin-shell: where a shortcut sits, written by Settings > Shortcuts.",
                    "# One `default = replacement` per line. What a shortcut does stays in",

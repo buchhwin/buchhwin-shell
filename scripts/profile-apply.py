@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""The file work of activating a built-in profile (LayoutService.applyBuiltin).
+
+    profile-apply.py --from DIR --config-dir DIR [--backup-dir DIR] [--dry-run]
+
+--from is config/builtin-profiles/<id> (profile.json, fastfetch.jsonc, the
+logo), --config-dir the shell's ${XDG_CONFIG_HOME}/buchhwin-shell, --backup-dir
+its state directory (~/.local/state/buchhwin-shell).
+
+In this order, and nothing after a step that failed:
+
+1. A copy of what is about to be overwritten: settings.json, layout.json and
+   the session's default-app lists (buchhwin-shell-mimeapps.list and
+   buchhwin-shell-xdg-terminals.list beside the config directory) go into
+   BACKUP/backup-<YYYY-MM-DD>, or backup-<YYYY-MM-DD>-<HHMMSS> when that is
+   taken. An existing backup is never written into.
+2. fastfetch.jsonc and its logo into the config directory. A different file
+   already there is kept as <name>.backup-<YYYY-MM-DD> (with the time when that
+   name holds something else again); the same file is left alone.
+3. Which of the profile's default apps are installed here, by default-apps.py's
+   own lookup - the shell sets only those, so a missing one is skipped rather
+   than reported as an error.
+
+The settings, the layout and the default apps themselves are the shell's to
+write (SettingsService, LayoutService, DefaultAppsService); this only moves
+files. One JSON line on stdout either way.
+"""
+import argparse
+import datetime
+import filecmp
+import importlib.util
+import json
+import os
+import pathlib
+import re
+import shutil
+import sys
+import tempfile
+
+SESSION = "buchhwin-shell"
+# The files a built-in profile overwrites, relative to the config directory.
+BACKED_UP = ["settings.json", "layout.json",
+             "../" + SESSION + "-mimeapps.list", "../" + SESSION + "-xdg-terminals.list"]
+# A shipped file name, never a path: the profile directory is the repository's,
+# but a name with a slash in it would still be a way out of the config directory.
+FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def default_apps_module():
+    path = pathlib.Path(__file__).resolve().parent / "default-apps.py"
+    spec = importlib.util.spec_from_file_location("default_apps", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def free_name(base, stamp_day, stamp_time):
+    """BASE-day, or BASE-day-time (then -2, -3 ...) when that is taken."""
+    candidate = base.with_name(base.name + "-" + stamp_day)
+    if not candidate.exists():
+        return candidate
+    candidate = base.with_name(base.name + "-" + stamp_day + "-" + stamp_time)
+    index = 2
+    while candidate.exists():
+        candidate = base.with_name(base.name + "-" + stamp_day + "-" + stamp_time + "-" + str(index))
+        index += 1
+    return candidate
+
+
+def backup(config_dir, backup_dir, now):
+    """(backup directory or None, names copied). Nothing to copy creates nothing."""
+    # Normalised, not resolved: a settings.json that is a link (a dotfiles
+    # repository) is copied by its own name, with the content it points to.
+    sources = [pathlib.Path(os.path.normpath(config_dir / relative)) for relative in BACKED_UP]
+    present = [path for path in sources if path.is_file()]
+    if not present:
+        return None, []
+    target = free_name(backup_dir / "backup", now.strftime("%Y-%m-%d"), now.strftime("%H%M%S"))
+    target.mkdir(parents=True)
+    for path in present:
+        shutil.copy2(path, target / path.name)
+    return target, [path.name for path in present]
+
+
+def write_atomic(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(dir=path.parent, prefix="." + path.name + "-")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(text)
+        os.replace(temporary, path)
+    except BaseException:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+        raise
+
+
+def install(text, target, now):
+    """Write TEXT to TARGET; a different file there is kept first. Returns (written, backup or None)."""
+    kept = None
+    if target.is_file():
+        if target.read_text(encoding="utf-8", errors="replace") == text:
+            return False, None
+        base = target.with_name(target.name + ".backup")
+        day = base.with_name(base.name + "-" + now.strftime("%Y-%m-%d"))
+        # The same old file kept once already today is not kept twice.
+        if day.is_file() and filecmp.cmp(day, target, shallow=False):
+            kept = day
+        else:
+            kept = free_name(base, now.strftime("%Y-%m-%d"), now.strftime("%H%M%S"))
+            shutil.copy2(target, kept)
+    write_atomic(target, text)
+    return True, kept
+
+
+def contract_home(path):
+    home = str(pathlib.Path.home())
+    text = str(path)
+    return "~" + text[len(home):] if home and text.startswith(home + "/") else text
+
+
+def install_fastfetch(profile, source_dir, config_dir, now):
+    """{"written": [...], "backups": [...]} for the profile's fastfetch files."""
+    spec = profile.get("fastfetch")
+    result = {"written": [], "backups": []}
+    if not isinstance(spec, dict):
+        return result
+    config_name = spec.get("config") or ""
+    logo_name = spec.get("logo") or ""
+    for name in (config_name, logo_name):
+        if name and not FILE_NAME.match(name):
+            raise ValueError("not a file name in the profile: %r" % name)
+    if not config_name:
+        return result
+    text = (source_dir / config_name).read_text(encoding="utf-8")
+    if logo_name:
+        # The export points the logo at ~/.config/buchhwin-shell/<logo>; a
+        # config directory somewhere else (XDG_CONFIG_HOME, a sandbox) gets
+        # its own path, or fastfetch would look for a logo that is not there.
+        shipped = "~/.config/" + SESSION + "/" + logo_name
+        text = text.replace(shipped, contract_home(config_dir / logo_name))
+        logo = (source_dir / logo_name).read_text(encoding="utf-8")
+        written, kept = install(logo, config_dir / logo_name, now)
+        if written:
+            result["written"].append(logo_name)
+        if kept:
+            result["backups"].append(kept.name)
+    written, kept = install(text, config_dir / "fastfetch.jsonc", now)
+    if written:
+        result["written"].append("fastfetch.jsonc")
+    if kept:
+        result["backups"].append(kept.name)
+    return result
+
+
+def installed_apps(profile):
+    apps = profile.get("defaultApps")
+    if not isinstance(apps, dict):
+        return {}, []
+    lookup = default_apps_module().InstalledApps()
+    found, missing = {}, []
+    for category in ("terminal", "files"):
+        desktop_id = apps.get(category)
+        if not isinstance(desktop_id, str) or not desktop_id:
+            continue
+        if desktop_id in lookup:
+            found[category] = desktop_id
+        else:
+            missing.append(desktop_id)
+    return found, missing
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--from", dest="source", required=True)
+    parser.add_argument("--config-dir", required=True)
+    parser.add_argument("--backup-dir", default="")
+    parser.add_argument("--dry-run", action="store_true", help="only say which default apps are installed")
+    args = parser.parse_args(argv)
+
+    source_dir = pathlib.Path(args.source)
+    config_dir = pathlib.Path(args.config_dir)
+    now = datetime.datetime.now()
+    try:
+        profile = json.loads((source_dir / "profile.json").read_text(encoding="utf-8"))
+        if not isinstance(profile, dict):
+            raise ValueError("profile.json is not an object")
+    except (OSError, ValueError) as error:
+        print(json.dumps({"ok": False, "error": "cannot read the profile: %s" % error}))
+        return 1
+    apps, missing = installed_apps(profile)
+    if args.dry_run:
+        print(json.dumps({"ok": True, "dryRun": True, "apps": apps, "missing": missing}))
+        return 0
+    if not args.backup_dir:
+        print(json.dumps({"ok": False, "error": "no backup directory: nothing is overwritten without one"}))
+        return 1
+    try:
+        target, copied = backup(config_dir, pathlib.Path(args.backup_dir), now)
+    except OSError as error:
+        print(json.dumps({"ok": False, "error": "backup failed, nothing changed: %s" % error}))
+        return 1
+    try:
+        fastfetch = install_fastfetch(profile, source_dir, config_dir, now)
+    except (OSError, ValueError) as error:
+        print(json.dumps({"ok": False, "error": "fastfetch not installed: %s" % error,
+                          "backup": str(target) if target else ""}))
+        return 1
+    print(json.dumps({"ok": True, "backup": str(target) if target else "", "backedUp": copied,
+                      "fastfetch": fastfetch, "apps": apps, "missing": missing}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -155,3 +155,51 @@ function uniqueName(text, taken) {
     while (list.indexOf(base + "-" + index) >= 0) index += 1
     return base + "-" + index
 }
+
+// ---- a built-in profile's settings -------------------------------------------
+// A profile the repository ships (config/builtin-profiles/<id>/profile.json)
+// carries settings.json's groups as a tree. Activating it writes them as leaf
+// paths - every one SettingsService knows - except the ones that are not the
+// look at all:
+//
+// - the mode-scoped leaves: they belong to the five modes, which carry their
+//   own `appearance` and apply it themselves (LayoutService.applyModeSettings).
+//   Written here as well, the active mode would take the values over through
+//   `settingChanged` and the other four would not, which is the leak
+//   MODE_SCOPED exists to prevent;
+// - one-shot markers: they say a migration has run on *this* machine's files,
+//   and a marker taken from another machine's either repeats a migration or
+//   skips one.
+var BUILTIN_SKIPPED = ["configVersion", "notch.headerAdopted", "desktop.quickSizesAdopted"]
+
+// "~/..." back to a path under this home. The export writes paths under the
+// home directory that way so the repository holds no user name, and the
+// stored form before the export was the absolute one - which is also the form
+// the login theme's installer reads with jq, unexpanded.
+function expandHome(value, home) {
+    if (typeof value !== "string" || !home) return value
+    if (value === "~") return String(home)
+    return value.indexOf("~/") === 0 ? String(home) + value.slice(1) : value
+}
+
+// { "appearance.accent": "#50e2cb", ... } from the nested groups. Primitive
+// leaves only: settings.json cannot hold a list (see LayoutLogic), so an array
+// in the tree is something this version would reject anyway.
+function settingLeaves(tree, home) {
+    const result = {}
+    const walk = (node, prefix) => {
+        for (const key of Object.keys(node)) {
+            const path = prefix + key
+            const value = node[key]
+            if (value !== null && typeof value === "object") {
+                if (!Array.isArray(value)) walk(value, path + ".")
+                continue
+            }
+            if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") continue
+            if (isModeScoped(path) || BUILTIN_SKIPPED.indexOf(path) >= 0) continue
+            result[path] = expandHome(value, home)
+        }
+    }
+    if (tree && typeof tree === "object" && !Array.isArray(tree)) walk(tree, "")
+    return result
+}

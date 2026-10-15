@@ -3,8 +3,10 @@ import Quickshell.Io
 import QtQuick
 import "Harness.js" as T
 import "../../services/fingerprint/FingerprintLogic.js" as F
+import "../../services/distro/DistroLogic.js" as D
 
 ShellRoot {
+    id: root
     // Synthetic fprintd output (no real reader or prints).
     FileView { id: enrollSample; path: Qt.resolvedUrl("../fixtures/fingerprint-enroll.txt").toString().replace("file://", ""); blockLoading: true }
     FileView { id: deniedSample; path: Qt.resolvedUrl("../fixtures/fingerprint-enroll-denied.txt").toString().replace("file://", ""); blockLoading: true }
@@ -119,14 +121,34 @@ ShellRoot {
         T.eq(F.parseSystemFingerprint("opensuse", suse, 1), null, "dispatch: a failed read is not an answer")
         T.eq(F.parseSystemFingerprint("fedora", withFp, 0), true, "dispatch: Fedora asks authselect")
         T.eq([F.systemFingerprintCommand("fedora"), F.systemFingerprintCommand("opensuse"), F.systemFingerprintCommand("arch"), F.systemFingerprintCommand("")],
-             [["authselect", "current"], ["cat", "/etc/pam.d/common-auth"], ["cat", "/etc/pam.d/system-auth"], []], "the command per family")
-        // Arch: system-auth as pambase ships it, and with the reader added by hand.
+             [["authselect", "current"], ["cat", "/etc/pam.d/common-auth"],
+              ["grep", "-H", "", "/etc/pam.d/buchhwin-lock", "/etc/pam.d/system-auth"], []], "the command per family")
+        // Fedora's and openSUSE's lock includes the system stack: one answer.
+        T.eq([F.parseLockFingerprint("opensuse", suse, 0), F.parseLockFingerprint("fedora", withoutFp, 0),
+              F.parseLockFingerprint("opensuse", suse, 1)], [true, false, null], "elsewhere the lock's answer is the system's")
+        // Arch: system-auth as pambase ships it and with the reader added by
+        // hand, the lock's file as session/pam/buchhwin-lock.arch ships it and
+        // with the line the page offers. Both come from one `grep -H` read.
         const archOff = "#%PAM-1.0\nauth       required                    pam_faillock.so      preauth\nauth       [success=1 default=bad]     pam_unix.so          try_first_pass nullok\n"
         const archOn = "#%PAM-1.0\nauth       sufficient                  pam_fprintd.so\n" + archOff.slice(10)
-        T.eq(F.parseSystemFingerprint("arch", archOff, 0), false, "dispatch: Arch reads system-auth, reader off")
-        T.eq(F.parseSystemFingerprint("arch", archOn, 0), true, "dispatch: Arch reads system-auth, reader on")
-        // Arch's lock includes system-auth only: without the line there the
-        // lock cannot offer the reader, and the page must not say it does.
+        const lockOff = archLock.text()
+        const include = "auth       include      system-auth"
+        const lockOn = lockOff.replace(include, D.FINGERPRINT_PAM_LINE + "\n" + include)
+        T.ok(lockOff.indexOf(include) >= 0 && lockOn !== lockOff, "the shipped lock file has the include the line goes above")
+        T.eq([F.parseLockFingerprint("arch", read(lockOff, archOff), 0), F.parseSystemFingerprint("arch", read(lockOff, archOff), 0)],
+             [false, false], "Arch, nothing added: neither the lock nor the system has the reader")
+        T.eq([F.parseLockFingerprint("arch", read(lockOn, archOff), 0), F.parseSystemFingerprint("arch", read(lockOn, archOff), 0)],
+             [true, false], "Arch, in buchhwin-lock: the lock has it, the rest of the system does not")
+        T.eq([F.parseLockFingerprint("arch", read(lockOff, archOn), 0), F.parseSystemFingerprint("arch", read(lockOff, archOn), 0)],
+             [true, true], "Arch, by hand in system-auth: on for the lock and for the whole system")
+        T.eq(F.parseLockFingerprint("arch", read(lockOn.replace(D.FINGERPRINT_PAM_LINE, "#" + D.FINGERPRINT_PAM_LINE), archOff), 0),
+             false, "Arch: a commented line does not count")
+        // A missing file is an error from grep, and half an answer is none.
+        T.eq([F.parseLockFingerprint("arch", read(lockOff, archOff), 2), F.parseSystemFingerprint("arch", read(lockOff, archOff), 2)],
+             [null, null], "Arch: a failed read is not an answer")
+        T.eq(F.parseLockFingerprint("arch", read(null, archOff), 0), null, "Arch: system-auth alone says nothing about the lock's file")
+        // Without the line in either file the lock cannot offer the reader,
+        // and the page must not say it does.
         T.eq([F.pamLineMissing("arch", false), F.pamLineMissing("arch", true), F.pamLineMissing("arch", null),
               F.pamLineMissing("fedora", false), F.pamLineMissing("opensuse", false)],
              [true, false, false, false, false], "only a definite no on Arch is a missing line")
@@ -134,10 +156,52 @@ ShellRoot {
         T.ok(F.modeState("auto", false, true).indexOf("not in PAM") >= 0, "automatic, the same")
         T.ok(F.modeState("off", false, true).indexOf("password only") >= 0, "off stays off")
         T.ok(F.modeState("on", false, false).indexOf("always offers") >= 0, "in PAM, the text is unchanged")
-        // The line the page offers to copy is the one the check reads back.
-        T.eq(F.systemFingerprintPam("#%PAM-1.0\n" + F.PAM_FPRINTD_LINE + "\n" + archOff.slice(10)), true,
-             "the offered line is one the check recognises")
 
-        T.finish("FingerprintTest")
+        // The commands the page offers, run for real on copies: on twice,
+        // then off over both files (DistroLogic). sudo and the paths are the
+        // only things changed.
+        const local = command => command.replace(/^sudo /, "").split("/etc/pam.d/buchhwin-lock").join("lock")
+            .split("/etc/pam.d/system-auth").join("system")
+        pamRun.expected = { lockOn: lockOn, archOn: archOn, archOff: archOff }
+        pamRun.command = ["bash", "-c", pamRun.script, "bash", archLock.path, archOn,
+                          local(D.fingerprintOnCommand("arch")), local(D.fingerprintOffCommand("arch"))]
+        pamRun.running = true
+    }
+
+    // `grep -H "" buchhwin-lock system-auth` as the shell reads it on Arch;
+    // null leaves a file out.
+    function read(lock, system) {
+        const prefix = (path, text) => text === null ? ""
+            : text.replace(/\n$/, "").split("\n").map(line => path + ":" + line).join("\n") + "\n"
+        return prefix("/etc/pam.d/buchhwin-lock", lock) + prefix("/etc/pam.d/system-auth", system)
+    }
+
+    FileView { id: archLock; path: Qt.resolvedUrl("../../session/pam/buchhwin-lock.arch").toString().replace("file://", ""); blockLoading: true }
+
+    Process {
+        id: pamRun
+        property var expected: ({})
+        readonly property string script: 'd=$(mktemp -d) || exit 1; trap \'rm -rf "$d"\' EXIT; cd "$d" || exit 1\n'
+            + 'cp "$1" lock && printf "%s" "$2" > system || exit 1\n'
+            + 'eval "$3" && eval "$3" || exit 1\n'
+            + 'printf "%s\\n" "-- on"; cat lock\n'
+            + 'eval "$4" || exit 1\n'
+            + 'printf "%s\\n" "-- off"; cat lock; printf "%s\\n" "-- system"; cat system; printf "%s\\n" "-- end"\n'
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const parts = text.split(/^-- (?:on|off|system|end)\n/m)
+                T.eq(parts.length, 5, "the commands ran")
+                if (parts.length === 5) {
+                    const on = parts[1], off = parts[2], system = parts[3]
+                    const x = pamRun.expected
+                    T.eq(on, x.lockOn, "on, twice: exactly one line, directly above the include, the rest unchanged")
+                    T.eq(F.parseLockFingerprint("arch", root.read(on, x.archOff), 0), true, "and the shell reads it back as on")
+                    T.eq(off, x.lockOn.replace(D.FINGERPRINT_PAM_LINE, "#" + D.FINGERPRINT_PAM_LINE), "off comments the lock's line")
+                    T.eq(system, x.archOn.replace("auth       sufficient", "#auth       sufficient"), "and a hand-made one in system-auth")
+                    T.eq(F.parseLockFingerprint("arch", root.read(off, system), 0), false, "which the shell reads back as off")
+                }
+                T.finish("FingerprintTest")
+            }
+        }
     }
 }

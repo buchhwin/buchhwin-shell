@@ -229,6 +229,9 @@ arch_root="$sandbox/arch-root"
 mkdir -p "$arch_root/etc/pam.d" && : > "$arch_root/etc/pam.d/system-auth"
 BUCHHWIN_DISTRO=arch "$project_dir/install/system-install.sh" --root "$arch_root" >/dev/null
 check 'grep -q "include *system-auth" "$arch_root/etc/pam.d/buchhwin-lock"' "Arch: the lock includes system-auth"
+# The reader goes into this file, but only on the user's word (Settings >
+# Lock Screen offers the command); the shipped file has no active line.
+check '! grep -v "^#" "$arch_root/etc/pam.d/buchhwin-lock" | grep -q pam_fprintd' "Arch: no reader in the shipped lock service"
 check '! grep -v "^#" "$arch_root/etc/pam.d/buchhwin-lock-password" | grep -q "include\|pam_fprintd"' \
   "Arch: password only, no password-auth and no other stack"
 check 'grep -q "pam_unix.so *try_first_pass" "$arch_root/etc/pam.d/buchhwin-lock-password"' "Arch: the password is pam_unix's"

@@ -13,8 +13,8 @@ PopupPanel {
     panelId: "colorPicker"
     heading: "Colors"
     detail: ColorPickerService.history.length
-        ? ColorPickerService.history.length + " picked · Super+Shift+C picks another"
-        : "Super+Shift+C picks one off the screen"
+        ? ColorPickerService.history.length + " picked · " + ShortcutService.keyHint("SUPER + SHIFT + C", true) + " picks another"
+        : ShortcutService.keyHint("SUPER + SHIFT + C", true) + " picks one off the screen"
     glyph: "󰈊"
     glyphActive: ColorPickerService.history.length > 0
     footerText: "Clear the list"

@@ -176,6 +176,22 @@ ShellRoot {
         T.eq(W.folderUrl("/home/u/a#b/x?y/50%2F/Über mich"), "file:///home/u/a%23b/x%3Fy/50%252F/%C3%9Cber%20mich",
              "#, ?, % and the rest encoded per segment")
         T.eq(W.folderUrl(""), "", "no folder, no url")
+
+        // Thumbnails: the helper's answer, and the url a tile loads.
+        const answer = JSON.stringify({ thumbs: { "/w/a.png": "/c/0a.jpg", "/w/b.jpg": "/c/1b.jpg",
+                                                  "relative.png": "/c/2c.jpg", "/w/c.webp": "../x.jpg",
+                                                  "/w/d.png": 7, "/w/e.png": "/c/3d.png" } })
+        T.eq(W.parseThumbs(answer), { "/w/a.png": "/c/0a.jpg", "/w/b.jpg": "/c/1b.jpg" },
+             "only image paths mapped to absolute .jpg files are kept")
+        T.eq(W.parseThumbs('{"thumbs": {}}'), {}, "a run that made nothing is an empty map")
+        T.eq([W.parseThumbs(""), W.parseThumbs("{broken"), W.parseThumbs('{"thumbs": []}'), W.parseThumbs("{}")],
+             [null, null, null, null], "no answer, a broken one or the wrong shape keeps what is there")
+        const thumbs = { "/w/a.png": "/home/u/.cache/buchhwin-shell/wallpaper-thumbs/0a.jpg", "/w/h.png": "/home/a#b/c.jpg" }
+        T.eq(W.thumbUrl(thumbs, "/w/a.png"), "file:///home/u/.cache/buchhwin-shell/wallpaper-thumbs/0a.jpg",
+             "an image with a thumbnail gets its url")
+        T.eq(W.thumbUrl(thumbs, "/w/h.png"), "file:///home/a%23b/c.jpg", "encoded like a folder url")
+        T.eq([W.thumbUrl(thumbs, "/w/none.png"), W.thumbUrl({}, "/w/a.png"), W.thumbUrl(null, "/w/a.png"),
+              W.thumbUrl(thumbs, "constructor")], ["", "", "", ""], "none yet is \"\", so the tile loads the image")
         T.eq(W.recentFolders(" ~/a, ~/b,,~/a "), ["~/a", "~/b"], "recent folders trimmed and unique")
         T.eq(W.addRecentFolder("~/a,~/b", "~/b"), "~/b,~/a", "a reused folder moves to the front")
         T.eq(W.addRecentFolder("~/1,~/2,~/3,~/4,~/5", "~/6").split(",").length, 5, "at most five")

@@ -32,7 +32,7 @@ SettingsSection {
         ShellButton { focusOnTab: true; icon: Icons.undo; text: "Undo"; enabledState: LayoutService.undoStack.length > 0; onClicked: LayoutService.undo() }
         ShellText {
             Layout.fillWidth: true
-            text: "Super + Alt + E edits widgets, the bar and the notch by hand"
+            text: ShortcutService.keyHint("SUPER + ALT + E") + " edits widgets, the bar and the notch by hand"
             role: "small"; muted: true; wrapMode: Text.Wrap
         }
     }

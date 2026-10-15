@@ -131,6 +131,7 @@ printf '== Session actions\n'
 "$project_dir/tests/x11-dpi-test.sh"
 "$project_dir/tests/shell-update-test.sh"
 "$project_dir/tests/updates-check-test.sh"
+"$project_dir/tests/screenshot-test.sh"
 
 printf '== Lid installers\n'
 "$project_dir/tests/fingerprint-lid-install-test.sh"

@@ -299,33 +299,74 @@ function systemFingerprint(output, exitCode) {
 
 // The same question on openSUSE, which has no authselect: pam-config writes
 // pam_fprintd straight into /etc/pam.d/common-auth, so an active `auth` line
-// naming it is the answer. Comments do not count. Arch has neither tool; the
-// line is added to /etc/pam.d/system-auth by hand, and read the same way.
+// naming it is the answer. Comments do not count. Arch has neither tool; its
+// PAM files are read the same way (below).
 function systemFingerprintPam(text) {
     if (typeof text !== "string" || !/^\s*auth\s/m.test(text)) return null
     return /^\s*auth\s[^#\n]*\bpam_fprintd\.so\b/m.test(text)
 }
 
-// Arch: the lock's PAM file (session/pam/buchhwin-lock.arch) includes
-// system-auth and nothing else, and pambase ships system-auth without
-// pam_fprintd - adding it by hand is Arch's way to enable a reader. Until
-// then the reader is offered nowhere, the lock screen included, whatever its
-// mode says. Only a definite "no" counts (null is "not known yet"); Fedora and
-// openSUSE turn the reader on with their own tools and keep their texts.
-var PAM_FPRINTD_LINE = "auth sufficient pam_fprintd.so"
-function pamLineMissing(family, systemEnabled) {
-    return family === "arch" && systemEnabled === false
+// Arch: the reader belongs to the lock's own PAM file, not to system-auth.
+// /etc/pam.d/sddm (through system-login), sudo and polkit all include
+// system-auth there, so pam_fprintd in it makes the login screen and sudo wait
+// for a finger first - and a finger login at SDDM gives pam_kwallet5 and
+// pam_gnome_keyring no password, the wallets stay shut and Brave refuses.
+// Above the `include system-auth` of /etc/pam.d/buchhwin-lock only the lock
+// offers it, and buchhwin-lock-password (mode off, lid closed) stays
+// password-only. A line in system-auth still counts: someone may have put it
+// there by hand. Both files are read in one call; `grep -H` prefixes every
+// line with its file, which keeps the two answers apart. The command that
+// adds the line is DistroLogic.fingerprintOnCommand.
+var ARCH_LOCK_PAM = "/etc/pam.d/buchhwin-lock"
+var ARCH_SYSTEM_PAM = "/etc/pam.d/system-auth"
+
+// `grep -H "" FILE…` split back into one text per file.
+function pamFiles(output) {
+    const files = {}
+    String(output || "").split("\n").forEach(function (line) {
+        const at = line.indexOf(":")
+        if (at <= 0) return
+        const path = line.slice(0, at)
+        files[path] = (files[path] || "") + line.slice(at + 1) + "\n"
+    })
+    return files
 }
 
-// The read-only command that answers it, per distribution family.
+// Until the line is in one of the two files the reader is offered nowhere on
+// Arch, the lock screen included, whatever its mode says, and the page shows
+// the command that adds it. `lockEnabled` is parseLockFingerprint's answer;
+// only a definite "no" counts (null is "not known yet"). Fedora and openSUSE
+// turn the reader on with their own tools and keep their texts.
+function pamLineMissing(family, lockEnabled) {
+    return family === "arch" && lockEnabled === false
+}
+
+// The read-only command that answers both questions below, per distribution
+// family.
 function systemFingerprintCommand(family) {
     if (family === "fedora") return ["authselect", "current"]
     if (family === "opensuse") return ["cat", "/etc/pam.d/common-auth"]
-    if (family === "arch") return ["cat", "/etc/pam.d/system-auth"]
+    if (family === "arch") return ["grep", "-H", "", ARCH_LOCK_PAM, ARCH_SYSTEM_PAM]
     return []
 }
 
+// Whether the reader is on for the whole system - the login screen, sudo,
+// polkit: authselect's feature, common-auth, Arch's system-auth.
 function parseSystemFingerprint(family, output, exitCode) {
-    if (family === "opensuse" || family === "arch") return Number(exitCode) === 0 ? systemFingerprintPam(String(output || "")) : null
+    if (family === "arch") return Number(exitCode) === 0 ? systemFingerprintPam(pamFiles(output)[ARCH_SYSTEM_PAM]) : null
+    if (family === "opensuse") return Number(exitCode) === 0 ? systemFingerprintPam(String(output || "")) : null
     return systemFingerprint(output, exitCode)
+}
+
+// Whether the PAM stack the lock goes through offers it. Fedora's and
+// openSUSE's lock includes the system stack, so the answer is the same; on
+// Arch the lock's own file counts too, and a definite no needs both files.
+function parseLockFingerprint(family, output, exitCode) {
+    if (family !== "arch") return parseSystemFingerprint(family, output, exitCode)
+    if (Number(exitCode) !== 0) return null
+    const files = pamFiles(output)
+    const lock = systemFingerprintPam(files[ARCH_LOCK_PAM])
+    const system = systemFingerprintPam(files[ARCH_SYSTEM_PAM])
+    if (lock === true || system === true) return true
+    return lock === false && system === false ? false : null
 }

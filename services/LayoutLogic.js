@@ -194,6 +194,11 @@ function sanitizeProfile(profile) {
     // switch to it and nothing to reset it from.
     for (const name of MODE_NAMES)
         if (modes[name] !== undefined) result.modes[name] = sanitizeMode(modes[name])
+    // Which shipped profile this is (config/builtin-profiles/<id>), so it can
+    // be told from a profile of the user's that happens to carry the same
+    // name. Only written when set: the user's own profiles stay as they were.
+    if (typeof source.builtin === "string" && source.builtin.length && Profile.slug(source.builtin) === source.builtin)
+        result.builtin = source.builtin
     return result
 }
 
@@ -291,11 +296,12 @@ function renameProfile(config, name, label) {
     return sanitize(next)
 }
 
-// The last profile is not removable: there has to be one to be in.
+// The last profile is not removable: there has to be one to be in. Nor is a
+// built-in one: it would only come back on the next start.
 function removeProfile(config, name) {
     const next = copyConfig(config)
     const key = String(name)
-    if (!next.profiles[key] || Object.keys(next.profiles).length < 2) return sanitize(next)
+    if (!next.profiles[key] || next.profiles[key].builtin || Object.keys(next.profiles).length < 2) return sanitize(next)
     delete next.profiles[key]
     if (next.activeProfile === key) next.activeProfile = Object.keys(next.profiles)[0]
     return sanitize(next)
@@ -303,12 +309,108 @@ function removeProfile(config, name) {
 
 // Back to the factory state, by emptying it: the next `ensureScreens` fills
 // each mode from its template again. One mode by name, or the whole profile.
-function resetProfile(config, name, modeName) {
+//
+// A built-in profile has a state of its own to go back to - the modes it
+// shipped with - and `shipped` is those. A mode the shipped file does not
+// carry falls back to the factory template the usual way.
+function resetProfile(config, name, modeName, shipped) {
     const next = copyConfig(config)
     const profile = next.profiles[String(name)]
     if (!profile) return sanitize(next)
-    if (modeName === undefined || modeName === null || modeName === "") profile.modes = {}
+    const all = modeName === undefined || modeName === null || modeName === ""
+    if (profile.builtin && shipped && typeof shipped === "object") {
+        const modes = JSON.parse(JSON.stringify(shipped))
+        if (all) profile.modes = modes
+        else if (modes[String(modeName)] !== undefined) profile.modes[String(modeName)] = modes[String(modeName)]
+        else delete profile.modes[String(modeName)]
+        return sanitize(next)
+    }
+    if (all) profile.modes = {}
     else delete profile.modes[String(modeName)]
+    return sanitize(next)
+}
+
+// ---- built-in profiles -------------------------------------------------------
+// A profile the repository ships: config/builtin-profiles/<id>/profile.json,
+// written by scripts/profile-export.py. It is always in the layout file, marked
+// with `builtin: "<id>"`; its modes are the user's to change like any other
+// profile's, and "Reset" brings back the shipped ones. The rest of the file -
+// the notch, its presets, the lock screen, the settings, the default apps and
+// fastfetch - is global and is applied when the profile is activated
+// (LayoutService.applyBuiltin).
+
+// The shipped file, whitelisted like everything else that is read: null when
+// it has no modes, because a built-in profile without them is nothing to add.
+function sanitizeBuiltinProfile(data, id) {
+    if (!data || typeof data !== "object") return null
+    const key = String(id || "")
+    if (!key.length || Profile.slug(key) !== key) return null
+    if (!data.modes || typeof data.modes !== "object") return null
+    const label = typeof data.label === "string" && data.label.trim().length ? data.label.trim().slice(0, 40) : key
+    const apps = {}
+    const sourceApps = data.defaultApps && typeof data.defaultApps === "object" ? data.defaultApps : {}
+    for (const category of ["terminal", "files"]) {
+        const value = sourceApps[category]
+        if (typeof value === "string" && /^[A-Za-z0-9._-]+\.desktop$/.test(value)) apps[category] = value
+    }
+    return {
+        id: key,
+        label: label,
+        modes: sanitizeProfile({ modes: data.modes }).modes,
+        notch: sanitizeNotch(data.notch),
+        notchPresets: sanitizeNotchPresets(data.notchPresets),
+        lock: sanitizeLock(data.lock),
+        settings: data.settings && typeof data.settings === "object" && !Array.isArray(data.settings) ? data.settings : {},
+        defaultApps: apps
+    }
+}
+
+// Which built-in profile a profile is, or "".
+function builtinOf(config, name) {
+    const profile = config && config.profiles ? config.profiles[String(name)] : null
+    return profile && typeof profile.builtin === "string" ? profile.builtin : ""
+}
+
+// The profile that carries a built-in id, or "".
+function builtinProfileName(config, id) {
+    for (const name of profileNames(config))
+        if (builtinOf(config, name) === String(id)) return name
+    return ""
+}
+
+// Every built-in profile the file does not carry yet, added under its own id.
+// A profile of the user's may already have that name (one they called
+// "buchhwin" before there was a built-in one): it stays exactly as it is, and
+// the built-in one takes the next free name instead - recognised by its
+// `builtin` field from then on, never by its name. `added` is empty when
+// nothing changed, so the caller writes only then.
+function addBuiltinProfiles(config, builtins) {
+    const next = copyConfig(config)
+    const added = []
+    for (const data of Array.isArray(builtins) ? builtins : []) {
+        if (!data || typeof data.id !== "string" || !data.id.length) continue
+        if (builtinProfileName(next, data.id).length) continue
+        const name = Profile.uniqueName(data.id, Object.keys(next.profiles))
+        next.profiles[name] = { label: data.label || data.id, modes: JSON.parse(JSON.stringify(data.modes || {})),
+                                builtin: data.id }
+        added.push(name)
+    }
+    return { config: added.length ? sanitize(next) : config, added: added }
+}
+
+// The global half of a built-in profile: its notch and its lock screen
+// replace the ones in the file. Its notch presets come in beside the user's
+// own, replacing one of the same id: a preset is saved like a file (no undo
+// step, see LayoutService.undo), and activating a profile is not deleting
+// one the user saved after the profile was exported.
+function applyBuiltinLayout(config, data) {
+    const next = copyConfig(config)
+    if (!data || typeof data !== "object") return sanitize(next)
+    next.notch = copyNotch(data.notch || defaultNotch())
+    next.lock = sanitizeLock(JSON.parse(JSON.stringify(data.lock || defaultLock())))
+    const shipped = sanitizeNotchPresets(data.notchPresets)
+    const ids = shipped.map(preset => preset.id)
+    next.notchPresets = shipped.concat(sanitizeNotchPresets(next.notchPresets).filter(preset => ids.indexOf(preset.id) < 0))
     return sanitize(next)
 }
 

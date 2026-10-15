@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""Write the running setup out as a built-in profile the repository ships.
+
+    profile-export.py [--name buchhwin] [--out config/builtin-profiles/NAME]
+                      [--profile PROFILE] [--dry-run]
+
+Reads ${XDG_CONFIG_HOME:-~/.config}/buchhwin-shell/{settings,layout}.json, the
+session's default terminal and file manager (default-apps.py's two lists) and
+the fastfetch configuration (~/.config/fastfetch/config.jsonc + its logo), and
+writes NAME/profile.json, NAME/fastfetch.jsonc and the logo next to it.
+
+What goes in: the active profile's five modes (layouts and the appearance each
+mode owns), the notch, its presets and the lock screen's layout, and every
+setting except what belongs to this machine or this person rather than to the
+look: where the weather is (a place and its coordinates), which calendars are
+hidden, the colour picker's history, onboarding, recent folders. Paths under
+the home directory are written as "~/...", which SettingsService expands.
+
+The result is checked before it is written: a value that looks like a
+coordinate, an e-mail address or a path under /home stops the export, so the
+repository's private-data rule (testing.md, pitfall 17) holds by construction.
+"""
+import argparse
+import json
+import os
+import pathlib
+import re
+import sys
+
+SESSION = "buchhwin-shell"
+
+# Settings that describe this machine or this person, not the look.
+DROP = {
+    "configVersion",
+    "onboarding",
+    "colorPicker.history",
+    "weather.locationName", "weather.lat", "weather.lon",
+    "wallpaper.recentFolders",
+    "calendar.hiddenCalendars", "calendar.newEventCalendar",
+}
+# Paths that are kept, home-relative.
+PATHS = {"wallpaper.path", "wallpaper.folder", "wallpaper.slideshowFolder", "login.wallpaper", "recording.folder"}
+# The appearance a mode owns travels with the modes (ProfileLogic.MODE_SCOPED).
+MODE_SCOPED = {"blurStrength", "panelOpacity", "animationMode", "animationSpeed", "windowRadius",
+               "shellRadius", "borderEnabled", "borderSize", "gapsIn", "gapsOut"}
+
+COORDINATE = re.compile(r"[-+]?\d{1,3}\.\d{3,}\s*[,;]\s*[-+]?\d{1,3}\.\d{3,}")
+EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+
+def config_home():
+    return pathlib.Path(os.environ.get("XDG_CONFIG_HOME") or pathlib.Path.home() / ".config")
+
+
+def flatten(tree, prefix=""):
+    out = {}
+    for key, value in tree.items():
+        path = prefix + key
+        if isinstance(value, dict):
+            out.update(flatten(value, path + "."))
+        else:
+            out[path] = value
+    return out
+
+
+def unflatten(flat):
+    tree = {}
+    for path, value in flat.items():
+        node = tree
+        parts = path.split(".")
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        node[parts[-1]] = value
+    return tree
+
+
+def contract_home(value, home):
+    text = str(value or "")
+    if text == home:
+        return "~"
+    return "~" + text[len(home):] if home and text.startswith(home + "/") else text
+
+
+def settings_of(raw, home):
+    flat = flatten(raw)
+    kept = {}
+    for path, value in flat.items():
+        if path in DROP or path.split(".")[0] in DROP:
+            continue
+        group, _, leaf = path.partition(".")
+        if group == "appearance" and leaf in MODE_SCOPED:
+            continue
+        if path in PATHS:
+            value = contract_home(value, home)
+        kept[path] = value
+    return unflatten(kept)
+
+
+def default_apps(config):
+    apps = {}
+    terminals = config / (SESSION + "-xdg-terminals.list")
+    if terminals.is_file():
+        first = next((line.strip() for line in terminals.read_text(encoding="utf-8").splitlines()
+                      if line.strip() and not line.startswith("#")), "")
+        if first:
+            apps["terminal"] = first
+    mimes = config / (SESSION + "-mimeapps.list")
+    if mimes.is_file():
+        for line in mimes.read_text(encoding="utf-8").splitlines():
+            if line.startswith("inode/directory="):
+                value = line.split("=", 1)[1].split(";")[0].strip()
+                if value:
+                    apps["files"] = value
+    return apps
+
+
+def fastfetch_files(config):
+    """(config text with the logo pointed at the shell's copy, logo name, logo text) or None."""
+    source = config / "fastfetch" / "config.jsonc"
+    if not source.is_file():
+        return None
+    text = source.read_text(encoding="utf-8")
+    match = re.search(r'"source"\s*:\s*"([^"]+)"', text)
+    logo_name, logo_text = "", ""
+    if match:
+        logo_path = pathlib.Path(os.path.expanduser(match.group(1)))
+        if logo_path.is_file():
+            logo_name = logo_path.name
+            logo_text = logo_path.read_text(encoding="utf-8")
+            # Applied, the logo sits beside the shell's fastfetch.jsonc.
+            text = text.replace(match.group(1), "~/.config/buchhwin-shell/" + logo_name)
+    return text, logo_name, logo_text
+
+
+def private_findings(text, home):
+    found = []
+    if COORDINATE.search(text):
+        found.append("a coordinate pair")
+    if EMAIL.search(text):
+        found.append("an e-mail address")
+    if home and home in text:
+        found.append("a path under " + home)
+    if re.search(r"/home/[A-Za-z0-9_.-]+", text):
+        found.append("a /home/<user> path")
+    return found
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--name", default="buchhwin")
+    parser.add_argument("--out", default="")
+    parser.add_argument("--profile", default="", help="the layout profile to export (default: the active one)")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args(argv)
+
+    home = str(pathlib.Path.home())
+    config = config_home()
+    shell_config = config / SESSION
+    try:
+        settings = json.loads((shell_config / "settings.json").read_text(encoding="utf-8"))
+        layout = json.loads((shell_config / "layout.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        print(json.dumps({"ok": False, "error": "cannot read the configuration: %s" % error}))
+        return 1
+    name = args.profile or layout.get("activeProfile") or "default"
+    source = (layout.get("profiles") or {}).get(name)
+    if not isinstance(source, dict) or not isinstance(source.get("modes"), dict):
+        print(json.dumps({"ok": False, "error": "no profile %r in layout.json" % name}))
+        return 1
+
+    profile = {
+        "configVersion": 1,
+        "id": args.name,
+        "label": args.name,
+        "modes": source["modes"],
+        "notch": layout.get("notch") or {},
+        "notchPresets": layout.get("notchPresets") or [],
+        "lock": layout.get("lock") or {},
+        "settings": settings_of(settings, home),
+        "defaultApps": default_apps(config),
+    }
+    fastfetch = fastfetch_files(config)
+    if fastfetch:
+        profile["fastfetch"] = {"config": "fastfetch.jsonc", "logo": fastfetch[1]}
+
+    text = json.dumps(profile, indent=2, ensure_ascii=False) + "\n"
+    findings = private_findings(text, home) + (private_findings(fastfetch[0], home) if fastfetch else [])
+    if findings:
+        print(json.dumps({"ok": False, "error": "refusing to write private data: " + ", ".join(sorted(set(findings)))}))
+        return 1
+
+    out = pathlib.Path(args.out) if args.out else pathlib.Path(__file__).resolve().parent.parent / "config" / "builtin-profiles" / args.name
+    written = [str(out / "profile.json")]
+    if not args.dry_run:
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "profile.json").write_text(text, encoding="utf-8")
+        if fastfetch:
+            (out / "fastfetch.jsonc").write_text(fastfetch[0], encoding="utf-8")
+            written.append(str(out / "fastfetch.jsonc"))
+            if fastfetch[1]:
+                (out / fastfetch[1]).write_text(fastfetch[2], encoding="utf-8")
+                written.append(str(out / fastfetch[1]))
+    print(json.dumps({"ok": True, "profile": name, "written": written, "dryRun": args.dry_run,
+                      "settings": len(flatten(profile["settings"])), "defaultApps": profile["defaultApps"]}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

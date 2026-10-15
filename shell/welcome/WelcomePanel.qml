@@ -34,27 +34,28 @@ ShellPanel {
         {
             icon: Icons.search, title: "Find anything",
             text: "The launcher starts apps, opens settings pages, does arithmetic and searches the web. Type ? for the web, = to calculate, @ for a settings page.",
-            keys: ["Super", "D"], action: "launcher"
+            keys: ShortcutService.keyHintParts("SUPER + D"), action: "launcher"
         },
         {
             icon: "󰕾", title: "Turn things on and off",
             text: "Wi-Fi, Bluetooth, brightness, sound, battery. The pencil in its header arranges the tiles the way you want them.",
-            keys: ["Super", "O"], action: "controlCenter"
+            keys: ShortcutService.keyHintParts("SUPER + O"), action: "controlCenter"
         },
         {
             icon: "󰃭", title: "Time and weather",
             text: "The dashboard has the month, the weather and the events of your KDE calendars. “+” creates an event, and a series can be changed one occurrence at a time.",
-            keys: ["Super", "K"], action: "dashboard"
+            keys: ShortcutService.keyHintParts("SUPER + K"), action: "dashboard"
         },
         {
             icon: Icons.edit, title: "Make it yours",
             text: "The layout editor arranges the desktop: widgets on the wallpaper, a bar of pills at the top, or a notch. Drag what you see, where you see it.",
-            keys: ["Super", "Alt", "E"], action: "editor"
+            keys: ShortcutService.keyHintParts("SUPER + ALT + E"), action: "editor"
         },
         {
             icon: "󰥻", title: "Everything else",
-            text: "Super+F1 lists every shortcut, Super+I opens Settings. Nothing here is hidden behind a menu you have to find first.",
-            keys: ["Super", "F1"], action: "shortcuts"
+            text: ShortcutService.keyHint("SUPER + F1", true) + " lists every shortcut, " + ShortcutService.keyHint("SUPER + I", true)
+                + " opens Settings. Nothing here is hidden behind a menu you have to find first.",
+            keys: ShortcutService.keyHintParts("SUPER + F1"), action: "shortcuts"
         }
     ]
     readonly property var current: steps[Math.max(0, Math.min(steps.length - 1, step))]

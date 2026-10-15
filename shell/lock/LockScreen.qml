@@ -71,7 +71,8 @@ Scope {
     // 0 → 1 while the lock screen appears, back to 0 when unlocking.
     property real fade: 0
 
-    // Fingerprint (pam_fprintd in system-auth): the reader blocks the password
+    // Fingerprint (pam_fprintd in the lock's PAM stack: system-auth on Fedora,
+    // /etc/pam.d/buchhwin-lock itself on Arch): the reader blocks the password
     // prompt until it matches or times out. `fingerprint` is the last event
     // (LockLogic.fingerprintEvent), `fingerprintStage` is true while the reader
     // waits. Submitting meanwhile aborts and checks the password alone.

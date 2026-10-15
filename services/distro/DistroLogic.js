@@ -65,16 +65,32 @@ function installHint(family_, package_) {
 
 // The one host command that takes pam_fprintd out of the system-wide PAM
 // stack. Fedora generates it with authselect, openSUSE with pam-config. Arch
-// has neither: the line was added to system-auth by hand, so the command
-// comments it out there - only an active auth line naming pam_fprintd, the
-// same lines FingerprintLogic.systemFingerprintPam reads as on: indented or
-// not, and not where the name is only in a trailing comment. Taking the #
-// away again is the way back.
+// has neither: the line was added by hand, to the lock's own buchhwin-lock
+// (fingerprintOnCommand below, where it belongs) or to system-auth, so the
+// command comments it out in both - only an active auth line naming
+// pam_fprintd, the same lines FingerprintLogic.systemFingerprintPam reads as
+// on: indented or not, and not where the name is only in a trailing comment.
+// Taking the # away again is the way back.
 function fingerprintOffCommand(family_) {
     if (family_ === "fedora") return "sudo authselect disable-feature with-fingerprint"
     if (family_ === "opensuse") return "sudo pam-config --delete --fprintd"
-    if (family_ === "arch") return "sudo sed -i '/^\\s*auth\\s[^#]*pam_fprintd\\.so/s/^/#/' /etc/pam.d/system-auth"
+    if (family_ === "arch") return "sudo sed -i '/^\\s*auth\\s[^#]*pam_fprintd\\.so/s/^/#/' /etc/pam.d/buchhwin-lock /etc/pam.d/system-auth"
     return ""
+}
+
+// Arch only: the command that gives the lock screen the reader, as Settings >
+// Lock Screen offers it. The line goes into /etc/pam.d/buchhwin-lock directly
+// above its `include system-auth`, never into system-auth itself - SDDM and
+// sudo include that too and would wait for a finger first, and a finger login
+// cannot open the wallet (FingerprintLogic, "Arch"). From the first active
+// pam_fprintd line to the end of the file sed branches past the insert, so
+// with the line already above the include a second run adds nothing, and
+// nothing else in the file changes. Fedora and openSUSE have their own tools.
+var FINGERPRINT_PAM_LINE = "auth       sufficient   pam_fprintd.so"
+function fingerprintOnCommand(family_) {
+    if (family_ !== "arch") return ""
+    return "sudo sed -i '/^\\s*auth\\s[^#]*pam_fprintd\\.so/,$b; /^auth\\s\\+include\\s\\+system-auth\\s*$/i "
+        + FINGERPRINT_PAM_LINE + "' /etc/pam.d/buchhwin-lock"
 }
 
 // Arch upgrades the whole system at once, in a terminal (pacman or an AUR

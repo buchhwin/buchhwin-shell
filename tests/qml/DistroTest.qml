@@ -32,9 +32,18 @@ ShellRoot {
 
         T.eq(D.fingerprintOffCommand("fedora"), "sudo authselect disable-feature with-fingerprint", "Fedora PAM switch")
         T.eq(D.fingerprintOffCommand("opensuse"), "sudo pam-config --delete --fprintd", "openSUSE PAM switch")
-        T.eq(D.fingerprintOffCommand("arch"), "sudo sed -i '/^\\s*auth\\s[^#]*pam_fprintd\\.so/s/^/#/' /etc/pam.d/system-auth",
-             "Arch PAM switch: the hand-made line in system-auth is commented out, indented too")
+        T.eq(D.fingerprintOffCommand("arch"), "sudo sed -i '/^\\s*auth\\s[^#]*pam_fprintd\\.so/s/^/#/' /etc/pam.d/buchhwin-lock /etc/pam.d/system-auth",
+             "Arch PAM switch: the hand-made line is commented out in the lock's file and in system-auth, indented too")
         T.eq(D.fingerprintOffCommand(""), "", "no switch without a distribution")
+        // Arch turns the reader on by hand, for the lock screen only: the line
+        // goes above the include of buchhwin-lock, never into system-auth
+        // (SDDM and sudo include that). FingerprintTest runs it on a copy.
+        T.eq(D.fingerprintOnCommand("arch"),
+             "sudo sed -i '/^\\s*auth\\s[^#]*pam_fprintd\\.so/,$b; /^auth\\s\\+include\\s\\+system-auth\\s*$/i auth       sufficient   pam_fprintd.so' /etc/pam.d/buchhwin-lock",
+             "Arch: the reader into the lock's own PAM file")
+        T.ok(D.fingerprintOnCommand("arch").indexOf("/etc/pam.d/system-auth") < 0, "and nowhere near system-auth")
+        T.eq([D.fingerprintOnCommand("fedora"), D.fingerprintOnCommand("opensuse"), D.fingerprintOnCommand("")],
+             ["", "", ""], "Fedora and openSUSE have their own tools")
         T.eq([D.upgradesInTerminal("arch"), D.upgradesInTerminal("fedora"), D.upgradesInTerminal("opensuse")],
              [true, false, false], "only Arch upgrades in a terminal")
         T.eq(D.packagesDescription(fedora), "Fedora Linux packages from dnf. Discover asks for the administrator password before installing.",

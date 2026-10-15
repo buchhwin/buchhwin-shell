@@ -551,6 +551,7 @@ Singleton {
         loaded = true
         ensureScreens()
         adoptOnce()
+        ensureBuiltinProfiles()
         revision++
         if (migrated) {
             pendingBackup = text
@@ -818,7 +819,10 @@ Singleton {
         // deleting one takes no undo step, so undoing the drag before it must
         // not take the preset with it (or bring a deleted one back).
         step.config.notchPresets = config.notchPresets || []
-        config = Logic.sanitize(step.config)
+        // Nor are the built-in profiles: a step taken before one was added
+        // must not take it away again.
+        config = Logic.addBuiltinProfiles(Logic.sanitize(step.config),
+                                          builtinProfileNames.map(id => builtinProfiles[id]).filter(data => !!data)).config
         const restored = {}
         for (const key of undoKeys)
             if (step.notch && step.notch[key] !== undefined) restored[key] = step.notch[key]
@@ -940,6 +944,7 @@ Singleton {
 
     function setActiveProfile(name) {
         if (profileNames.indexOf(name) < 0 || readOnly) return false
+        const switched = name !== activeProfile
         beginChange()
         const next = JSON.parse(JSON.stringify(config))
         next.activeProfile = name
@@ -948,6 +953,11 @@ Singleton {
         applyModeSettings(activeMode)
         revision++
         save()
+        // A built-in profile is a whole setup, not only five modes: entering
+        // it puts the rest back too. Only on a real switch - naming the
+        // profile one is already in is not a request to overwrite the
+        // settings; `applyBuiltin` (Restore) is.
+        if (switched && Logic.builtinOf(config, name).length) startBuiltin(Logic.builtinOf(config, name), name)
         return true
     }
 
@@ -1005,7 +1015,7 @@ Singleton {
     }
 
     function removeProfile(name) {
-        if (readOnly || profileNames.length < 2) return false
+        if (readOnly || profileNames.length < 2 || isBuiltinProfile(name)) return false
         beginChange()
         config = Logic.removeProfile(config, name)
         revision++
@@ -1018,17 +1028,151 @@ Singleton {
 
     // Back to the factory state - one mode of a profile, or all five. Asked for
     // explicitly, because Default itself gets changed and there was no way back
-    // from that.
+    // from that. A built-in profile goes back to the modes it shipped with,
+    // and not before they have been read: the factory templates in their
+    // place would be a reset to the wrong state.
     function resetProfile(name, modeName) {
         if (readOnly) return false
+        const id = Logic.builtinOf(config, name)
+        const shipped = id.length && builtinProfiles[id] ? builtinProfiles[id].modes : null
+        if (id.length && !shipped) return false
         beginChange()
-        config = Logic.resetProfile(config, name, modeName || "")
+        config = Logic.resetProfile(config, name, modeName || "", shipped)
         revision++
         changed()
         ensureScreens()
         applyModeSettings(activeMode)
         save()
         return true
+    }
+
+    // ---- built-in profiles ---------------------------------------------------
+    // Profiles the repository ships, read from config/builtin-profiles/<id>/
+    // the way the notch presets are read from config/notch-presets/. Each one
+    // is always in the layout file (added once it has loaded), cannot be
+    // removed, and resets to what it shipped with. "buchhwin" is the user's own
+    // setup, written by scripts/profile-export.py.
+    readonly property var builtinProfileNames: ["buchhwin"]
+    // id -> the shipped profile, sanitized (LayoutLogic.sanitizeBuiltinProfile).
+    property var builtinProfiles: ({})
+    // The id being applied right now, "" when none is; and why the last
+    // attempt applied nothing, for the Profiles page.
+    property string builtinApplying: ""
+    property string builtinError: ""
+    signal builtinApplied(string id)
+
+    function builtinOf(name) {
+        const unused = revision
+        return Logic.builtinOf(config, name)
+    }
+    function isBuiltinProfile(name) { return builtinOf(name).length > 0 }
+
+    // Every shipped profile the file does not carry yet. One save, through the
+    // write timer like every other (pitfall 3), and none when nothing was
+    // missing - this runs on every load of the file, including the reload
+    // after its own write.
+    function ensureBuiltinProfiles() {
+        if (!loaded || readOnly) return
+        const shipped = builtinProfileNames.map(id => builtinProfiles[id]).filter(data => !!data)
+        if (!shipped.length) return
+        const step = Logic.addBuiltinProfiles(config, shipped)
+        if (!step.added.length) return
+        config = step.config
+        revision++
+        changed()
+        save()
+    }
+
+    // The whole setup of a built-in profile, without switching to it: the
+    // Restore button, `buchhwin profile restore <name>`, and the switch itself.
+    // Takes a built-in id or the name of the profile that carries one.
+    //
+    // Nothing is overwritten before the copy of what is there now has been
+    // made: profile-apply.py backs up settings.json, layout.json and the
+    // session's default-app lists into the state directory first, then puts
+    // fastfetch's files in place (with a copy of a different fastfetch.jsonc
+    // kept beside it), and answers which of the shipped default apps are
+    // installed here. Only once it has answered does the rest happen, in
+    // `finishBuiltin`.
+    function applyBuiltin(name) {
+        return startBuiltin(builtinProfileNames.indexOf(name) >= 0 ? name : Logic.builtinOf(config, name), "")
+    }
+
+    // `forProfile` is the profile a switch entered, "" for Restore. A switch
+    // away before the script has answered (the profile key pressed twice)
+    // means the setup is no longer wanted, and the profile that is active by
+    // then keeps its settings.
+    function startBuiltin(id, forProfile) {
+        if (!id.length || !builtinProfiles[id] || readOnly || applyProc.running) return false
+        builtinError = ""
+        builtinApplying = id
+        applyProc.builtinId = id
+        applyProc.forProfile = forProfile
+        applyProc.command = ["python3", Paths.script("profile-apply.py"),
+                             "--from", Quickshell.shellPath("config/builtin-profiles/" + id),
+                             "--config-dir", Paths.configDir, "--backup-dir", Paths.stateDir]
+        applyProc.running = true
+        return true
+    }
+
+    function finishBuiltin(id, exitCode, text) {
+        builtinApplying = ""
+        let result = null
+        try {
+            const lines = String(text || "").trim().split("\n")
+            result = JSON.parse(lines[lines.length - 1])
+        } catch (error) {
+            result = null
+        }
+        const data = builtinProfiles[id]
+        if (exitCode !== 0 || !result || result.ok !== true) {
+            builtinError = result && result.error ? String(result.error) : "The built-in profile could not be applied"
+            return
+        }
+        if (!data || readOnly) return
+        if (applyProc.forProfile.length && activeProfile !== applyProc.forProfile) return
+        // One undo step for the notch, its options and the lock screen, taken
+        // before any of them changes: the step snapshots the notch's settings
+        // (`undoKeys`), so it has to see them as they were.
+        beginChange()
+        // The settings this shell knows. A key from a newer shell is left out
+        // here rather than warned about one by one in SettingsService - the
+        // file is shipped, not typed. One write for all of them.
+        const leaves = Profile.settingLeaves(data.settings, Paths.home)
+        const values = {}
+        for (const path of Object.keys(leaves)) {
+            const fallback = SettingsService.defaultOf(path)
+            if (fallback !== undefined && typeof fallback !== "object") values[path] = leaves[path]
+        }
+        if (Object.keys(values).length) SettingsService.setAll(values)
+        config = Logic.applyBuiltinLayout(config, data)
+        revision++
+        changed()
+        save()
+        // Only what the script found installed: default-apps.py refuses an id
+        // that is not, and that refusal would be the page's error line.
+        const apps = result.apps && typeof result.apps === "object" ? result.apps : {}
+        for (const category of ["terminal", "files"])
+            if (typeof apps[category] === "string" && apps[category] === data.defaultApps[category])
+                DefaultAppsService.setDefault(category, apps[category])
+        builtinApplied(id)
+    }
+
+    Process {
+        id: applyProc
+        stderr: ErrorLog { label: "LayoutService.applyProc" }
+        property string builtinId: ""
+        property string forProfile: ""
+        // The output may arrive before or after the exit; judge once both are in.
+        property string output: ""
+        property bool outputDone: false
+        property int exitCode: -1
+        function done() {
+            if (outputDone && exitCode >= 0) root.finishBuiltin(builtinId, exitCode, output)
+        }
+        stdout: StdioCollector { onStreamFinished: { applyProc.output = text; applyProc.outputDone = true; applyProc.done() } }
+        onStarted: { output = ""; outputDone = false; exitCode = -1 }
+        onExited: code => { exitCode = code; done() }
     }
 
     // ---- editing -----------------------------------------------------------
@@ -1261,6 +1405,30 @@ Singleton {
                         .concat([preset]).sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
                 } catch (error) {
                     console.warn("buchhwin-shell: notch preset unreadable:", modelData, error)
+                }
+            }
+        }
+    }
+
+    // The shipped profiles, read once like the notch presets above. Added to
+    // the layout as soon as both this and the layout file are in, whichever
+    // comes last.
+    Instantiator {
+        model: root.builtinProfileNames
+        delegate: FileView {
+            required property string modelData
+            path: Quickshell.shellPath("config/builtin-profiles/" + modelData + "/profile.json")
+            printErrors: false
+            onLoaded: {
+                try {
+                    const data = Logic.sanitizeBuiltinProfile(JSON.parse(text()), modelData)
+                    if (!data) return
+                    const next = Object.assign({}, root.builtinProfiles)
+                    next[modelData] = data
+                    root.builtinProfiles = next
+                    root.ensureBuiltinProfiles()
+                } catch (error) {
+                    console.warn("buchhwin-shell: built-in profile unreadable:", modelData, error)
                 }
             }
         }

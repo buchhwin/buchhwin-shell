@@ -253,11 +253,36 @@ function defaultFolder(pictures, home) {
 
 // A local path as a file: url for FolderListModel. Each segment is encoded:
 // a folder named "a#b", "x?y" or "50%2F" read as a fragment, a query or an
-// escape, and the picker showed nothing.
+// escape, and the picker showed nothing. Works for a file just the same (the
+// tiles' images).
 function folderUrl(path) {
     const value = String(path || "")
     if (!value.length) return ""
     return "file://" + value.split("/").map(encodeURIComponent).join("/")
+}
+
+// ---- thumbnails ----------------------------------------------------------------
+// scripts/wallpaper-thumbs.py answers {"thumbs": {image: thumbnail}}. Anything
+// else is null (keep what is there); an entry that is not an image path mapped
+// to an absolute .jpg is dropped, since it becomes an Image url.
+function parseThumbs(text) {
+    let data = null
+    try { data = JSON.parse(String(text || "")) } catch (error) { return null }
+    const thumbs = data && data.thumbs
+    if (!thumbs || typeof thumbs !== "object" || Array.isArray(thumbs)) return null
+    const result = {}
+    for (const path of Object.keys(thumbs)) {
+        const thumb = thumbs[path]
+        if (isImagePath(path) && typeof thumb === "string" && /^\/.+\.jpg$/.test(thumb)) result[path] = thumb
+    }
+    return result
+}
+
+// The thumbnail's url for an image, "" while it has none; encoded like
+// folderUrl, because the cache lives under a home that may hold a "#".
+function thumbUrl(thumbs, path) {
+    const thumb = thumbs && Object.prototype.hasOwnProperty.call(thumbs, path) ? thumbs[path] : ""
+    return thumb ? folderUrl(thumb) : ""
 }
 
 // "/home/a/x" → "~/x", so the setting survives a renamed home.

@@ -43,6 +43,11 @@ ColumnLayout {
                 id: card
                 required property string modelData
                 readonly property bool active: LayoutService.activeProfile === modelData
+                // A profile the shell ships (LayoutService.builtinProfileNames):
+                // always there, reset to what it shipped with, and a whole
+                // setup rather than only five modes.
+                readonly property string builtin: LayoutService.builtinOf(modelData)
+                readonly property bool applying: builtin.length > 0 && LayoutService.builtinApplying === builtin
                 Layout.fillWidth: true
                 // A card inside a settings section.
                 level: 2
@@ -78,6 +83,12 @@ ColumnLayout {
                         }
                         // A label, not a chip: a chip is a button, and there is
                         // nothing here to press.
+                        ShellText {
+                            visible: card.builtin.length > 0
+                            text: "Built in"
+                            role: "small"
+                            muted: true
+                        }
                         ShellText {
                             visible: card.active
                             text: "Active"
@@ -116,6 +127,22 @@ ColumnLayout {
                         }
                     }
 
+                    // What activating it does, said before it is done: it
+                    // writes far more than a profile switch otherwise does.
+                    ShellText {
+                        visible: card.builtin.length > 0
+                        Layout.fillWidth: true
+                        text: "Your setup as shipped: layouts, appearance, notch, shell settings, Alacritty and fastfetch. Activating it restores them; a backup of your settings is kept."
+                        role: "small"; muted: true; wrapMode: Text.Wrap
+                    }
+                    ShellText {
+                        visible: card.builtin.length > 0 && (card.applying || LayoutService.builtinError.length > 0)
+                        Layout.fillWidth: true
+                        text: card.applying ? "Restoring …" : LayoutService.builtinError
+                        role: "small"; wrapMode: Text.Wrap
+                        color: card.applying ? Colors.mutedText : Colors.warning
+                    }
+
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: Metrics.spaceSm
@@ -136,10 +163,25 @@ ColumnLayout {
                             icon: Icons.reset; text: "Reset"; compact: true
                             confirm: true
                             confirmText: "Reset all five?"
-                            toolTip: "Every mode of this profile back to the factory state"
+                            toolTip: card.builtin.length ? "Every mode of this profile back to the shipped state"
+                                                         : "Every mode of this profile back to the factory state"
                             onClicked: LayoutService.resetProfile(card.modelData, "")
                         }
+                        // In Remove's place: a built-in profile cannot be
+                        // removed, and what it can do instead is put its
+                        // settings back without a switch away and back.
                         ShellButton {
+                            visible: card.builtin.length > 0
+                            focusOnTab: true
+                            icon: Icons.undo; text: "Restore settings"; compact: true
+                            confirm: true
+                            confirmText: "Overwrite settings?"
+                            enabledState: !LayoutService.readOnly && LayoutService.builtinApplying.length === 0
+                            toolTip: "The shipped settings, notch, lock screen, default apps and fastfetch, after a backup"
+                            onClicked: LayoutService.applyBuiltin(card.builtin)
+                        }
+                        ShellButton {
+                            visible: card.builtin.length === 0
                             focusOnTab: true
                             icon: Icons.remove; text: "Remove"; compact: true
                             confirm: true

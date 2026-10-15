@@ -188,7 +188,7 @@ ColumnLayout {
         }
         SettingRow {
             label: "Opacity"
-            hint: "Also applies to Alacritty, the session terminal (Super+Enter)"
+            hint: "Also applies to Alacritty, the session terminal (" + ShortcutService.keyHint("SUPER + RETURN", true) + ")"
             ShellSlider {
                 focusOnTab: true
                 Layout.fillWidth: true

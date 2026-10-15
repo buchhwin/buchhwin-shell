@@ -1,6 +1,7 @@
 import Quickshell
 import Quickshell.Wayland
 import QtQuick
+import QtQuick.Effects
 import qs.theme
 import qs.services
 import qs.shell.components
@@ -96,8 +97,8 @@ Variants {
             - Metrics.spaceSm - hexBadge.height >= Metrics.screenMargin
 
         // ---- the loupe -------------------------------------------------
-        // The frozen frame again, scaled up and clipped to a circle, shifted
-        // so the sampled pixel sits under the crosshair in its middle.
+        // The frozen frame again, scaled up and cut to a circle, shifted so
+        // the sampled pixel sits under the crosshair in its middle.
         Item {
             id: loupe
             visible: window.frame !== null && pointer.containsMouse
@@ -106,13 +107,21 @@ Variants {
             x: pointer.mouseX - width / 2
             y: window.loupeAbove ? pointer.mouseY - height - Metrics.spaceLg : pointer.mouseY + Metrics.spaceLg
 
-            Rectangle {
+            // A Rectangle's `clip` cuts its square, never its radius (pitfall
+            // 4), so the zoomed pixels showed as a square inside the ring.
+            // `clip` here only trims the zoomed frame to the loupe, and the
+            // mask below rounds it, the way RoundedImage does. The layer is
+            // the loupe's size: a mask on the Image itself would need a
+            // texture `zoom` times the screen.
+            Item {
+                id: zoomed
                 anchors.fill: parent
-                radius: width / 2
-                color: Colors.surface1
-                border.width: Metrics.focusBorderWidth
-                border.color: Colors.border
                 clip: true
+                visible: false
+                layer.enabled: true
+
+                // Behind the frame where the loupe reaches past a screen edge.
+                Rectangle { anchors.fill: parent; color: Colors.surface1 }
 
                 Image {
                     readonly property real zoom: Metrics.colorLoupeZoom
@@ -123,6 +132,7 @@ Variants {
                     source: frozen.source
                     // Nearest neighbour: a loupe is for seeing which pixel you
                     // are on, and a smoothed one invents colours between them.
+                    // The layer keeps it that way (layer.smooth is off).
                     smooth: false
                     fillMode: Image.PreserveAspectCrop
                     sourceSize.width: frozen.sourceSize.width
@@ -130,22 +140,49 @@ Variants {
                     asynchronous: false
                     cache: false
                 }
+            }
 
-                // The pixel under the crosshair, outlined so it is findable
-                // whatever colour it is.
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: Metrics.colorLoupeZoom
-                    height: width
-                    color: "transparent"
-                    border.width: Metrics.borderWidth
-                    // `Colors.overviewText` never existed - the token is
-                    // `scrimText` - so this was `undefined` and the log said
-                    // "Unable to assign [undefined] to QColor" on every open.
-                    // A loupe ring over a frozen screenshot is text on a
-                    // scrim as far as contrast goes.
-                    border.color: Colors.scrimText
-                }
+            Rectangle {
+                id: loupeMask
+                anchors.fill: parent
+                radius: width / 2
+                visible: false
+                layer.enabled: true
+                layer.smooth: true
+            }
+
+            MultiEffect {
+                anchors.fill: parent
+                source: zoomed
+                maskEnabled: true
+                maskSource: loupeMask
+                maskThresholdMin: 0.5
+                maskSpreadAtMin: 1.0
+            }
+
+            // The ring, over the masked frame.
+            Rectangle {
+                anchors.fill: parent
+                radius: width / 2
+                color: "transparent"
+                border.width: Metrics.focusBorderWidth
+                border.color: Colors.border
+            }
+
+            // The pixel under the crosshair, outlined so it is findable
+            // whatever colour it is.
+            Rectangle {
+                anchors.centerIn: parent
+                width: Metrics.colorLoupeZoom
+                height: width
+                color: "transparent"
+                border.width: Metrics.borderWidth
+                // `Colors.overviewText` never existed - the token is
+                // `scrimText` - so this was `undefined` and the log said
+                // "Unable to assign [undefined] to QColor" on every open.
+                // A loupe ring over a frozen screenshot is text on a
+                // scrim as far as contrast goes.
+                border.color: Colors.scrimText
             }
         }
 

@@ -250,11 +250,15 @@ ShellPanel {
                         // Rectangle: a Rectangle does not clip its children to
                         // its radius, so every thumbnail had square corners
                         // inside a round frame.
+                        //
+                        // The cached thumbnail once it exists: a 6000x3750
+                        // PNG took 160-180 ms per tile to decode, its
+                        // thumbnail 1-2 ms (WallpaperService, "thumbnails").
                         RoundedImage {
                             anchors.fill: parent
                             anchors.margins: parent.border.width
                             radius: parent.radius - parent.border.width
-                            source: "file://" + tile.modelData.path
+                            source: WallpaperService.thumbFor(tile.modelData.path) || Logic.folderUrl(tile.modelData.path)
                             fillMode: Image.PreserveAspectCrop
                             sourceWidth: Metrics.wallpaperPickerTile
                         }

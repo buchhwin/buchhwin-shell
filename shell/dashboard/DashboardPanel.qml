@@ -118,7 +118,7 @@ ShellPanel {
                 toolTip: root.editing ? "Done arranging" : "Arrange cards"
                 onClicked: LayoutService.dashboardEditing = !LayoutService.dashboardEditing
             }
-            SectionLabel { id: shortcutLabel; Layout.leftMargin: Metrics.spaceMd; text: "Super + K" }
+            SectionLabel { id: shortcutLabel; Layout.leftMargin: Metrics.spaceMd; text: ShortcutService.keyHint("SUPER + K") }
         }
 
         // What does not fit the height the user chose scrolls, rather than

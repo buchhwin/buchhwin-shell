@@ -18,9 +18,10 @@ ColumnLayout {
     property bool enrollOpen: false
     property string enrollFinger: FingerprintService.defaultFinger()
     readonly property var enrollment: FingerprintService.enrollment
-    // Arch with no pam_fprintd in system-auth: the lock cannot offer the
-    // reader whatever the mode says (FingerprintLogic.pamLineMissing).
-    readonly property bool pamLineMissing: FingerprintLogic.pamLineMissing(DistroService.family, FingerprintService.systemEnabled)
+    // Arch with no pam_fprintd in the lock's PAM file (nor in system-auth):
+    // the lock cannot offer the reader whatever the mode says
+    // (FingerprintLogic.pamLineMissing).
+    readonly property bool pamLineMissing: FingerprintLogic.pamLineMissing(DistroService.family, FingerprintService.lockEnabled)
 
     PageActivity {
         onOpened: FingerprintService.track()
@@ -34,7 +35,7 @@ ColumnLayout {
 
         RowLayout {
             ShellIcon { glyph: "󰌾"; size: Metrics.iconLg; color: Colors.accentForeground }
-            ShellText { Layout.fillWidth: true; text: "Super+L locks the screen"; muted: true }
+            ShellText { Layout.fillWidth: true; text: ShortcutService.keyHint("SUPER + L", true) + " locks the screen"; muted: true }
             ShellButton {
                 focusOnTab: true
                 text: "Lock now"
@@ -211,9 +212,11 @@ ColumnLayout {
                     }
                 }
             }
-            // Arch turns the reader on by hand, and until that line is in
-            // system-auth the lock (which includes system-auth only) has no
-            // reader to offer. The line is the user's to add, with sudo.
+            // Arch turns the reader on by hand, and until the line is in the
+            // lock's own /etc/pam.d/buchhwin-lock the lock has no reader to
+            // offer. Not in system-auth, which SDDM and sudo include as well
+            // (DistroLogic.fingerprintOnCommand). The command is the user's
+            // to run, with sudo.
             ShellCard {
                 Layout.fillWidth: true
                 visible: root.pamLineMissing
@@ -225,27 +228,28 @@ ColumnLayout {
                     spacing: Metrics.spaceXs
                     ShellText {
                         Layout.fillWidth: true
-                        text: "The reader is not in PAM yet"
+                        text: "The reader is not in the lock screen's PAM file yet"
                         wrapMode: Text.Wrap
                     }
                     ShellText {
                         Layout.fillWidth: true
-                        text: "On Arch the reader is turned on by hand. Add this line at the top of /etc/pam.d/system-auth, "
-                            + "above the other auth lines; then the lock screen, the login screen, sudo and password dialogs offer the finger:"
+                        text: "On Arch the reader is turned on by hand. Run this once to add it to /etc/pam.d/buchhwin-lock, "
+                            + "then the lock screen offers the finger. Not system-auth: the login screen and sudo would wait "
+                            + "for the finger first, and a finger login cannot open the wallet."
                         role: "caption"
                         wrapMode: Text.Wrap
                     }
                     ShellText {
                         Layout.fillWidth: true
-                        text: FingerprintLogic.PAM_FPRINTD_LINE
+                        text: DistroService.fingerprintOnCommand
                         font.family: Typography.monoFamily
                         wrapMode: Text.Wrap
                     }
                     ShellButton {
                         focusOnTab: true
                         icon: Icons.copy
-                        text: "Copy line"
-                        onClicked: Quickshell.clipboardText = FingerprintLogic.PAM_FPRINTD_LINE
+                        text: "Copy command"
+                        onClicked: Quickshell.clipboardText = DistroService.fingerprintOnCommand
                     }
                 }
             }

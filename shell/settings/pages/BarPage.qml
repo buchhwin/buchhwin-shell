@@ -72,7 +72,7 @@ ColumnLayout {
         }
         SettingRow {
             label: "Size"
-            hint: "Drag the notch itself in the layout editor (Super+Alt+E): the strip sideways, the hover overview in both directions"
+            hint: "Drag the notch itself in the layout editor (" + ShortcutService.keyHint("SUPER + ALT + E", true) + "): the strip sideways, the hover overview in both directions"
             ShellButton {
                 focusOnTab: true
                 text: "Open the editor"
@@ -327,7 +327,7 @@ ColumnLayout {
         }
         ShellText {
             Layout.fillWidth: true
-            text: "Super + Alt + E drags pills between the zones on the desktop itself; the list below does the same by hand."
+            text: ShortcutService.keyHint("SUPER + ALT + E") + " drags pills between the zones on the desktop itself; the list below does the same by hand."
             role: "small"; muted: true; wrapMode: Text.Wrap
         }
     }
@@ -341,7 +341,9 @@ ColumnLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Each monitor its own"
-            hint: "Hyprland keeps one set of workspaces and gives each of them a monitor, so Super+3 means \u201Cgo to whichever screen is holding 3\u201D \u2014 with several monitors a workspace becomes a monitor. With this on, every monitor has its own 1 to 9: Super+3 switches the screen your pointer is on and the focus never jumps to another one. Behind the scenes the monitors get blocks of ten ids, and the first monitor keeps 1 to 10, so with a single screen nothing changes at all."
+            hint: "Hyprland keeps one set of workspaces and gives each of them a monitor, so " + ShortcutService.keyHint("SUPER + 3", true)
+                + " means \u201Cgo to whichever screen is holding 3\u201D \u2014 with several monitors a workspace becomes a monitor. With this on, every monitor has its own 1 to 9: "
+                + ShortcutService.keyHint("SUPER + 3", true) + " switches the screen your pointer is on and the focus never jumps to another one. Behind the scenes the monitors get blocks of ten ids, and the first monitor keeps 1 to 10, so with a single screen nothing changes at all."
             ShellToggle {
                 focusOnTab: true
                 checked: SettingsService.value("workspaces.perMonitor") === true

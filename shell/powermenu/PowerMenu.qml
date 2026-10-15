@@ -65,7 +65,7 @@ ShellPanel {
                 Layout.fillWidth: true
                 ShellText { text: root.pending ? root.pending.label + "?" : "Session"; role: "headline" }
                 Item { Layout.fillWidth: true }
-                SectionLabel { text: "Super + M"; visible: !root.pending }
+                SectionLabel { text: ShortcutService.keyHint("SUPER + M"); visible: !root.pending }
             }
 
             RowLayout {

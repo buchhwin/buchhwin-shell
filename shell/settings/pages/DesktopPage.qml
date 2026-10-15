@@ -52,7 +52,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Clipboard"
-        description: "History with Super + V. Entries marked as sensitive by password managers are not saved."
+        description: "History with " + ShortcutService.keyHint("SUPER + V") + ". Entries marked as sensitive by password managers are not saved."
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
@@ -77,7 +77,8 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Screen recording"
-        description: "Super + Shift + R records a region, Super + Ctrl + Shift + R the screen. Press it again or click the red indicator to stop."
+        description: ShortcutService.keyHint("SUPER + SHIFT + R") + " records a region, " + ShortcutService.keyHint("SUPER + CTRL + SHIFT + R")
+            + " the screen. Press it again or click the red indicator to stop."
         PageActivity { onOpened: RecordingService.refreshBackends() }
         ShellText {
             Layout.fillWidth: true

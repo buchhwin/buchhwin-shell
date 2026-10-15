@@ -132,7 +132,25 @@ Variants {
         readonly property int expandedWidth: expandedSize.width
         readonly property real overviewHeight: expandedSize.height
 
-        NotchValue { id: bodyWidth; minimum: Math.min(window.collapsedWidth, to)
+        // The floor is the collapsed width the body last came to rest at, not
+        // the one it is heading for: with the new one a strip that grew - a
+        // workspace opened, one more dot - snapped wider in a single frame
+        // and only its shrinking was animated, which read as the notch
+        // jumping about (measured live on 15.10.: 254 -> 302 px in one frame,
+        // back over twelve). Collapsing still never springs below the strip.
+        property real restingCollapsedWidth: 0
+        // Later, not inside the change: the floor is part of `value`'s own
+        // binding, and moving it from its change handler was a binding loop.
+        function settleCollapsedWidth() {
+            if (!expanded && !displaying && !paging && Math.abs(bodyWidth.value - collapsedWidth) < 0.5)
+                restingCollapsedWidth = collapsedWidth
+        }
+        Connections {
+            target: bodyWidth
+            function onValueChanged() { Qt.callLater(window.settleCollapsedWidth) }
+        }
+        NotchValue { id: bodyWidth
+                     minimum: Math.min(window.collapsedWidth, window.restingCollapsedWidth || window.collapsedWidth, to)
                      to: window.expanded ? window.expandedWidth
                          : window.displaying ? window.displayWidth
                          : window.paging ? window.pageWidth : window.collapsedWidth }
@@ -192,7 +210,10 @@ Variants {
         }
         onCollapsedWidthChanged: reportPlace()
         onShapeTopChanged: reportPlace()
-        Component.onCompleted: reportPlace()
+        Component.onCompleted: {
+            restingCollapsedWidth = collapsedWidth
+            reportPlace()
+        }
         // The screen's width is the other half of the sum, and it is the half
         // that arrives late. The notch is ready as soon as three FileViews
         // have loaded - a frame or two - while the saved display scaling takes

@@ -4,6 +4,7 @@ import Quickshell.Io
 import QtQuick
 import QtQml
 import Qt.labs.folderlistmodel
+import qs.theme
 import "wallpaper/WallpaperLogic.js" as Logic
 
 // Wallpaper selection and slideshow. The folder is watched by
@@ -239,6 +240,75 @@ Singleton {
         for (const name of subfolders)
             for (const path of subfolderImages[name] || []) result.push(path)
         images = result
+    }
+
+    // ---- thumbnails ------------------------------------------------------------
+    // The picker's and Settings' tiles load a small JPEG instead of the image.
+    // Qt cannot decode a PNG at a reduced size: the user's 6000x3750 PNGs
+    // (~4 MB) cost 140-340 ms per tile (measured with PIL), and the picker took
+    // about a second until its last tile was there. Measured in Qt on 15.10.
+    // (offscreen, sourceSize.width 260): 160-180 ms for such a PNG, 1-2 ms for
+    // its 520x325 thumbnail (16-33 KB). scripts/wallpaper-thumbs.py
+    // makes each thumbnail once, named by path, mtime, size and width; a run
+    // over a folder it has seen only stats and hashes, so it runs whenever the
+    // set of images changes and the first one starts shortly after the folder
+    // is read - before anyone opens the picker.
+    readonly property string thumbDir: Paths.cacheDir + "/wallpaper-thumbs"
+    // Twice the picker's sourceWidth: Qt multiplies sourceSize by the integer
+    // devicePixelRatio (2 on the 1.667 4K screens, pitfall 49), so this is the
+    // width a tile decoded the original at. The Settings grid's tiles are
+    // smaller than the picker's.
+    readonly property int thumbWidth: Metrics.wallpaperPickerTile * 2
+    // image -> thumbnail file, from the last run that finished.
+    property var thumbs: ({})
+    property bool thumbsQueued: false
+    // The image list the last run was started with: the picker re-reads the
+    // folder as it opens, and the same list again is not a reason to run.
+    property string thumbsRunFor: ""
+
+    // A file url, or "" while the image has none (the tile loads the image).
+    function thumbFor(path) { return Logic.thumbUrl(thumbs, path) }
+
+    // Debounced: a folder is read in steps (the folder, then each subfolder),
+    // and copying ten images in is ten count changes.
+    onImagesChanged: thumbDelay.restart()
+    Timer { id: thumbDelay; interval: 2000; onTriggered: root.makeThumbs() }
+
+    // One run at a time; a change during a run is picked up after it.
+    function makeThumbs() {
+        if (thumbProc.running) { thumbsQueued = true; return }
+        const key = JSON.stringify(images)
+        if (key === thumbsRunFor) return
+        thumbsRunFor = key
+        if (!images.length) { thumbs = ({}); return }
+        // Niced: the first run over a new folder decodes every image.
+        thumbProc.command = ["nice", "-n", "10", "python3", Paths.script("wallpaper-thumbs.py"),
+                             "--cache", thumbDir, "--width", String(thumbWidth), "--"].concat(images)
+        thumbProc.running = true
+    }
+
+    Process {
+        id: thumbProc
+        stderr: ErrorLog { label: "WallpaperService.thumbProc" }
+        // Read once the output and the exit are both in, in whichever order
+        // they arrive. A run that failed keeps the thumbnails there are and
+        // is tried again on the next change, even to the same list.
+        property string output: ""
+        property bool outputDone: false
+        property int exitCode: -1
+        function finish() {
+            if (!outputDone || exitCode < 0) return
+            const found = exitCode === 0 ? Logic.parseThumbs(output) : null
+            if (found) root.thumbs = found
+            else root.thumbsRunFor = ""
+            if (root.thumbsQueued) {
+                root.thumbsQueued = false
+                Qt.callLater(root.makeThumbs)
+            }
+        }
+        stdout: StdioCollector { onStreamFinished: { thumbProc.output = text; thumbProc.outputDone = true; thumbProc.finish() } }
+        onStarted: { output = ""; outputDone = false; exitCode = -1 }
+        onExited: code => { exitCode = code; finish() }
     }
 
     Timer {

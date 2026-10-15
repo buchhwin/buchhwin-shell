@@ -925,8 +925,14 @@ ShellRoot {
         function duplicate(name: string, label: string): string { return LayoutService.duplicateProfile(name, label) }
         function rename(name: string, label: string): bool { return LayoutService.renameProfile(name, label) }
         function remove(name: string): bool { return LayoutService.removeProfile(name) }
-        // With no mode named, all five of them.
+        // With no mode named, all five of them. A built-in profile resets to
+        // the modes it shipped with.
         function reset(name: string, mode: string): bool { return LayoutService.resetProfile(name, mode) }
+        // A built-in profile's whole setup again, without switching to it:
+        // settings, notch, lock screen, default apps and fastfetch, after a
+        // backup. Takes the built-in id or the profile's name; anything else
+        // is refused there.
+        function restore(name: string): bool { return LayoutService.applyBuiltin(name) }
         // The alias. `Super+Alt+P` has always been the mode key and still is.
         function cycle(): string { return root.cycleMode() }
         function cycleProfile(): string {
