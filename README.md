@@ -138,6 +138,7 @@ zsh and Starship setup and backs up existing files.
 | `Super` `L` · `M` | Lock · session and power menu |
 | `Super` `1`…`9` · `Shift` `1`…`9` | Go to workspace · move window there |
 | `Super` `Q` · `F` · `C` | Close · fullscreen · floating |
+| `Super` `Ctrl` `←` `→` `↑` `↓` | Arrange: move the window that way, into its neighbour's place |
 | `Super` `F1` | **All shortcuts, searchable** |
 
 Every key can be changed in Settings › Shortcuts. Touchpad gestures: swipe three fingers

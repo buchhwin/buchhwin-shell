@@ -315,6 +315,14 @@ hl.bind(keyFor("SUPER + ALT + RIGHT"), hl.dsp.focus({ direction = "right" }), { 
 hl.bind(keyFor("SUPER + ALT + UP"), hl.dsp.focus({ direction = "up" }), { description = "Move focus up" })
 hl.bind(keyFor("SUPER + ALT + DOWN"), hl.dsp.focus({ direction = "down" }), { description = "Move focus down" })
 
+-- Arranging the windows of a workspace: the focused one moves the way the
+-- arrow points, taking its neighbour's place (dwindle puts it into that slot);
+-- at the screen's edge it goes on to the next monitor, as the focus does.
+hl.bind(keyFor("SUPER + CTRL + LEFT"), hl.dsp.window.move({ direction = "left" }), { description = "Move window left" })
+hl.bind(keyFor("SUPER + CTRL + RIGHT"), hl.dsp.window.move({ direction = "right" }), { description = "Move window right" })
+hl.bind(keyFor("SUPER + CTRL + UP"), hl.dsp.window.move({ direction = "up" }), { description = "Move window up" })
+hl.bind(keyFor("SUPER + CTRL + DOWN"), hl.dsp.window.move({ direction = "down" }), { description = "Move window down" })
+
 -- Workspaces 1-9, through the shell: with workspaces per monitor, `Super+3`
 -- means "the third workspace of the monitor under the focus", and only the
 -- shell knows which monitor that is. `shellOr` falls back to the old, global

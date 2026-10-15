@@ -91,6 +91,16 @@ ShellRoot {
         T.eq(titles(legacyGroups, "workspaces"), ["Super+1–9 Go to workspace 1–9", "Super+Shift+1–9 Move window to workspace 1–9"], "workspace rows condensed")
         T.ok(titles(legacyGroups, "windows").indexOf("Super+Arrows Resize window") >= 0, "arrow resize condensed")
         T.ok(titles(legacyGroups, "windows").indexOf("Super+Alt+Arrows Move focus") >= 0, "arrow focus condensed")
+
+        // Super+Ctrl+arrows arrange the windows: titled from movewindow (conf)
+        // or the description (Lua), one row on the sheet either way.
+        const arrange = ["LEFT", "RIGHT", "UP", "DOWN"]
+        const confMoves = S.rows(arrange.map(key => ({ modmask: 68, key: key, dispatcher: "movewindow", arg: key[0].toLowerCase() })), [], null)
+        T.eq(confMoves.map(item => item.title), ["Move window left", "Move window right", "Move window up", "Move window down"], "movewindow titles")
+        T.eq(titles(S.grouped(confMoves, ""), "windows"), ["Super+Ctrl+Arrows Move window"], "window moves condensed")
+        const luaMoves = S.rows(arrange.map(key => ({ modmask: 68, key: key, dispatcher: "__lua", arg: "", has_description: true,
+                                                     description: "Move window " + key.toLowerCase() })), [], null)
+        T.eq(titles(S.grouped(luaMoves, ""), "windows"), ["Super+Ctrl+Arrows Move window"], "Lua window moves condensed")
         T.eq(S.grouped(legacyRows, "screenshot").map(group => group.id), ["screenshots"], "search by title")
         T.eq(titles(S.grouped(legacyRows, "super+shift+s"), "screenshots"), ["Super+Shift+S Screenshot of the screen"], "search by combo")
         T.eq(S.grouped(legacyRows, "nothing matches this").length, 0, "empty search result")

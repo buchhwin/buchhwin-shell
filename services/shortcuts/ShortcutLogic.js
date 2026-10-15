@@ -178,7 +178,7 @@ function describe(bind) {
         const text = String(bind.description)
         if (text.indexOf(customPrefix) === 0) return titleOf(text.slice(customPrefix.length), "custom")
         const workspace = /^(Go to|Move window to) workspace \d+$/.test(text)
-        return titleOf(text, workspace ? "workspaces" : /^Move focus /.test(text) ? "windows" : undefined)
+        return titleOf(text, workspace ? "workspaces" : /^Move (focus|window) (left|right|up|down)$/.test(text) ? "windows" : undefined)
     }
     switch (bind.dispatcher) {
     case "exec": return describeExec(arg)
@@ -187,6 +187,7 @@ function describe(bind) {
     case "togglefloating": return titleOf("Toggle floating")
     case "resizeactive": return titleOf("Resize window")
     case "movefocus": return titleOf("Move focus " + (focusDirections[arg] || arg), "windows")
+    case "movewindow": return titleOf("Move window " + (focusDirections[arg] || arg), "windows")
     case "workspace": return titleOf("Go to workspace " + arg, "workspaces")
     case "movetoworkspace": return titleOf("Move window to workspace " + arg + " and follow", "workspaces")
     case "movetoworkspacesilent": return titleOf("Move window to workspace " + arg, "workspaces")
@@ -221,7 +222,7 @@ function family(row) {
     const key = String(row.key).toLowerCase()
     let match = row.title.match(/^(Go to workspace|Move window to workspace) (\d+)$/)
     if (match && /^\d$/.test(key)) return { id: match[1], title: match[1], kind: "digits" }
-    match = row.title.match(/^(Move focus) (left|right|up|down)$/)
+    match = row.title.match(/^(Move focus|Move window) (left|right|up|down)$/)
     if (match && arrowKeys.indexOf(key) >= 0) return { id: match[1], title: match[1], kind: "arrows" }
     if (row.title === "Resize window" && arrowKeys.indexOf(key) >= 0) return { id: row.title, title: row.title, kind: "arrows" }
     return null
