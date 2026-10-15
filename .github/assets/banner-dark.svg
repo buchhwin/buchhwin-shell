@@ -1,22 +1,42 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 318" width="1000" height="318" role="img" aria-labelledby="title">
   <title id="title">buchhwin-shell</title>
-  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13.5" font-weight="700" xml:space="preserve">
-    <text x="24" y="38.0" textLength="413.1" lengthAdjust="spacing"><tspan fill="#5fafff">                                              </tspan><tspan fill="#afd7ff">_.oo.</tspan></text>
-    <text x="24" y="56.0" textLength="445.5" lengthAdjust="spacing"><tspan fill="#5fafff">                   </tspan><tspan fill="#5fafff">_.u[[[//;:,.            </tspan><tspan fill="#afd7ff">.odMMMMMMMM'</tspan></text>
-    <text x="24" y="74.0" textLength="421.2" lengthAdjust="spacing"><tspan fill="#5fafff">                 </tspan><tspan fill="#5fafff">.o8888UUU[[[//;:-.  </tspan><tspan fill="#afd7ff">.o@P^     MMMM^</tspan></text>
-    <text x="24" y="92.0" textLength="396.9" lengthAdjust="spacing"><tspan fill="#5fafff">               </tspan><tspan fill="#5fafff">oN8888888UUU[[[[/;:::-.        </tspan><tspan fill="#afd7ff">dP^</tspan></text>
-    <text x="24" y="110.0" textLength="380.7" lengthAdjust="spacing"><tspan fill="#5fafff">              </tspan><tspan fill="#5fafff">dNMMMNN8888UU[[[[/;:---.    </tspan><tspan fill="#afd7ff">.o@P^</tspan></text>
-    <text x="24" y="127.9" textLength="340.2" lengthAdjust="spacing"><tspan fill="#5fafff">             </tspan><tspan fill="#5fafff">,MMMMMMMMN888UUU[[/;:::-. </tspan><tspan fill="#afd7ff">o@^</tspan></text>
-    <text x="24" y="145.9" textLength="315.9" lengthAdjust="spacing"><tspan fill="#5fafff">             </tspan><tspan fill="#5fafff">NNNMMMMNN8888UU[[[[/~</tspan><tspan fill="#afd7ff">.o@P^</tspan></text>
-    <text x="24" y="163.9" textLength="307.8" lengthAdjust="spacing"><tspan fill="#5fafff">             </tspan><tspan fill="#5fafff">88888888888UUU[[[[/</tspan><tspan fill="#afd7ff">o@^</tspan><tspan fill="#5fafff">-..</tspan></text>
-    <text x="24" y="181.9" textLength="299.7" lengthAdjust="spacing"><tspan fill="#5fafff">            </tspan><tspan fill="#5fafff">oI88888UUU[[[[/</tspan><tspan fill="#afd7ff">o@P^</tspan><tspan fill="#5fafff">:--...</tspan></text>
-    <text x="24" y="199.9" textLength="283.5" lengthAdjust="spacing"><tspan fill="#5fafff">        </tspan><tspan fill="#afd7ff">.@^   </tspan><tspan fill="#5fafff">YUUU[[[[/</tspan><tspan fill="#afd7ff">o@^</tspan><tspan fill="#5fafff">;::----..</tspan></text>
-    <text x="24" y="217.8" textLength="267.3" lengthAdjust="spacing"><tspan fill="#5fafff">      </tspan><tspan fill="#afd7ff">oMMP     </tspan><tspan fill="#5fafff">^/</tspan><tspan fill="#afd7ff">o@P^</tspan><tspan fill="#5fafff">;::::----...</tspan></text>
-    <text x="24" y="235.8" textLength="251.1" lengthAdjust="spacing"><tspan fill="#5fafff">  </tspan><tspan fill="#afd7ff">.dMMMM     .o@^  </tspan><tspan fill="#5fafff">^;:::----...</tspan></text>
-    <text x="24" y="253.8" textLength="226.8" lengthAdjust="spacing"><tspan fill="#5fafff"> </tspan><tspan fill="#afd7ff">dMMMMMMMMM@^`         </tspan><tspan fill="#5fafff">`^^^^</tspan></text>
-    <text x="24" y="271.8" textLength="64.8" lengthAdjust="spacing"><tspan fill="#afd7ff">YMMMMUP^</tspan></text>
-    <text x="24" y="289.8" textLength="24.3" lengthAdjust="spacing"><tspan fill="#5fafff"> </tspan><tspan fill="#afd7ff">^^</tspan></text>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono', monospace" font-size="13.5" font-weight="700">
+    <text x="396.6" y="38.0" fill="#afd7ff" textLength="40.5" lengthAdjust="spacingAndGlyphs">_.oo.</text>
+    <text x="177.9" y="56.0" fill="#5fafff" textLength="97.2" lengthAdjust="spacingAndGlyphs">_.u[[[//;:,.</text>
+    <text x="372.3" y="56.0" fill="#afd7ff" textLength="97.2" lengthAdjust="spacingAndGlyphs">.odMMMMMMMM'</text>
+    <text x="161.7" y="74.0" fill="#5fafff" textLength="145.8" lengthAdjust="spacingAndGlyphs">.o8888UUU[[[//;:-.</text>
+    <text x="323.7" y="74.0" fill="#afd7ff" textLength="40.5" lengthAdjust="spacingAndGlyphs">.o@P^</text>
+    <text x="404.7" y="74.0" fill="#afd7ff" textLength="40.5" lengthAdjust="spacingAndGlyphs">MMMM^</text>
+    <text x="145.5" y="92.0" fill="#5fafff" textLength="186.3" lengthAdjust="spacingAndGlyphs">oN8888888UUU[[[[/;:::-.</text>
+    <text x="396.6" y="92.0" fill="#afd7ff" textLength="24.3" lengthAdjust="spacingAndGlyphs">dP^</text>
+    <text x="137.4" y="110.0" fill="#5fafff" textLength="194.4" lengthAdjust="spacingAndGlyphs">dNMMMNN8888UU[[[[/;:---.</text>
+    <text x="364.2" y="110.0" fill="#afd7ff" textLength="40.5" lengthAdjust="spacingAndGlyphs">.o@P^</text>
+    <text x="129.3" y="127.9" fill="#5fafff" textLength="202.5" lengthAdjust="spacingAndGlyphs">,MMMMMMMMN888UUU[[/;:::-.</text>
+    <text x="339.9" y="127.9" fill="#afd7ff" textLength="24.3" lengthAdjust="spacingAndGlyphs">o@^</text>
+    <text x="129.3" y="145.9" fill="#5fafff" textLength="170.1" lengthAdjust="spacingAndGlyphs">NNNMMMMNN8888UU[[[[/~</text>
+    <text x="299.4" y="145.9" fill="#afd7ff" textLength="40.5" lengthAdjust="spacingAndGlyphs">.o@P^</text>
+    <text x="129.3" y="163.9" fill="#5fafff" textLength="153.9" lengthAdjust="spacingAndGlyphs">88888888888UUU[[[[/</text>
+    <text x="283.2" y="163.9" fill="#afd7ff" textLength="24.3" lengthAdjust="spacingAndGlyphs">o@^</text>
+    <text x="307.5" y="163.9" fill="#5fafff" textLength="24.3" lengthAdjust="spacingAndGlyphs">-..</text>
+    <text x="121.2" y="181.9" fill="#5fafff" textLength="121.5" lengthAdjust="spacingAndGlyphs">oI88888UUU[[[[/</text>
+    <text x="242.7" y="181.9" fill="#afd7ff" textLength="32.4" lengthAdjust="spacingAndGlyphs">o@P^</text>
+    <text x="275.1" y="181.9" fill="#5fafff" textLength="48.6" lengthAdjust="spacingAndGlyphs">:--...</text>
+    <text x="88.8" y="199.9" fill="#afd7ff" textLength="24.3" lengthAdjust="spacingAndGlyphs">.@^</text>
+    <text x="137.4" y="199.9" fill="#5fafff" textLength="72.9" lengthAdjust="spacingAndGlyphs">YUUU[[[[/</text>
+    <text x="210.3" y="199.9" fill="#afd7ff" textLength="24.3" lengthAdjust="spacingAndGlyphs">o@^</text>
+    <text x="234.6" y="199.9" fill="#5fafff" textLength="72.9" lengthAdjust="spacingAndGlyphs">;::----..</text>
+    <text x="72.6" y="217.8" fill="#afd7ff" textLength="32.4" lengthAdjust="spacingAndGlyphs">oMMP</text>
+    <text x="145.5" y="217.8" fill="#5fafff" textLength="16.2" lengthAdjust="spacingAndGlyphs">^/</text>
+    <text x="161.7" y="217.8" fill="#afd7ff" textLength="32.4" lengthAdjust="spacingAndGlyphs">o@P^</text>
+    <text x="194.1" y="217.8" fill="#5fafff" textLength="97.2" lengthAdjust="spacingAndGlyphs">;::::----...</text>
+    <text x="40.2" y="235.8" fill="#afd7ff" textLength="48.6" lengthAdjust="spacingAndGlyphs">.dMMMM</text>
+    <text x="129.3" y="235.8" fill="#afd7ff" textLength="32.4" lengthAdjust="spacingAndGlyphs">.o@^</text>
+    <text x="177.9" y="235.8" fill="#5fafff" textLength="97.2" lengthAdjust="spacingAndGlyphs">^;:::----...</text>
+    <text x="32.1" y="253.8" fill="#afd7ff" textLength="105.3" lengthAdjust="spacingAndGlyphs">dMMMMMMMMM@^`</text>
+    <text x="210.3" y="253.8" fill="#5fafff" textLength="40.5" lengthAdjust="spacingAndGlyphs">`^^^^</text>
+    <text x="24.0" y="271.8" fill="#afd7ff" textLength="64.8" lengthAdjust="spacingAndGlyphs">YMMMMUP^</text>
+    <text x="32.1" y="289.8" fill="#afd7ff" textLength="16.2" lengthAdjust="spacingAndGlyphs">^^</text>
   </g>
-  <text x="506" y="163" font-family="Inter, 'Segoe UI', -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="60" font-weight="650" letter-spacing="-1.5" fill="#e6edf3">buchhwin<tspan fill="#5fafff">-shell</tspan></text>
-  <text x="508" y="205" font-family="Inter, 'Segoe UI', -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="22" fill="#9198a1">A Quickshell desktop for Hyprland</text>
+  <text x="506" y="163" font-family="'Inter Variable', Inter, 'Segoe UI', -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="60" font-weight="600" letter-spacing="-1.5" fill="#e6edf3">buchhwin<tspan fill="#5fafff">-shell</tspan></text>
+  <text x="508" y="205" font-family="'Inter Variable', Inter, 'Segoe UI', -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="22" fill="#9198a1">A Quickshell desktop for Hyprland</text>
 </svg>
