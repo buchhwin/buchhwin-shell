@@ -232,8 +232,31 @@ malloc_arenas=${MALLOC_ARENA_MAX:-2}
 mesa_glthread_value=${mesa_glthread:-false}
 gallium_thread=${GALLIUM_THREAD:-0}
 
+# The tray is the shell's: it is org.kde.StatusNotifierWatcher in this
+# session. A kded6 that something D-Bus-activated (all 29 Plasma modules,
+# statusnotifierwatcher among them) takes that name the moment a restarting
+# shell lets go, and the tray stays empty (testing.md pitfalls 43 and 68).
+# Unloading its module answers true and keeps the name; a SIGTERM makes it
+# crash in its Wayland teardown and KCrash starts it again at once. So a
+# kded6 found holding the name is ended with SIGKILL, which KCrash does not
+# see - only that process, checked by its name, and never from a nested test
+# session, whose shell must not touch the real one's bus. Plasma starts its
+# own kded6 and is not affected.
+release_tray() {
+  [[ ${BUCHHWIN_NESTED:-0} == 1 ]] && return 0
+  command -v busctl >/dev/null 2>&1 || return 0
+  local listed pid
+  listed=$(busctl --user --auto-start=no list --no-pager 2>/dev/null) || return 0
+  pid=$(awk '$1 == "org.kde.StatusNotifierWatcher" && $3 == "kded6" { print $2 }' <<<"$listed")
+  [[ $pid =~ ^[0-9]+$ ]] || return 0
+  [[ $(cat "/proc/$pid/comm" 2>/dev/null) == kded6 ]] || return 0
+  kill -KILL "$pid" 2>/dev/null || return 0
+  note "ended kded6 (pid $pid): it held the tray's StatusNotifierWatcher name"
+}
+
 while true; do
   status=0
+  release_tray
   env -u QT_QPA_PLATFORMTHEME QS_ICON_THEME="$icon_theme" MALLOC_ARENA_MAX="$malloc_arenas" \
     mesa_glthread="$mesa_glthread_value" GALLIUM_THREAD="$gallium_thread" \
     quickshell --no-duplicate --path "$config_dir" >>"$log_file" 2>&1 &

@@ -64,6 +64,17 @@ cat > "$SB/bin/pkill" <<'Q'
 printf 'run=%s %s\n' "$(cat "$COUNT" 2>/dev/null || echo 0)" "$*" >> "$PKILLS"
 Q
 chmod +x "$SB/bin/pgrep" "$SB/bin/pkill"
+# busctl too: before each start the supervisor ends a kded6 that holds the
+# tray's StatusNotifierWatcher name, and the real busctl would report - and
+# the supervisor end - the real session's kded6. The stand-in names the owner
+# from $TRAY_OWNER ("pid process"), none unless a scenario sets it.
+cat > "$SB/bin/busctl" <<'Q'
+#!/usr/bin/env bash
+printf 'NAME PID PROCESS USER CONNECTION UNIT SESSION DESCRIPTION\n'
+[[ -n ${TRAY_OWNER:-} ]] && printf 'org.kde.StatusNotifierWatcher %s buchhwin :1.9 - - -\n' "$TRAY_OWNER"
+exit 0
+Q
+chmod +x "$SB/bin/busctl"
 real_pkill=$(command -v pkill)
 export PATH="$SB/bin:$PATH" XDG_STATE_HOME="$SB/state" COUNT="$SB/count" LINGER="$SB/linger" \
   HELD="$SB/held" PKILLS="$SB/pkills"
@@ -113,6 +124,23 @@ for expected in "$expect_nmcli" "$expect_drives" "$expect_agent" "$expect_paste"
 done
 check '! grep -qw -- "$held_shell" "$PKILLS"' "a helper whose parent is a living quickshell is left alone"
 check 'grep -q "ended 6 helper(s) left behind" "$SB/state/buchhwin-shell/quickshell.log"' 'and the log says what was ended'
+
+# a kded6 holding the tray name is ended (SIGKILL) before the shell starts;
+# a process of another name under that name is left alone, and so is
+# everything in a nested session
+cp "$(command -v sleep)" "$SB/kded6"
+"$SB/kded6" 120 & tray=$!
+disown "$tray"   # its SIGKILL is expected, not a job to report
+for _ in {1..20}; do [[ $(cat /proc/$tray/comm 2>/dev/null) == kded6 ]] && break; sleep 0.05; done
+echo 0 > "$COUNT"; BUCHHWIN_NESTED=1 TRAY_OWNER="$tray kded6" CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
+check 'kill -0 "$tray" 2>/dev/null' 'a nested session never ends the tray owner'
+echo 0 > "$COUNT"; TRAY_OWNER="$tray other" CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
+check 'kill -0 "$tray" 2>/dev/null' 'a tray owner that is not kded6 is left alone'
+echo 0 > "$COUNT"; TRAY_OWNER="$tray kded6" CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
+for _ in {1..20}; do kill -0 "$tray" 2>/dev/null || break; sleep 0.05; done
+check '! kill -0 "$tray" 2>/dev/null' 'a kded6 holding the tray name is ended before the shell starts'
+check 'grep -q "ended kded6 (pid $tray)" "$SB/state/buchhwin-shell/quickshell.log"' 'and the log says so'
+kill "$tray" 2>/dev/null || true
 
 # a shell that ends without a crash - SIGTERM, the compositor gone (how every
 # nested test session ends) - is not restarted, but its leftovers are ended
