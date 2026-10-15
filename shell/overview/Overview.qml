@@ -243,8 +243,15 @@ ShellPanel {
 
                 // Cards (with a rounded image each) only while shown; the
                 // captures were already let go on close, the cards were not.
+                //
+                // Keyed models all the way down (monitor, workspace id, window
+                // address): every window move hands the overview a new array,
+                // and plain arrays rebuilt every card and every preview - each
+                // capture started again and showed the window icon for a moment
+                // (the user, 15.10., after a drag). Now only what came or went
+                // is built; the rest gets its new modelData in place.
                 Repeater {
-                    model: window.shown ? window.groups : []
+                    model: ScriptModel { values: window.shown ? window.groups : []; objectProp: "monitor" }
 
                     ColumnLayout {
                         id: row
@@ -269,9 +276,12 @@ ShellPanel {
                                 // The row's own next free number, not the
                                 // session's: a global one would offer the
                                 // third monitor a number belonging to the first.
-                                model: row.modelData.workspaces.concat([{ id: Logic.nextFreeIn(row.modelData.workspaces, row.modelData.base),
-                                    label: "", name: "", windows: [], aspect: row.modelData.aspect, active: false,
-                                    monitor: row.modelData.monitor, placeholder: true }])
+                                model: ScriptModel {
+                                    objectProp: "id"
+                                    values: row.modelData.workspaces.concat([{ id: Logic.nextFreeIn(row.modelData.workspaces, row.modelData.base),
+                                        label: "", name: "", windows: [], aspect: row.modelData.aspect, active: false,
+                                        monitor: row.modelData.monitor, placeholder: true }])
+                                }
 
                             ColumnLayout {
                                 id: card
@@ -389,7 +399,7 @@ ShellPanel {
                                         // keeps its place - it is positioned
                                         // from its own window's geometry, not
                                         // from its neighbours.
-                                        model: card.modelData.windows
+                                        model: ScriptModel { values: card.modelData.windows; objectProp: "address" }
 
                                         Rectangle {
                                             id: thumb
@@ -451,6 +461,13 @@ ShellPanel {
                                                 running: thumb.sent
                                                 onTriggered: thumb.sent = false
                                             }
+                                            Timer {
+                                                id: iconDelay
+                                                property bool passed: false
+                                                interval: Animations.previewIconDelay
+                                                running: true
+                                                onTriggered: passed = true
+                                            }
 
                                             HoverHandler { id: hover }
 
@@ -481,7 +498,7 @@ ShellPanel {
 
                                                 ShellIcon {
                                                     anchors.centerIn: parent
-                                                    visible: !preview.hasContent
+                                                    visible: !preview.hasContent && iconDelay.passed
                                                     glyph: Icons.window
                                                     size: Metrics.iconLg
                                                     color: Colors.mutedText

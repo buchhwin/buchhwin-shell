@@ -89,6 +89,11 @@ Singleton {
     readonly property int spinner: 900
     // A quick Alt+Tab switches without flashing the switcher; not scaled.
     readonly property int switcherShowDelay: 110
+    // A window preview shows its placeholder icon only after this long without
+    // a picture: a new one (a window just moved to another workspace) needs a
+    // frame or two for its first capture, and the icon flashed in that gap.
+    // Not scaled.
+    readonly property int previewIconDelay: 250
     // Lock screen: staggered entrance, rolling clock digits, zoom-out unlock.
     readonly property int lockEnter: travel(720)
     // A digit fades in over part of the roll, so the swap reads as one move.
