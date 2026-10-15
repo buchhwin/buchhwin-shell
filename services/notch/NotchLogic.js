@@ -297,6 +297,26 @@ function delay(value, range) {
     return Math.round(Math.max(range.min, Math.min(range.max, number)))
 }
 
+// ---- status glyphs in the accent ---------------------------------------------
+// notch.accentGlyphs: the neutral status glyphs (network, Bluetooth, battery,
+// volume, the bell) in the accent instead of the notch's white - nowhere, only
+// in the hover overview, or on the collapsed strip as well. Only the neutral
+// ink: a glyph that shows a state (charging, low, unread, a warning) keeps its
+// own colour wherever this says, because that colour is the message.
+var ACCENT_GLYPHS = ["off", "overview", "all"]
+
+function accentGlyphs(value) {
+    return ACCENT_GLYPHS.indexOf(value) >= 0 ? value : "off"
+}
+
+// Whether the glyphs in `where` ("overview" or "strip") take the accent.
+function glyphsInAccent(setting, where) {
+    const value = accentGlyphs(setting)
+    if (where === "overview") return value === "overview" || value === "all"
+    if (where === "strip") return value === "all"
+    return false
+}
+
 // ---- the collapsed body ------------------------------------------------------
 // How tall the collapsed shape is, how round its bottom corners are and how
 // much air the strip keeps at both ends (notch.bodyHeight / bodyRadius /

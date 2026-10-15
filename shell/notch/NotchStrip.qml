@@ -4,6 +4,7 @@ import QtQuick.Shapes
 import qs.theme
 import qs.services
 import "../../services/notch/NotchLogic.js" as Logic
+import "../../services/model/KeyedLogic.js" as Keyed
 
 // The always-visible strip: the list the user arranged, in its order. The
 // notch draws two of them itself - the time, which carries the notch's own
@@ -48,6 +49,16 @@ Item {
     // display and options a widget is loaded with. The recording and timer
     // chips have no id and differ by type; the count after `#` keeps two
     // equal items apart.
+    // What the model below was handed last, kept outside any binding's
+    // dependencies: each change hands back the very same objects for the
+    // entries that stayed, which is the only way Quickshell's ScriptModel
+    // matches them right (services/model/KeyedLogic.js).
+    property var lastParts: ({ list: [] })
+    function keptParts(next) {
+        const list = Keyed.keep(lastParts.list, next, "partKey")
+        lastParts.list = list
+        return list
+    }
     function partKeys(list) {
         const seen = {}
         return list.map(item => {
@@ -145,8 +156,9 @@ Item {
             // whose display or options changed is still loaded anew - the
             // widget reads them once, in `onLoaded` - and a kept one gets the
             // same values again: nothing in it moves, and no part here has a
-            // spring on its size to start running (pitfall 40).
-            model: ScriptModel { values: root.partKeys(root.items); objectProp: "partKey" }
+            // spring on its size to start running (pitfall 40). Kept parts
+            // are handed over as the same objects (`keptParts`).
+            model: ScriptModel { values: root.keptParts(root.partKeys(root.items)); objectProp: "partKey" }
             Loader {
                 required property var modelData
                 required property int index
@@ -301,6 +313,15 @@ Item {
                 item.inGroup = true
                 item.textColor = Colors.notchText
                 item.mutedTextColor = Colors.notchMutedText
+                // The neutral glyph ink: the accent when the strip is asked
+                // for it (notch.accentGlyphs "all"), else the notch's white. A
+                // binding, so a new accent or a changed setting reaches a
+                // widget that is already loaded. Only widgets built on
+                // WidgetBase have one (and the groove); the workspace dots or
+                // the weather draw their own and are left as they are.
+                if (item.glyphInk !== undefined)
+                    item.glyphInk = Qt.binding(() => NotchService.stripGlyphsInAccent ? Colors.notchAccent : Colors.notchText)
+                if (item.trackColor !== undefined) item.trackColor = Colors.notchTrack
             }
         }
     }

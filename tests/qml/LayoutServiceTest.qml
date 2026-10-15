@@ -15,7 +15,7 @@ import "Harness.js" as T
 // the same rectangle twice must not announce itself twice. Last, the notch
 // options: settings, but changed where an undo is within reach (the editor,
 // Bar & Notch), so `changeNotch` takes an undo step and `undo` brings them
-// back.
+// back. And its own write, read back by the file's watch, is not loaded again.
 ShellRoot {
     id: root
     property int waits: 0
@@ -45,7 +45,10 @@ ShellRoot {
         running: true
         onTriggered: {
             root.waits += 1
-            if (!LayoutService.loaded && root.waits < 100) return
+            // Settled too: a first start applies the shipped Default, and
+            // its writes would land in the middle of the ones below.
+            const there = LayoutService.loaded && LayoutService.stateSettled && !LayoutService.builtinApplying.length
+            if (!there && root.waits < 250) return
             stop()
             T.ok(LayoutService.loaded, "the layout loads in the sandbox (" + Paths.configDir + ")")
             T.eq(LayoutService.readOnly, false, "a missing file is an empty layout, not a read-only one")
@@ -74,6 +77,22 @@ ShellRoot {
             T.ok(parsed !== null, "layout.json was written in the sandbox")
             T.ok(bar !== null && bar.edge === "bottom", "the file holds the first option")
             T.ok(bar !== null && bar.style === "bar", "and the second")
+            readBack.start()
+        }
+    }
+
+    // The watch reads that write back; by now it has. The text is what the
+    // service holds already, so it is not parsed again, and no revision
+    // re-runs every binding on the layout.
+    Timer {
+        id: readBack
+        interval: 300
+        onTriggered: {
+            written.reload()
+            T.eq(LayoutService.fileText, written.text(), "the service knows the file as it wrote it")
+            const revision = LayoutService.revision
+            LayoutService.load()
+            T.eq(LayoutService.revision, revision, "reading its own write back changes nothing")
             placementReports.start()
         }
     }

@@ -819,7 +819,7 @@ ShellRoot {
         // Synthetic now-playing row for screenshots; controls stay disabled.
         function previewMedia(enabled: bool): void { NotchService.mediaPreview = enabled }
         function setOption(key: string, value: string): bool {
-            if (["fullscreen", "hoverMode", "clickAction", "middleAction", "rightAction", "panelOrigin", "osdStyle"].indexOf(key) >= 0)
+            if (["fullscreen", "hoverMode", "clickAction", "middleAction", "rightAction", "panelOrigin", "osdStyle", "accentGlyphs"].indexOf(key) >= 0)
                 return SettingsService.set("notch." + key, value)
             if (["openDelay", "closeDelay"].indexOf(key) >= 0) {
                 const number = Number(value)

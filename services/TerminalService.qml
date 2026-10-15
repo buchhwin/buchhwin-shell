@@ -55,9 +55,38 @@ Singleton {
     // Logo width in columns; also removes a stretching height from older configs.
     readonly property int imageSize: Math.max(8, Math.min(60, options.imageSize))
     onImageSizeChanged: if (SettingsService.loaded) sizeProc.running = true
+    // At login the script only runs when fastfetch.jsonc says otherwise. The
+    // width it writes stays in that file, so on almost every login there was
+    // nothing to fit, and it was a Python start all the same. `logoPending`
+    // is the login's own ask: a service made after the settings were in never
+    // ran it, and still does not.
+    property bool logoPending: false
+    // fastfetch.jsonc: "" until read, then "read" or "missing".
+    property string logoFile: ""
     Connections {
         target: SettingsService
-        function onLoadedChanged() { if (SettingsService.loaded) sizeProc.running = true }
+        function onLoadedChanged() {
+            if (!SettingsService.loaded) return
+            root.logoPending = true
+            root.checkLogo()
+        }
+    }
+    function checkLogo() {
+        if (!logoPending || !logoFile.length) return
+        logoPending = false
+        if (logoFile === "read" && logoNeedsFit(fastfetchConfig.text(), imageSize)) sizeProc.running = true
+    }
+    // What `fastfetch-image.py size` would change: a `logo` object with a
+    // stretching height or another width. No file, no logo object, or a
+    // document that is not an object, and it writes nothing. A file that is
+    // not plain JSON - comments, as the shipped one has until its first fit -
+    // is left to the script, which reads those.
+    function logoNeedsFit(text, columns) {
+        let data = null
+        try { data = JSON.parse(text) } catch (error) { return true }
+        const logo = data !== null && typeof data === "object" && !Array.isArray(data) ? data.logo : null
+        if (logo === null || logo === undefined || typeof logo !== "object" || Array.isArray(logo)) return false
+        return "height" in logo || logo.width !== columns
     }
     readonly property bool previewGit: options.previewGit
     onPreviewGitChanged: refreshPreview()
@@ -116,6 +145,15 @@ Singleton {
         printErrors: false
         onLoaded: root.filesReady |= 2
         onLoadFailed: root.filesReady |= 2
+    }
+
+    // Read once, for the login's check above; the script writes it.
+    FileView {
+        id: fastfetchConfig
+        path: Paths.configDir + "/fastfetch.jsonc"
+        printErrors: false
+        onLoaded: { root.logoFile = "read"; root.checkLogo() }
+        onLoadFailed: { root.logoFile = "missing"; root.checkLogo() }
     }
 
     // Read by zsh/.zshrc; "0" turns the greeting off.

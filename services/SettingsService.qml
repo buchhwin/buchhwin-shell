@@ -133,6 +133,11 @@ Singleton {
             // it - glued to the top edge with the notch's ears, the notch
             // gone while it is open (ShellPanel `fromNotch`).
             "panelOrigin": "below",
+            // The status glyphs (network, Bluetooth, battery, volume …) in
+            // the accent instead of the notch's white: nowhere, only in the
+            // overview, or in the strip as well (NotchService.accentGlyphs).
+            // Glyphs that show a state (charging, low, unread) keep its colour.
+            "accentGlyphs": "off",
             "rightAction": "none",
             "eventCount": 2,
             // The collapsed body: how tall it is, how round its bottom corners
@@ -456,6 +461,7 @@ Singleton {
         "notch.clickAction": ["dashboard", "expand"],
         "notch.osdStyle": ["ring", "bar"],
         "notch.panelOrigin": ["below", "notch"],
+        "notch.accentGlyphs": ["off", "overview", "all"],
         "notch.middleAction": ["none", "dashboard", "controlCenter", "notifications", "launcher",
                                "clipboard", "mediaPopup", "playPause", "overview"],
         "notch.rightAction": ["none", "dashboard", "controlCenter", "notifications", "launcher",
@@ -663,6 +669,13 @@ Singleton {
     function load() {
         const text = settingsFile.text()
         if (loaded && !text.trim().length) return
+        // The watch reads back every write of our own. That text is what
+        // `data` already holds (the write timer keeps it as fileText, and the
+        // migrations pass a written document through unchanged), and a fresh
+        // `data` would re-run every value() binding in the shell for nothing.
+        // Nothing is pending from before the load either: earlyValues only
+        // fill while `loaded` is still false.
+        if (loaded && text === fileText) return
         fileText = text
         try {
             data = text.trim().length

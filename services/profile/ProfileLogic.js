@@ -175,14 +175,21 @@ function uniqueName(text, taken) {
 // - the screens and the keyboard: X11's scale belongs to the monitors, the
 //   layout to the keys printed on them;
 // - where the Settings window was dragged to: restored by a switch, it would
-//   move the very window the switch was made from.
+//   move the very window the switch was made from;
+// - the hardware's own answers (the user's decision): what the lid does,
+//   when the screen goes off and the machine sleeps, the battery's warning
+//   level and whether the lock screen asks the fingerprint reader. They
+//   follow the battery and the reader this machine has, and a profile that
+//   carried them set a desktop's lid action on a laptop. A state stored
+//   before this still names them; the sanitizer drops them on the next read.
 var GLOBAL_SETTINGS = ["configVersion", "notch.headerAdopted", "desktop.quickSizesAdopted",
                        "onboarding",
                        "weather.locationName", "weather.lat", "weather.lon", "weather.autoLocate",
                        "calendar.hiddenCalendars", "calendar.newEventCalendar",
                        "colorPicker.history", "wallpaper.recentFolders",
                        "display", "input.kbLayout", "input.kbVariant",
-                       "desktop.settingsMoveX", "desktop.settingsMoveY"]
+                       "desktop.settingsMoveX", "desktop.settingsMoveY",
+                       "power", "lock.fingerprint"]
 
 function isGlobalSetting(path) {
     const text = String(path || "")

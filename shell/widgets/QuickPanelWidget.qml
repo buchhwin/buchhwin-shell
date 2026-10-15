@@ -23,7 +23,7 @@ WidgetBase {
     // whether the machine may interrupt you, which is the thing you would want
     // to be reminded of.
     icon: root.dnd ? "󰂛" : root.nightLight ? "󰖔" : root.wifiOff ? "󰤮" : "󰕮"
-    iconColor: root.dnd || root.wifiOff ? Colors.warning : root.textColor
+    iconColor: root.dnd || root.wifiOff ? Colors.warning : root.glyphInk
     label: ""
 
     name: "Control center"

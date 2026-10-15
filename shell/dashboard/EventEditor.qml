@@ -200,6 +200,9 @@ ShellPanel {
         }
 
         // ---- new event form ---------------------------------------------
+        // Every control is a Tab stop, in the order it is drawn: with only the
+        // text fields in the walk, the switch, the choices and the buttons
+        // were the mouse's alone.
         ColumnLayout {
             Layout.fillWidth: true
             visible: root.form
@@ -231,6 +234,7 @@ ShellPanel {
                 FieldLabel { text: "All day" }
                 Item { Layout.fillWidth: true }
                 ShellToggle {
+                    focusOnTab: true
                     checked: root.draft.allDay
                     onToggled: value => root.update({ allDay: value })
                 }
@@ -243,6 +247,7 @@ ShellPanel {
                 FieldLabel { text: root.draft.allDay ? "From" : "Date" }
                 ShellButton {
                     icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Previous day"
+                    focusOnTab: true
                     onClicked: { dateField.text = Draft.shiftDate(dateField.text, -1); endDateField.text = Draft.shiftDate(endDateField.text, -1) }
                 }
                 ShellTextField {
@@ -262,6 +267,7 @@ ShellPanel {
                 }
                 ShellButton {
                     icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Next day"
+                    focusOnTab: true
                     onClicked: { dateField.text = Draft.shiftDate(dateField.text, 1); endDateField.text = Draft.shiftDate(endDateField.text, 1) }
                 }
             }
@@ -271,7 +277,7 @@ ShellPanel {
                 visible: root.draft.allDay && !root.locked
                 spacing: Metrics.spaceSm
                 FieldLabel { text: "Until" }
-                ShellButton { icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Ends a day earlier"; onClicked: endDateField.text = Draft.shiftDate(endDateField.text, -1) }
+                ShellButton { icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Ends a day earlier"; focusOnTab: true; onClicked: endDateField.text = Draft.shiftDate(endDateField.text, -1) }
                 ShellTextField {
                     id: endDateField
                     Layout.fillWidth: true
@@ -282,7 +288,7 @@ ShellPanel {
                     onTextChanged: root.update({ endDate: text })
                     onAccepted: root.submit()
                 }
-                ShellButton { icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Ends a day later"; onClicked: endDateField.text = Draft.shiftDate(endDateField.text, 1) }
+                ShellButton { icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Ends a day later"; focusOnTab: true; onClicked: endDateField.text = Draft.shiftDate(endDateField.text, 1) }
             }
 
             RowLayout {
@@ -335,6 +341,7 @@ ShellPanel {
                 FieldLabel { text: "Duration" }
                 SegmentedControl {
                     Layout.fillWidth: true
+                    focusOnTab: true
                     options: Draft.durations.map(minutes => ({ value: String(minutes), label: Draft.durationLabel(minutes) }))
                     current: String(root.currentDuration)
                     onSelected: value => endField.text = Draft.endAfter(startField.text, Number(value))
@@ -369,6 +376,7 @@ ShellPanel {
                 FieldLabel { text: "Repeat" }
                 ShellSelect {
                     Layout.fillWidth: true
+                    focusOnTab: true
                     // All six choices at once: the default list height cuts the
                     // last one off and a scrollbar for six words reads badly.
                     listHeight: Metrics.popupListHeight
@@ -385,6 +393,7 @@ ShellPanel {
                 FieldLabel { text: "Ends" }
                 ShellSelect {
                     Layout.fillWidth: true
+                    focusOnTab: true
                     options: Rec.endingOptions()
                     current: root.rule.ending
                     // The field that just appeared starts filled, or the first
@@ -460,6 +469,7 @@ ShellPanel {
                     ShellSelect {
                         Layout.fillWidth: true
                         visible: !root.editing && CalendarService.newEventCalendars.length > 0
+                        focusOnTab: true
                         options: CalendarService.newEventCalendars
                         current: root.draft.calendarId
                         listHeight: Metrics.popupListHeight / 2
@@ -565,6 +575,7 @@ ShellPanel {
             }
             SegmentedControl {
                 Layout.fillWidth: true
+                focusOnTab: true
                 options: [{ value: "single", label: "This event" },
                           { value: "series", label: "All events in the series" }]
                 current: root.scope
@@ -590,16 +601,18 @@ ShellPanel {
                 variant: "danger"
                 visible: root.canChange || root.saving
                 enabledState: root.canChange && !root.saving
+                focusOnTab: true
                 onClicked: root.pressDelete()
             }
             Item { Layout.fillWidth: true }
-            ShellButton { icon: Icons.leavesPanel; text: root.canChange ? "Merkuro" : "Open in Merkuro"; variant: root.canChange ? "ghost" : "accent"; onClicked: CalendarService.openManager() }
+            ShellButton { icon: Icons.leavesPanel; text: root.canChange ? "Merkuro" : "Open in Merkuro"; variant: root.canChange ? "ghost" : "accent"; focusOnTab: true; onClicked: CalendarService.openManager() }
             ShellButton {
                 icon: Icons.edit
                 text: "Edit"
                 variant: "accent"
                 visible: root.canChange
                 enabledState: !root.saving
+                focusOnTab: true
                 onClicked: root.startEdit()
             }
         }
@@ -621,12 +634,14 @@ ShellPanel {
                 text: root.editing ? "Back" : "Cancel"
                 variant: "ghost"
                 enabledState: !root.saving
+                focusOnTab: true
                 onClicked: root.editing ? root.stopEdit() : PanelService.close("eventEditor")
             }
             ShellButton {
                 text: CalendarService.writeAllowed ? "Save" : "Show request"
                 variant: "accent"
                 enabledState: root.check.ok && !root.saving && (!root.editing || root.changedFields.length > 0)
+                focusOnTab: true
                 onClicked: root.submit()
             }
         }

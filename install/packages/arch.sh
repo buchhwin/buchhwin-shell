@@ -21,6 +21,10 @@ packages=(
   zsh-autosuggestions zsh-syntax-highlighting
   # the backends the shell drives; pw-metadata and pw-record are in pipewire
   brightnessctl wireplumber pipewire playerctl networkmanager
+  # realtime priority for PipeWire's audio threads (D-Bus activated, nothing
+  # to enable): without it PipeWire and WirePlumber log "RTKit error:
+  # org.freedesktop.DBus.Error.ServiceUnknown" and run at normal priority
+  rtkit
   plocate jq curl grim slurp swappy wl-clipboard cliphist gammastep
   swaylock swayidle kdialog udisks2 wireguard-tools
   # checkupdates: the update check (scripts/updates-check.sh); it syncs its

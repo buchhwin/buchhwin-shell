@@ -62,8 +62,12 @@ wl-copy --type image/png < "$file" 9>&-
 exec 9>&-
 
 # Actions are handled in the background so the key binding returns at once.
+# notify-send waits until its notice closes, and the shell keeps notices in
+# its history: unbounded, every screenshot left this subshell and its
+# notify-send behind for good (15.10.). Ten minutes is time enough to click;
+# after that the notice stays in the history and its buttons do nothing.
 (
-  action=$(notify-send --app-name=Screenshot --icon="$file" \
+  action=$(timeout 10m notify-send --app-name=Screenshot --icon="$file" \
     --action=edit=Edit --action=folder="Open folder" \
     "Screenshot saved" "Copied to the clipboard · ${file##*/}" 2>/dev/null || true)
   case "$action" in

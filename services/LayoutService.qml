@@ -526,6 +526,14 @@ Singleton {
 
     function load() {
         const text = layoutFile.text()
+        // The watch reads back every write of our own, and that text is what
+        // `config` already holds (the write timer keeps it as fileText).
+        // Parsed, migrated and sanitized again, it bought a revision that
+        // re-ran every binding on the layout, after every edit. Nothing waits
+        // for that read: the one-shots, the built-in profiles and the settling
+        // all ran on the config it was written from, and a file this shell
+        // wrote is never one to migrate.
+        if (loaded && text === fileText) return
         // A reload can catch the file while it is being replaced (empty, missing
         // or half written): keep the current layout rather than resetting to an
         // empty one that the next change would save over the user's pills and
@@ -550,8 +558,9 @@ Singleton {
         backupVersion = migrated ? result.from : 0
         config = Logic.sanitize(result.config)
         notchStored = !!(result.config && result.config.notch)
-        if (!loaded) freshLayout = result.ok && !text.trim().length
+        if (!loaded) layoutWasEmpty = result.ok && !text.trim().length
         loaded = true
+        decideFresh()
         ensureScreens()
         adoptOnce()
         ensureBuiltinProfiles()
@@ -593,7 +602,7 @@ Singleton {
     // writes of the same file in the same turn of the event loop drop the
     // first one, which Quickshell says in the log and the smoke test fails on.
     function adoptOnce() {
-        if (readOnly || !loaded || !SettingsService.loaded) return
+        if (readOnly || !loaded || !SettingsService.loaded || !freshDecided) return
         const marks = {}
         let touched = false
         if (!headerAdopted) {
@@ -746,10 +755,14 @@ Singleton {
         target: SettingsService
         function onLoadedChanged() {
             if (!SettingsService.loaded) return
+            root.noteSettings()
+            root.ensureBuiltinProfiles()
             root.adoptOnce()
             root.settleActiveState()
         }
     }
+    // A shell whose settings were in before this service was made.
+    Component.onCompleted: if (SettingsService.loaded) noteSettings()
 
     // One write per turn of the event loop, and never from inside the load
     // that is finishing. `load()` and `adoptOnce()` run from the file's own
@@ -798,7 +811,7 @@ Singleton {
     // editor, and Ctrl+Z there has to reach them, so an undo step carries them
     // along.
     readonly property var notchKeys: ["notch.eventCount", "notch.hoverMode", "notch.openDelay", "notch.closeDelay",
-                                      "notch.clickAction", "notch.middleAction", "notch.rightAction", "notch.swipe", "notch.panelOrigin", "notch.reserve",
+                                      "notch.clickAction", "notch.middleAction", "notch.rightAction", "notch.swipe", "notch.panelOrigin", "notch.accentGlyphs", "notch.reserve",
                                       "notch.fullscreen", "notch.shape", "notch.collapsedWidth",
                                       "notch.expandedWidth", "notch.expandedHeight",
                                       "notch.bodyHeight", "notch.bodyRadius", "notch.bodyPadding"]
@@ -839,6 +852,19 @@ Singleton {
         // deleting one takes no undo step, so undoing the drag before it must
         // not take the preset with it (or bring a deleted one back).
         step.config.notchPresets = config.notchPresets || []
+        // Nor are the profiles' stored states and the one-shot markers. A
+        // state is what a profile was left with, or what entering a built-in
+        // one applied: Ctrl+Z right after that took the applied state away,
+        // and the next switch stored nothing for it. A marker says a
+        // migration has run, and an older list would run it again. A profile
+        // the step brings back (a removal undone) keeps the state it had.
+        for (const name of Object.keys(step.config.profiles || {})) {
+            const now = config.profiles[name]
+            if (!now) continue
+            if (now.state) step.config.profiles[name].state = now.state
+            else delete step.config.profiles[name].state
+        }
+        step.config.adopted = config.adopted || []
         // Nor are the built-in profiles: a step taken before one was added
         // must not take it away again.
         config = Logic.addBuiltinProfiles(Logic.sanitize(step.config),
@@ -993,9 +1019,10 @@ Singleton {
     }
 
     // A built-in profile without a state has not had its shipped one yet:
-    // entered for the first time, its setup is being applied (or could not
-    // be). Left now, it must not store what happens to be set - that is the
-    // profile it came from - or the shipped setup would never arrive.
+    // entered for the first time, its setup is being applied (one that could
+    // not be takes what is set, finishBuiltin). Left now, it must not store
+    // what happens to be set - that is the profile it came from - or the
+    // shipped setup would never arrive.
     function waitingForShipped(name) {
         const id = Logic.builtinOf(config, name)
         return id.length > 0 && builtinProfiles[id] !== undefined && !Logic.stateOf(config, name)
@@ -1038,15 +1065,19 @@ Singleton {
     // `setAll` and the mode's go through the same zero-interval timer in the
     // same turn (pitfall 3).
     function enterProfile(next, name) {
-        // First, while nothing has changed yet.
-        backupToday()
+        const stored = next.profiles[name] ? next.profiles[name].state || null : null
+        const id = Logic.builtinOf(next, name)
+        const shipped = !stored && id.length > 0 && builtinProfiles[id] !== undefined
+        // First, while nothing has changed yet - unless a shipped setup is
+        // about to be applied: profile-apply.py backs the files up itself,
+        // and the two started in the same turn raced for the same
+        // backup-<day>. Its copy is of the files this switch has written,
+        // which loses nothing: the profile left is in it, with its state.
+        if (!shipped) backupToday()
         // An undo step from the profile left would put its layout back under
         // the settings of this one, and the next switch would store that mix
         // as its state. Undo starts again in every profile.
         undoStack = []
-        const stored = next.profiles[name] ? next.profiles[name].state || null : null
-        const id = Logic.builtinOf(next, name)
-        const shipped = !stored && id.length > 0 && builtinProfiles[id] !== undefined
         next.activeProfile = name
         if (!stored && !shipped) next.profiles[name].state = currentState()
         config = stored ? Logic.restoreStateLayout(next, stored) : Logic.sanitize(next)
@@ -1076,16 +1107,47 @@ Singleton {
     property bool stateSettled: false
     // id -> true once its profile.json has been read or found missing.
     property var builtinRead: ({})
-    // The layout file was missing or empty on the first read: a first start.
+    // A first start: layout.json and settings.json were both missing or
+    // empty on their first read. The layout alone is not enough - a layout
+    // file lost beside the user's settings is not a new user, and the
+    // shipped Default's modes and setup would replace a desktop the settings
+    // still describe. Decided once both have been read, in whichever order
+    // they arrive (`decideFresh`); the adoptions, the built-in profiles and
+    // the settling below wait for that, and the settling ends it - a layout
+    // read again later in the session is not a first start.
     property bool freshLayout: false
+    property bool freshDecided: false
+    // What the two first reads found. The settings are taken the moment they
+    // load, before anything has written them, so their text is still the
+    // file's (SettingsService.fileText follows every write after that).
+    property bool layoutWasEmpty: false
+    property bool settingsSeen: false
+    property bool settingsWereEmpty: false
+
+    function noteSettings() {
+        if (settingsSeen) return
+        settingsSeen = true
+        settingsWereEmpty = !SettingsService.fileText.trim().length
+        decideFresh()
+    }
+
+    function decideFresh() {
+        if (freshDecided || !loaded || !settingsSeen) return
+        freshDecided = true
+        freshLayout = layoutWasEmpty && settingsWereEmpty
+    }
 
     function settleActiveState() {
-        if (stateSettled || !loaded || readOnly || !SettingsService.loaded) return
+        if (stateSettled || !loaded || readOnly || !SettingsService.loaded || !freshDecided) return
         if (!builtinProfileNames.every(id => builtinRead[id] === true)) return
         stateSettled = true
         const name = activeProfile
         const id = Logic.builtinOf(config, name)
         const action = Logic.settleAction(config, name, builtinProfiles[id] !== undefined, freshLayout)
+        // Everything that asks has asked by now: the built-in profiles were
+        // added as each file was read, and the one-shots ran with the second
+        // of the two files.
+        freshLayout = false
         if (!action.length && Logic.hasAdopted(config, "profileState")) return
         const next = JSON.parse(JSON.stringify(config))
         next.adopted = Logic.withAdopted(next, "profileState")
@@ -1245,6 +1307,10 @@ Singleton {
         const shipped = id.length && builtinProfiles[id] ? builtinProfiles[id].modes : null
         if (id.length && !shipped) return false
         const all = !modeName
+        // Not while a shipped setup is being applied, like Restore: the run
+        // in flight is refused a second start (startBuiltin), and the reset
+        // would bring back the modes without the rest.
+        if (id.length && all && name === activeProfile && (applyProc.running || builtinApplying.length)) return false
         beginChange()
         config = Logic.resetProfile(config, name, modeName || "", shipped)
         if (id.length && all && name !== activeProfile) config = Logic.withState(config, name, null)
@@ -1273,7 +1339,20 @@ Singleton {
     // attempt applied nothing, for the Profiles page.
     property string builtinApplying: ""
     property string builtinError: ""
+    // The same per built-in id, so a card can show its own: id -> why its
+    // last attempt applied nothing, gone once one goes through.
+    property var builtinErrors: ({})
     signal builtinApplied(string id)
+
+    function builtinErrorOf(id) {
+        return builtinErrors[String(id)] || ""
+    }
+    function setBuiltinError(id, error) {
+        const next = Object.assign({}, builtinErrors)
+        if (error.length) next[id] = error
+        else delete next[id]
+        builtinErrors = next
+    }
 
     function builtinOf(name) {
         const unused = revision
@@ -1283,14 +1362,16 @@ Singleton {
 
     // Every shipped profile the file does not carry yet. One save, through the
     // write timer like every other (pitfall 3), and none when nothing was
-    // missing - this runs on every load of the file, including the reload
-    // after its own write.
+    // missing - this runs on every load of the file and as each shipped one
+    // and the settings arrive.
     //
     // On a first start the adopted Default takes the shipped modes, and the
     // mode in use was materialized from its template a moment before: it is
     // filled in again from the shipped one, with that mode's appearance.
+    // Whether it is one is known once the settings have been read too, so
+    // nothing is added before that (decideFresh).
     function ensureBuiltinProfiles() {
-        if (!loaded || readOnly) return
+        if (!loaded || readOnly || !freshDecided) return
         const shipped = builtinProfileNames.map(id => builtinProfiles[id]).filter(data => !!data)
         if (!shipped.length) return
         const step = Logic.addBuiltinProfiles(config, shipped, freshLayout)
@@ -1320,7 +1401,8 @@ Singleton {
         if (!holder.length) return false
         if (holder === activeProfile) return startBuiltin(id, holder)
         backupToday()
-        beginChange()
+        // No undo step: undo leaves the stored states alone (see undo), so
+        // it would be a step that takes nothing back.
         config = Logic.withState(config, holder, null)
         revision++
         changed()
@@ -1337,13 +1419,15 @@ Singleton {
     // session's default-app lists into the state directory first, then puts
     // fastfetch's files in place (with a copy of a different fastfetch.jsonc
     // kept beside it), and answers which of the shipped default apps are
-    // installed here. Only once it has answered does the rest happen, in
-    // `finishBuiltin`. A switch away before then (the profile key pressed
-    // twice) means the setup is no longer wanted, and the profile that is
-    // active by then keeps its settings.
+    // installed here, and whether its cursor theme is. Only once it has
+    // answered does the rest happen, in `finishBuiltin`. A switch away
+    // before then (the profile key pressed twice) means the setup is no
+    // longer wanted, and the profile that is active by then keeps its
+    // settings.
     function startBuiltin(id, forProfile) {
         if (!id.length || !builtinProfiles[id] || readOnly || applyProc.running) return false
         builtinError = ""
+        setBuiltinError(id, "")
         builtinApplying = id
         applyProc.builtinId = id
         applyProc.forProfile = forProfile
@@ -1354,7 +1438,8 @@ Singleton {
         return true
     }
 
-    function finishBuiltin(id, exitCode, text) {
+    // What profile-apply.py answered for the run started for `forProfile`.
+    function finishBuiltin(id, forProfile, exitCode, text) {
         builtinApplying = ""
         let result = null
         try {
@@ -1366,16 +1451,36 @@ Singleton {
         const data = builtinProfiles[id]
         if (exitCode !== 0 || !result || result.ok !== true) {
             builtinError = result && result.error ? String(result.error) : "The built-in profile could not be applied"
+            setBuiltinError(id, builtinError)
+            // Nothing of the shipped setup arrived, and it is not tried again
+            // on its own: the profile keeps what is set, as one of the user's
+            // would, until Restore. Left waiting for it, every switch away
+            // stored nothing and every start applied it again.
+            if (!readOnly && SettingsService.loaded && activeProfile === forProfile && waitingForShipped(forProfile)) {
+                config = Logic.withState(config, forProfile, currentState())
+                revision++
+                changed()
+                save()
+            }
             return
         }
+        builtinError = ""
+        setBuiltinError(id, "")
         if (!data || readOnly) return
-        if (activeProfile !== applyProc.forProfile) return
-        // One undo step for the notch, its options and the lock screen, taken
-        // before any of them changes: the step snapshots the notch's settings
-        // (`undoKeys`), so it has to see them as they were.
-        beginChange()
+        if (activeProfile !== forProfile) return
+        // No undo step, and the ones there are go: entering a profile is not
+        // an edit (setActiveProfile starts undo again too), and a step from
+        // before the apply would put the old notch and lock screen back under
+        // the shipped settings.
+        undoStack = []
         // The settings this shell knows, in one write.
         const values = knownValues(Profile.settingLeaves(data.settings, Paths.home))
+        // The cursor theme only where it is installed (profile-apply.py
+        // looks where Xcursor does): a name nothing answers to leaves
+        // Hyprland and every toolkit to a fallback cursor of its own.
+        const cursor = result.cursor && typeof result.cursor === "object" ? result.cursor : {}
+        if (cursor.installed !== true || cursor.theme !== values["appearance.cursorTheme"])
+            delete values["appearance.cursorTheme"]
         if (Object.keys(values).length) SettingsService.setAll(values)
         config = Logic.applyBuiltinLayout(config, data)
         // What was applied is the profile's state from now on: it keeps the
@@ -1416,7 +1521,7 @@ Singleton {
         function done() {
             if (!outputDone || exitCode < 0) return
             const left = forProfile !== root.activeProfile
-            root.finishBuiltin(builtinId, exitCode, output)
+            root.finishBuiltin(builtinId, forProfile, exitCode, output)
             if (left) Qt.callLater(root.resumeShipped)
         }
         stdout: StdioCollector { onStreamFinished: { applyProc.output = text; applyProc.outputDone = true; applyProc.done() } }

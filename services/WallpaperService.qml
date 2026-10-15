@@ -43,8 +43,51 @@ Singleton {
     readonly property var favourites: state.favourites
     property string slideshowPath: ""
     readonly property string current: slideshow && slideshowPath.length ? slideshowPath
-        : configuredPath.length ? configuredPath
+        : configuredPath.length && !configuredMissing ? configuredPath
         : images.length ? images[0] : ""
+
+    // The configured image when it is not there (a profile from another
+    // machine, a file moved away): handed to the desktop as it was, it drew
+    // nothing, and after a restart only the background colour showed. Then the
+    // folder's first image is the wallpaper, or none.
+    //
+    // Taken to be there until it is shown not to be, so a start does not wait
+    // for the answer before the first picture. An image the folder lists is
+    // there; any other is asked once with `test -f` - when the path changes,
+    // and when the folder's list does (an image added or moved away) - never
+    // per frame.
+    property string missingPath: ""
+    readonly property bool configuredMissing: configuredPath.length > 0 && missingPath === configuredPath
+    onConfiguredPathChanged: existsDelay.restart()
+    // Debounced: at a start the path and the folder's list arrive a moment
+    // apart, and the list alone often answers.
+    Timer { id: existsDelay; interval: 1000; onTriggered: root.checkConfigured() }
+
+    function checkConfigured() {
+        if (!configuredPath.length || images.indexOf(configuredPath) >= 0) {
+            missingPath = ""
+            return
+        }
+        if (existsProc.running) { existsProc.again = true; return }
+        existsProc.path = configuredPath
+        existsProc.command = ["test", "-f", configuredPath]
+        existsProc.running = true
+    }
+
+    Process {
+        id: existsProc
+        stderr: ErrorLog { label: "WallpaperService.existsProc" }
+        property string path: ""
+        property bool again: false
+        // 1 is test's "no"; anything else (it could not run) keeps the path.
+        onExited: code => {
+            if (path === root.configuredPath) root.missingPath = code === 1 ? path : ""
+            if (again) {
+                again = false
+                Qt.callLater(root.checkConfigured)
+            }
+        }
+    }
 
     // screen: "" for all monitors (also clears per-monitor choices).
     function setWallpaper(path, screen) {
@@ -239,7 +282,12 @@ Singleton {
             result.push(folderModel.get(i, "filePath"))
         for (const name of subfolders)
             for (const path of subfolderImages[name] || []) result.push(path)
-        images = result
+        // Only when it changed, like the subfolders above: a folder is read
+        // in steps and each one calls this, and a new list - the same paths
+        // or not - recomputes the pool and the groups, rebuilds the picker's
+        // grid and restarts the thumbnail run's wait.
+        if (result.length !== images.length || result.some((path, i) => path !== images[i]))
+            images = result
     }
 
     // ---- thumbnails ------------------------------------------------------------
@@ -270,8 +318,9 @@ Singleton {
     function thumbFor(path) { return Logic.thumbUrl(thumbs, path) }
 
     // Debounced: a folder is read in steps (the folder, then each subfolder),
-    // and copying ten images in is ten count changes.
-    onImagesChanged: thumbDelay.restart()
+    // and copying ten images in is ten count changes. The configured image is
+    // looked for again too (`checkConfigured`).
+    onImagesChanged: { thumbDelay.restart(); existsDelay.restart() }
     Timer { id: thumbDelay; interval: 2000; onTriggered: root.makeThumbs() }
 
     // One run at a time; a change during a run is picked up after it.

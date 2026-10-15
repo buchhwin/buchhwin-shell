@@ -69,7 +69,7 @@ Item {
             scale: Animations.motionEnabled && submitMouse.pressed ? Effects.pressScale : 1
             opacity: root.length > 0 && !root.lockState.busy ? 1 : 0
             visible: opacity > 0
-            Behavior on opacity { NumberAnimation { duration: Animations.hover } }
+            Behavior on opacity { NumberAnimation { duration: Animations.hover; easing.type: Animations.easing } }
             Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
             Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
             ShellIcon { anchors.centerIn: parent; glyph: "󰁔"; size: Metrics.iconSm; color: Colors.lockText }

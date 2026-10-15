@@ -9,7 +9,8 @@ import "../../services/profile/ProfileLogic.js" as P
 // A profile keeps everything the user sets, not only its layouts: the panel
 // colour, the accent, the notch's options and its two lists, the lock screen
 // - every setting except the machine's and the person's (the weather place,
-// the keyboard layout, the screens), and except what the five modes own.
+// the keyboard layout, the screens, power and the fingerprint reader), and
+// except what the five modes own.
 // First the pure half: which settings are a profile's, and the state in the
 // file. Then LayoutService against the runner's sandbox: leaving a profile
 // stores its state, entering one with a state puts it back, one without keeps
@@ -41,10 +42,12 @@ ShellRoot {
               "input.kbVariant", "display.x11Scale", "display.xwaylandSharp", "onboarding.completed",
               "calendar.hiddenCalendars", "calendar.newEventCalendar", "colorPicker.history",
               "wallpaper.recentFolders", "configVersion", "notch.headerAdopted", "desktop.quickSizesAdopted",
-              "desktop.settingsMoveX", "desktop.settingsMoveY"].filter(P.isProfileSetting), [],
-             "the machine's and the person's settings are global")
+              "desktop.settingsMoveX", "desktop.settingsMoveY", "power.lockBeforeSleep", "power.lowBatteryLevel",
+              "power.battery.lidAction", "power.ac.suspendMinutes", "lock.fingerprint"].filter(P.isProfileSetting), [],
+             "the machine's and the person's settings are global, power and the fingerprint reader too")
         T.ok(P.isProfileSetting("weather.unit") && P.isProfileSetting("input.repeatRate")
-             && P.isProfileSetting("wallpaper.path"), "their neighbours are a profile's")
+             && P.isProfileSetting("wallpaper.path") && P.isProfileSetting("lock.showAvatar"),
+             "their neighbours are a profile's")
         T.eq(P.profileSettings({ appearance: { panelColor: "#202020", gapsIn: 3 }, weather: { lat: 12.5, unit: "celsius" },
                                  recording: { folder: "~/Videos" } }, "/home/u"),
              { appearance: { panelColor: "#202020" }, weather: { unit: "celsius" }, recording: { folder: "/home/u/Videos" } },
@@ -52,12 +55,16 @@ ShellRoot {
 
         // ---- the state in the file ------------------------------------------------
         const raw = { settings: { appearance: { panelColor: "#202020", blurStrength: 0.3, list: [1] },
-                                  weather: { lat: 12.5, unit: "fahrenheit" }, input: { kbLayout: "us" }, odd: null },
+                                  weather: { lat: 12.5, unit: "fahrenheit" }, input: { kbLayout: "us" }, odd: null,
+                                  power: { lowBatteryLevel: 15, ac: { lidAction: "nothing" } },
+                                  lock: { fingerprint: "off", showAvatar: false } },
                       notch: { collapsed: [], expanded: [] }, lock: { lock: [] } }
         const config = L.sanitize({ profiles: { default: { label: "Default", modes: {}, state: raw } } })
         const state = L.stateOf(config, "default")
-        T.eq(state.settings, { appearance: { panelColor: "#202020" }, weather: { unit: "fahrenheit" } },
-             "the sanitizer keeps a profile's settings and drops the mode's, the machine's, lists and nulls")
+        T.eq(state.settings, { appearance: { panelColor: "#202020" }, weather: { unit: "fahrenheit" },
+                               lock: { showAvatar: false } },
+             "the sanitizer keeps a profile's settings and drops the mode's, the machine's (a state stored "
+             + "with power and the fingerprint reader in it too), lists and nulls")
         T.eq(state.notch, L.sanitizeNotch(raw.notch), "the notch through its own sanitizer")
         T.eq(state.lock, L.sanitizeLock(raw.lock), "and the lock screen")
         T.eq(L.sanitize(JSON.parse(JSON.stringify(config))), config, "a write and a read keep the state")
@@ -104,6 +111,8 @@ ShellRoot {
             T.eq(home, "default", "the sandbox starts in Default")
             T.ok(L.stateOf(LayoutService.config, home) !== null, "which holds a state from the first start on")
             T.ok(L.hasAdopted(LayoutService.config, "profileState"), "and the file says so")
+            T.eq([LayoutService.freshDecided, LayoutService.freshLayout], [true, false],
+                 "the sandbox's start was a first one (both files missing), and it is over once settled")
             // A first start with a shipped Default (config/builtin-profiles/
             // default): adopted with the shipped modes, and its setup applied.
             const shipped = LayoutService.builtinProfiles["default"]
@@ -124,7 +133,8 @@ ShellRoot {
             // own place and keyboard.
             SettingsService.setAll({ "appearance.panelColor": "#202020", "appearance.accent": "#aa0000",
                                      "notch.bodyHeight": 32, "terminal.fontSize": 13,
-                                     "weather.lat": 12.5, "input.kbLayout": "us" })
+                                     "weather.lat": 12.5, "input.kbLayout": "us",
+                                     "power.ac.lidAction": "lock", "lock.fingerprint": "off" })
             SettingsService.set("appearance.blurStrength", 0.2)
             LayoutService.notchResetLayout()
             LayoutService.notchRemove(LayoutService.notchLayout.expanded[0].id)
@@ -142,6 +152,8 @@ ShellRoot {
             T.eq(left.lock, root.homeLock, "and the lock screen")
             T.eq(left.settings.weather.lat, undefined, "but not the weather place")
             T.eq(left.settings.input.kbLayout, undefined, "nor the keyboard layout")
+            T.eq(left.settings.power, undefined, "nor power")
+            T.eq(left.settings.lock.fingerprint, undefined, "nor the fingerprint reader")
             T.eq(left.settings.appearance.blurStrength, undefined, "nor what the mode owns")
             T.eq(SettingsService.value("appearance.panelColor"), "#202020",
                  "a profile without a state keeps what is set")
@@ -160,7 +172,8 @@ ShellRoot {
         onTriggered: {
             SettingsService.setAll({ "appearance.panelColor": "#303030", "appearance.accent": "#00aa00",
                                      "notch.bodyHeight": 48, "terminal.fontSize": 15,
-                                     "weather.lat": 23.5, "input.kbLayout": "fr" })
+                                     "weather.lat": 23.5, "input.kbLayout": "fr",
+                                     "power.ac.lidAction": "nothing", "lock.fingerprint": "on" })
             LayoutService.notchResetLayout()
             LayoutService.lockResetLayout()
             T.eq(LayoutService.setActiveProfile("default"), true, "back to Default")
@@ -172,6 +185,8 @@ ShellRoot {
             T.eq(LayoutService.lockLayout, root.homeLock, "and the lock screen")
             T.eq(SettingsService.value("weather.lat"), 23.5, "the weather place stays what it is")
             T.eq(SettingsService.value("input.kbLayout"), "fr", "and so does the keyboard layout")
+            T.eq([SettingsService.value("power.ac.lidAction"), SettingsService.value("lock.fingerprint")], ["nothing", "on"],
+                 "and power and the fingerprint reader")
             T.eq(SettingsService.value("appearance.blurStrength"), 0.2, "the blur comes from Default's mode")
             const away = L.stateOf(LayoutService.config, root.studio)
             T.eq([away.settings.appearance.panelColor, away.settings.notch.bodyHeight], ["#303030", 48],
@@ -189,11 +204,18 @@ ShellRoot {
         onTriggered: {
             const trimmed = JSON.parse(JSON.stringify(L.stateOf(LayoutService.config, root.studio)))
             delete trimmed.settings.terminal.fontSize
-            LayoutService.config = L.withState(LayoutService.config, root.studio, trimmed)
+            // As an older shell stored it: with power and the fingerprint
+            // reader in it, past the sanitizer.
+            const older = JSON.parse(JSON.stringify(L.withState(LayoutService.config, root.studio, trimmed)))
+            older.profiles[root.studio].state.settings.power = { ac: { lidAction: "suspend" } }
+            older.profiles[root.studio].state.settings.lock = { fingerprint: "auto" }
+            LayoutService.config = older
             SettingsService.set("terminal.fontSize", 17)
             T.eq(LayoutService.setActiveProfile(root.studio), true, "into Studio again")
             T.eq(SettingsService.value("appearance.panelColor"), "#303030", "its panel colour is back")
             T.eq(SettingsService.value("terminal.fontSize"), 17, "a setting its state does not name is not reset")
+            T.eq([SettingsService.value("power.ac.lidAction"), SettingsService.value("lock.fingerprint")], ["nothing", "on"],
+                 "a state stored with power and the fingerprint reader in it does not put them back")
             const twin = LayoutService.duplicateProfile(root.studio, "Studio copy")
             T.eq(L.stateOf(LayoutService.config, twin).settings.terminal.fontSize, 17,
                  "a duplicate of the profile in use takes the settings as they are now")

@@ -5,8 +5,9 @@ import qs.services
 import "../../services/notch/NotchLogic.js" as NotchLogic
 
 // How the notch opens, shown the same in the layout editor and on the Bar &
-// Notch page: the mode, what a click does and the two delays. Each change is
-// an undo step (LayoutService.changeNotch), wherever it was made.
+// Notch page: the mode, what a click does and the two delays - and the colour
+// of its status glyphs. Each change is an undo step (LayoutService.changeNotch),
+// wherever it was made.
 ColumnLayout {
     id: root
     spacing: Metrics.spaceSm
@@ -122,6 +123,19 @@ ColumnLayout {
             from: NotchLogic.CLOSE_DELAY.min; to: NotchLogic.CLOSE_DELAY.max
             value: NotchService.closeDelay
             onReleased: value => root.set("closeDelay", Math.round(value / 10) * 10)
+        }
+    }
+    // Shown whatever the shape: a pill carries the same glyphs as a notch.
+    SettingRow {
+        Layout.fillWidth: true
+        label: "Status icons"
+        hint: "In the accent instead of white; charging, low and unread keep their colours"
+        SegmentedControl {
+            focusOnTab: true
+            Layout.fillWidth: true
+            current: NotchService.accentGlyphs
+            options: [{ value: "off", label: "Off" }, { value: "overview", label: "Overview" }, { value: "all", label: "Everywhere" }]
+            onSelected: value => root.set("accentGlyphs", value)
         }
     }
 }

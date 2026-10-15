@@ -8,12 +8,24 @@ import "Harness.js" as T
 // that a change asked for before settings.json has been read lands on top of
 // the user's file instead of replacing it with the defaults, what `set`
 // refuses, that two sets in one turn of the event loop are one pending text
-// and one write, and that the write lands in settings.json.
+// and one write, that the write lands in settings.json, and that reading our
+// own write back leaves `data` alone while a change from outside still lands.
 ShellRoot {
     id: root
     property int tries: 0
-    // 1: waiting for the early change in the file, 2: for the later two.
+    // 1: waiting for the early change in the file, 2: for the later two,
+    // 3: for a change written from outside.
     property int phase: 0
+    property int dataChanges: 0
+    property var dataBefore: null
+    property int changesBefore: 0
+
+    // Not before phase 2: touching the singleton earlier would start its
+    // read before the user's file is in place.
+    Connections {
+        target: root.phase >= 2 ? SettingsService : null
+        function onDataChanged() { root.dataChanges += 1 }
+    }
 
     FileView {
         id: written
@@ -78,6 +90,12 @@ ShellRoot {
             const count = root.phase === 1 ? 7 : 5
             const done = SettingsService.loaded && parsed !== null && parsed.workspaces
                 && parsed.workspaces.count === count
+            if (root.phase === 3) {
+                if (SettingsService.value("workspaces.count") !== 3 && root.tries < 50) return
+                stop()
+                root.outsideChange()
+                return
+            }
             if (!done && root.tries < 50) return
             stop()
             T.ok(parsed !== null, "settings.json was written in the sandbox (" + Paths.configDir + ")")
@@ -94,7 +112,42 @@ ShellRoot {
             T.eq(parsed.appearance.theme, "light", "the file holds the first key")
             T.eq(parsed.workspaces.count, 5, "and the second")
             T.eq(parsed.appearance.clockFormat, "12", "and the user's own setting")
-            T.finish("SettingsService")
+            root.dataBefore = SettingsService.data
+            root.changesBefore = root.dataChanges
+            readBack.start()
         }
+    }
+
+    // The watch reads every write of the service's own back. Given time to
+    // do so, and once more by hand, that read must not hand out a new `data`:
+    // every value() binding in the shell would re-run on it.
+    Timer {
+        id: readBack
+        interval: 600
+        onTriggered: {
+            T.ok(SettingsService.data === root.dataBefore, "reading our own write back keeps data")
+            T.eq(root.dataChanges, root.changesBefore, "and emits no dataChanged")
+            SettingsService.load()
+            T.ok(SettingsService.data === root.dataBefore, "a load of the same text keeps data")
+            T.eq(root.dataChanges, root.changesBefore, "and emits nothing either")
+            root.phase = 3
+            outside.running = true
+        }
+    }
+
+    // A hand edit of the file is still read, so the watch was there to read
+    // the write above too.
+    Process {
+        id: outside
+        command: ["sh", "-c", "printf '%s\\n' \"$2\" > \"$1/settings.json\"", "sh", Paths.configDir,
+                  JSON.stringify({ appearance: { clockFormat: "12", theme: "light" }, workspaces: { count: 3 } })]
+        onExited: { root.tries = 0; settle.start() }
+    }
+
+    function outsideChange() {
+        T.eq(SettingsService.value("workspaces.count"), 3, "a change from outside is read")
+        T.ok(root.dataChanges > root.changesBefore, "and hands out a new data")
+        T.eq(SettingsService.value("appearance.theme"), "light", "with the rest of the file")
+        T.finish("SettingsService")
     }
 }

@@ -9,6 +9,7 @@ import qs.shell.widgets
 import qs.shell.editor
 import "../../services/bar/BarLogic.js" as BarLogic
 import "../../services/LayoutLogic.js" as LayoutLogic
+import "../../services/model/KeyedLogic.js" as Keyed
 
 // One pill of the top bar with one or more widget items. Items reuse the
 // desktop widget files in their compact form (inGroup, sizeClass "small" or
@@ -137,6 +138,16 @@ Rectangle {
 
     // Each item with a key that is all of it; the count after `#` keeps two
     // equal items (two clocks) apart.
+    // What the model below was handed last, kept outside any binding's
+    // dependencies: each change hands back the very same objects for the
+    // entries that stayed, which is the only way Quickshell's ScriptModel
+    // matches them right (services/model/KeyedLogic.js).
+    property var lastItems: ({ list: [] })
+    function keptItems(next) {
+        const list = Keyed.keep(lastItems.list, next, "itemKey")
+        lastItems.list = list
+        return list
+    }
     function itemKeys(list) {
         const seen = {}
         return (list || []).map(item => {
@@ -263,7 +274,7 @@ Rectangle {
             // Matched, not rebuilt: a pill PillBar keeps is handed a new but
             // equal `pill` on every write of the layout, and a plain array
             // would load all of its widgets again. Kept only while equal.
-            model: ScriptModel { values: root.itemKeys(root.pill.items); objectProp: "itemKey" }
+            model: ScriptModel { values: root.keptItems(root.itemKeys(root.pill.items)); objectProp: "itemKey" }
             onItemAdded: root.recount()
             onItemRemoved: Qt.callLater(root.recount)
 
@@ -321,7 +332,7 @@ Rectangle {
                                                      segment.coverAt(false) || segment.coverAt(true))
                     color: Colors.barItemHover
                     opacity: segment.hovered ? 1 : 0
-                    Behavior on opacity { NumberAnimation { duration: Animations.hover } }
+                    Behavior on opacity { NumberAnimation { duration: Animations.hover; easing.type: Animations.easing } }
                 }
 
                 // Below the widget so its own buttons (media controls, volume

@@ -19,8 +19,9 @@ In this order, and nothing after a step that failed:
    already there is kept as <name>.backup-<YYYY-MM-DD> (with the time when that
    name holds something else again); the same file is left alone.
 3. Which of the profile's default apps are installed here, by default-apps.py's
-   own lookup - the shell sets only those, so a missing one is skipped rather
-   than reported as an error.
+   own lookup, and whether its cursor theme is (a `cursors` folder in one of
+   the icon directories Xcursor searches) - the shell sets only those, so a
+   missing one is skipped rather than reported as an error.
 
 The settings, the layout and the default apps themselves are the shell's to
 write (SettingsService, LayoutService, DefaultAppsService); this only moves
@@ -54,6 +55,8 @@ BACKED_UP = ["settings.json", "layout.json",
 # A shipped file name, never a path: the profile directory is the repository's,
 # but a name with a slash in it would still be a way out of the config directory.
 FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+# How often a backup name that another run took first is chosen again.
+BACKUP_ATTEMPTS = 5
 
 
 def default_apps_module():
@@ -85,8 +88,17 @@ def backup(config_dir, backup_dir, now):
     present = [path for path in sources if path.is_file()]
     if not present:
         return None, []
-    target = free_name(backup_dir / "backup", now.strftime("%Y-%m-%d"), now.strftime("%H%M%S"))
-    target.mkdir(parents=True)
+    # Choosing a free name and making it are two steps, and another run can
+    # take the name in between (the day's backup before a switch, a second
+    # apply): a name taken a moment ago means asking for the next free one.
+    for attempt in range(BACKUP_ATTEMPTS):
+        target = free_name(backup_dir / "backup", now.strftime("%Y-%m-%d"), now.strftime("%H%M%S"))
+        try:
+            target.mkdir(parents=True)
+            break
+        except FileExistsError:
+            if attempt == BACKUP_ATTEMPTS - 1:
+                raise
     for path in present:
         shutil.copy2(path, target / path.name)
     return target, [path.name for path in present]
@@ -188,6 +200,33 @@ def install_fastfetch(profile, source_dir, config_dir, now):
     return result
 
 
+def icon_dirs():
+    """Where a cursor theme can be installed, in the order Xcursor looks."""
+    home = pathlib.Path.home()
+    data_home = pathlib.Path(os.environ.get("XDG_DATA_HOME") or home / ".local" / "share")
+    data_dirs = os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
+    return [data_home / "icons", home / ".icons"] + [pathlib.Path(entry) / "icons"
+                                                      for entry in data_dirs.split(":") if entry]
+
+
+def cursor_theme(profile):
+    """{"theme": name, "installed": bool} for the profile's cursor theme, {} when it names none.
+
+    The shell sets the theme only when it is installed here: a name nothing
+    answers to leaves Hyprland and every toolkit to a fallback of their own,
+    which is a different cursor in each, rather than the one in use now.
+    """
+    settings = profile.get("settings")
+    appearance = settings.get("appearance") if isinstance(settings, dict) else None
+    name = appearance.get("cursorTheme") if isinstance(appearance, dict) else None
+    if not isinstance(name, str) or not name:
+        return {}
+    # A theme's name, never a path.
+    if "/" in name or name in (".", ".."):
+        return {"theme": name, "installed": False}
+    return {"theme": name, "installed": any((directory / name / "cursors").is_dir() for directory in icon_dirs())}
+
+
 def installed_apps(profile):
     apps = profile.get("defaultApps")
     if not isinstance(apps, dict):
@@ -249,8 +288,9 @@ def main(argv=None):
         print(json.dumps({"ok": False, "error": "cannot read the profile: %s" % error}))
         return 1
     apps, missing = installed_apps(profile)
+    cursor = cursor_theme(profile)
     if args.dry_run:
-        print(json.dumps({"ok": True, "dryRun": True, "apps": apps, "missing": missing}))
+        print(json.dumps({"ok": True, "dryRun": True, "apps": apps, "missing": missing, "cursor": cursor}))
         return 0
     if not args.backup_dir:
         print(json.dumps({"ok": False, "error": "no backup directory: nothing is overwritten without one"}))
@@ -267,7 +307,7 @@ def main(argv=None):
                           "backup": str(target) if target else ""}))
         return 1
     print(json.dumps({"ok": True, "backup": str(target) if target else "", "backedUp": copied,
-                      "fastfetch": fastfetch, "apps": apps, "missing": missing}))
+                      "fastfetch": fastfetch, "apps": apps, "missing": missing, "cursor": cursor}))
     return 0
 
 

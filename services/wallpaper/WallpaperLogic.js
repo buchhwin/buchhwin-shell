@@ -212,7 +212,7 @@ var FAVOURITES = "*favourites"
 // then one per subfolder. `key` is what `pickerItems` takes as its filter.
 function pickerFilters(images, favourites, folder) {
     const result = [{ key: "", label: "All" }]
-    if ((favourites || []).length) result.push({ key: FAVOURITES, label: "Favourites" })
+    if ((favourites || []).length) result.push({ key: FAVOURITES, label: "Favorites" })
     for (const name of groups(images, folder)) result.push({ key: name, label: name })
     return result
 }

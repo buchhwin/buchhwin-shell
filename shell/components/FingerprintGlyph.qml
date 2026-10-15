@@ -81,7 +81,7 @@ Item {
             glyph: "󰈷"
             size: root.size
             color: root.mode === "failed" ? root.errorColor : root.trackColor
-            Behavior on color { ColorAnimation { duration: Animations.fingerprintFill } }
+            Behavior on color { ColorAnimation { duration: Animations.fingerprintFill; easing.type: Animations.easing } }
         }
         // The filled part, clipped from the bottom.
         Item {

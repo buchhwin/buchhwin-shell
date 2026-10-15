@@ -125,6 +125,10 @@ ColumnLayout {
                         height: parent.height
                         radius: parent.radius
                         color: AudioService.inputPeak >= 0.98 ? Colors.warning : Colors.accent
+                        // Linear on purpose: a new level arrives halfway through
+                        // every glide, and an ease-out would land each step in
+                        // its first frames and then wait - the stutter
+                        // Animations.meter is longer than the gap to avoid.
                         Behavior on width { NumberAnimation { duration: Animations.move(Animations.meter) } }
                     }
                     Rectangle {

@@ -8,7 +8,14 @@
 #   geoclue-demo-agent               GeoClue demo agent (the shell asks for no location)
 #   sealertauto                      SELinux troubleshooter applet
 #   org.freedesktop.problems.applet  ABRT problem reporting applet
-BUCHHWIN_AUTOSTART_SKIP=(geoclue-demo-agent sealertauto org.freedesktop.problems.applet)
+#   print-applet                     system-config-printer's print queue applet,
+#                                    ~42 MB of Python for a tray icon; its entry
+#                                    says NotShowIn=KDE;GNOME;Cinnamon, so it
+#                                    started here and never under Plasma
+# Not nm-applet, however much it looks like one more of these: it is the
+# session's only NetworkManager secret agent, and without it no Wi-Fi or VPN
+# password is asked for. Its tray icon is hidden in services/TrayService.qml.
+BUCHHWIN_AUTOSTART_SKIP=(geoclue-demo-agent sealertauto org.freedesktop.problems.applet print-applet)
 
 # Prints the generated unit name of every skipped entry, one per line.
 autostart_skip_units() {

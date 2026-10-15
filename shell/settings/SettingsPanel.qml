@@ -210,6 +210,16 @@ ShellPanel {
                             }
                         }
                     }
+
+                    // Where the list would be: an empty sidebar under a search
+                    // reads as the panel having broken, not as no match.
+                    EmptyState {
+                        Layout.fillWidth: true
+                        Layout.topMargin: Metrics.spaceLg
+                        visible: root.search.length > 0 && root.rows.length === 0
+                        icon: Icons.search
+                        title: "No settings match"
+                    }
                 }
             }
         }

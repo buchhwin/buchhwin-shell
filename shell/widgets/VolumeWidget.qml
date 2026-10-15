@@ -3,11 +3,14 @@ import qs.shell.widgets
 import qs.theme
 import qs.services
 WidgetBase {
+    id: root
     icon: AudioService.volumeIcon(AudioService.volume, AudioService.muted)
     label: Math.round(AudioService.volume * 100) + "%"
     name: "Volume"
     meter: AudioService.volume
-    meterColor: AudioService.muted ? Colors.mutedText : Colors.accent
+    // Muted in the surface's muted ink, not the theme's: on the notch that
+    // one is a grey made for a panel.
+    meterColor: AudioService.muted ? root.mutedTextColor : Colors.accent
     // Which device it is going to, which is the question a percentage raises.
     detail: AudioService.sink ? AudioService.label(AudioService.sink) : ""
 

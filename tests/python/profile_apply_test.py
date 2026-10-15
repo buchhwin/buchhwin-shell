@@ -80,6 +80,48 @@ with tempfile.TemporaryDirectory() as temp:
     check(module.backup(empty, base / "nostate", morning) == (None, []) and not (base / "nostate").exists(),
           "nothing to back up creates nothing")
 
+    # Another run takes the name between choosing it and making it: the
+    # day's backup before a switch, started by the same switch.
+    raced = base / "raced"
+    choose = module.free_name
+    taken = []
+
+    def racing(name_base, day, time):
+        candidate = choose(name_base, day, time)
+        if not taken:
+            candidate.mkdir(parents=True)
+            taken.append(candidate)
+        return candidate
+
+    module.free_name = racing
+    try:
+        target, copied = module.backup(config, raced, morning)
+    except OSError as error:
+        target, copied = None, []
+        check(False, "a name taken in between is not a failed backup: %s" % error)
+    finally:
+        module.free_name = choose
+    check(target == raced / "backup-2026-10-15-093005" and len(copied) == 3,
+          "a name taken in between: the next free one is used: %s" % target)
+    check(taken == [raced / "backup-2026-10-15"] and not any(taken[0].iterdir()),
+          "and the one the other run made is not written into")
+
+    # ---- the cursor theme: set only when it is installed here --------------------
+    themed = dict(profile, settings={"appearance": {"cursorTheme": "Example-Cursors", "accent": "#123456"}})
+    check(module.cursor_theme(themed) == {"theme": "Example-Cursors", "installed": False},
+          "a cursor theme that is nowhere is not installed")
+    for where in (data / "icons", home / ".icons", system / "icons"):
+        (where / "Example-Cursors" / "cursors").mkdir(parents=True)
+        check(module.cursor_theme(themed) == {"theme": "Example-Cursors", "installed": True},
+              "one under %s is" % where.relative_to(base))
+        (where / "Example-Cursors" / "cursors").rmdir()
+    (data / "icons" / "Example-Cursors" / "index.theme").write_text("[Icon Theme]\n", encoding="utf-8")
+    check(module.cursor_theme(themed)["installed"] is False, "an icon theme without cursors is not a cursor theme")
+    check(module.cursor_theme(dict(profile, settings={"appearance": {"cursorTheme": "../icons"}}))["installed"] is False,
+          "a path is not a theme name")
+    check(module.cursor_theme(profile) == {} and module.cursor_theme(dict(profile, settings={"appearance": {}})) == {},
+          "a profile that names no cursor theme says nothing about one")
+
     # ---- fastfetch: a different file is kept, the same one left alone -------------
     target_config = base / "ff" / "buchhwin-shell"
     target_config.mkdir(parents=True)
@@ -119,6 +161,7 @@ with tempfile.TemporaryDirectory() as temp:
     check(answer.get("backup", "").startswith(str(state / "backup-")), "and says where the backup is")
     check(answer.get("apps") == {"terminal": "Alacritty.desktop"}, "only the installed default app is handed on: %r" % answer)
     check(answer.get("missing") == ["org.kde.dolphin.desktop"], "the missing one is named, not an error")
+    check(answer.get("cursor") == {}, "a profile without a cursor theme answers with none: %r" % answer.get("cursor"))
     check((config / "fastfetch.jsonc").is_file() and (config / "saturn.txt").is_file(), "fastfetch's files are in place")
     check(not (base / "xdg-config").exists(), "nothing outside the directories it was given")
 
@@ -183,6 +226,8 @@ with tempfile.TemporaryDirectory() as temp:
     status, answer = run("--from", str(ROOT / "config" / "builtin-profiles" / "buchhwin"),
                          "--config-dir", str(base / "untouched"), "--dry-run")
     check(status == 0 and answer.get("apps") == {"terminal": "Alacritty.desktop"}, "the shipped profile reads: %r" % answer)
+    check(answer.get("cursor") == {"theme": "macOS", "installed": False},
+          "and says its cursor theme is not installed in the sandbox: %r" % answer.get("cursor"))
     check(not (base / "untouched").exists(), "and a dry run writes nothing")
 
 if failures:

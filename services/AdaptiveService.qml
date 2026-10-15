@@ -15,12 +15,20 @@ Singleton {
     // ---- accent from wallpaper ------------------------------------------------
     readonly property bool accentFromWallpaper: SettingsService.value("appearance.accentFromWallpaper")
     readonly property string wallpaper: WallpaperService.current
+    // The wallpaper the last run was for, whatever it answered.
     property string accentSource: ""
+    // Where the script keeps its last answer, by the image's path, mtime and
+    // size: every login decoded the whole wallpaper again (a 6000x3750 PNG)
+    // for the accent that was already stored, and the same image now answers
+    // from here without a decode. In the cache directory beside the wallpaper
+    // thumbnails, which are kept by the same key: both are made from the
+    // image and can always be made again.
+    readonly property string accentCache: Paths.cacheDir + "/wallpaper-accent.json"
 
     function updateAccent() {
         if (!accentFromWallpaper || !wallpaper.length || wallpaper === accentSource || accentProc.running) return
         accentProc.source = wallpaper
-        accentProc.command = [Paths.script("wallpaper-accent.py"), wallpaper]
+        accentProc.command = [Paths.script("wallpaper-accent.py"), "--cache", accentCache, wallpaper]
         accentProc.running = true
     }
 
@@ -34,15 +42,23 @@ Singleton {
         property string source: ""
         stdout: StdioCollector {
             onStreamFinished: {
+                // Done with this image whatever it said, or a wallpaper that
+                // cannot be read would be asked for again every 300 ms.
+                root.accentSource = accentProc.source
+                // A missing or unreadable image answers with no accent (and
+                // exit 1), not with the default blue: that is no colour of
+                // the wallpaper, and taking it turned the accent blue on
+                // every machine without the shipped wallpaper file. The
+                // accent in use stays.
+                let accent = ""
                 try {
-                    const accent = JSON.parse(text).accent
-                    if (/^#[0-9a-f]{6}$/i.test(accent) && root.accentFromWallpaper) {
-                        root.accentSource = accentProc.source
-                        if (SettingsService.accent.toLowerCase() !== accent.toLowerCase()) SettingsService.set("appearance.accent", accent)
-                    }
+                    accent = String(JSON.parse(text).accent || "")
                 } catch (error) {
-                    // Keep the current accent.
+                    accent = ""
                 }
+                if (/^#[0-9a-f]{6}$/i.test(accent) && root.accentFromWallpaper
+                        && SettingsService.accent.toLowerCase() !== accent.toLowerCase())
+                    SettingsService.set("appearance.accent", accent)
             }
         }
         onExited: if (root.wallpaper !== root.accentSource) accentDelay.restart()

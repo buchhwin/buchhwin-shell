@@ -15,7 +15,8 @@ import "../../services/profile/ProfileLogic.js" as P
 // installs fastfetch's files and applies the settings, the notch and the lock
 // screen, which become its state - all of it inside the sandbox's XDG
 // directories. After that it keeps the user's changes; Restore and Reset bring
-// the shipped setup back.
+// the shipped setup back. A run that fails leaves it a profile like the
+// user's own, and a cursor theme this machine lacks is not set.
 ShellRoot {
     id: root
     property int waits: 0
@@ -60,6 +61,10 @@ ShellRoot {
              "with all five modes")
         T.eq(shipped.defaultApps, { terminal: "Alacritty.desktop", files: "org.kde.dolphin.desktop" },
              "and the two default apps")
+        T.eq([raw.settings.power, raw.settings.lock.fingerprint], [undefined, undefined],
+             "nothing of the machine's: no power settings, no fingerprint reader")
+        T.eq([raw.settings.appearance.accentFromWallpaper, raw.settings.appearance.accent], [false, "#50e2cb"],
+             "the measured accent, not one from a wallpaper another machine does not have")
         T.eq(L.sanitizeBuiltinProfile({ label: "x" }, "x"), null, "a file without modes is nothing to add")
         T.eq(L.sanitizeBuiltinProfile(raw, "Not A Slug"), null, "nor is one under an id that is not a profile name")
         T.eq(L.sanitizeBuiltinProfile({ modes: {}, defaultApps: { terminal: "../evil.desktop", files: "x" } }, "y").defaultApps,
@@ -171,8 +176,8 @@ ShellRoot {
         }, "/home/u")
         T.eq(leaves, { "appearance.accent": "#50e2cb", "appearance.theme": "dark", "notch.openDelay": 120,
                        "desktop.dashboardWidth": 900, "wallpaper.path": "/home/u/Pictures/w.webp",
-                       "wallpaper.folder": "", "power.ac.lidAction": "nothing" },
-             "leaf paths, without the mode-scoped ones, the markers, lists or nulls; home paths expanded")
+                       "wallpaper.folder": "" },
+             "leaf paths, without the mode-scoped ones, the markers, the machine's power, lists or nulls; home paths expanded")
         T.ok(Object.keys(P.settingLeaves(shipped.settings, "/home/u")).every(path => !P.isModeScoped(path)),
              "the shipped settings carry nothing a mode owns")
         T.eq([P.expandHome("~", "/h"), P.expandHome("~user/x", "/h"), P.expandHome("/abs", "/h")], ["/h", "~user/x", "/abs"],
@@ -266,7 +271,25 @@ ShellRoot {
             const logo = Paths.configDir + "/saturn.txt"
             const expected = logo.indexOf(Paths.home + "/") === 0 ? "~" + logo.slice(Paths.home.length) : logo
             T.ok(fastfetch.indexOf("\"" + expected + "\"") >= 0, "pointing at the logo beside it (" + expected + ")")
-            T.eq(LayoutService.undoStack.length > 0, true, "the notch and the lock screen are an undo step")
+            T.eq(LayoutService.undoStack.length, 0, "applying it takes no undo step, and undo starts again")
+            // A later edit undone takes the edit back, not a state stored or
+            // a marker set after its step.
+            const notch = LayoutService.notchLayout
+            const before = L.stateOf(LayoutService.config, "default")
+            LayoutService.notchResetLayout()
+            const marked = JSON.parse(JSON.stringify(L.withState(LayoutService.config, "default",
+                { settings: { appearance: { panelColor: "#0a0a0a" } }, notch: null, lock: null })))
+            marked.adopted.push("testMarker")
+            LayoutService.config = L.sanitize(marked)
+            LayoutService.undo()
+            T.eq(LayoutService.notchLayout, notch, "undo takes the edit back")
+            T.eq(L.stateOf(LayoutService.config, "default").settings.appearance.panelColor, "#0a0a0a",
+                 "but not a state stored after its step")
+            T.ok(L.hasAdopted(LayoutService.config, "testMarker"), "nor a marker set after it")
+            T.eq(L.stateOf(LayoutService.config, "buchhwin").notch, shipped.notch, "the applied state stays")
+            const clean = JSON.parse(JSON.stringify(L.withState(LayoutService.config, "default", before)))
+            clean.adopted = clean.adopted.filter(name => name !== "testMarker")
+            LayoutService.config = L.sanitize(clean)
             kept.start()
         }
     }
@@ -291,6 +314,8 @@ ShellRoot {
             // Restore, in use: the shipped setup again, at once.
             T.eq(LayoutService.applyBuiltin("buchhwin"), true, "Restore in use")
             T.eq(LayoutService.builtinApplying, "buchhwin", "applies the shipped setup")
+            T.eq(LayoutService.resetProfile("buchhwin", ""), false,
+                 "and Reset of the profile in use is refused while that runs, like a second Restore")
             root.tries = 0
             restored.start()
         }
@@ -418,6 +443,44 @@ ShellRoot {
             T.eq(L.stateOf(LayoutService.config, "buchhwin").settings.appearance.accent, "#0d0e0f",
                  "the built-in profile in use keeps what is set as its state")
             T.ok(L.hasAdopted(LayoutService.config, "profileState"), "and the marker is in the file from then on")
+            failed.start()
+        }
+    }
+
+    // A run that failed (profile-apply.py's answer, handed in as the process
+    // would): the built-in profile in use stops waiting for its shipped
+    // setup and keeps what is set, like one of the user's, until Restore; the
+    // error is that profile's own. Then one that went through, on a machine
+    // without the shipped cursor theme and on one with it.
+    Timer {
+        id: failed
+        interval: 50
+        onTriggered: {
+            const arranged = JSON.parse(JSON.stringify(LayoutService.config))
+            delete arranged.profiles.buchhwin.state
+            LayoutService.config = L.sanitize(arranged)
+            SettingsService.setAll({ "appearance.accent": "#0c0d0e", "appearance.cursorTheme": "breeze_cursors" })
+            T.ok(LayoutService.waitingForShipped("buchhwin"), "a built-in profile in use without a state waits for its setup")
+            LayoutService.finishBuiltin("buchhwin", "buchhwin", 1, '{"ok": false, "error": "backup failed, nothing changed"}')
+            T.eq(LayoutService.builtinErrorOf("buchhwin"), "backup failed, nothing changed", "a failed run says why, for that profile")
+            T.eq(LayoutService.builtinErrorOf("default"), "", "and not for every built-in one")
+            T.ok(!LayoutService.waitingForShipped("buchhwin"), "it waits no longer")
+            T.eq(L.stateOf(LayoutService.config, "buchhwin").settings.appearance.accent, "#0c0d0e",
+                 "and keeps what is set as its state")
+            T.eq(SettingsService.value("appearance.accent"), "#0c0d0e", "nothing that is set changes")
+            LayoutService.notchResetLayout()
+            const cursor = LayoutService.builtinProfiles.buchhwin.settings.appearance.cursorTheme
+            LayoutService.finishBuiltin("buchhwin", "buchhwin", 0,
+                '{"ok": true, "apps": {}, "cursor": {"theme": "' + cursor + '", "installed": false}}')
+            T.eq(LayoutService.builtinErrorOf("buchhwin"), "", "one that went through clears its error")
+            T.eq(SettingsService.value("appearance.accent"), LayoutService.builtinProfiles.buchhwin.settings.appearance.accent,
+                 "and applies the shipped settings")
+            T.eq(SettingsService.value("appearance.cursorTheme"), "breeze_cursors",
+                 "but not a cursor theme this machine does not have")
+            T.eq(LayoutService.undoStack.length, 0, "and the undo steps from before it are gone")
+            LayoutService.finishBuiltin("buchhwin", "buchhwin", 0,
+                '{"ok": true, "apps": {}, "cursor": {"theme": "' + cursor + '", "installed": true}}')
+            T.eq(SettingsService.value("appearance.cursorTheme"), cursor, "one it has is applied")
             T.finish("BuiltinProfileTest")
         }
     }

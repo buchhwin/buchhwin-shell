@@ -52,7 +52,7 @@ GridLayout {
         opacity: MprisService.playing ? 1 : Effects.mutedOpacity
         source: root.compactCover ? MprisService.artUrl : ""
         sourceWidth: 96
-        Behavior on opacity { NumberAnimation { duration: Animations.hover } }
+        Behavior on opacity { NumberAnimation { duration: Animations.hover; easing.type: Animations.easing } }
     }
 
     Text {

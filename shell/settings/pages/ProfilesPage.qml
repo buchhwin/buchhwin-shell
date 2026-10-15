@@ -22,7 +22,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Profiles"
-        description: "A profile keeps everything: its five modes' layouts, the notch, panels, colours and all other settings. Switching brings them back."
+        description: "A profile keeps everything: its five modes' layouts, the notch, panels, colors and all other settings. Switching brings them back."
 
         SettingRow {
             Layout.fillWidth: true
@@ -135,10 +135,13 @@ ColumnLayout {
                         text: "Shipped with the shell: the first time you use it, it brings its setup - layouts, notch, settings, default apps, fastfetch - after a backup; after that it keeps your changes. Restore settings brings the shipped one back."
                         role: "small"; muted: true; wrapMode: Text.Wrap
                     }
+                    // Its own error only: one that failed says so on its own
+                    // card, not on every built-in one.
                     ShellText {
-                        visible: card.builtin.length > 0 && (card.applying || LayoutService.builtinError.length > 0)
+                        readonly property string error: LayoutService.builtinErrorOf(card.builtin)
+                        visible: card.builtin.length > 0 && (card.applying || error.length > 0)
                         Layout.fillWidth: true
-                        text: card.applying ? "Applying the shipped setup …" : LayoutService.builtinError
+                        text: card.applying ? "Applying the shipped setup …" : error
                         role: "small"; wrapMode: Text.Wrap
                         color: card.applying ? Colors.mutedText : Colors.warning
                     }

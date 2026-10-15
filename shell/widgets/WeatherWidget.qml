@@ -23,6 +23,14 @@ GridLayout {
     readonly property var current: WeatherService.current
     property bool hasData: current !== null
     readonly property bool detailed: sizeClass !== "small" && !inGroup
+    // The condition line ends in "…" rather than running on: "Thunderstorm
+    // with hail" and the day's range went past the edge of a narrow cell. Capped
+    // like WidgetBase's labels, and by the room a surface that sizes its cells
+    // grants (`availableWidth`, below zero none) less the glyph beside it.
+    property int maxLabelWidth: 220
+    property real availableWidth: -1
+    readonly property real detailRoom: availableWidth < 0 ? Infinity
+        : Math.max(0, availableWidth - (vertical ? 0 : weatherGlyph.implicitWidth + columnSpacing))
 
     columns: vertical ? 1 : 1000
     columnSpacing: Metrics.spaceSm * scaleFactor
@@ -32,6 +40,7 @@ GridLayout {
     Component.onDestruction: WeatherService.untrack()
 
     Text {
+        id: weatherGlyph
         text: root.current ? root.current.icon : ""
         color: root.textColor
         font.family: Typography.iconFamily
@@ -53,6 +62,8 @@ GridLayout {
         }
         Text {
             visible: root.detailed && root.current !== null
+            Layout.maximumWidth: Math.min(root.maxLabelWidth * root.scaleFactor, root.detailRoom)
+            elide: Text.ElideRight
             text: root.current ? root.current.label + " · " + WeatherService.formatTemperature(root.current.max)
                 + " / " + WeatherService.formatTemperature(root.current.min) : ""
             color: root.mutedTextColor

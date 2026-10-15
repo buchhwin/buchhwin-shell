@@ -240,10 +240,11 @@ ShellPanel {
                         border.color: tile.selected ? Colors.accentLine
                             : tile.active ? Colors.accentBorder : Colors.border
                         // The one under the hand lifts, the same way a dragged
-                        // tile does, so the two surfaces agree.
+                        // tile does, so the two surfaces agree. The lift is
+                        // movement, so Reduced and Off jump to it.
                         scale: tile.selected ? 1 : Effects.pickerRestScale
                         Behavior on scale {
-                            NumberAnimation { duration: Animations.hover; easing.type: Animations.easing }
+                            NumberAnimation { duration: Animations.move(Animations.hover); easing.type: Animations.easing }
                         }
 
                         // RoundedImage, not an Image inside a rounded

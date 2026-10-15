@@ -87,6 +87,21 @@ ShellRoot {
         T.eq(N.picture({ image: "HTTP://cdn.example/a.jpg" }, icons), "", "and with no app icon, nothing")
         T.eq(N.picture({ image: "file:///tmp/a.png" }, icons), "file:///tmp/a.png", "a local image stays")
 
+        // The history's cap: the ones older than the newest `limit` go, and
+        // never a popup that is on screen.
+        const aged = [1, 2, 3, 4, 5, 6].map(id => ({ id: id }))
+        const ids = list => list.map(item => item.id)
+        T.eq(N.overflow(aged, 6, []), [], "at the cap nothing goes")
+        T.eq(N.overflow(aged, 10, []), [], "under it neither")
+        T.eq(ids(N.overflow(aged, 4, [])), [1, 2], "over it, the oldest, as many as it is over")
+        T.eq(ids(N.overflow(aged, 4, [aged[0], aged[5]])), [2], "a popup on screen stays")
+        T.eq(ids(N.overflow(aged, 4, aged.slice(0, 2))), [],
+             "and nothing of the newest takes its place, the new arrival least of all")
+        T.eq(ids(N.overflow(aged, 0, [])), [1, 2, 3, 4, 5, 6], "a cap of none lets every one go")
+        T.eq(N.overflow(null, 4, null), [], "no history at all does not throw")
+        T.eq(N.overflow(aged, 5, [{ id: 1 }]).map(item => item === aged[0]), [true],
+             "the popups are told apart by identity, like the queue")
+
         T.finish("NotificationPopupTest")
     }
 }

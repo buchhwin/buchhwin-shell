@@ -148,24 +148,41 @@ ShellPanel {
                     unit: Metrics.dashboardGridUnit
                     editing: root.editing
                     maxRows: LayoutService.gridMaxRows
-                    animated: !root.sizing
+                    animated: !root.sizing && !root.landing
                     dragLayer: root.overlay
-                    model: LayoutService.dashboardItems.map(item => ({ id: item.id, w: item.w, h: item.h,
-                        minW: Dash.minSize(item.type).w, minH: Dash.minSize(item.type).h }))
+                    model: root.cardCells
                     onCommitted: (id, index) => LayoutService.dashboardMoveTo(id, index)
                     onPlacementChanged: reportTimer.restart()
                     onWidthChanged: reportTimer.restart()
 
+                    // Matched by id, not rebuilt: the card list is new on every
+                    // write of the layout file - any surface, a mode or profile
+                    // switch, an undo - and on a plain array every card (the
+                    // month's 42 cells, the media card, the weather) was thrown
+                    // away and built again, hidden or not.
+                    //
+                    // The model is the ids themselves, not the cards with
+                    // `objectProp: "id"`: Quickshell 0.3.2's ScriptModel stops
+                    // comparing keys once it has updated one entry in place and
+                    // hands every later row the next entry by position, so after
+                    // a card taken out of the middle each slot below it showed
+                    // its neighbour, and the last one forgot the height of a card
+                    // still on the panel. Strings are equal by value, so the ids
+                    // diff as they should, and a slot reads its card by its id.
                     Repeater {
-                        model: LayoutService.dashboard.dashboard
+                        model: ScriptModel { values: LayoutService.dashboardItems.map(item => item.id) }
                         DashboardSlot {
-                            required property var modelData
+                            required property string modelData
                             required property int index
+                            // Gone from the table in the same turn as the slot
+                            // itself when its card is taken off; empty, it
+                            // unloads rather than build a card on its way out.
+                            readonly property var card: root.cardById[modelData] || null
                             area: cardArea
-                            cardId: modelData.id
-                            type: modelData.items[0].type
+                            cardId: modelData
+                            type: card ? card.type : ""
                             slotIndex: index
-                            content: root.cardFor(modelData.items[0].type)
+                            content: card ? root.cardFor(card.type) : null
                         }
                     }
                 }
@@ -215,6 +232,38 @@ ShellPanel {
             }
         }
     }
+
+    // The slots' cards by id (the Repeater runs on the ids alone).
+    readonly property var cardById: {
+        const table = {}
+        for (const item of LayoutService.dashboardItems) table[item.id] = item
+        return table
+    }
+
+    // The cells the area places, handed over by hand rather than bound. The
+    // cards used to be built again on every write, already in their new
+    // places; kept (the ScriptModel above), one whose cell moved would glide
+    // there instead - a removed card's neighbours, an undo, a profile switch
+    // with the panel open - and start springs that never ran on a write
+    // (pitfall 40). So a write lands as it always did: the glide is off
+    // before the new cells reach the area and back on once that turn is
+    // over. A drag or a pulled corner moves the cells without a write and
+    // glides as before. Bound, the order between the area's binding and a
+    // handler switching the glide off would be the engine's to pick.
+    property bool landing: false
+    property var cardCells: []
+    function takeCells() {
+        landing = true
+        cardCells = LayoutService.dashboardItems.map(item => ({ id: item.id, w: item.w, h: item.h,
+            minW: Dash.minSize(item.type).w, minH: Dash.minSize(item.type).h }))
+        Qt.callLater(root.landed)
+    }
+    function landed() { landing = false }
+    Connections {
+        target: LayoutService
+        function onDashboardItemsChanged() { root.takeCells() }
+    }
+    Component.onCompleted: takeCells()
 
     // Reported from the layout's resting cells, not from the items: a card
     // glides to its new place and a report would fire long before it arrived.

@@ -215,7 +215,7 @@ function enrollExited(state, exitCode, cancelled) {
     if (cancelled) {
         next.phase = "cancelled"
         next.error = false
-        next.message = "Enrollment cancelled"
+        next.message = "Enrollment canceled"
     } else {
         next.phase = "failed"
         next.error = true
@@ -320,6 +320,16 @@ function systemFingerprintPam(text) {
 var ARCH_LOCK_PAM = "/etc/pam.d/buchhwin-lock"
 var ARCH_SYSTEM_PAM = "/etc/pam.d/system-auth"
 
+// grep's exit status for that read: 0 a line was found, 1 none (both files
+// empty), 2 a file could not be read - on Arch before install/system-install.sh
+// that is the lock's own file, and system-auth was read all the same. Each
+// file is judged from its own lines, so 2 is half an answer, not none.
+// Anything else (127: no grep) is no read at all.
+function pamRead(exitCode) {
+    const code = Number(exitCode)
+    return code === 0 || code === 1 || code === 2
+}
+
 // `grep -H "" FILE…` split back into one text per file.
 function pamFiles(output) {
     const files = {}
@@ -353,7 +363,7 @@ function systemFingerprintCommand(family) {
 // Whether the reader is on for the whole system - the login screen, sudo,
 // polkit: authselect's feature, common-auth, Arch's system-auth.
 function parseSystemFingerprint(family, output, exitCode) {
-    if (family === "arch") return Number(exitCode) === 0 ? systemFingerprintPam(pamFiles(output)[ARCH_SYSTEM_PAM]) : null
+    if (family === "arch") return pamRead(exitCode) ? systemFingerprintPam(pamFiles(output)[ARCH_SYSTEM_PAM]) : null
     if (family === "opensuse") return Number(exitCode) === 0 ? systemFingerprintPam(String(output || "")) : null
     return systemFingerprint(output, exitCode)
 }
@@ -361,10 +371,16 @@ function parseSystemFingerprint(family, output, exitCode) {
 // Whether the PAM stack the lock goes through offers it. Fedora's and
 // openSUSE's lock includes the system stack, so the answer is the same; on
 // Arch the lock's own file counts too, and a definite no needs both files.
+// Without the lock's file (grep's 2 and none of its lines) PAM runs the lock
+// through /etc/pam.d/other, which is pam_deny on Arch and includes nothing -
+// not system-auth either, so no line anywhere gives the lock a reader. Only
+// when neither file was read is there nothing to say.
 function parseLockFingerprint(family, output, exitCode) {
     if (family !== "arch") return parseSystemFingerprint(family, output, exitCode)
-    if (Number(exitCode) !== 0) return null
+    if (!pamRead(exitCode)) return null
     const files = pamFiles(output)
+    if (Number(exitCode) === 2 && files[ARCH_LOCK_PAM] === undefined)
+        return files[ARCH_SYSTEM_PAM] === undefined ? null : false
     const lock = systemFingerprintPam(files[ARCH_LOCK_PAM])
     const system = systemFingerprintPam(files[ARCH_SYSTEM_PAM])
     if (lock === true || system === true) return true

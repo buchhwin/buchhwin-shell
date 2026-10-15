@@ -74,6 +74,7 @@ ShellRoot {
 
         // Process exit
         T.eq(F.enrollExited(state, 0, true).phase, "cancelled", "cancel")
+        T.eq(F.enrollExited(state, 0, true).message, "Enrollment canceled", "cancel message in US spelling")
         T.eq(F.enrollExited(state, 1, false).message, "Enrollment stopped (exit code 1)", "unexpected exit")
         T.eq(F.enrollExited(done, 0, true).phase, "done", "exit keeps a result")
 
@@ -143,9 +144,25 @@ ShellRoot {
              [true, true], "Arch, by hand in system-auth: on for the lock and for the whole system")
         T.eq(F.parseLockFingerprint("arch", read(lockOn.replace(D.FINGERPRINT_PAM_LINE, "#" + D.FINGERPRINT_PAM_LINE), archOff), 0),
              false, "Arch: a commented line does not count")
-        // A missing file is an error from grep, and half an answer is none.
+        // A file grep cannot read is its exit 2, and the other file still
+        // answers from its own lines: before system-install.sh there is no
+        // buchhwin-lock, and system-auth was read all the same.
         T.eq([F.parseLockFingerprint("arch", read(lockOff, archOff), 2), F.parseSystemFingerprint("arch", read(lockOff, archOff), 2)],
-             [null, null], "Arch: a failed read is not an answer")
+             [false, false], "Arch: grep's 2 is not a failed read, each file answers")
+        T.eq([F.parseLockFingerprint("arch", read(null, archOff), 2), F.parseSystemFingerprint("arch", read(null, archOff), 2)],
+             [false, false], "Arch, no buchhwin-lock: system-auth is still read, and the lock has no reader")
+        T.eq([F.parseLockFingerprint("arch", read(null, archOn), 2), F.parseSystemFingerprint("arch", read(null, archOn), 2)],
+             [false, true], "Arch, no buchhwin-lock, the reader in system-auth: on for the system, not for the lock (PAM's `other`)")
+        T.eq([F.parseLockFingerprint("arch", read(lockOn, null), 2), F.parseSystemFingerprint("arch", read(lockOn, null), 2)],
+             [true, null], "Arch, no system-auth: the lock's own line still counts, the system is unknown")
+        T.eq(F.parseLockFingerprint("arch", read(lockOff, null), 2), null, "Arch, no system-auth and no line in the lock's file: nothing to say")
+        T.eq([F.parseLockFingerprint("arch", read(null, null), 2), F.parseSystemFingerprint("arch", read(null, null), 2)],
+             [null, null], "Arch: neither file read is no answer")
+        T.eq([F.parseLockFingerprint("arch", read(lockOn, archOn), 127), F.parseSystemFingerprint("arch", read(lockOn, archOn), 127),
+              F.parseLockFingerprint("arch", read(lockOn, archOn), -1)],
+             [null, null, null], "Arch: no grep, or no exit, is not an answer")
+        T.eq([F.parseLockFingerprint("arch", "", 1), F.parseSystemFingerprint("arch", "", 1)],
+             [null, null], "Arch: two empty files (grep's 1) say nothing")
         T.eq(F.parseLockFingerprint("arch", read(null, archOff), 0), null, "Arch: system-auth alone says nothing about the lock's file")
         // Without the line in either file the lock cannot offer the reader,
         // and the page must not say it does.

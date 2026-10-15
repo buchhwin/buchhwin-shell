@@ -5,6 +5,7 @@ import qs.services
 import qs.shell.components
 import "../../services/workspaces/WorkspaceLogic.js" as Logic
 import "../../services/hypr/HiddenWindows.js" as Hidden
+import "../../services/model/KeyedLogic.js" as Keyed
 
 // Workspaces of this widget's monitor; the focused one is highlighted. Settings
 // > Bar & Notch chooses which workspaces are shown (the open ones, the open
@@ -62,11 +63,20 @@ Grid {
     columns: vertical ? 1 : 1000
     spacing: Metrics.spaceXs * scaleFactor
 
+    property var lastList: ({ list: [] })
+    function keptList(next) {
+        const list = Keyed.keep(lastList.list, next, "id")
+        lastList.list = list
+        return list
+    }
+
     Repeater {
         // Matched by id, not rebuilt: a plain array threw every pip away on
         // each switch, in every screen's notch at once. Kept delegates get
-        // their new modelData.
-        model: ScriptModel { values: root.list; objectProp: "id" }
+        // their new modelData; the ones that stayed are handed over as the
+        // same objects (`keptList`, services/model/KeyedLogic.js), or a
+        // workspace that went took its neighbours' pips along.
+        model: ScriptModel { values: root.keptList(root.list); objectProp: "id" }
         // A slot rather than the pip itself: a dot is smaller than the row is
         // tall, and a pointer should not have to find a 14 px target. The slot
         // keeps the full height and a hand's width whatever is drawn in it.

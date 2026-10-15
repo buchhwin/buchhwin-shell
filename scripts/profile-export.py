@@ -13,7 +13,8 @@ What goes in: the profile's five modes (layouts and the appearance each mode
 owns), its notch, the notch presets and its lock screen's layout, and every
 setting except what belongs to this machine or this person rather than to the
 look (DROP: at least ProfileLogic.GLOBAL_SETTINGS - where the weather is,
-hidden calendars, histories, onboarding, the screens and the keyboard layout).
+hidden calendars, histories, onboarding, the screens and the keyboard layout,
+power and the fingerprint reader).
 The profile in use is exported as it is set now; another one with the state it
 keeps in layout.json (LayoutService, `state`), and one that has none yet is
 refused rather than exported with the settings of the profile in use. Paths
@@ -46,6 +47,7 @@ DROP = {
     "calendar.hiddenCalendars", "calendar.newEventCalendar",
     "display", "input.kbLayout", "input.kbVariant",
     "desktop.settingsMoveX", "desktop.settingsMoveY",
+    "power", "lock.fingerprint",
 }
 # Paths that are kept, home-relative.
 PATHS = {"wallpaper.path", "wallpaper.folder", "wallpaper.slideshowFolder", "login.wallpaper", "recording.folder"}

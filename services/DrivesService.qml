@@ -122,21 +122,30 @@ Singleton {
     }
 
     // ---- notifications (notify-send to the shell's own server) -------------
+    // notify-send waits for an answer until its notice closes, and the shell
+    // keeps notices in its history: every plug event left a notify-send and
+    // its Process behind for good. Ten minutes is time enough to click; after
+    // that the notice stays in the history and its buttons do nothing. Bound
+    // to the shell as well, so a crash leaves none of them behind (Paths.bound).
+    function noticeCommand(argv) { return Paths.bound(["timeout", "10m"].concat(argv)) }
+
     function notifyConnected(drive) {
         const body = Logic.connectedBody(drive)
+        rememberNotice(drive.id, body)
         notifyComponent.createObject(root, {
-            driveId: drive.id, body: body,
-            command: ["notify-send", "--app-name=Drives", "--icon=" + Logic.notifyIcon(drive),
-                      "--action=open=Open", "--action=ignore=Ignore", "--", Logic.connectedTitle(drive), body]
+            driveId: drive.id,
+            command: noticeCommand(["notify-send", "--app-name=Drives", "--icon=" + Logic.notifyIcon(drive),
+                      "--action=open=Open", "--action=ignore=Ignore", "--", Logic.connectedTitle(drive), body])
         })
     }
 
     function notifyPhone(phone) {
         const body = Logic.phoneConnectedBody(phone)
+        rememberNotice(phone.id, body)
         notifyComponent.createObject(root, {
-            driveId: phone.id, body: body,
-            command: ["notify-send", "--app-name=Drives", "--icon=" + Logic.phoneNotifyIcon(),
-                      "--action=open=Open", "--action=ignore=Ignore", "--", "Phone connected", body]
+            driveId: phone.id,
+            command: noticeCommand(["notify-send", "--app-name=Drives", "--icon=" + Logic.phoneNotifyIcon(),
+                      "--action=open=Open", "--action=ignore=Ignore", "--", "Phone connected", body])
         })
     }
 
@@ -154,19 +163,27 @@ Singleton {
         if (phone) openPhone(phone)
     }
 
-    // A connection notice is pointless once the drive is gone.
+    // A connection notice is pointless once the drive is gone. Its body is
+    // kept by drive rather than on the notifier: the notifier is gone after
+    // ten minutes, the notice in the history is not.
+    property var noticeBodies: ({})
+    function rememberNotice(driveId, body) {
+        const next = Object.assign({}, noticeBodies)
+        next[driveId] = body
+        noticeBodies = next
+    }
     function dismissNotifications(driveId) {
-        for (let i = 0; i < notifiers.length; ++i) {
-            const notifier = notifiers[i]
-            if (notifier.driveId !== driveId) continue
-            const list = NotificationService.history
-            for (let j = list.length - 1; j >= 0; --j) {
-                const item = list[j]
-                if (item && item.appName === "Drives" && item.body === notifier.body) item.dismiss()
-            }
+        const body = noticeBodies[driveId]
+        if (body === undefined) return
+        const next = Object.assign({}, noticeBodies)
+        delete next[driveId]
+        noticeBodies = next
+        const list = NotificationService.history
+        for (let j = list.length - 1; j >= 0; --j) {
+            const item = list[j]
+            if (item && item.appName === "Drives" && item.body === body) item.dismiss()
         }
     }
-    property var notifiers: []
 
     Component {
         id: notifyComponent
@@ -174,18 +191,16 @@ Singleton {
             id: notifier
             stderr: ErrorLog { label: "DrivesService.notifier" }
             property string driveId: ""
-            property string body: ""
             running: true
             // notify-send prints the chosen action key and exits when the
-            // notification closes.
+            // notification closes, or timeout ends it (noticeCommand); the
+            // Process goes with it either way.
             stdout: StdioCollector {
                 onStreamFinished: {
-                    root.notifiers = root.notifiers.filter(item => item !== notifier)
                     root.notificationAction(notifier.driveId, text.trim())
                     notifier.destroy()
                 }
             }
-            Component.onCompleted: root.notifiers = root.notifiers.concat([notifier])
         }
     }
 

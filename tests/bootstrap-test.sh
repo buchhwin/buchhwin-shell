@@ -108,6 +108,13 @@ check 'Arch installs checkupdates for the update check, and the fakeroot it sync
   'grep -qx pacman-contrib <<<"$arch_list" && grep -qx fakeroot <<<"$arch_list"'
 check 'Arch installs the MTP backend the drives list finds phones with' 'grep -qx gvfs-mtp <<<"$arch_list"'
 check 'Arch installs merkuro, which the calendar service cannot load without' 'grep -qx merkuro <<<"$arch_list"'
+check 'Arch installs rtkit, which PipeWire asks for realtime priority' 'grep -qx rtkit <<<"$arch_list"'
+
+# setpriv (Paths.bound) is in util-linux or util-linux-core depending on the
+# Fedora release; util-linux requires util-linux-core, so it covers both.
+fedora_list=$("$script" --distro fedora --list-packages)
+check 'Fedora installs util-linux for setpriv, not util-linux-core alone' \
+  'grep -qx util-linux <<<"$fedora_list" && ! grep -qx util-linux-core <<<"$fedora_list"'
 
 # Detection from os-release, through the library the script uses.
 lib="$project_dir/install/lib/distro.sh"

@@ -1,9 +1,28 @@
 import Quickshell
+import Quickshell.Io
 import QtQuick
+import qs.services
 import "Harness.js" as T
 import "../../services/wallpaper/WallpaperLogic.js" as W
 
 ShellRoot {
+    id: root
+    property int waits: 0
+    property int imageLists: 0
+    // A wallpaper folder in the sandbox with two images in it. Their bytes do
+    // not matter: the folder is read by name.
+    readonly property string wallFolder: Paths.cacheDir + "/wallpaper-test"
+    FileView { id: imageA; path: root.wallFolder + "/a.png"; printErrors: false }
+    FileView { id: imageB; path: root.wallFolder + "/b.png"; printErrors: false }
+    // The accent from the wallpaper follows every image below, and none of
+    // them is one it can read.
+    readonly property string accentSource: AdaptiveService.accentSource
+
+    Connections {
+        target: WallpaperService
+        function onImagesChanged() { root.imageLists += 1 }
+    }
+
     Component.onCompleted: {
         const images = ["/w/a.png", "/w/b.jpg", "/w/c.webp"]
         T.eq(W.parseState("{broken"), W.emptyState(), "broken file")
@@ -115,6 +134,9 @@ ShellRoot {
         T.eq(W.pickerFilters(shelf, [flat], home).map(f => f.key), ["", W.FAVOURITES, "abstract", "nature"],
              "with favourites it comes first, before the folders")
         T.eq(W.pickerFilters(shelf, [flat], home)[0].label, "All", "and everything is the first chip")
+        // The key keeps its old spelling, only the label is US English like the
+        // rest of the interface.
+        T.eq(W.pickerFilters(shelf, [flat], home)[1].label, "Favorites", "the starred chip reads Favorites")
         T.eq(W.pickerFilters([], [], home).length, 1, "nothing to group is one chip, which the picker then hides")
 
         // Filtering. The grid stays one rectangle; only what is in it changes.
@@ -197,6 +219,53 @@ ShellRoot {
         T.eq(W.addRecentFolder("~/1,~/2,~/3,~/4,~/5", "~/6").split(",").length, 5, "at most five")
         T.eq(W.addRecentFolder("~/a", "~/x,y"), "~/a", "a comma would split the list, so it is not stored")
 
-        T.finish("WallpaperTest")
+        // ---- WallpaperService in the sandbox: a configured image that is gone
+        imageA.setText("a\n")
+        imageB.setText("b\n")
+        SettingsService.setAll({ "wallpaper.folder": root.wallFolder, "wallpaper.path": root.wallFolder + "/gone.png",
+                                 "appearance.accentFromWallpaper": true, "appearance.accent": "#50e2cb" })
+        missing.start()
+    }
+
+    // The configured file is not there: the desktop gets the folder's first
+    // image rather than a path that draws nothing.
+    Timer {
+        id: missing
+        interval: 50
+        repeat: true
+        onTriggered: {
+            root.waits += 1
+            const there = WallpaperService.images.length === 2 && WallpaperService.configuredMissing
+            if (!there && root.waits < 100) return
+            stop()
+            T.eq(WallpaperService.images, [root.wallFolder + "/a.png", root.wallFolder + "/b.png"], "the folder's two images")
+            T.ok(WallpaperService.configuredMissing, "the configured image is known to be gone")
+            T.eq(WallpaperService.current, root.wallFolder + "/a.png", "and the first image of the folder is the wallpaper")
+            SettingsService.set("wallpaper.path", root.wallFolder + "/b.png")
+            T.eq(WallpaperService.current, root.wallFolder + "/b.png", "an image the folder lists is taken at once")
+            // The same list again is not a new one.
+            const lists = root.imageLists
+            WallpaperService.refresh()
+            T.eq(root.imageLists, lists, "reading the same folder again does not hand out a new list")
+            // A file outside the folder is asked for; this one is there.
+            const outside = Quickshell.shellPath("config/builtin-profiles/buchhwin/saturn.txt")
+            SettingsService.set("wallpaper.path", outside)
+            T.eq(WallpaperService.current, outside, "a file outside the folder is taken to be there until asked")
+            root.waits = 0
+            outsideFile.start()
+        }
+    }
+
+    Timer {
+        id: outsideFile
+        interval: 1500
+        onTriggered: {
+            T.ok(!WallpaperService.configuredMissing, "one that is there stays the wallpaper after it was asked")
+            T.eq(WallpaperService.current, Quickshell.shellPath("config/builtin-profiles/buchhwin/saturn.txt"), "as it was")
+            T.eq(root.accentSource, WallpaperService.current, "the accent was asked for each wallpaper")
+            T.eq(SettingsService.value("appearance.accent"), "#50e2cb",
+                 "and an image that is gone or cannot be read keeps the accent rather than turning it blue")
+            T.finish("WallpaperTest")
+        }
     }
 }

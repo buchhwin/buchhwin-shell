@@ -28,6 +28,12 @@ Singleton {
     readonly property string middleAction: NotchLogic.buttonAction(SettingsService.value("notch.middleAction"))
     readonly property string rightAction: NotchLogic.buttonAction(SettingsService.value("notch.rightAction"))
     readonly property bool swipe: SettingsService.value("notch.swipe") !== false
+    // The neutral status glyphs in the accent instead of white: "off",
+    // "overview" or "all" (the strip too). The two flags are what the surfaces
+    // read; a glyph that shows a state keeps its colour either way.
+    readonly property string accentGlyphs: NotchLogic.accentGlyphs(SettingsService.value("notch.accentGlyphs"))
+    readonly property bool overviewGlyphsInAccent: NotchLogic.glyphsInAccent(accentGlyphs, "overview")
+    readonly property bool stripGlyphsInAccent: NotchLogic.glyphsInAccent(accentGlyphs, "strip")
     // Panels open out of the notch rather than below it (ShellPanel).
     readonly property bool panelsFromNotch: SettingsService.value("notch.panelOrigin") === "notch" && !pill
     // ---- the collapsed body -----------------------------------------------
@@ -195,7 +201,7 @@ Singleton {
         const covered = {}
         for (const screen of Quickshell.screens) covered[screen.name] = HyprlandService.fullscreenReport(screen)
         return JSON.stringify({ mode: LayoutService.desktopMode, reserve: reserve, fullscreen: fullscreen, hoverMode: hoverMode,
-                                clickAction: clickAction, openDelay: openDelay, closeDelay: closeDelay,
+                                clickAction: clickAction, openDelay: openDelay, closeDelay: closeDelay, accentGlyphs: accentGlyphs,
                                 bodyHeight: bodyHeight, bodyRadius: bodyRadius, bodyPadding: bodyPadding,
                                 presets: LayoutService.notchPresets.length,
                                 forced: forcedScreens.join(","), mediaPreview: mediaPreview, weatherTrackers: WeatherService.trackers,

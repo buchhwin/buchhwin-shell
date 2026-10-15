@@ -36,6 +36,10 @@ stub grim 'for last; do :; done; : > "$last"'
 # inherit the lock. The stand-in leaves a sleep behind with its open files.
 stub wl-copy "cat >/dev/null; (exec sleep 3.141) & echo \$! >> '$daemons'; exit 0"
 stub notify-send
+# The notification's waiter runs under timeout: notify-send waits until its
+# notice closes, and the shell's history keeps notices open for good. The
+# stand-in notes whether it got the lock's descriptor, then runs the command.
+stub timeout "if [ -e /proc/\$\$/fd/9 ]; then echo 'lock held by timeout' >> '$calls'; fi; shift; exec \"\$@\""
 stub xdg-user-dir "echo '$sandbox/home/Pictures'"
 stub hyprctl "echo '[{\"name\":\"eDP-1\",\"focused\":true}]'"
 export PATH="$bin:$PATH"
@@ -66,6 +70,16 @@ check 'kill -0 "$(head -n1 "$daemons")" 2>/dev/null' 'the stand-in clipboard dae
 : > "$calls"
 shoot SLURP_SECONDS=0
 check '[[ $(count slurp) -eq 1 && $(count grim) -eq 1 ]]' 'the next screenshot is not blocked by the clipboard daemon'
+
+# The notification is sent from a background job after the script has
+# returned; it gets a moment to arrive.
+for _ in {1..30}; do
+  [[ $(count notify-send) -ge 1 ]] && break
+  sleep 0.1
+done
+check '[[ $(count notify-send) -ge 1 ]]' 'the screenshot is announced'
+check 'grep -q "^timeout 10m notify-send --app-name=Screenshot " "$calls"' 'the notification waiter ends on its own (timeout 10m)'
+check '! grep -q "^lock held" "$calls"' 'the notification waiter does not hold the screenshot lock'
 
 if (( failures )); then
   printf 'screenshot: %d check(s) failed\n' "$failures" >&2

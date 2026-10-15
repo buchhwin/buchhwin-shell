@@ -23,7 +23,11 @@ ShellPanel {
     // Group keys the user expanded ("N more").
     property var expanded: ({})
     property string query: ""
-    readonly property var matching: Logic.search(NotificationService.history, query)
+    // Searched and grouped while shown, like the list below: hidden, every
+    // notification that arrived ran both over the whole history for a panel
+    // nobody saw. `shown` turns true in the same turn the window maps
+    // (ShellPanel), so the first frame of an open already has the list.
+    readonly property var matching: shown ? Logic.search(NotificationService.history, query) : []
     readonly property var groups: Logic.group(matching)
 
     onWantedChanged: if (wanted) { NotificationService.markRead(); query = "" }

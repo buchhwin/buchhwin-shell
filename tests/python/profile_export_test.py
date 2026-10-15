@@ -59,6 +59,13 @@ for entry in global_settings:
 check(not module.dropped("displayX") and not module.dropped("notch.displayOsd"), "a group is matched whole")
 check(set(js_list("MODE_SCOPED")) == module.MODE_SCOPED, "the mode-scoped leaves are ProfileLogic.MODE_SCOPED")
 
+# The shipped profiles themselves: edited by hand as well as written by the
+# export, and a global setting in one is set on every machine that uses it.
+for shipped in sorted((ROOT / "config" / "builtin-profiles").glob("*/profile.json")):
+    carried = [path for path in module.flatten(json.loads(shipped.read_text(encoding="utf-8")).get("settings") or {})
+               if module.dropped(path)]
+    check(carried == [], "%s carries no global setting: %r" % (shipped.parent.name, carried))
+
 
 def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -83,6 +90,8 @@ with tempfile.TemporaryDirectory() as temp:
         "input": {"kbLayout": "de", "repeatRate": 30},
         "display": {"x11Scale": 1.5},
         "notch": {"headerAdopted": True, "bodyHeight": 32},
+        "power": {"lowBatteryLevel": 20, "ac": {"lidAction": "nothing"}},
+        "lock": {"fingerprint": "on", "showAvatar": True},
     }
     layout = {
         "configVersion": 3, "activeProfile": "default", "activeMode": "work",
@@ -123,6 +132,8 @@ with tempfile.TemporaryDirectory() as temp:
     check(profile["settings"]["input"] == {"repeatRate": 30}, "the keyboard layout is this machine's, the repeat rate is not")
     check("display" not in profile["settings"], "the screens are this machine's")
     check(profile["settings"]["notch"] == {"bodyHeight": 32}, "a one-shot marker is this machine's files'")
+    check("power" not in profile["settings"], "power - the lid, sleep, the battery - is this machine's")
+    check(profile["settings"]["lock"] == {"showAvatar": True}, "and so is the fingerprint reader, the rest of the lock screen is not")
     check("autoLocate" not in weather, "asking where this machine is goes with the place")
     check(profile["label"] == "Default", "the label is the profile's own")
     check(profile["modes"]["work"]["appearance"] == {"blurStrength": 0.9, "gapsIn": 3}, "the modes keep their appearance")

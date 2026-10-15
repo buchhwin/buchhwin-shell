@@ -25,8 +25,10 @@ packages=(
   brightnessctl wireplumber pipewire-utils playerctl NetworkManager
   plocate jq curl grim slurp swappy wl-clipboard cliphist gammastep
   swaylock swayidle kdialog udisks2 wireguard-tools
-  # setpriv: the shell's long-running helpers die with it (--pdeathsig)
-  util-linux-core
+  # setpriv: the shell's long-running helpers die with it (--pdeathsig).
+  # util-linux requires util-linux-core, so setpriv is there whichever of the
+  # two carries it on this release.
+  util-linux
   # the helper scripts in scripts/ are Python
   python3-dbus python3-gobject python3-pillow
   # KDE pieces the session reuses instead of carrying its own

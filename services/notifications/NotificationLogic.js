@@ -109,6 +109,20 @@ function withPopup(popups, notification, maxPopups) {
     return next.slice(Math.max(0, next.length - limit))
 }
 
+// The notifications to let go once the history holds more than `limit`: the
+// ones older than the newest `limit`, but never one in `keep` (the popups on
+// screen). A popup that is still up keeps its place and the history stays
+// that much over until a later arrival finds it gone; nothing of the newest
+// `limit` is taken in its stead. `history` is in arrival order, as the server
+// keeps it. Unit tested.
+function overflow(history, limit, keep) {
+    const list = history || []
+    const over = list.length - Math.max(0, limit)
+    if (over <= 0) return []
+    const kept = keep || []
+    return list.slice(0, over).filter(notification => kept.indexOf(notification) < 0)
+}
+
 // Popups that are still in the server's list. Dismissed notifications leave
 // the history and must leave the queue with it. Unit tested.
 function livePopups(popups, live) {

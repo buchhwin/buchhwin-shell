@@ -168,7 +168,11 @@ Singleton {
     // event of an idle session. A hotspot this shell started is the
     // exception: it can go down on its own, so it keeps being read.
     property bool viewOpen: false
-    property bool hotspotRead: false
+    // The connection network-helper.py starts and asks about (HOTSPOT_ID).
+    // Its showing up active in nmcli's list is when a view-less read is due:
+    // a hotspot up before this shell, or started outside it.
+    readonly property string hotspotName: "buchhwin-hotspot"
+    property bool hotspotListed: false
     function setScanning(enabled) {
         viewOpen = enabled
         if (wifiDevice) wifiDevice.scannerEnabled = enabled
@@ -320,9 +324,10 @@ Singleton {
     function refresh() {
         if (connectionsProc.running) refreshQueued = true
         else connectionsProc.running = true
-        // Once at start as well, so a hotspot started before this shell, or
-        // outside it, shows without a network view having been opened first.
-        if (viewOpen || hotspotActive || !hotspotRead) { hotspotRead = true; refreshHotspot() }
+        // Not at start any more: a hotspot started before this shell, or
+        // outside it, is read once the connection list shows it (below), and
+        // on almost every login there is none to read.
+        if (viewOpen || hotspotActive) refreshHotspot()
     }
 
     Process {
@@ -346,6 +351,9 @@ Singleton {
                 // Only a list that changed is handed on: a new array every
                 // run rebuilt everything bound to the VPNs for nothing.
                 if (JSON.stringify(result) !== JSON.stringify(root.connections)) root.connections = result
+                const listed = result.some(item => item.active && item.name === root.hotspotName)
+                if (listed && !root.hotspotListed) root.refreshHotspot()
+                root.hotspotListed = listed
                 root.wiredConnected = wired
                 root.readAddress(device)
             }

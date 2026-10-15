@@ -297,6 +297,18 @@ ShellRoot {
         T.eq([N.delay(120, N.OPEN_DELAY), N.delay(-5, N.OPEN_DELAY), N.delay(99999, N.CLOSE_DELAY), N.delay("x", N.CLOSE_DELAY)],
              [120, 0, 2000, 400], "delays clamped, nonsense falls back")
 
+        // Status glyphs in the accent: nowhere, the overview, or the strip too.
+        T.eq(N.ACCENT_GLYPHS, ["off", "overview", "all"], "the three accent-glyph settings")
+        T.eq([N.accentGlyphs("all"), N.accentGlyphs("overview"), N.accentGlyphs("evil"), N.accentGlyphs(undefined)],
+             ["all", "overview", "off", "off"], "an unknown accent-glyph setting is off")
+        T.eq([N.glyphsInAccent("off", "overview"), N.glyphsInAccent("off", "strip")], [false, false], "off: white everywhere")
+        T.eq([N.glyphsInAccent("overview", "overview"), N.glyphsInAccent("overview", "strip")], [true, false],
+             "overview: the open notch only, the strip stays white")
+        T.eq([N.glyphsInAccent("all", "overview"), N.glyphsInAccent("all", "strip")], [true, true], "all: both places")
+        T.eq([N.glyphsInAccent("evil", "overview"), N.glyphsInAccent(undefined, "strip"), N.glyphsInAccent("all", "bar")],
+             [false, false, false], "nonsense is off, and no other place takes the accent")
+        T.ok(L.NOTCH_PRESET_OPTIONS.indexOf("accentGlyphs") >= 0, "a preset carries the glyph colour")
+
         // The collapsed body: clamped to its ranges, rounded, and the theme's
         // token (the caller's fallback) for anything that is not a number.
         T.eq([N.bodySize(32, N.BODY_HEIGHT, 40), N.bodySize(10, N.BODY_HEIGHT, 40), N.bodySize(999, N.BODY_RADIUS, 16),

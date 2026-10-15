@@ -17,7 +17,7 @@ WidgetBase {
     glyph: lying && PowerService.hasBattery ? batteryGlyph : null
     icon: PowerService.icon
     iconColor: PowerService.charging ? Colors.success
-        : PowerService.percent <= 15 && PowerService.onBattery ? Colors.danger : root.textColor
+        : PowerService.percent <= 15 && PowerService.onBattery ? Colors.danger : root.glyphInk
     label: PowerService.percent + "%"
     name: PowerService.hasBattery ? "Battery" : "Power"
     meter: PowerService.hasBattery ? PowerService.percent / 100 : -1

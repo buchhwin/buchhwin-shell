@@ -17,6 +17,10 @@ Singleton {
         || Quickshell.env("BUCHHWIN_NESTED_NOTIFICATIONS") === "1"
     readonly property var server: serverLoader.item
     readonly property int maxPopups: 3
+    // How many notifications the history keeps. Every one is tracked, image
+    // and all, until it is dismissed, and nothing else ever let one go: a
+    // session that was never cleared held every notification since login.
+    readonly property int maxHistory: 100
     readonly property var history: server ? server.trackedNotifications.values : []
     property var popups: []
     property int unread: 0
@@ -58,6 +62,19 @@ Singleton {
         for (let i = values.length - 1; i >= 0; --i) values[i].dismiss()
         popups = []
         unread = 0
+    }
+
+    // The oldest beyond `maxHistory` expire: they leave the history, and the
+    // sender hears that they closed (a `notify-send --wait` or `--action`
+    // still waiting on one returns). Expired, not dismissed - nobody closed
+    // them. A popup on screen is left alone; it goes with a later arrival.
+    function trimHistory() {
+        if (!server) return
+        const values = server.trackedNotifications.values
+        const old = Logic.overflow(values, maxHistory, popups)
+        for (const notification of old) notification.expire()
+        // Counted per arrival; there are no more unread than are left.
+        if (old.length) unread = Math.min(unread, server.trackedNotifications.values.length)
     }
 
     function hidePopup(notification) {
@@ -209,6 +226,9 @@ Singleton {
 
             onNotification: notification => {
                 notification.tracked = true
+                // After this arrival has been queued as a popup or not, and
+                // not from inside the server's own signal.
+                Qt.callLater(root.trimHistory)
                 root.now = Date.now()
                 if (!PanelService.isOpen("notifications")) root.unread += 1
                 const state = { suppressed: root.suppressed, dndMode: root.dndMode }

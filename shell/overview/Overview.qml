@@ -10,6 +10,7 @@ import qs.services
 import qs.shell.components
 import "../../services/overview/OverviewLogic.js" as Logic
 import "../../services/appearance/ContrastLogic.js" as Contrast
+import "../../services/model/KeyedLogic.js" as Keyed
 
 // Super+W: workspaces with live window previews. Type to filter, arrows to
 // select, Enter to focus, Delete to close; click a workspace to switch to it,
@@ -129,8 +130,14 @@ ShellPanel {
                     // every card and every preview in it, whether or not a
                     // single window moved. Every workspace or window event
                     // comes through here, so most answers are the same answer.
+                    // Workspaces and windows that did not change are handed on
+                    // as the same objects: the cards' and previews' models only
+                    // match those right (services/model/KeyedLogic.js) - a
+                    // window that left a card used to pass every preview after
+                    // it on to its neighbour, capture and all.
                     if (JSON.stringify(monitors) !== JSON.stringify(window.monitors)) window.monitors = monitors
-                    if (JSON.stringify(workspaces) !== JSON.stringify(window.workspaces)) window.workspaces = workspaces
+                    if (JSON.stringify(workspaces) !== JSON.stringify(window.workspaces))
+                        window.workspaces = Keyed.keep(window.workspaces, workspaces, "id", { windows: "address" })
                 } catch (error) {
                     window.monitors = []
                     window.workspaces = []
@@ -347,8 +354,17 @@ ShellPanel {
                                         // a ring.
                                         anchors.margins: frame.border.width
                                         visible: !card.placeholder && status === Image.Ready
+                                        // The picker's thumbnail where there is one,
+                                        // like the picker: `sourceWidth` alone did not
+                                        // spare the decode, because Qt cannot decode a
+                                        // PNG at a reduced size - a 6000x3750 wallpaper
+                                        // cost 160-180 ms and ~90 MB per card, for 480
+                                        // pixels. The thumbnails are 520 wide, so the
+                                        // card still gets its 480. An image outside the
+                                        // folder has none and is read as before.
                                         source: card.placeholder ? ""
-                                            : WallpaperService.currentFor(card.modelData.monitor)
+                                            : WallpaperService.thumbFor(WallpaperService.currentFor(card.modelData.monitor))
+                                              || WallpaperService.currentFor(card.modelData.monitor)
                                         // Concentric with the card: the same radius
                                         // less the border it sits inside.
                                         radius: Metrics.radiusCard - frame.border.width

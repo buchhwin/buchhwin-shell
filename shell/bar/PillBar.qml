@@ -5,6 +5,7 @@ import QtQuick.Shapes
 import qs.theme
 import qs.services
 import "../../services/bar/BarLogic.js" as BarLogic
+import "../../services/model/KeyedLogic.js" as Keyed
 
 // Desktop mode "pills": a bar on one edge of every screen with start, centre
 // and end zones (layout.json, per profile). Style "pills" draws floating
@@ -108,6 +109,17 @@ Variants {
         // width spring cannot start for a change that used to arrive in a
         // fresh pill (pitfall 40): a pill that changed, and every pill when
         // the scale, style or edge does, is built anew as before.
+        // What each zone's model was handed last, kept outside any binding's
+        // dependencies: each change hands back the very same objects for the
+        // pills that stayed, which is the only way Quickshell's ScriptModel
+        // matches them right (services/model/KeyedLogic.js) - a pill taken
+        // out of the middle used to hand its neighbours' data on by position.
+        property var lastPills: ({ left: [], center: [], right: [] })
+        function keptPills(zone, next) {
+            const list = Keyed.keep(lastPills[zone], next, "pillKey")
+            lastPills[zone] = list
+            return list
+        }
         function pillKeys(list) {
             const options = JSON.stringify([scaleFactor, flat, vertical, barRadius, barSpan])
             const seen = {}
@@ -397,7 +409,7 @@ Variants {
             spacing: window.zoneGap
             Repeater {
                 id: leftRepeater
-                model: ScriptModel { values: window.pillKeys(window.bar.left); objectProp: "pillKey" }
+                model: ScriptModel { values: window.keptPills("left", window.pillKeys(window.bar.left)); objectProp: "pillKey" }
                 Pill {
                     required property var modelData
                     required property int index
@@ -437,7 +449,7 @@ Variants {
             spacing: window.zoneGap
             Repeater {
                 id: centerRepeater
-                model: ScriptModel { values: window.pillKeys(window.bar.center); objectProp: "pillKey" }
+                model: ScriptModel { values: window.keptPills("center", window.pillKeys(window.bar.center)); objectProp: "pillKey" }
                 Pill {
                     required property var modelData
                     required property int index
@@ -475,7 +487,7 @@ Variants {
             }
             Repeater {
                 id: rightRepeater
-                model: ScriptModel { values: window.pillKeys(window.bar.right); objectProp: "pillKey" }
+                model: ScriptModel { values: window.keptPills("right", window.pillKeys(window.bar.right)); objectProp: "pillKey" }
                 Pill {
                     required property var modelData
                     required property int index

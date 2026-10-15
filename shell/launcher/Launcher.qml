@@ -67,6 +67,12 @@ ShellPanel {
     // shell has instead, twice. A block goes where it is put and is the size
     // it is dragged to; nothing here decides that for it any more.
     readonly property var blocks: LayoutService.launcherItems
+    // The slots' blocks by id (their Repeater runs on the ids alone).
+    readonly property var blockById: {
+        const table = {}
+        for (const block of blocks) table[block.id] = block
+        return table
+    }
 
     onWantedChanged: {
         if (wanted) {
@@ -182,25 +188,39 @@ ShellPanel {
             onPlacementChanged: reportTimer.restart()
             onWidthChanged: reportTimer.restart()
 
+            // Matched by id, not rebuilt: `blocks` is a new list on every write
+            // of the layout file, and on a plain array every block - the field
+            // with its focus, the result list - was thrown away and built
+            // again, hidden or not. The model is the ids, not the blocks with
+            // `objectProp` (see DashboardPanel: Quickshell 0.3.2 hands rows on
+            // by position after the first one it updates in place), and a slot
+            // reads its block by its id. The motion is the old one: the
+            // rebuilt blocks were made at their old cells and glided to the new
+            // ones, because this Repeater hears of a new list before the area
+            // does; a kept block glides the same way from where it stands.
             Repeater {
-                model: root.blocks
+                model: ScriptModel { values: root.blocks.map(block => block.id) }
                 LauncherSlot {
-                    required property var modelData
+                    required property string modelData
                     required property int index
+                    // Empty for the turn in which its block is taken off: it
+                    // unloads rather than build a block on its way out.
+                    readonly property var block: root.blockById[modelData] || null
+                    readonly property string blockType: block ? block.type : ""
                     area: grid
-                    blockId: modelData.id
-                    type: modelData.type
-                    label: LayoutService.launcherLabel(modelData.type)
-                    removable: !LauncherCatalogue.fixed(modelData.type)
+                    blockId: modelData
+                    type: blockType
+                    label: LayoutService.launcherLabel(blockType)
+                    removable: !LauncherCatalogue.fixed(blockType)
                     // The pinned row is there before the query and gone the
                     // moment there is one - gone, not blank: a block that
                     // shows nothing holds no row, and the result list takes
                     // it. While arranging it holds its place, or it could not
                     // be dragged.
-                    holds: modelData.type !== "pinned" || root.editing || root.pinnedShown
+                    holds: blockType !== "pinned" || root.editing || root.pinnedShown
                     slotIndex: index
-                    content: root.blockFor(modelData.type)
-                    onResized: (w, h) => LayoutService.launcherSetSize(modelData.id, w, h)
+                    content: block ? root.blockFor(blockType) : null
+                    onResized: (w, h) => LayoutService.launcherSetSize(modelData, w, h)
                 }
             }
         }

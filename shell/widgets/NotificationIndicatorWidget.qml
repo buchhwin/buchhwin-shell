@@ -5,7 +5,7 @@ import qs.services
 WidgetBase {
     id: root
     icon: NotificationService.dndActive ? "󰂛" : NotificationService.unread > 0 ? "󰂞" : "󰂚"
-    iconColor: NotificationService.unread > 0 && !NotificationService.dndActive ? Colors.accentForeground : root.textColor
+    iconColor: NotificationService.unread > 0 && !NotificationService.dndActive ? Colors.accentForeground : root.glyphInk
     label: NotificationService.unread > 0 ? String(NotificationService.unread) : ""
     name: "Notifications"
     detail: NotificationService.dndActive ? NotificationService.dndLabel

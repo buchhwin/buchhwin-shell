@@ -75,7 +75,7 @@ Item {
             border.width: root.styleName === "card" || (root.styleName === "minimal" && root.lit) ? Metrics.borderWidth : 0
             border.color: Colors.panelBorder
             opacity: root.styleName === "minimal" ? (root.lit ? 1 : 0) : 1
-            Behavior on opacity { NumberAnimation { duration: Animations.hover } }
+            Behavior on opacity { NumberAnimation { duration: Animations.hover; easing.type: Animations.easing } }
         }
 
         // The padding around the widgets is part of the frame that lifts, so

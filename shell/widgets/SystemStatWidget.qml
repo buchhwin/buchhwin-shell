@@ -32,7 +32,7 @@ WidgetBase {
 
     icon: metric === "ram" ? "󰍛" : metric === "disk" ? "󰋊" : "󰻠"
     label: SystemStatsService.percent(usage)
-    iconColor: usage > 0.9 ? Colors.danger : usage > 0.75 ? Colors.warning : root.textColor
+    iconColor: usage > 0.9 ? Colors.danger : usage > 0.75 ? Colors.warning : root.glyphInk
     // What a bigger cell is worth here: the name, so a row of three of these
     // can be read without knowing the glyphs; a bar, because a number alone
     // does not say whether 62 % is a lot; and how much of the thing there

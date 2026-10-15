@@ -2038,7 +2038,7 @@
       "fontScale": 1,
       "cursorTheme": "macOS",
       "cursorSize": 24,
-      "accentFromWallpaper": true,
+      "accentFromWallpaper": false,
       "panelScrim": true,
       "panelColor": "#000000",
       "screenCorners": true,
@@ -2144,8 +2144,7 @@
       "showAvatar": true,
       "showMedia": false,
       "showStatus": false,
-      "showPowerButtons": true,
-      "fingerprint": "auto"
+      "showPowerButtons": true
     },
     "terminal": {
       "fontFamily": "JetBrainsMono Nerd Font",
@@ -2230,27 +2229,6 @@
       "temperature": 4000,
       "start": "20:00",
       "end": "07:00"
-    },
-    "power": {
-      "lockBeforeSleep": true,
-      "lowBatteryWarning": true,
-      "lowBatteryLevel": 20,
-      "battery": {
-        "screenOffMinutes": 5,
-        "lockMinutes": 0,
-        "suspendMinutes": 15,
-        "dimBeforeScreenOff": true,
-        "lidAction": "suspend",
-        "profile": "powerSaver"
-      },
-      "ac": {
-        "screenOffMinutes": 0,
-        "lockMinutes": 0,
-        "suspendMinutes": 0,
-        "dimBeforeScreenOff": true,
-        "lidAction": "nothing",
-        "profile": "balanced"
-      }
     },
     "calendar": {
       "enabled": true,

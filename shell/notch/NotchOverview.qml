@@ -11,7 +11,8 @@ import "../../services/LayoutLogic.js" as LayoutLogic
 // Content of the expanded notch. Two arrangements of the same blocks:
 // "wide" puts the media beside the events so the notch grows sideways, and
 // "stacked" keeps the older single column. Loaded only while the notch is
-// expanded, so the weather is tracked only then.
+// expanded, so the weather is tracked only then - and only with a weather
+// item in it.
 Item {
     id: root
     required property var notch
@@ -73,8 +74,23 @@ Item {
     // which is the first thing you see on a pill, where both edges are there.
     implicitHeight: column.implicitHeight + Metrics.notchExpandedPadding * 2
 
-    Component.onCompleted: WeatherService.track()
-    Component.onDestruction: { WeatherService.untrack(); root.clearRects() }
+    // The forecast is fetched only while this overview has a weather item to
+    // draw it in. It used to be tracked on every opening, so a hover over a
+    // notch without the weather could still send a request when the data was
+    // more than ten minutes old. Followed rather than read once: the editor
+    // can add or remove the item while the overview is open.
+    readonly property bool showsWeather: root.bodyTypes.indexOf("weather") >= 0
+    property bool weatherTracked: false
+    onShowsWeatherChanged: syncWeather()
+    function syncWeather() {
+        if (showsWeather === weatherTracked) return
+        weatherTracked = showsWeather
+        if (weatherTracked) WeatherService.track()
+        else WeatherService.untrack()
+    }
+
+    Component.onCompleted: syncWeather()
+    Component.onDestruction: { if (weatherTracked) WeatherService.untrack(); root.clearRects() }
 
     SystemClock { id: clock; precision: SystemClock.Minutes }
 
@@ -494,19 +510,25 @@ Item {
                 spacing: statusBlock.showText ? Metrics.spaceLg : Metrics.spaceMd
                 Repeater {
                     model: root.status
+                    // Something off (no connection, a muted speaker) is drawn
+                    // in the subtle ink rather than the muted one at the
+                    // disabled opacity: the two together came to 1.9:1 on
+                    // black, which is not dimmed but gone. And it stays
+                    // subtle with the accent on, because the accent says "on".
                     RowLayout {
                         required property var modelData
                         spacing: Metrics.spaceXxs
-                        opacity: modelData.dim ? Effects.disabledOpacity : 1
                         NotchGlyph {
                             text: modelData.icon
                             size: Metrics.iconSm
-                            color: modelData.charging ? Colors.successOnDark : Colors.notchMutedText
+                            color: modelData.charging ? Colors.successOnDark
+                                : modelData.dim ? Colors.notchSubtleText
+                                : NotchService.overviewGlyphsInAccent ? Colors.notchAccent : Colors.notchMutedText
                         }
                         NotchText {
                             visible: statusBlock.showText && modelData.text.length > 0
                             text: modelData.text
-                            muted: true
+                            color: modelData.dim ? Colors.notchSubtleText : Colors.notchMutedText
                             font.pixelSize: Typography.captionSize
                             font.features: { "tnum": 1 }
                         }
@@ -735,6 +757,21 @@ Item {
                     // strip below the notch does not, and still says so.
                     item.textColor = Colors.notchText
                     item.mutedTextColor = Colors.notchMutedText
+                    // The neutral glyph ink, the accent when the overview is
+                    // asked for it (notch.accentGlyphs); a binding, so a new
+                    // accent or setting reaches it without a reload. And the
+                    // groove behind a meter: the theme's vanishes on black.
+                    // Only widgets built on WidgetBase have either.
+                    if (item.glyphInk !== undefined)
+                        item.glyphInk = Qt.binding(() => NotchService.overviewGlyphsInAccent ? Colors.notchAccent : Colors.notchText)
+                    if (item.trackColor !== undefined) item.trackColor = Colors.notchTrack
+                    // The cell's room, inside the field's padding: the cell is
+                    // the size the user dragged, and a label that did not know
+                    // it ran past the edge and was cut mid-letter instead of
+                    // ending in "…". A widget that does not take it is centred
+                    // and clipped by the field as before.
+                    if (item.availableWidth !== undefined)
+                        item.availableWidth = Qt.binding(() => Math.max(0, widgetBox.width - Metrics.notchFieldPadding * 2))
                 }
             }
             // The size the cell was pulled to, not a fixed "small". Eleven

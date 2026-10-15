@@ -47,15 +47,17 @@ ShellCard {
     readonly property bool clickToggles: root.iconOnly && root.showToggle
 
     activeFocusOnTab: focusOnTab && available
-    Keys.onSpacePressed: root.showToggle ? root.toggled(!root.checked) : root.activated()
-    Keys.onReturnPressed: root.showChevron && !root.iconOnly ? root.detailsRequested() : root.activated()
-    Keys.onEnterPressed: root.showChevron && !root.iconOnly ? root.detailsRequested() : root.activated()
+    // Every way in asks `available`, like ShellToggle's `enabledState`: a tile
+    // that loses its device while it has the focus must not act on a key.
+    Keys.onSpacePressed: if (root.available) root.showToggle ? root.toggled(!root.checked) : root.activated()
+    Keys.onReturnPressed: if (root.available) root.showChevron && !root.iconOnly ? root.detailsRequested() : root.activated()
+    Keys.onEnterPressed: if (root.available) root.showChevron && !root.iconOnly ? root.detailsRequested() : root.activated()
     Accessible.role: root.showToggle ? Accessible.CheckBox : Accessible.Button
     Accessible.name: root.title
     Accessible.checkable: root.showToggle
     Accessible.checked: root.checked
-    Accessible.onToggleAction: root.toggled(!root.checked)
-    Accessible.onPressAction: root.activated()
+    Accessible.onToggleAction: if (root.available) root.toggled(!root.checked)
+    Accessible.onPressAction: if (root.available) root.activated()
     FocusRing { active: root.activeFocus; controlRadius: root.radius }
 
     interactive: true
@@ -67,10 +69,13 @@ ShellCard {
     // the card is what says on or off.
     highlighted: root.iconOnly && root.checked && root.available
 
+    // A dimmed tile neither lights up nor answers: without the device there
+    // is nothing to switch, and a hover would promise otherwise.
     MouseArea {
         id: tileMouse
         anchors.fill: parent
         hoverEnabled: true
+        enabled: root.available
         cursorShape: Qt.PointingHandCursor
         onClicked: {
             if (root.clickToggles) root.toggled(!root.checked)

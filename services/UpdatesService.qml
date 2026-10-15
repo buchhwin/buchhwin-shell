@@ -214,12 +214,18 @@ Singleton {
     // A notice still open is taken down, and the new one is sent once its
     // notify-send has exited: stopped and started in the same turn, the new
     // one could be lost - and its set was recorded as notified all the same.
+    // notify-send waits until its notice closes, and the shell keeps notices
+    // in its history, so the waiter stayed until the next set of updates. Ten
+    // minutes is time enough to click "Open"; after that the notice stays in
+    // the history and its button does nothing. Bound to the shell as well, so
+    // a crash leaves no waiter behind (Paths.bound). The old notice is taken
+    // down whether or not its waiter is still there.
     property var queuedNotice: null
     function notify(next) {
-        queuedNotice = ["notify-send", "--app-name=Updates", "--icon=system-software-update",
-                        "--action=open=Open", "--", Logic.notifyTitle(next), Logic.notifyBody(next)]
+        queuedNotice = Paths.bound(["timeout", "10m", "notify-send", "--app-name=Updates", "--icon=system-software-update",
+                                    "--action=open=Open", "--", Logic.notifyTitle(next), Logic.notifyBody(next)])
+        dismissNotifications()
         if (notifier.running) {
-            dismissNotifications()
             notifier.running = false
             return
         }
@@ -244,7 +250,8 @@ Singleton {
     Process {
         id: notifier
         stderr: ErrorLog { label: "UpdatesService.notifier" }
-        // notify-send prints the chosen action and exits when the notice closes.
+        // notify-send prints the chosen action and exits when the notice
+        // closes, or timeout ends it (notify above).
         stdout: StdioCollector {
             onStreamFinished: if (text.trim() === "open") PanelService.open("settings", { page: "updates" })
         }

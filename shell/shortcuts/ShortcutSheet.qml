@@ -17,7 +17,11 @@ ShellPanel {
     scrimColor: Colors.scrimStrong
 
     property string query: ""
-    readonly property var groups: ShortcutService.grouped(query)
+    // Only while shown, like the clipboard's and the launcher's lists: hidden,
+    // the sheet built every row of every bind at start and again on every
+    // refresh of the binds. `shown` turns true in the same turn the window
+    // maps (ShellPanel), so the first frame of an open already has the rows.
+    readonly property var groups: shown ? ShortcutService.grouped(query) : []
     readonly property int count: groups.reduce((total, group) => total + group.rows.length, 0)
 
     onWantedChanged: if (wanted) query = ""

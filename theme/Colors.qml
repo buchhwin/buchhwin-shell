@@ -213,6 +213,15 @@ Singleton {
     readonly property color notch: "#000000"
     readonly property color notchText: "#f5f5f7"
     readonly property color notchMutedText: Qt.rgba(1, 1, 1, 0.58)
+    // A glyph that is there but off - no connection, a muted speaker - about
+    // 3.6:1 on black, the most a mark can lose and still be one. The muted ink
+    // at the disabled opacity came to 1.9:1, which read as nothing at all.
+    readonly property color notchSubtleText: Qt.rgba(1, 1, 1, 0.4)
+    // The accent as a status glyph on the notch (notch.accentGlyphs): lifted
+    // until it keeps 3:1 on black, the minimum for a mark that is not text,
+    // so a dark accent does not sink into the notch. Every offered swatch
+    // already clears it and stays as it is.
+    readonly property color notchAccent: Contrast.readable(String(accent), String(notch), 3)
     // The groove behind a level the notch itself is showing. Not `track`: that
     // one is made to sit on a panel, and on black it disappears.
     readonly property color notchTrack: Qt.rgba(1, 1, 1, 0.22)

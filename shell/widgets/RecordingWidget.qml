@@ -35,6 +35,10 @@ Item {
         sizeClass: root.sizeClass
         inGroup: root.inGroup
         vertical: root.vertical
+        // Handed on, or the elapsed time stayed the theme's text: dark on the
+        // black notch in the light theme. The dot is red on any surface.
+        textColor: root.textColor
+        mutedTextColor: root.mutedTextColor
         icon: stopMouse.containsMouse ? "󰓛" : "󰑊"
         iconColor: Colors.recording
         // "Saving …" has nowhere to go on a strip a pill wide, and the

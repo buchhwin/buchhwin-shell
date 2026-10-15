@@ -51,9 +51,9 @@ Item {
     ParallelAnimation {
         id: roll
         NumberAnimation { target: incoming; property: "y"; to: 0; duration: Animations.lockDigit; easing.type: Animations.easingControl; easing.overshoot: Animations.overshoot }
-        NumberAnimation { target: incoming; property: "opacity"; to: 1; duration: Animations.lockDigitFade }
+        NumberAnimation { target: incoming; property: "opacity"; to: 1; duration: Animations.lockDigitFade; easing.type: Animations.easing }
         NumberAnimation { target: outgoing; property: "y"; to: -root.height * 0.55; duration: Animations.lockDigit; easing.type: Animations.easing }
-        NumberAnimation { target: outgoing; property: "opacity"; to: 0; duration: Animations.lockDigitFade }
+        NumberAnimation { target: outgoing; property: "opacity"; to: 0; duration: Animations.lockDigitFade; easing.type: Animations.easing }
         onFinished: root.previous = root.value
     }
 }

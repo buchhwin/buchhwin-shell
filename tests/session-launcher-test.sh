@@ -95,12 +95,12 @@ check '[[ $(configs) == hyprland.conf && $status -eq 3 ]]' "conf failures are no
 
 # After the session: skipped autostart units unmasked, session target stopped.
 launch
-check 'grep -q "^systemctl --user unmask --runtime app-geoclue\\\\x2ddemo\\\\x2dagent@autostart.service app-sealertauto@autostart.service app-org.freedesktop.problems.applet@autostart.service$" "$calls"' "autostart units unmasked at logout"
+check 'grep -q "^systemctl --user unmask --runtime app-geoclue\\\\x2ddemo\\\\x2dagent@autostart.service app-sealertauto@autostart.service app-org.freedesktop.problems.applet@autostart.service app-print\\\\x2dapplet@autostart.service$" "$calls"' "autostart units unmasked at logout"
 check '[[ $(tail -n1 "$calls") == "systemctl --user stop buchhwin-shell-session.target" ]]' "session target stopped last"
 
 # Autostart skip list.
 source "$project_dir/scripts/lib/autostart-skip.sh"
-check '[[ $(autostart_skip_units | paste -sd" ") == "app-geoclue\\x2ddemo\\x2dagent@autostart.service app-sealertauto@autostart.service app-org.freedesktop.problems.applet@autostart.service" ]]' "generated unit names"
+check '[[ $(autostart_skip_units | paste -sd" ") == "app-geoclue\\x2ddemo\\x2dagent@autostart.service app-sealertauto@autostart.service app-org.freedesktop.problems.applet@autostart.service app-print\\x2dapplet@autostart.service" ]]' "generated unit names"
 
 # session-init.sh: environment and portal before the shell, masks before autostart.
 # The runtime directory is the sandbox's too: the real one has a kwallet socket

@@ -366,7 +366,7 @@ ColumnLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Sharp X11 applications"
-            hint: "They draw in real pixels instead of being stretched, and X11 is told the real scale of the largest screen (Xft.dpi, which only X11 applications read). A toolkit that honours it comes up the right size; one that does not is a third smaller and needs its own scale (GDK_SCALE, QT_SCALE_FACTOR) in its launcher. Only applications started afterwards are affected."
+            hint: "They draw in real pixels instead of being stretched, and X11 is told the real scale of the largest screen (Xft.dpi, which only X11 applications read). A toolkit that honors it comes up the right size; one that does not is a third smaller and needs its own scale (GDK_SCALE, QT_SCALE_FACTOR) in its launcher. Only applications started afterwards are affected."
             ShellToggle {
                 focusOnTab: true
                 checked: SettingsService.value("display.xwaylandSharp")
