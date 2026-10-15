@@ -44,25 +44,34 @@
 
 ## Install
 
+One line. It clones the shell and installs everything it needs: packages, fonts,
+the session and the lock screen. It runs as you and asks for `sudo` only where it
+has to.
+
 ```sh
-git clone https://github.com/buchhwin/buchhwin-shell.git
-cd buchhwin-shell
-./install/bootstrap.sh            # dry run: prints every command, changes nothing
-./install/bootstrap.sh --apply    # installs; asks for sudo where it needs it
+git clone https://github.com/buchhwin/buchhwin-shell.git && cd buchhwin-shell && ./install/bootstrap.sh --apply
 ```
 
-Log out and choose **buchhwin-shell** from the session list. In your first session,
-run `~/.local/share/buchhwin-shell/scripts/session-check.sh`. It changes nothing and
-reports anything that needs attention.
+Then log out, pick **buchhwin-shell** on the login screen, and you're in.
+
+> [!TIP]
+> On Arch, bring the system up to date first with `sudo pacman -Syu`. To see every
+> command before anything changes, run the line without `--apply`.
+
+**Updating:** Settings › Updates › *The shell*, or `git pull --ff-only && ./install/install.sh --apply`.
+
+<details>
+<summary><b>Distributions and options</b></summary>
+
+<br>
 
 | Distribution | Notes |
 | --- | --- |
-| **Arch Linux** | Everything comes from the official repositories. Brave comes from the AUR (`brave-bin`, through paru or yay). Run `sudo pacman -Syu` first. |
+| **Arch Linux** | Everything comes from the official repositories. Brave comes from the AUR (`brave-bin`, through paru or yay). |
 | **Fedora 44** | Hyprland comes from the `sachesi/hyprland` Copr and Brave from its RPM repository. |
 | **openSUSE Leap 16** | Quickshell comes from OBS. Hyprland 0.56 is built from pinned sources into `~/.local/opt/buchhwin-hyprland`, and `install/build-hyprland-leap.sh --remove --apply` removes it again. |
 
-Run it as yourself, not as root. Re-running is safe. Derivatives such as EndeavourOS
-or CachyOS need `--distro arch`.
+Re-running is safe. Derivatives such as EndeavourOS or CachyOS need `--distro arch`.
 
 | Flag | |
 | --- | --- |
@@ -74,7 +83,7 @@ or CachyOS need `--distro arch`.
 The default apps it sets (Brave, Dolphin, kitty, VLC, Okular, Gwenview, Ark) apply to
 this session only. Plasma keeps its own.
 
-**Updating:** Settings › Updates › *The shell*, or `git pull --ff-only && ./install/install.sh --apply`.
+</details>
 
 <details>
 <summary><b>Step by step, login theme, Plasma terminal</b></summary>
@@ -143,6 +152,8 @@ open the launcher.
 
 - Settings live in `~/.config/buchhwin-shell/` (`settings.json`, `layout.json`, …),
   logs in `~/.local/state/buchhwin-shell/quickshell.log`.
+- Something not working? `~/.local/share/buchhwin-shell/scripts/session-check.sh` checks the
+  session without changing anything.
 - `Super` `Ctrl` `R` restarts the shell.
 - Locked out? Switch to a TTY (`Ctrl` `Alt` `F3`), log in and run
   `systemctl --user restart buchhwin-shell-lock`.
