@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import Quickshell.Io
+import Quickshell.Widgets as QsWidgets
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
@@ -370,7 +371,10 @@ ShellPanel {
                                         anchors.fill: parent
                                         keys: ["buchhwin-window"]
                                         onDropped: drag => {
-                                            window.dispatch(HyprCompat.commands.moveWindowSilent(card.modelData.id, drag.source.address))
+                                            if (drag.source.workspaceId !== card.modelData.id) {
+                                                window.dispatch(HyprCompat.commands.moveWindowSilent(card.modelData.id, drag.source.address))
+                                                drag.source.sent = true
+                                            }
                                             drag.acceptProposedAction()
                                         }
                                     }
@@ -390,18 +394,32 @@ ShellPanel {
                                         Rectangle {
                                             id: thumb
                                             required property var modelData
-                                            visible: Logic.matches(modelData, search.text)
+                                            visible: Logic.matches(modelData, search.text) && !sent
                                             readonly property string address: modelData.address
+                                            readonly property int workspaceId: card.modelData.id
+                                            // Dropped on another workspace: gone from
+                                            // this card until the overview reads the
+                                            // windows again, instead of springing back
+                                            // home for the moment that takes. Back after
+                                            // a while if the move never happened.
+                                            property bool sent: false
+                                            readonly property bool dragging: dragArea.drag.active
                                             readonly property bool isSelected: window.selectedWindow !== null && window.selectedWindow.address === modelData.address
                                             readonly property var toplevel: window.wanted ? window.toplevelFor(modelData.address) : null
                                             property real homeX: modelData.x * frame.width
                                             property real homeY: modelData.y * frame.height
-                                            x: dragArea.drag.active ? x : homeX + Metrics.spaceXxs
-                                            y: dragArea.drag.active ? y : homeY + Metrics.spaceXxs
+                                            x: homeX + Metrics.spaceXxs
+                                            y: homeY + Metrics.spaceXxs
                                             width: Math.max(Metrics.iconXl, modelData.width * frame.width - Metrics.spaceXxs * 2)
                                             height: Math.max(Metrics.iconXl, modelData.height * frame.height - Metrics.spaceXxs * 2)
                                             z: dragArea.drag.active ? 10 : isSelected ? 2 : 1
-                                            radius: Metrics.radiusInner
+                                            // Concentric with the card it sits in, a
+                                            // gap of spaceXxs inside its border: a
+                                            // window that fills its workspace has
+                                            // its corners right in the card's, and
+                                            // radiusInner (10 against 16) left the gap
+                                            // between them wider at the corners.
+                                            radius: Math.max(0, Metrics.radiusCard - frame.border.width - Metrics.spaceXxs)
                                             color: Colors.surface2
                                             border.width: isSelected || hover.hovered ? Metrics.focusBorderWidth : Metrics.borderWidth
                                             border.color: isSelected ? Colors.accentForeground : hover.hovered ? Colors.borderStrong : Colors.border
@@ -412,52 +430,78 @@ ShellPanel {
                                             Drag.hotSpot.x: width / 2
                                             Drag.hotSpot.y: height / 2
 
+                                            // While dragged it lives in `dragLayer`, above
+                                            // every card: the card clips its windows, and a
+                                            // thumbnail taken to another workspace vanished
+                                            // the moment it left its own card (the user,
+                                            // 15.10.). ParentChange keeps it where it is on
+                                            // screen; the drag and its own setX/setY end the
+                                            // position bindings, which `rehome` puts back.
+                                            states: State {
+                                                when: thumb.dragging
+                                                ParentChange { target: thumb; parent: dragLayer }
+                                            }
+                                            function rehome() {
+                                                x = Qt.binding(() => homeX + Metrics.spaceXxs)
+                                                y = Qt.binding(() => homeY + Metrics.spaceXxs)
+                                            }
+                                            onDraggingChanged: if (!dragging) Qt.callLater(rehome)
+                                            Timer {
+                                                interval: 2000
+                                                running: thumb.sent
+                                                onTriggered: thumb.sent = false
+                                            }
+
                                             HoverHandler { id: hover }
 
-                                            ScreencopyView {
-                                                id: preview
+                                            // The capture and the title bar inside the
+                                            // thumbnail's rounding: a Rectangle does not
+                                            // clip its children to its radius (pitfall 4),
+                                            // and the capture's square corners stood out
+                                            // past it. The inset stays the thin border's,
+                                            // so a hover (the thick one) does not resize
+                                            // the capture and start it again.
+                                            QsWidgets.ClippingRectangle {
                                                 anchors.fill: parent
                                                 anchors.margins: Metrics.borderWidth
-                                                captureSource: thumb.toplevel ? thumb.toplevel.wayland : null
-                                                live: window.wanted
-                                                // Capture at preview size instead of the
-                                                // window's own resolution (the switcher
-                                                // does the same); a wall of full-size
-                                                // captures made the fade-in stutter.
-                                                constraintSize: Qt.size(width, height)
-                                            }
+                                                radius: Math.max(0, thumb.radius - Metrics.borderWidth)
+                                                color: "transparent"
 
-                                            ShellIcon {
-                                                anchors.centerIn: parent
-                                                visible: !preview.hasContent
-                                                glyph: Icons.window
-                                                size: Metrics.iconLg
-                                                color: Colors.mutedText
-                                            }
-
-                                            Rectangle {
-                                                anchors.left: parent.left
-                                                anchors.right: parent.right
-                                                anchors.bottom: parent.bottom
-                                                // Inside the thumbnail's border, with its
-                                                // bottom corners rounded to match: a
-                                                // Rectangle does not clip its children to
-                                                // its radius (see the wallpaper above), so
-                                                // a square bar stuck out of the round
-                                                // corners.
-                                                anchors.margins: Metrics.borderWidth
-                                                bottomLeftRadius: Math.max(0, Metrics.radiusInner - Metrics.borderWidth)
-                                                bottomRightRadius: Math.max(0, Metrics.radiusInner - Metrics.borderWidth)
-                                                height: label.implicitHeight + Metrics.spaceXs * 2
-                                                visible: thumb.isSelected || hover.hovered
-                                                color: Colors.pill
-                                                ShellText {
-                                                    id: label
+                                                ScreencopyView {
+                                                    id: preview
                                                     anchors.fill: parent
-                                                    anchors.margins: Metrics.spaceXs
-                                                    text: thumb.modelData.title || thumb.modelData.appClass
-                                                    role: "caption"
-                                                    color: Colors.text
+                                                    captureSource: thumb.toplevel ? thumb.toplevel.wayland : null
+                                                    live: window.wanted
+                                                    // Capture at preview size instead of the
+                                                    // window's own resolution (the switcher
+                                                    // does the same); a wall of full-size
+                                                    // captures made the fade-in stutter.
+                                                    constraintSize: Qt.size(width, height)
+                                                }
+
+                                                ShellIcon {
+                                                    anchors.centerIn: parent
+                                                    visible: !preview.hasContent
+                                                    glyph: Icons.window
+                                                    size: Metrics.iconLg
+                                                    color: Colors.mutedText
+                                                }
+
+                                                Rectangle {
+                                                    anchors.left: parent.left
+                                                    anchors.right: parent.right
+                                                    anchors.bottom: parent.bottom
+                                                    height: label.implicitHeight + Metrics.spaceXs * 2
+                                                    visible: thumb.isSelected || hover.hovered
+                                                    color: Colors.pill
+                                                    ShellText {
+                                                        id: label
+                                                        anchors.fill: parent
+                                                        anchors.margins: Metrics.spaceXs
+                                                        text: thumb.modelData.title || thumb.modelData.appClass
+                                                        role: "caption"
+                                                        color: Colors.text
+                                                    }
                                                 }
                                             }
 
@@ -493,5 +537,13 @@ ShellPanel {
             role: "caption"
             color: Colors.scrimMutedText
         }
+    }
+
+    // A window thumbnail being dragged (see `thumb`): above every card and
+    // outside the cards' and the flickable's clips.
+    Item {
+        id: dragLayer
+        anchors.fill: content
+        z: 1
     }
 }
