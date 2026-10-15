@@ -2065,13 +2065,10 @@
       "clockIndicators": true,
       "osd": true,
       "autoProfile": false,
-      "quickSizesAdopted": false,
       "quickWidth": 0,
       "quickHeight": 0,
       "dashboardWidth": 900,
       "dashboardHeight": 620,
-      "settingsMoveX": 0,
-      "settingsMoveY": 0,
       "launcherWidth": 520,
       "launcherHeight": 422
     },
@@ -2097,8 +2094,7 @@
       "shape": "notch",
       "collapsedWidth": 0,
       "expandedWidth": 700,
-      "expandedHeight": 0,
-      "headerAdopted": true
+      "expandedHeight": 0
     },
     "workspaces": {
       "mode": "open",
@@ -2130,10 +2126,6 @@
     },
     "emoji": {
       "tone": 0
-    },
-    "display": {
-      "xwaylandSharp": false,
-      "x11Scale": 0
     },
     "launcher": {
       "categories": true,
@@ -2205,13 +2197,10 @@
     },
     "weather": {
       "enabled": true,
-      "autoLocate": true,
       "unit": "celsius",
       "refreshMinutes": 30
     },
     "input": {
-      "kbLayout": "de",
-      "kbVariant": "",
       "repeatRate": 25,
       "repeatDelay": 600,
       "sensitivity": 0,

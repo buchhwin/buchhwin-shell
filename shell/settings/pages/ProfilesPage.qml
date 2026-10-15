@@ -22,7 +22,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Profiles"
-        description: "A profile holds its own five modes. The mode is what the desktop is set to right now; the profile is the set of five it picks from."
+        description: "A profile keeps everything: its five modes' layouts, the notch, panels, colours and all other settings. Switching brings them back."
 
         SettingRow {
             Layout.fillWidth: true
@@ -44,8 +44,8 @@ ColumnLayout {
                 required property string modelData
                 readonly property bool active: LayoutService.activeProfile === modelData
                 // A profile the shell ships (LayoutService.builtinProfileNames):
-                // always there, reset to what it shipped with, and a whole
-                // setup rather than only five modes.
+                // always there, reset to what it shipped with, and its setup
+                // applied the first time it is used.
                 readonly property string builtin: LayoutService.builtinOf(modelData)
                 readonly property bool applying: builtin.length > 0 && LayoutService.builtinApplying === builtin
                 Layout.fillWidth: true
@@ -127,18 +127,18 @@ ColumnLayout {
                         }
                     }
 
-                    // What activating it does, said before it is done: it
-                    // writes far more than a profile switch otherwise does.
+                    // What activating it does, said before it is done: the
+                    // first time it writes more than a switch otherwise does.
                     ShellText {
                         visible: card.builtin.length > 0
                         Layout.fillWidth: true
-                        text: "Your setup as shipped: layouts, appearance, notch, shell settings, Alacritty and fastfetch. Activating it restores them; a backup of your settings is kept."
+                        text: "Shipped with the shell: the first time you use it, it brings its setup - layouts, notch, settings, default apps, fastfetch - after a backup; after that it keeps your changes. Restore settings brings the shipped one back."
                         role: "small"; muted: true; wrapMode: Text.Wrap
                     }
                     ShellText {
                         visible: card.builtin.length > 0 && (card.applying || LayoutService.builtinError.length > 0)
                         Layout.fillWidth: true
-                        text: card.applying ? "Restoring …" : LayoutService.builtinError
+                        text: card.applying ? "Applying the shipped setup …" : LayoutService.builtinError
                         role: "small"; wrapMode: Text.Wrap
                         color: card.applying ? Colors.mutedText : Colors.warning
                     }
@@ -154,7 +154,7 @@ ColumnLayout {
                         ShellButton {
                             focusOnTab: true
                             icon: Icons.add; text: "Duplicate"; compact: true
-                            toolTip: "A copy of this profile as it stands"
+                            toolTip: "A copy of this profile as it stands, settings included"
                             onClicked: LayoutService.duplicateProfile(card.modelData,
                                                                      LayoutService.profileLabelOf(card.modelData) + " copy")
                         }
@@ -163,21 +163,23 @@ ColumnLayout {
                             icon: Icons.reset; text: "Reset"; compact: true
                             confirm: true
                             confirmText: "Reset all five?"
-                            toolTip: card.builtin.length ? "Every mode of this profile back to the shipped state"
-                                                         : "Every mode of this profile back to the factory state"
+                            toolTip: card.builtin.length ? "Every mode and setting of this profile back to the shipped state"
+                                                         : "Every mode of this profile back to the factory state; its settings stay"
                             onClicked: LayoutService.resetProfile(card.modelData, "")
                         }
                         // In Remove's place: a built-in profile cannot be
-                        // removed, and what it can do instead is put its
-                        // settings back without a switch away and back.
+                        // removed, and what it can do instead is go back to
+                        // its shipped state - at once when it is in use,
+                        // otherwise the next time it is.
                         ShellButton {
                             visible: card.builtin.length > 0
                             focusOnTab: true
                             icon: Icons.undo; text: "Restore settings"; compact: true
                             confirm: true
-                            confirmText: "Overwrite settings?"
+                            confirmText: card.active ? "Overwrite settings?" : "Back to shipped?"
                             enabledState: !LayoutService.readOnly && LayoutService.builtinApplying.length === 0
-                            toolTip: "The shipped settings, notch, lock screen, default apps and fastfetch, after a backup"
+                            toolTip: card.active ? "The shipped settings, notch, lock screen, default apps and fastfetch, after a backup"
+                                                 : "Forgets your changes to it; using it next brings the shipped setup again"
                             onClicked: LayoutService.applyBuiltin(card.builtin)
                         }
                         ShellButton {
@@ -210,9 +212,10 @@ ColumnLayout {
                 focusOnTab: true
                 icon: Icons.add; text: "Add"; variant: "accent"
                 enabledState: newField.text.trim().length > 0
-                // A new profile starts from the factory state, not from the
-                // profile you are in - "Duplicate" is the other case.
-                toolTip: "Five modes straight from the factory state"
+                // A new profile starts from the factory layouts, not from the
+                // profile you are in - "Duplicate" is the other case. Its
+                // settings are the ones in use when it is first entered.
+                toolTip: "Factory layouts; it starts with the settings you have when you first use it"
                 onClicked: { LayoutService.addProfile(newField.text); newField.text = "" }
             }
         }
@@ -240,7 +243,7 @@ ColumnLayout {
         // to read why here, and a control that has a scope has to say it.
         ShellText {
             Layout.fillWidth: true
-            text: "Blur, panel opacity, animation mode and speed, corner radius, window borders and gaps are the mode's own - each mode keeps its own. Everything else on the Appearance page is one choice for the whole session."
+            text: "Blur, panel opacity, animation mode and speed, corner radius, window borders and gaps are the mode's own - each mode keeps its own. Everything else belongs to the profile, except the weather place, keyboard layout and displays, which stay the same in every profile."
             role: "small"; muted: true; wrapMode: Text.Wrap
         }
         ShellButton {

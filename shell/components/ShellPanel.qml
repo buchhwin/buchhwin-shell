@@ -263,12 +263,17 @@ PanelWindow {
     // `false` keeps the whole screen, as before (the overview, which draws
     // the screen itself, and a panel the user drags around by its title).
     property bool compactSurface: showCard && !movable
-    // The surface goes full-screen while something may reach beyond the
-    // card: a resize grip being pulled, an arrange drag whose ghost follows
-    // the pointer. Only margins and size change, which a mapped layer surface
-    // takes; its anchors (top and left) never do.
-    readonly property bool fullSurface: !compactSurface || gripShown || sizing
-        || LayoutService.arrangeDragging.length > 0
+    // The surface goes full-screen while the card itself is being resized by
+    // its grip, so it can grow under the hand. Only margins and size change,
+    // which a mapped layer surface takes; its anchors (top and left) never do.
+    //
+    // Not for arranging. The arrange mode and its drags stay inside the card
+    // (the grip sits in its corner, the tiles move within the grid, and the
+    // shadow's pad holds what pokes out), but going full-screen for them
+    // resized the mapped surface - 752 -> 1920 -> 752 -> 1920 px measured
+    // nested on 15.10. - and the card jumped by its own offset for a frame
+    // each time the arranging started or ended (pitfall 57).
+    readonly property bool fullSurface: !compactSurface || sizing
     // A panel whose card changes height while it stays open - the control
     // center going from its overview to a detail page - keeps a surface as
     // tall as the screen and only as wide as the card. Resizing the mapped

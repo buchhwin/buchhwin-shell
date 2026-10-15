@@ -15,6 +15,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import sys
 import tempfile
 
@@ -39,6 +40,26 @@ def run(*argv):
     return status, json.loads(lines[-1]) if lines else {}
 
 
+def js_list(name):
+    """The strings of `var NAME = [...]` in services/profile/ProfileLogic.js."""
+    text = (ROOT / "services" / "profile" / "ProfileLogic.js").read_text(encoding="utf-8")
+    match = re.search(r"^var " + name + r" = \[(.*?)\]", text, re.S | re.M)
+    return re.findall(r'"([^"]+)"', match.group(1)) if match else []
+
+
+# ---- the export leaves out at least what a profile never keeps -----------------
+# ProfileLogic.GLOBAL_SETTINGS is the shell's list of settings that belong to
+# the machine or the person; a shipped profile carrying one would set it on
+# every machine that activates the profile.
+global_settings = js_list("GLOBAL_SETTINGS")
+check(len(global_settings) > 5, "ProfileLogic.GLOBAL_SETTINGS is found: %r" % global_settings)
+for entry in global_settings:
+    check(module.dropped(entry) and module.dropped(entry + ".leaf"),
+          "the export drops %s (and what is under it), as ProfileLogic.GLOBAL_SETTINGS does" % entry)
+check(not module.dropped("displayX") and not module.dropped("notch.displayOsd"), "a group is matched whole")
+check(set(js_list("MODE_SCOPED")) == module.MODE_SCOPED, "the mode-scoped leaves are ProfileLogic.MODE_SCOPED")
+
+
 def write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -59,6 +80,9 @@ with tempfile.TemporaryDirectory() as temp:
         "onboarding": {"completed": True},
         "colorPicker": {"history": "#112233,#445566"},
         "recording": {"folder": "~/Videos/Recordings"},
+        "input": {"kbLayout": "de", "repeatRate": 30},
+        "display": {"x11Scale": 1.5},
+        "notch": {"headerAdopted": True, "bodyHeight": 32},
     }
     layout = {
         "configVersion": 3, "activeProfile": "default", "activeMode": "work",
@@ -96,6 +120,11 @@ with tempfile.TemporaryDirectory() as temp:
     check("blurStrength" not in profile["settings"]["appearance"] and "gapsIn" not in profile["settings"]["appearance"],
           "the mode-scoped appearance travels with the modes, not with the settings")
     check(profile["settings"]["appearance"]["accent"] == "#50e2cb", "the accent is a setting")
+    check(profile["settings"]["input"] == {"repeatRate": 30}, "the keyboard layout is this machine's, the repeat rate is not")
+    check("display" not in profile["settings"], "the screens are this machine's")
+    check(profile["settings"]["notch"] == {"bodyHeight": 32}, "a one-shot marker is this machine's files'")
+    check("autoLocate" not in weather, "asking where this machine is goes with the place")
+    check(profile["label"] == "Default", "the label is the profile's own")
     check(profile["modes"]["work"]["appearance"] == {"blurStrength": 0.9, "gapsIn": 3}, "the modes keep their appearance")
     check(profile["defaultApps"] == {"terminal": "Alacritty.desktop", "files": "org.kde.dolphin.desktop"},
           "the session's terminal and file manager")
@@ -132,6 +161,27 @@ with tempfile.TemporaryDirectory() as temp:
     error = refused("autostart.apps", str(home / "bin" / "x.desktop"), "own-home")
     check(str(home) in error or "/home" in error or "path under" in error,
           "a path under the home directory outside the known path fields is named: %r" % error)
+
+    # ---- a profile that is not in use: its own state -----------------------------
+    stored = {"settings": {"appearance": {"accent": "#0a0b0c", "panelColor": "#202020"},
+                           "wallpaper": {"path": str(home / "Pictures" / "other.webp")}},
+              "notch": {"collapsed": [{"id": "n1", "items": [{"type": "clock"}]}], "expanded": []},
+              "lock": {"lock": [{"id": "l1", "items": [{"type": "clock"}]}]}}
+    two = dict(layout, profiles=dict(layout["profiles"], studio={"label": "Studio", "modes": {}, "state": stored},
+                                     bare={"label": "Bare", "modes": {}}))
+    write_json(shell / "layout.json", two)
+    write_json(shell / "settings.json", settings)
+    status, answer = run("--name", "studio", "--profile", "studio", "--out", str(base / "studio"))
+    check(status == 0 and answer.get("ok") is True, "a profile not in use exports: %r" % answer)
+    exported = json.loads((base / "studio" / "profile.json").read_text(encoding="utf-8"))
+    check(exported["settings"]["appearance"] == {"accent": "#0a0b0c", "panelColor": "#202020"},
+          "with the settings it keeps, not the ones in use")
+    check(exported["settings"]["wallpaper"]["path"] == "~/Pictures/other.webp", "home paths contracted there too")
+    check(exported["notch"] == stored["notch"] and exported["lock"] == stored["lock"], "its notch and lock screen")
+    check(exported["label"] == "Studio", "under its label")
+    status, answer = run("--profile", "bare", "--out", str(base / "bare"))
+    check(status == 1 and "no state" in answer.get("error", "") and not (base / "bare").exists(),
+          "one that keeps no state yet is refused rather than given the settings in use: %r" % answer)
 
     # ---- nothing to export -----------------------------------------------------
     write_json(shell / "layout.json", dict(layout, activeProfile="gone", profiles={}))

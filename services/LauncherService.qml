@@ -106,11 +106,13 @@ Singleton {
         { title: "Do Not Disturb: off", keywords: "dnd nicht stören", icon: "󰂚", run: () => NotificationService.setDnd("off") },
         { title: "Toggle Dark Mode", keywords: "theme dark light dunkelmodus hell dunkel", icon: "󰔎", run: () => SettingsService.set("appearance.theme", SettingsService.theme === "dark" ? "light" : "dark") },
         { title: "Next wallpaper", keywords: "wallpaper next hintergrundbild nächstes", icon: "󰸉", run: () => WallpaperService.next(1) },
-        { title: "Profile: Minimal", keywords: "profile layout profil", icon: Icons.edit, run: () => LayoutService.setActiveProfile("minimal") },
-        { title: "Profile: Work", keywords: "profile layout profil arbeit", icon: Icons.edit, run: () => LayoutService.setActiveProfile("work") },
-        { title: "Profile: Gaming", keywords: "profile layout games profil spiele", icon: "󰊴", run: () => LayoutService.setActiveProfile("gaming") },
-        { title: "Profile: Laptop", keywords: "profile layout profil", icon: "󰌢", run: () => LayoutService.setActiveProfile("laptop") },
-        { title: "Profile: Docked", keywords: "profile layout monitor display profil", icon: "󰍹", run: () => LayoutService.setActiveProfile("docked") },
+        // The five modes, not profiles: these called setActiveProfile with a
+        // mode's name and did nothing (15.10.).
+        { title: "Mode: Minimal", keywords: "mode modus profile layout profil", icon: Icons.edit, run: () => LayoutService.setActiveMode("minimal") },
+        { title: "Mode: Work", keywords: "mode modus profile layout profil arbeit", icon: Icons.edit, run: () => LayoutService.setActiveMode("work") },
+        { title: "Mode: Gaming", keywords: "mode modus profile layout games profil spiele", icon: "󰊴", run: () => LayoutService.setActiveMode("gaming") },
+        { title: "Mode: Laptop", keywords: "mode modus profile layout profil", icon: "󰌢", run: () => LayoutService.setActiveMode("laptop") },
+        { title: "Mode: Docked", keywords: "mode modus profile layout monitor display profil", icon: "󰍹", run: () => LayoutService.setActiveMode("docked") },
         { title: "Animations: Full", keywords: "animation full fast animationen voll schnell", icon: "󰓅", run: () => SettingsService.set("appearance.animationMode", "full") },
         { title: "Animations: Reduced", keywords: "animation reduced motion animationen reduziert", icon: "󰾆", run: () => SettingsService.set("appearance.animationMode", "reduced") },
         { title: "Toggle Night Light", keywords: "night light blue light warm nachtlicht nachtmodus blaulicht", icon: "󰖔", run: () => NightLightService.toggle() },

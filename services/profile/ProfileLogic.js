@@ -156,21 +156,54 @@ function uniqueName(text, taken) {
     return base + "-" + index
 }
 
-// ---- a built-in profile's settings -------------------------------------------
-// A profile the repository ships (config/builtin-profiles/<id>/profile.json)
-// carries settings.json's groups as a tree. Activating it writes them as leaf
-// paths - every one SettingsService knows - except the ones that are not the
-// look at all:
+// ---- which settings belong to a profile --------------------------------------
+// A profile keeps everything the user sets (LayoutService, `state`): its five
+// modes, the notch, the lock screen and every setting - except the ones below,
+// which describe this machine or this person rather than a look, and are one
+// value whatever profile is in use. The one place that says it; the export
+// (scripts/profile-export.py, DROP) leaves out at least these, and a test
+// holds the two together. An entry is a setting or a whole group.
 //
-// - the mode-scoped leaves: they belong to the five modes, which carry their
-//   own `appearance` and apply it themselves (LayoutService.applyModeSettings).
-//   Written here as well, the active mode would take the values over through
-//   `settingChanged` and the other four would not, which is the leak
-//   MODE_SCOPED exists to prevent;
-// - one-shot markers: they say a migration has run on *this* machine's files,
-//   and a marker taken from another machine's either repeats a migration or
-//   skips one.
-var BUILTIN_SKIPPED = ["configVersion", "notch.headerAdopted", "desktop.quickSizesAdopted"]
+// - settings.json's own version and the one-shot markers: they say a
+//   migration has run on *this* machine's files, and a marker carried over
+//   from another state either repeats a migration or skips one;
+// - the onboarding tour, which is seen once per machine;
+// - where this machine is: the weather place, its coordinates, and whether
+//   the shell may ask ipinfo.io for them - a privacy choice that goes with
+//   the place rather than with a look;
+// - this person's calendars and the histories (colours picked, folders used);
+// - the screens and the keyboard: X11's scale belongs to the monitors, the
+//   layout to the keys printed on them;
+// - where the Settings window was dragged to: restored by a switch, it would
+//   move the very window the switch was made from.
+var GLOBAL_SETTINGS = ["configVersion", "notch.headerAdopted", "desktop.quickSizesAdopted",
+                       "onboarding",
+                       "weather.locationName", "weather.lat", "weather.lon", "weather.autoLocate",
+                       "calendar.hiddenCalendars", "calendar.newEventCalendar",
+                       "colorPicker.history", "wallpaper.recentFolders",
+                       "display", "input.kbLayout", "input.kbVariant",
+                       "desktop.settingsMoveX", "desktop.settingsMoveY"]
+
+function isGlobalSetting(path) {
+    const text = String(path || "")
+    return GLOBAL_SETTINGS.some(entry => text === entry || text.indexOf(entry + ".") === 0)
+}
+
+// What a profile keeps and a switch restores: neither global nor one of the
+// leaves a mode owns. Those belong to the five modes, which carry their own
+// `appearance` and apply it themselves (LayoutService.applyModeSettings);
+// written by a profile as well, the active mode would take the values over
+// through `settingChanged` and the other four would not, which is the leak
+// MODE_SCOPED exists to prevent.
+function isProfileSetting(path) {
+    return String(path || "").length > 0 && !isModeScoped(path) && !isGlobalSetting(path)
+}
+
+// ---- a profile's settings, and a built-in profile's ---------------------------
+// A profile's stored state and a profile the repository ships
+// (config/builtin-profiles/<id>/profile.json) both carry settings.json's
+// groups as a tree. Applying one writes them as leaf paths - every one
+// SettingsService knows - and only the ones `isProfileSetting` lets through.
 
 // "~/..." back to a path under this home. The export writes paths under the
 // home directory that way so the repository holds no user name, and the
@@ -196,10 +229,27 @@ function settingLeaves(tree, home) {
                 continue
             }
             if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") continue
-            if (isModeScoped(path) || BUILTIN_SKIPPED.indexOf(path) >= 0) continue
+            if (!isProfileSetting(path)) continue
             result[path] = expandHome(value, home)
         }
     }
     if (tree && typeof tree === "object" && !Array.isArray(tree)) walk(tree, "")
+    return result
+}
+
+// The same leaves as a tree again, the form a profile's state keeps them in:
+// settings.json's own shape, so the file stays readable next to it.
+function profileSettings(tree, home) {
+    const leaves = settingLeaves(tree, home)
+    const result = {}
+    for (const path of Object.keys(leaves)) {
+        const parts = path.split(".")
+        let node = result
+        for (let i = 0; i < parts.length - 1; ++i) {
+            if (!node[parts[i]] || typeof node[parts[i]] !== "object") node[parts[i]] = {}
+            node = node[parts[i]]
+        }
+        node[parts[parts.length - 1]] = leaves[path]
+    }
     return result
 }

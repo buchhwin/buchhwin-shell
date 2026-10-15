@@ -199,7 +199,75 @@ function sanitizeProfile(profile) {
     // name. Only written when set: the user's own profiles stay as they were.
     if (typeof source.builtin === "string" && source.builtin.length && Profile.slug(source.builtin) === source.builtin)
         result.builtin = source.builtin
+    // Everything else the profile keeps (see sanitizeProfileState). Only
+    // written once it has one: a profile that has never been left since
+    // states existed simply has none yet.
+    const state = sanitizeProfileState(source.state)
+    if (state) result.state = state
     return result
+}
+
+// ---- a profile's own state ---------------------------------------------------
+// What a profile keeps beside its five modes: every setting that is a
+// profile's (ProfileLogic.isProfileSetting - not the machine's, not a mode's),
+// the notch and the lock screen. LayoutService stores it when a profile is
+// left and puts it back when the profile is entered again, so switching
+// brings back the panel colour and the notch as well as the layouts.
+//
+// The shell wrote it, so it is checked loosely: the settings are kept as the
+// primitive leaves of a profile's settings (whether this version knows them
+// is SettingsService's question when they are restored, so a state written by
+// a newer shell keeps its keys), the notch and the lock screen go through
+// their own sanitizers. A part that is missing is null, and restoring leaves
+// that part as it is - the same as a setting the state does not name.
+function sanitizeProfileState(state) {
+    if (!state || typeof state !== "object" || Array.isArray(state)) return null
+    return {
+        settings: Profile.profileSettings(state.settings, ""),
+        notch: state.notch && typeof state.notch === "object" ? sanitizeNotch(state.notch) : null,
+        lock: state.lock && typeof state.lock === "object" ? sanitizeLock(state.lock) : null
+    }
+}
+
+// A profile's stored state, or null.
+function stateOf(config, name) {
+    const profile = config && config.profiles ? config.profiles[String(name)] : null
+    return profile && profile.state ? profile.state : null
+}
+
+// The config with a profile's state replaced; null takes it away, so the next
+// time the profile is entered it keeps what is set then - or, for a built-in
+// one, gets its shipped state again.
+function withState(config, name, state) {
+    const next = copyConfig(config)
+    const profile = next.profiles[String(name)]
+    if (!profile) return sanitize(next)
+    if (state) profile.state = JSON.parse(JSON.stringify(state))
+    else delete profile.state
+    return sanitize(next)
+}
+
+// What the profile in use gets once per start (LayoutService.settleActiveState):
+// "" when it has a state already; "shipped" for a built-in one whose shipped
+// setup (`hasShipped`: the file was read) is to be applied; "current" when it
+// takes what is set now. The first start of this version over an existing
+// layout file (no `profileState` marker, not `fresh`) never applies a shipped
+// setup: the built-in profile in use was entered by a version that applied it
+// on every entry, and what the user changed since stays.
+function settleAction(config, name, hasShipped, fresh) {
+    if (stateOf(config, name)) return ""
+    const first = !hasAdopted(config, "profileState")
+    if (builtinOf(config, name).length && hasShipped === true && (!first || fresh === true)) return "shipped"
+    return "current"
+}
+
+// A state put back: the notch and the lock screen it names replace the
+// global ones. Its settings are SettingsService's to write, not this file's.
+function restoreStateLayout(config, state) {
+    const next = copyConfig(config)
+    if (state && state.notch) next.notch = copyNotch(state.notch)
+    if (state && state.lock) next.lock = sanitizeLock(JSON.parse(JSON.stringify(state.lock)))
+    return sanitize(next)
 }
 
 // Rebuild a v3 layout from whitelisted primitive fields only.
@@ -277,14 +345,20 @@ function addProfile(config, label) {
     return { config: sanitize(next), name: name }
 }
 
-// The other case: this profile as it stands, copied whole.
-function duplicateProfile(config, source, label) {
+// The other case: this profile as it stands, copied whole - its modes and
+// its state. `state` is the one to copy: the caller passes the settings as
+// they are now when the source is the profile in use, whose stored state is
+// only as new as the last time it was left. Without one the source's own is
+// copied, if it has one.
+function duplicateProfile(config, source, label, state) {
     const next = copyConfig(config)
     const from = next.profiles[String(source)]
     if (!from) return { config: sanitize(next), name: "" }
     const name = Profile.uniqueName(label, Object.keys(next.profiles))
     next.profiles[name] = { label: String(label || "").trim() || name,
                             modes: JSON.parse(JSON.stringify(from.modes || {})) }
+    const kept = state || from.state
+    if (kept) next.profiles[name].state = JSON.parse(JSON.stringify(kept))
     return { config: sanitize(next), name: name }
 }
 
@@ -313,6 +387,12 @@ function removeProfile(config, name) {
 // A built-in profile has a state of its own to go back to - the modes it
 // shipped with - and `shipped` is those. A mode the shipped file does not
 // carry falls back to the factory template the usual way.
+//
+// The profile's stored state (settings, notch, lock screen) is not touched
+// here. A profile of the user's has no factory settings to go back to - the
+// factory state of a setting is its default, and resetting the layouts is not
+// a request to reset the accent - so it keeps its state. A built-in profile's
+// shipped state comes back through LayoutService.resetProfile.
 function resetProfile(config, name, modeName, shipped) {
     const next = copyConfig(config)
     const profile = next.profiles[String(name)]
@@ -333,11 +413,12 @@ function resetProfile(config, name, modeName, shipped) {
 // ---- built-in profiles -------------------------------------------------------
 // A profile the repository ships: config/builtin-profiles/<id>/profile.json,
 // written by scripts/profile-export.py. It is always in the layout file, marked
-// with `builtin: "<id>"`; its modes are the user's to change like any other
-// profile's, and "Reset" brings back the shipped ones. The rest of the file -
-// the notch, its presets, the lock screen, the settings, the default apps and
-// fastfetch - is global and is applied when the profile is activated
-// (LayoutService.applyBuiltin).
+// with `builtin: "<id>"`; its modes and its state are the user's to change like
+// any other profile's, and "Reset" brings back the shipped ones. The rest of
+// the file - the notch, its presets, the lock screen, the settings, the
+// default apps and fastfetch - is applied the first time the profile is
+// entered (LayoutService.startBuiltin) and becomes its state; after that the
+// profile keeps whatever the user makes of it.
 
 // The shipped file, whitelisted like everything else that is read: null when
 // it has no modes, because a built-in profile without them is nothing to add.
@@ -384,12 +465,26 @@ function builtinProfileName(config, id) {
 // the built-in one takes the next free name instead - recognised by its
 // `builtin` field from then on, never by its name. `added` is empty when
 // nothing changed, so the caller writes only then.
-function addBuiltinProfiles(config, builtins) {
+//
+// The one exception is the Default profile. Every layout file has one (the
+// sanitizer makes it), and the shipped "default" is that profile rather than
+// a second one beside it: an unmarked "default" is adopted - marked, with its
+// label, its modes and its state kept. Only a file that is new (`fresh`: the
+// layout file was missing or empty, a first start) takes the shipped modes as
+// well, because there is nothing of the user's in it to keep yet.
+function addBuiltinProfiles(config, builtins, fresh) {
     const next = copyConfig(config)
     const added = []
     for (const data of Array.isArray(builtins) ? builtins : []) {
         if (!data || typeof data.id !== "string" || !data.id.length) continue
         if (builtinProfileName(next, data.id).length) continue
+        const own = next.profiles[data.id]
+        if (data.id === DEFAULT_PROFILE && own && !own.builtin) {
+            own.builtin = data.id
+            if (fresh === true) own.modes = JSON.parse(JSON.stringify(data.modes || {}))
+            added.push(data.id)
+            continue
+        }
         const name = Profile.uniqueName(data.id, Object.keys(next.profiles))
         next.profiles[name] = { label: data.label || data.id, modes: JSON.parse(JSON.stringify(data.modes || {})),
                                 builtin: data.id }

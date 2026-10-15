@@ -587,7 +587,21 @@ Singleton {
         pendingText = JSON.stringify(next, null, 2) + "\n"
         writeTimer.restart()
     }
-    Timer { id: writeTimer; interval: 0; onTriggered: if (!unreadableBackup.running) settingsFile.setText(root.pendingText) }
+    // The file as last read or written, for the backup LayoutService keeps
+    // before the first profile switch of a day: the file itself, keys this
+    // version would drop included; "" while there is none. Kept here rather
+    // than asked of the FileView, whose text() stays empty for a file that
+    // did not exist when it was first read.
+    property string fileText: ""
+    Timer {
+        id: writeTimer
+        interval: 0
+        onTriggered: {
+            if (unreadableBackup.running) return
+            settingsFile.setText(root.pendingText)
+            root.fileText = root.pendingText
+        }
+    }
     Process {
         id: unreadableBackup
         command: ["cp", "-f", "--", settingsFile.path, settingsFile.path + ".bad"]
@@ -649,6 +663,7 @@ Singleton {
     function load() {
         const text = settingsFile.text()
         if (loaded && !text.trim().length) return
+        fileText = text
         try {
             data = text.trim().length
                 ? NotchLogic.migrate(AnimationLogic.migrate(WallpaperLogic.migrate(PowerSourceLogic.migrate(JSON.parse(text))))) : defaults

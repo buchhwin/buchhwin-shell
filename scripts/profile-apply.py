@@ -2,6 +2,7 @@
 """The file work of activating a built-in profile (LayoutService.applyBuiltin).
 
     profile-apply.py --from DIR --config-dir DIR [--backup-dir DIR] [--dry-run]
+    profile-apply.py --backup-stdin --backup-dir DIR
 
 --from is config/builtin-profiles/<id> (profile.json, fastfetch.jsonc, the
 logo), --config-dir the shell's ${XDG_CONFIG_HOME}/buchhwin-shell, --backup-dir
@@ -24,6 +25,15 @@ In this order, and nothing after a step that failed:
 The settings, the layout and the default apps themselves are the shell's to
 write (SettingsService, LayoutService, DefaultAppsService); this only moves
 files. One JSON line on stdout either way.
+
+--backup-stdin is the backup before the first profile switch of a day
+(LayoutService.backupToday): a JSON object on stdin, {"settings.json": text,
+"layout.json": text}, the files as the shell held them a moment before it
+rewrote them, goes into BACKUP/backup-<YYYY-MM-DD>. When that directory is
+there already (an earlier switch, or a built-in profile applied today), the
+day's state is kept and nothing is written. The texts come from the shell
+rather than from disk because the shell writes the new files before a copy
+started from here could read the old ones.
 """
 import argparse
 import datetime
@@ -80,6 +90,31 @@ def backup(config_dir, backup_dir, now):
     for path in present:
         shutil.copy2(path, target / path.name)
     return target, [path.name for path in present]
+
+
+# The files a profile switch rewrites, and the only names --backup-stdin
+# writes: the names come from the shell, but a name is still a path.
+DAILY = ("settings.json", "layout.json")
+
+
+def daily_backup(texts, backup_dir, now):
+    """(backup directory or None, names written, whether the day's backup was there already)."""
+    present = {name: texts[name] for name in DAILY
+               if isinstance(texts.get(name), str) and texts[name].strip()}
+    target = backup_dir / ("backup-" + now.strftime("%Y-%m-%d"))
+    if target.exists():
+        return None, [], True
+    if not present:
+        return None, [], False
+    try:
+        target.mkdir(parents=True)
+    except FileExistsError:
+        # Made a moment ago by another run (profile-apply for a built-in
+        # profile entered by the same switch): that one is the day's.
+        return None, [], True
+    for name, text in present.items():
+        write_atomic(target / name, text)
+    return target, sorted(present), False
 
 
 def write_atomic(path, text):
@@ -172,15 +207,40 @@ def installed_apps(profile):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--from", dest="source", required=True)
-    parser.add_argument("--config-dir", required=True)
+    parser.add_argument("--from", dest="source", default="")
+    parser.add_argument("--config-dir", default="")
     parser.add_argument("--backup-dir", default="")
     parser.add_argument("--dry-run", action="store_true", help="only say which default apps are installed")
+    parser.add_argument("--backup-stdin", action="store_true",
+                        help="only keep the files on stdin as the day's backup")
     args = parser.parse_args(argv)
+    now = datetime.datetime.now()
+
+    if args.backup_stdin:
+        if not args.backup_dir:
+            print(json.dumps({"ok": False, "error": "no backup directory"}))
+            return 1
+        try:
+            texts = json.loads(sys.stdin.read() or "{}")
+            if not isinstance(texts, dict):
+                raise ValueError("not an object")
+        except ValueError as error:
+            print(json.dumps({"ok": False, "error": "cannot read the files to back up: %s" % error}))
+            return 1
+        try:
+            target, written, kept = daily_backup(texts, pathlib.Path(args.backup_dir), now)
+        except OSError as error:
+            print(json.dumps({"ok": False, "error": "backup failed: %s" % error}))
+            return 1
+        print(json.dumps({"ok": True, "backup": str(target) if target else "", "backedUp": written,
+                          "alreadyToday": kept}))
+        return 0
+    if not args.source or not args.config_dir:
+        print(json.dumps({"ok": False, "error": "--from and --config-dir are needed"}))
+        return 1
 
     source_dir = pathlib.Path(args.source)
     config_dir = pathlib.Path(args.config_dir)
-    now = datetime.datetime.now()
     try:
         profile = json.loads((source_dir / "profile.json").read_text(encoding="utf-8"))
         if not isinstance(profile, dict):

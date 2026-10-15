@@ -136,6 +136,49 @@ with tempfile.TemporaryDirectory() as temp:
     status, answer = run("--from", str(base / "nowhere"), "--config-dir", str(config), "--backup-dir", str(state))
     check(status == 1 and "cannot read" in answer.get("error", ""), "a missing profile is an error before anything")
 
+    # ---- the backup before the first profile switch of a day (--backup-stdin) -----
+    daily = base / "daily-state"
+    texts = {"settings.json": '{"appearance": {"accent": "#abcdef"}}\n', "layout.json": '{"configVersion": 3}\n',
+             "../escape.json": "x", "fastfetch.jsonc": "x"}
+    target, written, kept = module.daily_backup(texts, daily, morning)
+    check(target == daily / "backup-2026-10-15" and written == ["layout.json", "settings.json"] and not kept,
+          "the day's backup holds the two files: %r %r" % (target, written))
+    check((target / "settings.json").read_text(encoding="utf-8") == texts["settings.json"], "as they were handed over")
+    check(sorted(path.name for path in target.iterdir()) == ["layout.json", "settings.json"],
+          "and nothing else: a name that is not one of the two is not a file to write")
+    again, written, kept = module.daily_backup({"settings.json": "{}\n"}, daily, morning)
+    check(again is None and written == [] and kept, "a second switch that day writes nothing")
+    check((target / "settings.json").read_text(encoding="utf-8") == texts["settings.json"], "and the day's backup stays")
+    nothing = module.daily_backup({"settings.json": "  ", "layout.json": 3}, base / "daily-none", morning)
+    check(nothing == (None, [], False) and not (base / "daily-none").exists(), "empty texts create nothing")
+
+    def run_stdin(text, *argv):
+        out = io.StringIO()
+        previous = sys.stdin
+        sys.stdin = io.StringIO(text)
+        try:
+            with contextlib.redirect_stdout(out):
+                status = module.main(list(argv))
+        finally:
+            sys.stdin = previous
+        lines = out.getvalue().strip().splitlines()
+        check(len(lines) == 1, "one JSON line out, got %d" % len(lines))
+        return status, json.loads(lines[-1]) if lines else {}
+
+    status, answer = run_stdin(json.dumps({"layout.json": "{}\n"}), "--backup-stdin", "--backup-dir", str(base / "daily-run"))
+    check(status == 0 and answer.get("ok") is True and answer.get("backedUp") == ["layout.json"],
+          "--backup-stdin backs up what it is given: %r" % answer)
+    check(answer.get("backup", "").startswith(str(base / "daily-run" / "backup-")), "and says where")
+    status, answer = run_stdin(json.dumps({"layout.json": "{}\n"}), "--backup-stdin", "--backup-dir", str(base / "daily-run"))
+    check(status == 0 and answer.get("alreadyToday") is True and answer.get("backup") == "",
+          "the same day again: kept as it is: %r" % answer)
+    status, answer = run_stdin("not json", "--backup-stdin", "--backup-dir", str(base / "daily-bad"))
+    check(status == 1 and answer.get("ok") is False and not (base / "daily-bad").exists(), "unreadable input is an error")
+    status, answer = run_stdin("{}", "--backup-stdin")
+    check(status == 1 and "backup directory" in answer.get("error", ""), "and so is no backup directory")
+    status, answer = run("--config-dir", str(config))
+    check(status == 1 and "--from" in answer.get("error", ""), "without --backup-stdin, --from is needed")
+
     # The shipped profile itself, as a dry run: it only says what is installed.
     status, answer = run("--from", str(ROOT / "config" / "builtin-profiles" / "buchhwin"),
                          "--config-dir", str(base / "untouched"), "--dry-run")

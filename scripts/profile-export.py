@@ -9,12 +9,15 @@ session's default terminal and file manager (default-apps.py's two lists) and
 the fastfetch configuration (~/.config/fastfetch/config.jsonc + its logo), and
 writes NAME/profile.json, NAME/fastfetch.jsonc and the logo next to it.
 
-What goes in: the active profile's five modes (layouts and the appearance each
-mode owns), the notch, its presets and the lock screen's layout, and every
+What goes in: the profile's five modes (layouts and the appearance each mode
+owns), its notch, the notch presets and its lock screen's layout, and every
 setting except what belongs to this machine or this person rather than to the
-look: where the weather is (a place and its coordinates), which calendars are
-hidden, the colour picker's history, onboarding, recent folders. Paths under
-the home directory are written as "~/...", which SettingsService expands.
+look (DROP: at least ProfileLogic.GLOBAL_SETTINGS - where the weather is,
+hidden calendars, histories, onboarding, the screens and the keyboard layout).
+The profile in use is exported as it is set now; another one with the state it
+keeps in layout.json (LayoutService, `state`), and one that has none yet is
+refused rather than exported with the settings of the profile in use. Paths
+under the home directory are written as "~/...", which SettingsService expands.
 
 The result is checked before it is written: a value that looks like a
 coordinate, an e-mail address or a path under /home stops the export, so the
@@ -29,14 +32,20 @@ import sys
 
 SESSION = "buchhwin-shell"
 
-# Settings that describe this machine or this person, not the look.
+# Settings that describe this machine or this person, not the look: a setting
+# or a whole group. Every entry of ProfileLogic.GLOBAL_SETTINGS is here (a
+# profile never keeps those, so a shipped one must not carry them either;
+# tests/python/profile_export_test.py holds the two lists together), and this
+# may leave out more.
 DROP = {
-    "configVersion",
+    "configVersion", "notch.headerAdopted", "desktop.quickSizesAdopted",
     "onboarding",
     "colorPicker.history",
-    "weather.locationName", "weather.lat", "weather.lon",
+    "weather.locationName", "weather.lat", "weather.lon", "weather.autoLocate",
     "wallpaper.recentFolders",
     "calendar.hiddenCalendars", "calendar.newEventCalendar",
+    "display", "input.kbLayout", "input.kbVariant",
+    "desktop.settingsMoveX", "desktop.settingsMoveY",
 }
 # Paths that are kept, home-relative.
 PATHS = {"wallpaper.path", "wallpaper.folder", "wallpaper.slideshowFolder", "login.wallpaper", "recording.folder"}
@@ -81,11 +90,15 @@ def contract_home(value, home):
     return "~" + text[len(home):] if home and text.startswith(home + "/") else text
 
 
+def dropped(path):
+    return any(path == entry or path.startswith(entry + ".") for entry in DROP)
+
+
 def settings_of(raw, home):
     flat = flatten(raw)
     kept = {}
     for path, value in flat.items():
-        if path in DROP or path.split(".")[0] in DROP:
+        if dropped(path):
             continue
         group, _, leaf = path.partition(".")
         if group == "appearance" and leaf in MODE_SCOPED:
@@ -162,20 +175,34 @@ def main(argv=None):
     except (OSError, ValueError) as error:
         print(json.dumps({"ok": False, "error": "cannot read the configuration: %s" % error}))
         return 1
-    name = args.profile or layout.get("activeProfile") or "default"
+    active = layout.get("activeProfile") or "default"
+    name = args.profile or active
     source = (layout.get("profiles") or {}).get(name)
     if not isinstance(source, dict) or not isinstance(source.get("modes"), dict):
         print(json.dumps({"ok": False, "error": "no profile %r in layout.json" % name}))
         return 1
+    # The settings, notch and lock screen in use belong to the active profile;
+    # any other keeps its own in its state.
+    notch, lock = layout.get("notch") or {}, layout.get("lock") or {}
+    if name != active:
+        state = source.get("state")
+        if not isinstance(state, dict) or not isinstance(state.get("settings"), dict):
+            print(json.dumps({"ok": False, "error": "profile %r keeps no state yet: switch to it once, "
+                                                    "or export it while it is in use" % name}))
+            return 1
+        settings = state["settings"]
+        notch = state.get("notch") or notch
+        lock = state.get("lock") or lock
+    label = source.get("label") if isinstance(source.get("label"), str) and source.get("label").strip() else args.name
 
     profile = {
         "configVersion": 1,
         "id": args.name,
-        "label": args.name,
+        "label": label,
         "modes": source["modes"],
-        "notch": layout.get("notch") or {},
+        "notch": notch,
         "notchPresets": layout.get("notchPresets") or [],
-        "lock": layout.get("lock") or {},
+        "lock": lock,
         "settings": settings_of(settings, home),
         "defaultApps": default_apps(config),
     }

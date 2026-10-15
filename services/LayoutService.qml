@@ -118,10 +118,11 @@ Singleton {
     // editor: the editor is a full-screen surface with exclusive keyboard
     // focus, and so is the control center - two of them at once is the trap
     // that keeps Alt+Tab out of the panel system.
-    // The notch's two lists. Outside `profiles`, because the notch is the same
-    // on every profile and every mode - the rest of its options are in
-    // settings.json, which
-    // cannot hold a list at all (see the note in LayoutLogic).
+    // The notch's two lists. Outside the modes, because the notch is the same
+    // in all five - the rest of its options are in settings.json, which
+    // cannot hold a list at all (see the note in LayoutLogic). This is the
+    // notch in use; each profile keeps its own in its state and puts it back
+    // here when it is entered (enterProfile).
     readonly property var notchLayout: config.notch || Logic.defaultNotch()
     property bool notchEditing: false
     // "collapsed" or "expanded": which shape the notch editor is working on.
@@ -208,11 +209,11 @@ Singleton {
         return save()
     }
 
-    // The lock screen's grid. Outside `profiles` like the notch: there is one
-    // lock screen whatever the desktop mode says about monitors. The lock
-    // screen itself is another process and only ever reads this file; it is
-    // arranged in Settings, on a preview, because editing a surface whose
-    // whole job is to be modal is a trap.
+    // The lock screen's grid. Outside the modes like the notch (and kept in a
+    // profile's state like it): there is one lock screen whatever the desktop
+    // mode says about monitors. The lock screen itself is another process and
+    // only ever reads this file; it is arranged in Settings, on a preview,
+    // because editing a surface whose whole job is to be modal is a trap.
     readonly property var lockLayout: config.lock || Logic.defaultLock()
     readonly property var lockTypes: Logic.lockTypes(lockLayout)
     readonly property var lockItems: Logic.lockItems(lockLayout)
@@ -535,6 +536,7 @@ Singleton {
             console.warn("buchhwin-shell: layout file unreadable, keeping current layout:", result.error)
             return
         }
+        fileText = text
         readOnly = result.readOnly
         readOnlyReason = result.error || ""
         if (result.readOnly)
@@ -548,6 +550,7 @@ Singleton {
         backupVersion = migrated ? result.from : 0
         config = Logic.sanitize(result.config)
         notchStored = !!(result.config && result.config.notch)
+        if (!loaded) freshLayout = result.ok && !text.trim().length
         loaded = true
         ensureScreens()
         adoptOnce()
@@ -558,6 +561,7 @@ Singleton {
             backupTimer.restart()
             save()
         }
+        settleActiveState()
     }
 
     // The notch used to be four booleans in settings.json. A layout file that
@@ -732,6 +736,7 @@ Singleton {
         function onLoadedChanged() {
             if (!SettingsService.loaded) return
             root.adoptOnce()
+            root.settleActiveState()
         }
     }
 
@@ -751,7 +756,10 @@ Singleton {
         writeTimer.restart()
         return true
     }
-    Timer { id: writeTimer; interval: 0; onTriggered: layoutFile.setText(root.pendingText) }
+    // The file as last read or written, for the backup before a profile
+    // switch (backupToday); see SettingsService.fileText.
+    property string fileText: ""
+    Timer { id: writeTimer; interval: 0; onTriggered: { layoutFile.setText(root.pendingText); root.fileText = root.pendingText } }
     // The copy a migration keeps of the file it read, written the same way
     // and for the same reason: it is asked for from `load()`.
     property string pendingBackup: ""
@@ -774,9 +782,10 @@ Singleton {
         return true
     }
 
-    // The notch is not in the layout file - it is the same everywhere, so
-    // it lives in settings.json. Its options are still edited in the editor,
-    // and Ctrl+Z there has to reach them, so an undo step carries them along.
+    // The notch's options are not in the layout file but in settings.json (a
+    // profile keeps them in its state with the rest). They are edited in the
+    // editor, and Ctrl+Z there has to reach them, so an undo step carries them
+    // along.
     readonly property var notchKeys: ["notch.eventCount", "notch.hoverMode", "notch.openDelay", "notch.closeDelay",
                                       "notch.clickAction", "notch.middleAction", "notch.rightAction", "notch.swipe", "notch.panelOrigin", "notch.reserve",
                                       "notch.fullscreen", "notch.shape", "notch.collapsedWidth",
@@ -941,24 +950,191 @@ Singleton {
     }
 
     // ---- the profile: the level above --------------------------------------
+    // A profile keeps everything the user sets: its five modes in `modes`, and
+    // the rest in `state` (LayoutLogic.sanitizeProfileState) - every setting
+    // that is a profile's (ProfileLogic.isProfileSetting), the notch and the
+    // lock screen. The settings and the global notch and lock layouts are
+    // what is live; a profile's state is a copy of them, taken when the
+    // profile is left and put back when it is entered. The notch presets stay
+    // global: they are a library to pick from, not a choice.
+
+    // The state as it is right now, in the form a profile keeps it.
+    function currentState() {
+        return Logic.sanitizeProfileState({ settings: SettingsService.sanitized(), notch: config.notch, lock: config.lock })
+    }
+
+    // The settings of a state (or of a shipped profile) this shell knows and
+    // would take - the right type, an allowed value - and that differ from
+    // what is set. A key from a newer shell is left out here rather than
+    // warned about one by one in SettingsService; a key the state does not
+    // name is not in `leaves` at all and keeps its value, so a setting added
+    // after the state was stored is not reset by restoring it.
+    function knownValues(leaves) {
+        const values = {}
+        for (const path of Object.keys(leaves || {})) {
+            const fallback = SettingsService.defaultOf(path)
+            if (fallback === undefined || typeof fallback === "object" || typeof leaves[path] !== typeof fallback) continue
+            const choices = SettingsService.allowed[path]
+            if (choices && choices.indexOf(leaves[path]) < 0) continue
+            if (SettingsService.value(path) !== leaves[path]) values[path] = leaves[path]
+        }
+        return values
+    }
+
+    // A built-in profile without a state has not had its shipped one yet:
+    // entered for the first time, its setup is being applied (or could not
+    // be). Left now, it must not store what happens to be set - that is the
+    // profile it came from - or the shipped setup would never arrive.
+    function waitingForShipped(name) {
+        const id = Logic.builtinOf(config, name)
+        return id.length > 0 && builtinProfiles[id] !== undefined && !Logic.stateOf(config, name)
+    }
 
     function setActiveProfile(name) {
         if (profileNames.indexOf(name) < 0 || readOnly) return false
-        const switched = name !== activeProfile
-        beginChange()
+        if (name === activeProfile) {
+            // Naming the profile one is already in re-applies its mode's
+            // settings and nothing else - it is not a request to put its
+            // stored state back over what is set; Restore is.
+            beginChange()
+            ensureScreens()
+            applyModeSettings(activeMode)
+            revision++
+            save()
+            return true
+        }
+        // A state taken before settings.json has been read would be the
+        // defaults, stored over the profile being left.
+        if (!loaded || !SettingsService.loaded) return false
         const next = JSON.parse(JSON.stringify(config))
+        if (!waitingForShipped(activeProfile)) next.profiles[activeProfile].state = currentState()
+        enterProfile(next, name)
+        return true
+    }
+
+    // The switch itself, on a copy of the config the caller has already
+    // changed: the state of the profile left stored (setActiveProfile), or
+    // the profile left removed (removeProfile).
+    //
+    // Into a profile with a state: its settings, notch and lock screen are
+    // put back. Into one without: a profile of the user's keeps what is set
+    // and takes it as its state (a new profile starts from the session it was
+    // made in, not from defaults); a built-in one gets its shipped setup
+    // (startBuiltin), which becomes its state once it is in. The mode-scoped
+    // appearance comes from the mode, as before.
+    //
+    // One save of layout.json, and one write of settings.json: the state's
+    // `setAll` and the mode's go through the same zero-interval timer in the
+    // same turn (pitfall 3).
+    function enterProfile(next, name) {
+        // First, while nothing has changed yet.
+        backupToday()
+        // An undo step from the profile left would put its layout back under
+        // the settings of this one, and the next switch would store that mix
+        // as its state. Undo starts again in every profile.
+        undoStack = []
+        const stored = next.profiles[name] ? next.profiles[name].state || null : null
+        const id = Logic.builtinOf(next, name)
+        const shipped = !stored && id.length > 0 && builtinProfiles[id] !== undefined
         next.activeProfile = name
-        config = Logic.sanitize(next)
+        if (!stored && !shipped) next.profiles[name].state = currentState()
+        config = stored ? Logic.restoreStateLayout(next, stored) : Logic.sanitize(next)
+        if (stored) {
+            const values = knownValues(Profile.settingLeaves(stored.settings, Paths.home))
+            if (Object.keys(values).length) SettingsService.setAll(values)
+        }
         ensureScreens()
         applyModeSettings(activeMode)
         revision++
+        changed()
         save()
-        // A built-in profile is a whole setup, not only five modes: entering
-        // it puts the rest back too. Only on a real switch - naming the
-        // profile one is already in is not a request to overwrite the
-        // settings; `applyBuiltin` (Restore) is.
-        if (switched && Logic.builtinOf(config, name).length) startBuiltin(Logic.builtinOf(config, name), name)
-        return true
+        if (shipped) startBuiltin(id, name)
+    }
+
+    // ---- once per start: the profile in use and its state ------------------
+    // When the layout, the settings and every shipped profile are in (read or
+    // missing), the profile in use gets a state if it has none, so the one
+    // in use before the first switch - Default with its notch - holds what it
+    // is now rather than nothing.
+    //
+    // A built-in one without a state gets its shipped setup instead (with the
+    // backup first, as on entering it): on a first start that makes Default
+    // the shipped Default. Not on the first start of this version over an
+    // existing layout file, though (LayoutLogic.settleAction): an update must
+    // not put a shipped setup back over what the user has.
+    property bool stateSettled: false
+    // id -> true once its profile.json has been read or found missing.
+    property var builtinRead: ({})
+    // The layout file was missing or empty on the first read: a first start.
+    property bool freshLayout: false
+
+    function settleActiveState() {
+        if (stateSettled || !loaded || readOnly || !SettingsService.loaded) return
+        if (!builtinProfileNames.every(id => builtinRead[id] === true)) return
+        stateSettled = true
+        const name = activeProfile
+        const id = Logic.builtinOf(config, name)
+        const action = Logic.settleAction(config, name, builtinProfiles[id] !== undefined, freshLayout)
+        if (!action.length && Logic.hasAdopted(config, "profileState")) return
+        const next = JSON.parse(JSON.stringify(config))
+        next.adopted = Logic.withAdopted(next, "profileState")
+        if (action === "current") next.profiles[name].state = currentState()
+        config = Logic.sanitize(next)
+        revision++
+        changed()
+        save()
+        if (action === "shipped") startBuiltin(id, name)
+    }
+
+    function markBuiltinRead(id) {
+        const next = Object.assign({}, builtinRead)
+        next[id] = true
+        builtinRead = next
+        settleActiveState()
+    }
+
+    // ---- a backup before the first switch of a day ---------------------------
+    // A switch rewrites settings.json from the profile entered. Nothing is
+    // lost by that - the profile left keeps it as its state - but a mistake
+    // in that would be, so the first switch of each day keeps both files in
+    // the state directory first, as backup-<YYYY-MM-DD> (profile-apply.py
+    // --backup-stdin; an existing backup of the day is never written into).
+    //
+    // The texts are taken now and handed over on stdin, not copied from disk
+    // by the helper: its start is slower than the write timers below, and a
+    // copy made after them would be of the files the switch just wrote.
+    property string backupDay: ""
+
+    function backupToday() {
+        const day = Qt.formatDate(new Date(), "yyyy-MM-dd")
+        if (backupDay === day || backupProc.running || !loaded) return
+        backupDay = day
+        backupProc.request = JSON.stringify({ "settings.json": SettingsService.fileText,
+                                              "layout.json": fileText })
+        backupProc.command = ["python3", Paths.script("profile-apply.py"), "--backup-stdin",
+                              "--backup-dir", Paths.stateDir]
+        backupProc.running = true
+    }
+
+    Process {
+        id: backupProc
+        property string request: "{}"
+        stdinEnabled: true
+        stderr: ErrorLog { label: "LayoutService.backupProc" }
+        stdout: StdioCollector {}
+        onStarted: {
+            write(request + "\n")
+            stdinEnabled = false
+        }
+        // Opened again for the next run; a backup that failed is tried again
+        // on the next switch rather than counted as the day's.
+        onExited: code => {
+            stdinEnabled = true
+            if (code !== 0) {
+                console.warn("buchhwin-shell: the backup before a profile switch failed:", code)
+                root.backupDay = ""
+            }
+        }
     }
 
     // A profile's own name, for a list that is not the active one.
@@ -982,6 +1158,9 @@ Singleton {
 
     // `laptop` and `docked` are not renameable or removable anywhere, so a
     // profile only ever adds, duplicates, renames, removes or resets.
+    //
+    // A new profile has no state: entered the first time, it keeps the
+    // settings, notch and lock screen in use then (enterProfile).
     function addProfile(label) {
         if (readOnly) return ""
         beginChange()
@@ -993,10 +1172,13 @@ Singleton {
         return step.name
     }
 
+    // A copy with the source's state: the profile in use is copied as it is
+    // set now, any other with the state it was left with.
     function duplicateProfile(name, label) {
         if (readOnly) return ""
         beginChange()
-        const step = Logic.duplicateProfile(config, name, label)
+        const state = name === activeProfile && SettingsService.loaded ? currentState() : null
+        const step = Logic.duplicateProfile(config, name, label, state)
         config = step.config
         revision++
         changed()
@@ -1014,8 +1196,17 @@ Singleton {
         return true
     }
 
+    // Removing the profile in use is a switch to the one that takes its place
+    // (the first left), with that one's state put back - and without storing
+    // the state of the one removed, which goes with it.
     function removeProfile(name) {
         if (readOnly || profileNames.length < 2 || isBuiltinProfile(name)) return false
+        if (name === activeProfile) {
+            if (!loaded || !SettingsService.loaded) return false
+            const next = Logic.removeProfile(config, name)
+            enterProfile(JSON.parse(JSON.stringify(next)), next.activeProfile)
+            return true
+        }
         beginChange()
         config = Logic.removeProfile(config, name)
         revision++
@@ -1031,18 +1222,27 @@ Singleton {
     // from that. A built-in profile goes back to the modes it shipped with,
     // and not before they have been read: the factory templates in their
     // place would be a reset to the wrong state.
+    //
+    // All five of a built-in profile also bring back its shipped state: at
+    // once when it is the profile in use (startBuiltin, with its backup),
+    // otherwise by forgetting the stored one, so entering it applies the
+    // shipped setup as the first time did. A profile of the user's keeps its
+    // state (see LayoutLogic.resetProfile).
     function resetProfile(name, modeName) {
         if (readOnly) return false
         const id = Logic.builtinOf(config, name)
         const shipped = id.length && builtinProfiles[id] ? builtinProfiles[id].modes : null
         if (id.length && !shipped) return false
+        const all = !modeName
         beginChange()
         config = Logic.resetProfile(config, name, modeName || "", shipped)
+        if (id.length && all && name !== activeProfile) config = Logic.withState(config, name, null)
         revision++
         changed()
         ensureScreens()
         applyModeSettings(activeMode)
         save()
+        if (id.length && all && name === activeProfile) startBuiltin(id, name)
         return true
     }
 
@@ -1050,9 +1250,12 @@ Singleton {
     // Profiles the repository ships, read from config/builtin-profiles/<id>/
     // the way the notch presets are read from config/notch-presets/. Each one
     // is always in the layout file (added once it has loaded), cannot be
-    // removed, and resets to what it shipped with. "buchhwin" is the user's own
-    // setup, written by scripts/profile-export.py.
-    readonly property var builtinProfileNames: ["buchhwin"]
+    // removed, and resets to what it shipped with. "default" is the Default
+    // profile every layout has (adopted, see LayoutLogic.addBuiltinProfiles),
+    // "buchhwin" the user's own setup; both are written by
+    // scripts/profile-export.py. A missing file is a profile that is not built
+    // in yet, and everything about it stays as it was.
+    readonly property var builtinProfileNames: ["default", "buchhwin"]
     // id -> the shipped profile, sanitized (LayoutLogic.sanitizeBuiltinProfile).
     property var builtinProfiles: ({})
     // The id being applied right now, "" when none is; and why the last
@@ -1071,21 +1274,52 @@ Singleton {
     // write timer like every other (pitfall 3), and none when nothing was
     // missing - this runs on every load of the file, including the reload
     // after its own write.
+    //
+    // On a first start the adopted Default takes the shipped modes, and the
+    // mode in use was materialized from its template a moment before: it is
+    // filled in again from the shipped one, with that mode's appearance.
     function ensureBuiltinProfiles() {
         if (!loaded || readOnly) return
         const shipped = builtinProfileNames.map(id => builtinProfiles[id]).filter(data => !!data)
         if (!shipped.length) return
-        const step = Logic.addBuiltinProfiles(config, shipped)
+        const step = Logic.addBuiltinProfiles(config, shipped, freshLayout)
         if (!step.added.length) return
         config = step.config
+        if (freshLayout && step.added.indexOf(activeProfile) >= 0) {
+            ensureScreens()
+            applyModeSettings(activeMode)
+        }
         revision++
         changed()
         save()
     }
 
-    // The whole setup of a built-in profile, without switching to it: the
-    // Restore button, `buchhwin profile restore <name>`, and the switch itself.
-    // Takes a built-in id or the name of the profile that carries one.
+    // A built-in profile's shipped setup again: the Restore button and
+    // `buchhwin profile restore <name>`. Takes a built-in id or the name of
+    // the profile that carries one.
+    //
+    // For the profile in use it is applied now, after a backup (startBuiltin).
+    // Any other one forgets its stored state, so entering it brings the
+    // shipped setup back exactly as the first time did; nothing that is set
+    // now changes, because it is not that profile's.
+    function applyBuiltin(name) {
+        const id = builtinProfileNames.indexOf(name) >= 0 ? name : Logic.builtinOf(config, name)
+        if (!id.length || !builtinProfiles[id] || readOnly) return false
+        const holder = Logic.builtinProfileName(config, id)
+        if (!holder.length) return false
+        if (holder === activeProfile) return startBuiltin(id, holder)
+        backupToday()
+        beginChange()
+        config = Logic.withState(config, holder, null)
+        revision++
+        changed()
+        save()
+        return true
+    }
+
+    // The whole setup of a built-in profile, for the profile `forProfile`
+    // that carries it and is in use: entered without a state, restored, or
+    // reset.
     //
     // Nothing is overwritten before the copy of what is there now has been
     // made: profile-apply.py backs up settings.json, layout.json and the
@@ -1093,15 +1327,9 @@ Singleton {
     // fastfetch's files in place (with a copy of a different fastfetch.jsonc
     // kept beside it), and answers which of the shipped default apps are
     // installed here. Only once it has answered does the rest happen, in
-    // `finishBuiltin`.
-    function applyBuiltin(name) {
-        return startBuiltin(builtinProfileNames.indexOf(name) >= 0 ? name : Logic.builtinOf(config, name), "")
-    }
-
-    // `forProfile` is the profile a switch entered, "" for Restore. A switch
-    // away before the script has answered (the profile key pressed twice)
-    // means the setup is no longer wanted, and the profile that is active by
-    // then keeps its settings.
+    // `finishBuiltin`. A switch away before then (the profile key pressed
+    // twice) means the setup is no longer wanted, and the profile that is
+    // active by then keeps its settings.
     function startBuiltin(id, forProfile) {
         if (!id.length || !builtinProfiles[id] || readOnly || applyProc.running) return false
         builtinError = ""
@@ -1130,22 +1358,19 @@ Singleton {
             return
         }
         if (!data || readOnly) return
-        if (applyProc.forProfile.length && activeProfile !== applyProc.forProfile) return
+        if (activeProfile !== applyProc.forProfile) return
         // One undo step for the notch, its options and the lock screen, taken
         // before any of them changes: the step snapshots the notch's settings
         // (`undoKeys`), so it has to see them as they were.
         beginChange()
-        // The settings this shell knows. A key from a newer shell is left out
-        // here rather than warned about one by one in SettingsService - the
-        // file is shipped, not typed. One write for all of them.
-        const leaves = Profile.settingLeaves(data.settings, Paths.home)
-        const values = {}
-        for (const path of Object.keys(leaves)) {
-            const fallback = SettingsService.defaultOf(path)
-            if (fallback !== undefined && typeof fallback !== "object") values[path] = leaves[path]
-        }
+        // The settings this shell knows, in one write.
+        const values = knownValues(Profile.settingLeaves(data.settings, Paths.home))
         if (Object.keys(values).length) SettingsService.setAll(values)
         config = Logic.applyBuiltinLayout(config, data)
+        // What was applied is the profile's state from now on: it keeps the
+        // user's changes to it, and the next entry restores those rather than
+        // the shipped setup.
+        config = Logic.withState(config, activeProfile, currentState())
         revision++
         changed()
         save()
@@ -1158,6 +1383,16 @@ Singleton {
         builtinApplied(id)
     }
 
+    // The profile in use is a built-in one still waiting for its shipped
+    // setup, entered while another one's was being applied (startBuiltin
+    // refuses a second run): its turn comes once that one is done. Only after
+    // a run for a profile that is no longer in use, so a run that failed is
+    // not simply started again and again.
+    function resumeShipped() {
+        if (applyProc.running || !waitingForShipped(activeProfile)) return
+        startBuiltin(Logic.builtinOf(config, activeProfile), activeProfile)
+    }
+
     Process {
         id: applyProc
         stderr: ErrorLog { label: "LayoutService.applyProc" }
@@ -1168,7 +1403,10 @@ Singleton {
         property bool outputDone: false
         property int exitCode: -1
         function done() {
-            if (outputDone && exitCode >= 0) root.finishBuiltin(builtinId, exitCode, output)
+            if (!outputDone || exitCode < 0) return
+            const left = forProfile !== root.activeProfile
+            root.finishBuiltin(builtinId, exitCode, output)
+            if (left) Qt.callLater(root.resumeShipped)
         }
         stdout: StdioCollector { onStreamFinished: { applyProc.output = text; applyProc.outputDone = true; applyProc.done() } }
         onStarted: { output = ""; outputDone = false; exitCode = -1 }
@@ -1412,7 +1650,10 @@ Singleton {
 
     // The shipped profiles, read once like the notch presets above. Added to
     // the layout as soon as both this and the layout file are in, whichever
-    // comes last.
+    // comes last. A missing one (a profile not exported yet) is read too, as
+    // nothing: the state of the profile in use is settled only once every
+    // one has answered, so it is never settled before its shipped setup is
+    // known.
     Instantiator {
         model: root.builtinProfileNames
         delegate: FileView {
@@ -1422,15 +1663,18 @@ Singleton {
             onLoaded: {
                 try {
                     const data = Logic.sanitizeBuiltinProfile(JSON.parse(text()), modelData)
-                    if (!data) return
-                    const next = Object.assign({}, root.builtinProfiles)
-                    next[modelData] = data
-                    root.builtinProfiles = next
-                    root.ensureBuiltinProfiles()
+                    if (data) {
+                        const next = Object.assign({}, root.builtinProfiles)
+                        next[modelData] = data
+                        root.builtinProfiles = next
+                        root.ensureBuiltinProfiles()
+                    }
                 } catch (error) {
                     console.warn("buchhwin-shell: built-in profile unreadable:", modelData, error)
                 }
+                root.markBuiltinRead(modelData)
             }
+            onLoadFailed: root.markBuiltinRead(modelData)
         }
     }
 
