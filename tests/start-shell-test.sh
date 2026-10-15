@@ -128,8 +128,11 @@ check 'grep -q "ended 6 helper(s) left behind" "$SB/state/buchhwin-shell/quicksh
 # a kded6 holding the tray name is ended (SIGKILL) before the shell starts;
 # a process of another name under that name is left alone, and so is
 # everything in a nested session
-cp "$(command -v sleep)" "$SB/kded6"
-"$SB/kded6" 120 & tray=$!
+# A script, not a copy of sleep: Fedora's coreutils-single is one binary that
+# picks the tool by its own name and refuses to run as "kded6".
+printf '#!/usr/bin/env bash\nprintf kded6 > /proc/$$/comm\nwhile :; do sleep 0.2; done\n' > "$SB/kded6"
+chmod +x "$SB/kded6"
+"$SB/kded6" & tray=$!
 disown "$tray"   # its SIGKILL is expected, not a job to report
 for _ in {1..20}; do [[ $(cat /proc/$tray/comm 2>/dev/null) == kded6 ]] && break; sleep 0.05; done
 echo 0 > "$COUNT"; BUCHHWIN_NESTED=1 TRAY_OWNER="$tray kded6" CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1

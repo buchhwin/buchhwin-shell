@@ -59,7 +59,8 @@ check '[[ $status -eq 1 && $out == "locked (prompt not followed)" ]]' "without -
 check '! grep -q "Secret.Prompt" "$calls"' "and Prompt is not called"
 # With --prompt it is followed, and the wallet opens.
 run ensure --prompt
-check '[[ $status -eq 0 && $out == "open (after prompt, 0 s)" ]]' "a followed prompt that opens the wallet (got $status: $out)"
+# The seconds are wall time: a loaded machine (the whole suite) can make it 1.
+check '[[ $status -eq 0 && $out =~ ^open\ \(after\ prompt,\ [0-9]+\ s\)$ ]]' "a followed prompt that opens the wallet (got $status: $out)"
 check '[[ $(grep -c -- "--auto-start=no .*$prompt org.freedesktop.Secret.Prompt Prompt s " "$calls") -eq 1 ]]' "Prompt called once, on the offered path, without activating anything"
 # The prompt is dismissed: the prompt object is gone and the wallet is shut.
 stub busctl "case \"\$*\" in *Unlock*) printf 'ao 0 o \"$prompt\"\n' ;; *\"Secret.Prompt Prompt\"*) touch '$flag' ;; *introspect*) if [ -e '$flag' ]; then exit 1; fi ;; *get-property*) echo 'b true' ;; *) $owned ;; esac"

@@ -7,9 +7,13 @@ set -euo pipefail
 # is taken - also while wl-copy stays behind to serve the clipboard.
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
 sandbox=$(mktemp -d "${TMPDIR:-/tmp}/buchhwin-screenshottest.XXXXXX")
+daemons="$sandbox/daemons"
 cleanup() {
-  # The stand-in wl-copy daemon of the last run.
-  pkill -f "^sleep 3.141$" 2>/dev/null || true
+  # The stand-in wl-copy daemons, by the pids they wrote (pgrep is not on
+  # every machine, and a pattern could end someone else's sleep).
+  if [[ -r $daemons ]]; then
+    while read -r pid; do kill "$pid" 2>/dev/null || true; done < "$daemons"
+  fi
   rm -rf -- "$sandbox"
 }
 trap cleanup EXIT
@@ -30,7 +34,7 @@ stub slurp 'sleep "${SLURP_SECONDS:-0}"; echo "10,10 100x100"'
 stub grim 'for last; do :; done; : > "$last"'
 # wl-copy forks a daemon that keeps serving the clipboard: it must not
 # inherit the lock. The stand-in leaves a sleep behind with its open files.
-stub wl-copy 'cat >/dev/null; (exec sleep 3.141) & exit 0'
+stub wl-copy "cat >/dev/null; (exec sleep 3.141) & echo \$! >> '$daemons'; exit 0"
 stub notify-send
 stub xdg-user-dir "echo '$sandbox/home/Pictures'"
 stub hyprctl "echo '[{\"name\":\"eDP-1\",\"focused\":true}]'"
@@ -58,7 +62,7 @@ wait "$first"
 check '[[ $(ls "$sandbox/home/Pictures/Screenshots" | wc -l) -eq 1 ]]' 'the first selection still saves its screenshot'
 
 # The wl-copy daemon of that run is still there; the next screenshot works.
-check 'pgrep -f "^sleep 3.141$" >/dev/null' 'the stand-in clipboard daemon is still running'
+check 'kill -0 "$(head -n1 "$daemons")" 2>/dev/null' 'the stand-in clipboard daemon is still running'
 : > "$calls"
 shoot SLURP_SECONDS=0
 check '[[ $(count slurp) -eq 1 && $(count grim) -eq 1 ]]' 'the next screenshot is not blocked by the clipboard daemon'

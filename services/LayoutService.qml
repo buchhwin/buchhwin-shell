@@ -709,6 +709,17 @@ Singleton {
     // It needs the templates, so it is tried again as each one arrives.
     function adoptModeAppearance() {
         if (Logic.hasAdopted(config, "modeAppearance")) return false
+        // A first start has no modes from before mode-scoped appearance, so
+        // there is nothing to carry over. Run there, it filled in every mode a
+        // shipped Default leaves out whenever the templates were read after
+        // the shipped profile (the reads race), and the mark alone is enough:
+        // a mode that is not in the file is in its factory state.
+        if (freshLayout) {
+            config = Logic.sanitize(Object.assign({}, config, { adopted: Logic.withAdopted(config, "modeAppearance") }))
+            revision++
+            changed()
+            return true
+        }
         if (modeNames.some(name => !templates[name])) return false
         const next = JSON.parse(JSON.stringify(config))
         for (const profileName of Object.keys(next.profiles)) {

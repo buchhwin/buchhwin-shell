@@ -43,7 +43,7 @@ jobs:
           dnf -y config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
           dnf -y install \
             hyprland quickshell \
-            git jq ripgrep zsh python3 python3-pillow tar findutils diffutils which gzip \
+            git jq ripgrep zsh python3 python3-pillow tar findutils diffutils which gzip procps-ng \
             qt6-qtdeclarative-devel \
             plasma-workspace kdepim-addons akonadi-server kf6-kitemmodels
 
