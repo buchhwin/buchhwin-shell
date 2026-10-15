@@ -19,13 +19,9 @@
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-lightgrey"></a>
 </p>
 
-<p align="center">
-  <a href="https://www.youtube.com/watch?v=5ngu3fTjsfU">
-    <img alt="buchhwin-shell on YouTube" src="https://img.youtube.com/vi/5ngu3fTjsfU/maxresdefault.jpg" width="820">
-  </a>
-  <br>
-  <sub>▶ <a href="https://www.youtube.com/watch?v=5ngu3fTjsfU">Watch the 74-second tour</a></sub>
-</p>
+https://github.com/user-attachments/assets/ed802a3a-7811-4f83-98b8-1682edcdbb9c
+
+<p align="center"><sub>Also on <a href="https://www.youtube.com/watch?v=5ngu3fTjsfU">YouTube</a>, in 1080p</sub></p>
 
 ## What it is
 
