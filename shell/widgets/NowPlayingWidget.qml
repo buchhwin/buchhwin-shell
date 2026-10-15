@@ -61,6 +61,7 @@ GridLayout {
         color: root.textColor
         font.family: Typography.iconFamily
         font.pixelSize: Typography.titleSize * root.scaleFactor
+        renderType: Typography.renderType
     }
 
     ColumnLayout {
@@ -96,6 +97,7 @@ GridLayout {
         color: root.textColor
         font.family: Typography.iconFamily
         font.pixelSize: Typography.headlineSize * root.scaleFactor
+        renderType: Typography.renderType
         MouseArea { anchors.fill: parent; anchors.margins: -Metrics.spaceXs; cursorShape: Qt.PointingHandCursor; onClicked: MprisService.togglePlaying() }
     }
 

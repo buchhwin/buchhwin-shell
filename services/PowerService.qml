@@ -68,6 +68,16 @@ Singleton {
     // would otherwise notify Plasma about the host battery.
     readonly property bool lowBatteryWarning: SettingsService.value("power.lowBatteryWarning")
     readonly property int lowBatteryLevel: BatteryLogic.lowLevel(SettingsService.value("power.lowBatteryLevel"))
+    // The one "low" every surface draws in the danger colour: the bar widget,
+    // the battery popup, the control center's tile and Power page, the clock's
+    // hint and the notch's status block. They used to keep thresholds of their
+    // own (15 % in three places, 20 and 10 at the clock) while the warning came
+    // at the level chosen here, so the battery could be red without a warning
+    // or warned about while still drawn in the plain ink. The level counts
+    // whether or not the warnings are switched on: it is the user's own idea
+    // of "low". Only on battery and not charging - 12 % on the charger is not
+    // a problem.
+    readonly property bool low: hasBattery && onBattery && !charging && percent <= lowBatteryLevel
     property var batteryState: ({ fired: {} })
     readonly property string batteryInput: [device !== null && device.ready, hasBattery, charging, onBattery,
                                             percent, lowBatteryWarning, lowBatteryLevel].join(",")

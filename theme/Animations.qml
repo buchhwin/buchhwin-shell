@@ -184,4 +184,27 @@ Singleton {
     readonly property real overshootStrong: 2
     // Something breathing in place, back and forth (the lock screen's pulse).
     readonly property int easingBreathe: Easing.InOutSine
+
+    // ---- waits that were numbers in the timers ----------------------------
+    // None of these is a transition, so none is scaled by the animation mode:
+    // with motion off the shell still has to wait just as long for the
+    // compositor or a service to settle.
+    //
+    // After the shell starts, the services report what already was - the
+    // volume, the song that was playing - and none of it is something the
+    // user did. The OSD and the notch's track change stay quiet this long.
+    readonly property int startupQuiet: 2500
+    // A new output (headphones over Bluetooth, a dock) comes with its own
+    // volume; the jump to it is not a key the OSD should answer.
+    readonly property int sinkSettle: 2000
+    // The overview reads the windows again this long after the last
+    // compositor event, so a burst of them (a move is several) is one read.
+    readonly property int overviewRefresh: 250
+    // A command for the window the overview closed onto waits this long, until
+    // the overlay has given the keyboard back; sent at once, Hyprland handed
+    // the focus back to the previous window.
+    readonly property int overviewDispatchDelay: 120
+    // A preview dropped on another workspace hides until the windows are read
+    // again, and comes back after this long if the move never happened.
+    readonly property int overviewSentTimeout: 2000
 }

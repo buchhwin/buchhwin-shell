@@ -42,13 +42,24 @@ ColumnLayout {
             : root.status === "loading" ? "Loading events …"
             : root.remainingOnly ? (CalendarService.todayEvents.length ? "Nothing else today" : "No events today")
             : root.isToday ? "No events today" : "No events"
-        // Only where there is somewhere to go. A day with no events in it is
-        // not a problem to be solved, and "No events today · Settings >
-        // Calendar" reads as one.
-        description: root.status === "disabled"
-                || (root.status === "ok" && CalendarService.visibleCalendarCount === 0) ? "Settings > Calendar"
-            : root.status === "unavailable" ? "Is Akonadi running?"
-            : ""
+        description: root.status === "unavailable" ? "Is Akonadi running?" : ""
+    }
+    // The way there, not a description of the way: "Settings > Calendar" was
+    // a line of text naming a page the reader then had to go and find, where
+    // the weather card has always had a button. Only where there is somewhere
+    // to go - a day with no events in it is not a problem to be solved.
+    //
+    // Beside the empty state rather than in its action slot, where it would
+    // sit just the same (left, a spaceSm below): the slot shows itself when it
+    // has children, shown or not, so a hidden button there would keep an
+    // empty slot and its spacing under every "No events today".
+    ShellButton {
+        visible: root.all.length === 0 && (root.status === "disabled"
+            || (root.status === "ok" && CalendarService.visibleCalendarCount === 0))
+        icon: Icons.settings
+        text: "Calendar settings"
+        compact: true
+        onClicked: PanelService.open("settings", { page: "calendar" })
     }
 
     Repeater {
@@ -80,6 +91,22 @@ ColumnLayout {
             Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
             Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
 
+            // ListRow's keyboard half as well: a stop for the panel's keys
+            // (NavLogic stops on `focusOnTab`), Return or Space opens the event
+            // as the click does, and a name for the screen reader. The pointer
+            // could open every event and the keyboard none.
+            property bool focusOnTab: false
+            activeFocusOnTab: focusOnTab
+            function activate() { CalendarService.openEvent(eventRow.modelData, root.returnArgs) }
+            Keys.onReturnPressed: eventRow.activate()
+            Keys.onEnterPressed: eventRow.activate()
+            Keys.onSpacePressed: eventRow.activate()
+            Accessible.role: Accessible.Button
+            Accessible.name: eventRow.modelData.title
+            Accessible.description: CalendarService.formatRange(eventRow.modelData)
+            Accessible.onPressAction: eventRow.activate()
+            FocusRing { active: eventRow.activeFocus; controlRadius: eventRow.radius }
+
             RowLayout {
                 id: rowLayout
                 anchors.left: parent.left
@@ -110,7 +137,7 @@ ColumnLayout {
                     glyph: Icons.forward
                     size: Metrics.iconSm
                     color: Colors.subtleText
-                    opacity: rowMouse.containsMouse ? 1 : 0
+                    opacity: rowMouse.containsMouse || eventRow.activeFocus ? 1 : 0
                 }
             }
 
@@ -119,7 +146,7 @@ ColumnLayout {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: CalendarService.openEvent(eventRow.modelData, root.returnArgs)
+                onClicked: eventRow.activate()
             }
         }
     }

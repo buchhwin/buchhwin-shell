@@ -38,7 +38,7 @@ ShellRoot {
         T.eq(tablet.battery, null, "unknown charge hidden")
         T.eq(K.stateText(tablet), "Paired, not reachable", "paired label")
         T.eq(K.deviceIcon(tablet.type), "󰓶", "tablet icon")
-        T.eq(K.stateText(nearby), "Waiting for the phone to accept…", "outgoing request label")
+        T.eq(K.stateText(nearby), "Waiting for the phone to accept …", "outgoing request label")
         T.eq(K.stateText({ paired: false, reachable: true }), "Available to pair", "available label")
         T.ok(K.supports(phone, "share") && !K.supports(phone, "findmyphone"), "plugins from the phone")
         T.ok(K.supports(tablet, "findmyphone"), "empty plugin list allows actions")
@@ -82,7 +82,7 @@ ShellRoot {
         T.eq(K.parseNotifications(""), [], "empty list")
         T.eq(K.summary(status), "1 connected · 2 paired", "summary")
         T.eq(K.summary(K.parseStatus("@daemon stopped\n")), "KDE Connect is not running", "stopped")
-        T.eq(K.summary(K.parseStatus("")), "Checking KDE Connect…", "unknown before the first run")
+        T.eq(K.summary(K.parseStatus("")), "Checking KDE Connect …", "unknown before the first run")
         T.eq(K.parseStatus("@daemon running\n@devices\n{\"type\":\"a{ss}\",\"data\":[{}]}\n@end\n").devices, [], "empty snapshot")
         const bare = K.parseStatus("@devices\n{\"type\":\"a{ss}\",\"data\":[{\"abc\":\"Old\"}]}\n@device abc\nCall failed\n").devices[0]
         T.eq([bare.name, bare.paired, bare.reachable, bare.battery], ["Old", false, false, null], "device without properties")

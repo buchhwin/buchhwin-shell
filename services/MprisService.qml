@@ -122,8 +122,18 @@ Singleton {
     readonly property bool canLoop: active !== null && active.canControl && active.loopSupported
     // The PipeWire stream playing this player's audio (for its volume), else
     // null; players without a matching stream may offer MPRIS volume instead.
+    // It is matched by the streams' properties, which a node only has while
+    // AudioService binds it, and only the media popup and the control center
+    // read it - both trackers. So it is looked for, and the streams are asked
+    // for, only while one of them is open; before, every stream's properties
+    // were read again on every change of any of them.
+    readonly property bool streamWanted: trackers > 0
+    onStreamWantedChanged: {
+        if (streamWanted) AudioService.trackNodes()
+        else AudioService.untrackNodes()
+    }
     readonly property var stream: {
-        if (!active) return null
+        if (!active || !streamWanted) return null
         const streams = AudioService.playbackStreams
         const index = Logic.streamIndex(active, streams.map(node => {
             const props = node.properties || {}

@@ -185,8 +185,7 @@ ColumnLayout {
                 focusOnTab: true
                 text: root.template
                 placeholder: "https://example.org/search?q=%s"
-                border.color: Web.customError(text).length ? Colors.danger
-                    : inputActiveFocus ? Colors.accentBorder : Colors.border
+                error: Web.customError(text).length > 0
                 onTextChanged: SettingsService.set("launcher.searchUrl", text)
             }
         }

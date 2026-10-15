@@ -35,7 +35,18 @@ Singleton {
     readonly property int hintMinutes: Math.max(5, Math.min(120, SettingsService.value("calendar.hintMinutes")))
     readonly property bool hintActive: enabled && SettingsService.value("calendar.eventHint")
         && SettingsService.value("desktop.clockIndicators")
-    readonly property var hiddenIds: Logic.parseIdList(SettingsService.value("calendar.hiddenCalendars"))
+    // Re-read on every settings write, whatever its key (`value` depends on
+    // the whole document), and each new list re-ran `applySelection` over
+    // every calendar and every binding below. An equal list hands back the
+    // previous one, which QML does not announce as a change; it is kept in a
+    // holder so reading it adds no dependency.
+    property var lastHiddenIds: ({ list: [] })
+    readonly property var hiddenIds: {
+        const next = Logic.parseIdList(SettingsService.value("calendar.hiddenCalendars"))
+        if (JSON.stringify(next) === JSON.stringify(lastHiddenIds.list)) return lastHiddenIds.list
+        lastHiddenIds.list = next
+        return next
+    }
     // "accent" (default) or "calendar": colour of the bar next to an event.
     readonly property string eventColorMode: SettingsService.value("calendar.eventColor")
     function colorFor(event) { return Logic.eventColor(event, Colors.accent, eventColorMode) }

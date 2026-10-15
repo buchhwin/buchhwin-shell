@@ -30,6 +30,12 @@ ShellRoot {
         T.eq(N.rows("#connectivity").length, 0, "no match gives no rows")
         T.eq(N.pageIds(N.rows("devices")), ["bluetooth", "displays", "audio", "input", "power"], "group title matches its pages")
         T.eq(N.pageIds(N.rows("lock fingerprint")), ["lockScreen"], "every word must match")
+        // Page titles are sentence case, like the section titles under them,
+        // and the search ignores case, so the old spelling still finds them.
+        const renamed = [["lockScreen", "Lock screen", "Lock Screen"], ["login", "Login screen", "Login Screen"],
+                         ["defaultApps", "Default apps", "Default Apps"], ["desktop", "Desktop extras", "Desktop Extras"]]
+        T.eq(renamed.map(entry => N.pageById(entry[0]).title), renamed.map(entry => entry[1]), "page titles are sentence case")
+        T.ok(renamed.every(entry => N.pageIds(N.rows(entry[2])).indexOf(entry[0]) >= 0), "the Title Case spelling still finds each page")
         T.eq(N.rows(undefined).length, all.length, "undefined query shows everything")
 
         const groups = [{ key: "a", title: "A", pages: ["x", "missing"] }, { key: "b", title: "B", pages: [] }]

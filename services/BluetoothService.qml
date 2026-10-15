@@ -8,7 +8,10 @@ import QtQuick
 Singleton {
     id: root
     readonly property var adapter: Bluetooth.defaultAdapter
-    readonly property bool available: adapter !== null
+    // `!!`, not `!== null`: without an adapter Quickshell hands over
+    // undefined as well, which got past the check and threw in every reader
+    // of `adapter.name` (Settings > Bluetooth).
+    readonly property bool available: !!adapter
     readonly property bool enabled: available && adapter.enabled
     readonly property var devices: available ? adapter.devices.values : []
     readonly property var connected: devices.filter(device => device.connected)

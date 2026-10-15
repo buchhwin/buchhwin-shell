@@ -71,12 +71,17 @@ function rows(state) {
 
 // Status icons of the overview: battery (with percent), network, Bluetooth,
 // Do Not Disturb (only while on) and volume. `dim` marks something off.
+// The battery is `charging` or `low` (PowerService.low, the level from
+// Settings > Power), never both: a battery on the charger is not in trouble,
+// whatever the number says.
 function statusItems(state) {
     const items = []
     const s = state || {}
-    if (s.battery && s.battery.present)
+    if (s.battery && s.battery.present) {
+        const charging = s.battery.charging === true
         items.push({ id: "battery", icon: s.battery.icon, text: Math.round(s.battery.percent) + "%", dim: false,
-                     charging: s.battery.charging === true })
+                     charging: charging, low: !charging && s.battery.low === true })
+    }
     if (s.network) items.push({ id: "network", icon: s.network.icon, text: "", dim: !s.network.connected })
     if (s.bluetooth && s.bluetooth.available)
         items.push({ id: "bluetooth", icon: s.bluetooth.icon, text: "", dim: !s.bluetooth.connected })

@@ -113,8 +113,12 @@ Item {
             height: panels.height
             title: "What it carries"
 
+            // Tab stops in reading order: this card top to bottom, then the
+            // options beside it, then the editor's toolbar.
             SegmentedControl {
                 id: zoneSwitch
+                focusOnTab: true
+                accessibleName: "Which part to arrange"
                 Layout.fillWidth: true
                 current: LayoutService.notchEditZone
                 options: [{ value: "collapsed", label: "Strip" }, { value: "expanded", label: "On hover" }]
@@ -130,6 +134,7 @@ Item {
                     model: root.missing
                     ShellButton {
                         required property var modelData
+                        focusOnTab: true
                         icon: modelData.icon
                         variant: "surface"
                         compact: true
@@ -140,6 +145,7 @@ Item {
                 // Arranging pushes undo steps like every other editor
                 // does, so it offers the way back like every other editor.
                 ShellButton {
+                    focusOnTab: true
                     icon: Icons.undo
                     variant: "ghost"
                     compact: true
@@ -148,6 +154,7 @@ Item {
                     onClicked: LayoutService.undo()
                 }
                 ShellButton {
+                    focusOnTab: true
                     icon: Icons.reset
                     variant: "ghost"
                     compact: true
@@ -166,9 +173,12 @@ Item {
         width: root.cardWidth
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
+        // What the pointer does on the notch; the keys are in the line over
+        // the toolbar. The arrows are buttons on the items, so they are called
+        // that: a bare "↓" read like the arrow key, which does nothing here.
         text: LayoutService.notchEditZone === "collapsed"
-            ? "The notch sits at the top center and cannot be moved · drag its right edge to set how wide the strip is · ↓ sends an item to the overview"
-            : "Drag a tile to reorder it, its corner to size it · drag the notch's own corner to size the overview · ↑ sends an item to the strip"
+            ? "The notch sits at the top center and cannot be moved · drag an item to reorder it, the notch's right edge to set how wide the strip is · an item's arrow button sends it to the overview"
+            : "Drag a tile to reorder it, its corner to size it · drag the notch's own corner to size the overview · a tile's arrow button sends it to the strip"
         role: "small"
         // The scrim's ink: the panel's text is dark in the light theme, and
         // dark text in a dark outline was dark on dark.
@@ -202,6 +212,7 @@ Item {
             label: "Shape"
             hint: "A pill is the same notch, let go of the top edge - everything it carries and everything it does stays the same"
             SegmentedControl {
+                focusOnTab: true
                 Layout.fillWidth: true
                 current: SettingsService.value("notch.shape")
                 options: [{ value: "notch", label: "Notch" }, { value: "pill", label: "Pill" }]
@@ -213,6 +224,7 @@ Item {
             label: "Events"
             hint: "How many appear in the expanded notch"
             SegmentedControl {
+                focusOnTab: true
                 Layout.fillWidth: true
                 current: String(SettingsService.value("notch.eventCount"))
                 options: [{ value: "1", label: "1" }, { value: "2", label: "2" },
@@ -226,6 +238,7 @@ Item {
             labelFills: true
             label: "Reserve space for windows"
             ShellToggle {
+                focusOnTab: true
                 checked: SettingsService.value("notch.reserve")
                 onToggled: value => LayoutService.changeNotch("notch.reserve", value)
             }
@@ -234,6 +247,7 @@ Item {
             Layout.fillWidth: true
             label: "In fullscreen"
             SegmentedControl {
+                focusOnTab: true
                 Layout.fillWidth: true
                 current: SettingsService.value("notch.fullscreen")
                 options: [{ value: "hide", label: "Hide" }, { value: "show", label: "Always show" }]

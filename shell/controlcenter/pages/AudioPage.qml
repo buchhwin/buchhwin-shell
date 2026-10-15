@@ -21,6 +21,7 @@ GridLayout {
         Repeater {
             model: AudioService.sinks
             ListRow {
+                level: 1
                 required property var modelData
                 Layout.fillWidth: true
                 icon: AudioService.deviceIcon(modelData, false)
@@ -64,6 +65,7 @@ GridLayout {
         Repeater {
             model: AudioService.sources
             ListRow {
+                level: 1
                 required property var modelData
                 Layout.fillWidth: true
                 icon: AudioService.deviceIcon(modelData, true)

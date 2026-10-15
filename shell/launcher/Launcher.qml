@@ -161,14 +161,14 @@ ShellPanel {
     // `rowsUsed` is safe to read: it counts steps and knows no pixel.
     readonly property real gridRoom: Math.max(Metrics.rowHeight * 2,
         root.cardTargetHeight - Metrics.panelPadding * 2
-            - (root.editing ? editBar.implicitHeight + Metrics.spaceMd : 0))
+            - (root.editing ? editBar.implicitHeight + Metrics.panelGap : 0))
     readonly property int gridRows: root.editing ? LauncherCatalogue.rows : Math.max(1, grid.rowsUsed)
     readonly property real gridUnit:
         (gridRoom - Metrics.spaceMd * (gridRows - 1)) / gridRows
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: Metrics.spaceMd
+        spacing: Metrics.panelGap
 
         ArrangeArea {
             id: grid

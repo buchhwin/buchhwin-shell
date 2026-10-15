@@ -59,13 +59,13 @@ ShellPanel {
         ColumnLayout {
             id: column
             width: parent.width
-            spacing: Metrics.spaceLg
+            spacing: Metrics.panelGap
 
-            RowLayout {
+            // The key is for the menu; a confirmation is answered here.
+            PanelHeader {
                 Layout.fillWidth: true
-                ShellText { text: root.pending ? root.pending.label + "?" : "Session"; role: "headline" }
-                Item { Layout.fillWidth: true }
-                SectionLabel { text: ShortcutService.keyHint("SUPER + M"); visible: !root.pending }
+                title: root.pending ? root.pending.label + "?" : "Session"
+                shortcut: root.pending ? "" : "SUPER + M"
             }
 
             RowLayout {

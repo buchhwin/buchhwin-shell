@@ -145,13 +145,13 @@ PanelWindow {
 
     Timer { id: hideTimer; interval: Metrics.osdTimeout; onTriggered: window.showing = false }
     // Ignore the initial values reported while services start.
-    Timer { interval: 2500; running: true; onTriggered: window.armed = true }
+    Timer { interval: Animations.startupQuiet; running: true; onTriggered: window.armed = true }
     // A new output - headphones connecting over Bluetooth, a dock - comes
     // with its own volume, and the jump to it is not something the user did.
     // Two seconds of quiet after the default sink changes, so the OSD only
     // answers a key. The sink is compared rather than its own signal waited
     // for: which of "sink" and "volume" is notified first is not promised.
-    Timer { id: sinkSettling; interval: 2000 }
+    Timer { id: sinkSettling; interval: Animations.sinkSettle }
     property var lastSink: null
     function volumeMoved() {
         if (AudioService.sink !== lastSink) {

@@ -205,7 +205,7 @@ function sortDevices(devices) {
 
 function stateText(item) {
     if (item.requestedByPeer) return "Wants to pair"
-    if (item.requested) return "Waiting for the phone to accept…"
+    if (item.requested) return "Waiting for the phone to accept …"
     if (item.paired && item.reachable) return "Connected"
     if (item.paired) return "Paired, not reachable"
     if (item.reachable) return "Available to pair"
@@ -295,7 +295,7 @@ function supports(item, plugin) {
 }
 
 function summary(status) {
-    if (!status.known) return "Checking KDE Connect…"
+    if (!status.known) return "Checking KDE Connect …"
     if (!status.daemon) return "KDE Connect is not running"
     const connected = status.devices.filter(item => item.paired && item.reachable).length
     const paired = status.devices.filter(item => item.paired).length

@@ -11,9 +11,9 @@
 const PAGES = [
     { id: "appearance", subtitle: "Customize the look and behavior of buchhwin-shell", title: "Appearance", icon: "󰏘", keywords: "theme light dark accent color font panel background opacity individual windows transparency blur corners border gaps animation cursor mouse darstellung hell dunkel akzent farbe schrift transparenz unschärfe ecken rahmen abstand mauszeiger apps kde gtk plasma color scheme programme" },
     { id: "wallpaper", subtitle: "Choose a wallpaper or set up a slideshow", title: "Wallpaper", icon: "󰸉", keywords: "wallpaper slideshow folder background hintergrundbild diashow ordner" },
-    { id: "lockScreen", subtitle: "The lock screen's look, its extras and fingerprint unlock", title: "Lock Screen", icon: "󰌾", keywords: "lock screen password clock blur avatar media power buttons fingerprint fprintd reader enroll sperrbildschirm sperren passwort fingerabdruck" },
+    { id: "lockScreen", subtitle: "The lock screen's look, its extras and fingerprint unlock", title: "Lock screen", icon: "󰌾", keywords: "lock screen password clock blur avatar media power buttons fingerprint fprintd reader enroll sperrbildschirm sperren passwort fingerabdruck" },
     { id: "profiles", icon: "󰒓", subtitle: "Profiles and the five modes each one has", title: "Profiles", keywords: "profile profiles mode modes minimal work gaming laptop docked switch automatic duplicate reset rename remove factory state profil profile modus modi wechseln automatisch duplizieren zurücksetzen umbenennen entfernen werkszustand" },
-    { id: "desktop", icon: "󱂵", subtitle: "Clock, clipboard, screen recording and removable drives", title: "Desktop Extras", keywords: "clock hints indicators osd volume brightness clipboard history screen recording video removable drives usb stick sd card external disk uhr hinweise anzeige zwischenablage aufnahme laufwerke" },
+    { id: "desktop", icon: "󱂵", subtitle: "Clock, clipboard, screen recording and removable drives", title: "Desktop extras", keywords: "clock hints indicators osd volume brightness clipboard history screen recording video removable drives usb stick sd card external disk uhr hinweise anzeige zwischenablage aufnahme laufwerke" },
     { id: "widgets", subtitle: "Choose the desktop mode and arrange the widgets on your wallpaper", title: "Widgets", icon: "󰕰", keywords: "widgets desktop mode layout editor clock date weather calendar arrange move group style add remove edit modus oberfläche anordnen verschieben gruppieren stil hinzufügen entfernen bearbeiten" },
     { id: "bar", subtitle: "Choose the desktop mode, workspaces and build your own bar", title: "Bar & Notch", icon: "󰘔", keywords: "bar pills notch island desktop mode panel top leiste modus oben kerbe insel workspaces arbeitsflächen" },
     { id: "notifications", subtitle: "Popups, history and Do Not Disturb", title: "Notifications", icon: "󰂚", keywords: "dnd do not disturb popup benachrichtigungen nicht stören" },
@@ -29,17 +29,17 @@ const PAGES = [
     { id: "input", subtitle: "Keyboard, touchpad, mouse and touchpad gestures", title: "Input", icon: "󰌌", keywords: "keyboard layout touchpad mouse pointer scrolling repeat rate gestures swipe pinch eingabe tastatur maus zeiger scrollen wiederholrate gesten wischen" },
     { id: "power", subtitle: "Battery and mains behavior, idle, sleep and the lid", title: "Power", icon: "󰁹", keywords: "battery charger plugged in ac profile screen off lock sleep lid close stay awake energie akku netzteil profil bildschirm aus sperren bereitschaft deckel zuklappen wach" },
     { id: "terminal", subtitle: "Kitty, Starship prompt and Fastfetch for terminals in this session", title: "Terminal", icon: "󰆍", keywords: "kitty starship prompt zsh fastfetch font cursor transparency schrift transparenz" },
-    { id: "defaultApps", subtitle: "Apps for links, files and the app hotkeys", title: "Default Apps", icon: "󰀻", keywords: "default applications browser email file manager terminal text editor images pdf video music archives open with mime standard anwendungen standardprogramme öffnen mit" },
+    { id: "defaultApps", subtitle: "Apps for links, files and the app hotkeys", title: "Default apps", icon: "󰀻", keywords: "default applications browser email file manager terminal text editor images pdf video music archives open with mime standard anwendungen standardprogramme öffnen mit" },
     { id: "autostart", subtitle: "Apps and services that start when you log in", title: "Autostart", icon: "󰒲", keywords: "startup login apps kde connect start anmelden" },
     { id: "accounts", subtitle: "Online accounts for calendars, contacts and mail", title: "Accounts", icon: "󰀉", keywords: "accounts account online google nextcloud caldav carddav dav groupware ical file imap pop3 mail email contacts calendar akonadi kde pim sync add remove wizard konten konto zugang hinzufügen entfernen synchronisieren kalender kontakte e-mail postfach" },
     { id: "updates", subtitle: "System packages and Flatpaks that can be updated", title: "Updates", icon: "󰚰", keywords: "updates upgrade software packages dnf zypper pacman aur paru flatpak discover security check aktualisierungen pakete sicherheit" },
-    { id: "login", subtitle: "How the login screen looks before you are signed in", title: "Login Screen", icon: "󰍂", keywords: "login screen sddm greeter theme background blur accent font date anmeldung anmeldebildschirm hintergrund akzent schrift datum" },
+    { id: "login", subtitle: "How the login screen looks before you are signed in", title: "Login screen", icon: "󰍂", keywords: "login screen sddm greeter theme background blur accent font date anmeldung anmeldebildschirm hintergrund akzent schrift datum" },
     { id: "about", subtitle: "This session, the system and the versions it runs on", title: "About", icon: "󰋼", keywords: "system fedora opensuse leap arch version info" }
 ]
 
 // Sidebar sections in display order; every page id belongs to exactly one.
 const GROUPS = [
-    // Lock Screen and Login Screen are the same kind of thing - how a screen
+    // Lock screen and Login screen are the same kind of thing - how a screen
     // looks before you are in - so they sit together rather than one here and
     // one under System.
     { key: "personalization", title: "Personalization", pages: ["appearance", "wallpaper", "lockScreen", "login"] },

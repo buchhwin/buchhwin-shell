@@ -1,11 +1,15 @@
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
+import qs.services
 
 // The top line of a panel: an optional back button, the title with an optional
-// second line, and a slot for the actions on the right. One header for the
-// control center, settings, the notification centre and the dialogs, so a
-// title is the same size and sits at the same place wherever it appears.
+// second line, a slot for the actions on the right and, after them, the key
+// that opens the panel. One header for every panel - control center,
+// dashboard, session menu, notification centre, emoji, shortcuts, settings -
+// and the dialogs, so a title is the same size and sits at the same place
+// wherever it appears. The dashboard and the session menu used to draw their
+// own rows, each with its key as a line of text.
 RowLayout {
     id: root
     property string icon: ""
@@ -27,6 +31,11 @@ RowLayout {
     // A popup's subtitle is a status that changes while it is open; it elides
     // rather than wraps, so a longer status cannot change the card's height.
     property bool wrap: true
+    // The key that opens the panel, by the combination hyprland.lua starts it
+    // on ("SUPER + K"), shown as key caps at the far end. Asked of
+    // ShortcutService rather than written out, so a key moved in Settings >
+    // Shortcuts shows where it sits now. Empty for none.
+    property string shortcut: ""
     default property alias actions: actionSlot.data
     signal backPressed()
 
@@ -86,5 +95,13 @@ RowLayout {
         Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
         visible: children.length > 0
         spacing: Metrics.spaceXs
+    }
+    // After the actions rather than among them: it is not something to
+    // click. The caps are lower than a button, so a key beside the actions
+    // never makes the header taller than they do.
+    KeyChips {
+        Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+        visible: keys.length > 0
+        keys: root.shortcut.length > 0 ? ShortcutService.keyHintParts(root.shortcut) : []
     }
 }

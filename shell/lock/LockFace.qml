@@ -130,7 +130,7 @@ Item {
                 visible: PowerService.hasBattery
                 spacing: Metrics.spaceXs
                 LockLabel { text: PowerService.percent + "%" }
-                ShellIcon { glyph: PowerService.icon; size: Metrics.iconMd; color: PowerService.charging ? Colors.successOnDark : Colors.lockText }
+                ShellIcon { glyph: PowerService.icon; size: Metrics.iconMd; color: PowerService.charging ? Colors.successOnDark : PowerService.low ? Colors.dangerOnDark : Colors.lockText }
             }
         }
 
@@ -289,7 +289,7 @@ Item {
                 }
             }
         }
-        Timer { id: confirmReset; interval: 4000; onTriggered: root.confirmAction = "" }
+        Timer { id: confirmReset; interval: Animations.confirmTimeout; onTriggered: root.confirmAction = "" }
     }
 
     // ---- the blocks the grid can draw -------------------------------------
@@ -501,7 +501,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     glyph: PowerService.icon
                     size: Metrics.iconMd
-                    color: PowerService.charging ? Colors.successOnDark : Colors.lockText
+                    color: PowerService.charging ? Colors.successOnDark : PowerService.low ? Colors.dangerOnDark : Colors.lockText
                 }
                 LockLabel {
                     anchors.verticalCenter: parent.verticalCenter

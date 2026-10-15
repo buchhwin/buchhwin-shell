@@ -61,7 +61,8 @@ Item {
     }
 
     readonly property var status: Logic.statusItems({
-        battery: { present: PowerService.hasBattery, percent: PowerService.percent, charging: PowerService.charging, icon: PowerService.icon },
+        battery: { present: PowerService.hasBattery, percent: PowerService.percent, charging: PowerService.charging,
+                   low: PowerService.low, icon: PowerService.icon },
         network: { icon: NetworkService.icon, connected: NetworkService.connected },
         bluetooth: { available: BluetoothService.available, icon: BluetoothService.icon, connected: BluetoothService.connected.length > 0 },
         dnd: NotificationService.dndActive,
@@ -515,6 +516,9 @@ Item {
                     // disabled opacity: the two together came to 1.9:1 on
                     // black, which is not dimmed but gone. And it stays
                     // subtle with the accent on, because the accent says "on".
+                    // A low battery is red here as it is on every other
+                    // surface - the notch's own red, since it is black in
+                    // both themes.
                     RowLayout {
                         required property var modelData
                         spacing: Metrics.spaceXxs
@@ -522,6 +526,7 @@ Item {
                             text: modelData.icon
                             size: Metrics.iconSm
                             color: modelData.charging ? Colors.successOnDark
+                                : modelData.low ? Colors.dangerOnDark
                                 : modelData.dim ? Colors.notchSubtleText
                                 : NotchService.overviewGlyphsInAccent ? Colors.notchAccent : Colors.notchMutedText
                         }

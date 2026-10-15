@@ -21,7 +21,7 @@ ShellPanel {
     // which took the grip out of reach with it, nor shrink to a height at
     // which its body computed to nothing.
     readonly property real minPanelHeight: header.height + Metrics.quickGridUnit
-        + Metrics.panelPadding * 2 + Metrics.panelGap + Metrics.spaceXs
+        + Metrics.panelPadding * 2 + Metrics.panelGap
     sizeBounds: ({ minWidth: Metrics.controlCenterMinWidth,
                                          maxWidth: Metrics.controlCenterMaxWidth,
                                          width: Metrics.controlCenterWidth,
@@ -87,7 +87,6 @@ ShellPanel {
         PanelHeader {
             id: header
             Layout.fillWidth: true
-            Layout.bottomMargin: Metrics.spaceXs
             showBack: root.page.length > 0
             onBackPressed: root.page = ""
             title: root.page === "network" ? "Network"
@@ -135,7 +134,7 @@ ShellPanel {
             // compute to nothing.
             maxHeight: Math.max(Metrics.quickGridUnit,
                 (root.cardHeight > 0 ? root.cardTargetHeight : root.roomBelowTop)
-                - header.height - Metrics.panelPadding * 2 - Metrics.panelGap - Metrics.spaceXs)
+                - header.height - Metrics.panelPadding * 2 - Metrics.panelGap)
 
             // Unloaded while hidden so pages stop scans and discovery on close.
             Loader {

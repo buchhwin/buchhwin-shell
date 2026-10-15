@@ -36,6 +36,7 @@ ColumnLayout {
             model: AudioService.sinks
             ListRow {
                 focusOnTab: true
+                level: 1
                 required property var modelData
                 Layout.fillWidth: true
                 icon: AudioService.deviceIcon(modelData, false)
@@ -75,6 +76,7 @@ ColumnLayout {
             model: AudioService.sources
             ListRow {
                 focusOnTab: true
+                level: 1
                 required property var modelData
                 Layout.fillWidth: true
                 icon: AudioService.deviceIcon(modelData, true)

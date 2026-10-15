@@ -185,7 +185,7 @@ Item {
                 property real pressY: 0
                 property bool moved: false
                 onPressed: mouse => {
-                    overlay.editor.forceActiveFocus()
+                    overlay.editor.takeFocus()
                     const point = mapToItem(overlay, mouse.x, mouse.y)
                     pressX = point.x
                     pressY = point.y

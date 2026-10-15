@@ -22,7 +22,7 @@ ShellPanel {
     // corner while the cards are being arranged; until it is, the default is
     // the width the month needs.
     readonly property real minPanelHeight: header.height + Metrics.dashboardGridUnit
-        + Metrics.panelPadding * 2 + Metrics.spaceLg
+        + Metrics.panelPadding * 2 + Metrics.panelGap
     sizeBounds: ({ minWidth: Metrics.dashboardMinWidth,
                                          maxWidth: Metrics.dashboardMaxWidth,
                                          width: Metrics.dashboardWidth,
@@ -102,23 +102,24 @@ ShellPanel {
     // arranged, the way the control center's is.
     ColumnLayout {
         width: parent.width
-        spacing: Metrics.spaceLg
+        spacing: Metrics.panelGap
 
-        RowLayout {
+        // The header every panel has, so the title sits where the control
+        // center's does; the pencil arranges the cards the way it arranges
+        // the tiles there.
+        PanelHeader {
             id: header
             Layout.fillWidth: true
-            ShellText { text: "buchhwin-shell"; role: "label"; color: Colors.text; font.capitalization: Font.MixedCase }
-            Rectangle { Layout.preferredWidth: Metrics.spaceLg; height: Metrics.borderWidth; color: Colors.mutedText }
-            Item { Layout.fillWidth: true }
+            title: "Dashboard"
+            shortcut: "SUPER + K"
+
             ShellButton {
-                Layout.leftMargin: Metrics.spaceMd
                 icon: Icons.edit
                 variant: root.editing ? "accent" : "ghost"
                 iconSize: Metrics.iconMd
                 toolTip: root.editing ? "Done arranging" : "Arrange cards"
                 onClicked: LayoutService.dashboardEditing = !LayoutService.dashboardEditing
             }
-            SectionLabel { id: shortcutLabel; Layout.leftMargin: Metrics.spaceMd; text: ShortcutService.keyHint("SUPER + K") }
         }
 
         // What does not fit the height the user chose scrolls, rather than
@@ -130,7 +131,7 @@ ShellPanel {
             card: false
             maxHeight: Math.max(Metrics.dashboardGridUnit,
                 (root.cardHeight > 0 ? root.cardTargetHeight : root.roomBelowTop)
-                - header.height - Metrics.panelPadding * 2 - Metrics.spaceLg * 2)
+                - header.height - Metrics.panelPadding * 2 - Metrics.panelGap - Metrics.spaceLg)
 
             ColumnLayout {
                 width: parent.width

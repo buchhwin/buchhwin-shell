@@ -27,6 +27,14 @@ Rectangle {
     // surface is open (the launcher): an outline that never goes away marks
     // nothing and reads as a stuck border. The fill still lightens on focus.
     property bool focusOutline: true
+    // What is typed is not a value the field can take (a date that is not
+    // one): a danger outline, and focus still draws the ring every field
+    // draws. The forms used to set the border by hand, each with its own
+    // copy of the focus colours and a grey outline no other field has.
+    property bool error: false
+    // Dimmed, and then it takes neither the focus nor a key nor a click, like
+    // ShellButton's and ShellToggle's `enabledState`.
+    property bool enabledState: true
     property string accessibleName: ""
     signal accepted()
     signal escapePressed()
@@ -40,6 +48,9 @@ Rectangle {
     // Focus a panel hands the field as it opens is quiet: no ring (below).
     property bool quietFocus: false
     function focusInput(reason) {
+        // Or the quiet flag outlived a focus that never came, and the next
+        // Tab into the field drew no ring.
+        if (!root.enabledState) return
         quietFocus = reason === undefined
         input.forceActiveFocus(reason === undefined ? Qt.OtherFocusReason : reason)
     }
@@ -47,8 +58,9 @@ Rectangle {
     implicitHeight: large ? Metrics.controlHeight + Metrics.spaceLg : Metrics.controlHeight
     radius: large ? Metrics.radiusCard : Metrics.pillRadius(height)
     color: input.activeFocus ? Colors.controlFillHover : Colors.controlFill
+    opacity: enabledState ? 1 : Effects.disabledOpacity
     border.width: Metrics.borderWidth
-    border.color: large ? Colors.border : "transparent"
+    border.color: error ? Colors.danger : large ? Colors.border : "transparent"
     Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
 
     // Not for the focus a panel hands its search field as it opens: the field
@@ -76,6 +88,9 @@ Rectangle {
             font.pixelSize: root.large ? Typography.titleSize : Typography.bodySize
             selectedTextColor: Colors.text
             clip: true
+            // A disabled item gives up the focus and is given none: no key,
+            // no click, no caret.
+            enabled: root.enabledState
             activeFocusOnTab: root.focusOnTab
             // The field is named by its row (SettingRow), by the caller, or
             // by what its placeholder asks for.

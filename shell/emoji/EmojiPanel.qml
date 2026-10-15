@@ -52,11 +52,11 @@ ShellPanel {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: Metrics.spaceMd
+        spacing: Metrics.panelGap
 
+        // No icon: no other panel's title has one.
         PanelHeader {
             Layout.fillWidth: true
-            icon: "󰞅"
             title: "Emoji"
             subtitle: EmojiService.loaded ? "" : "Loading …"
         }

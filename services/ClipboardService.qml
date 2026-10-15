@@ -68,13 +68,48 @@ Singleton {
         command: ["cliphist", "-db-path", root.dbPath, "-preview-width", "160", "list"]
         stdout: StdioCollector {
             onStreamFinished: {
-                root.entries = root.parse(text).slice(0, 200)
+                const list = root.parse(text)
+                root.entries = list.slice(0, 200)
+                root.pruneThumbnails(list)
                 root.loading = false
                 // Decode image previews for the first entries.
                 root.decodeThumbnails()
             }
         }
         onExited: root.loading = false
+    }
+
+    // Entries cliphist drops at `max-items` left their preview file and their
+    // mark in `readyThumbs` behind for good: only a remove or a wipe here
+    // cleaned up. Each read of the list now keeps what its entries need and
+    // lets the rest go - all of the history, not only the 200 shown, so no
+    // file of an entry still in it is touched. The marks are the files this
+    // session decoded, so their difference with the list names what to
+    // delete; files from before it (a restart, a crash) are found by one
+    // look into the directory at the first read. Only files directly in the
+    // shell's own preview directory are deleted. An empty read prunes
+    // nothing: previews are a cache, but a cliphist that failed to open its
+    // database is no reason to throw them away.
+    property bool thumbsSwept: false
+    function pruneThumbnails(list) {
+        if (!list.length) return
+        const wanted = {}
+        for (const entry of list) if (entry.image) wanted[entry.thumb] = true
+        const kept = {}
+        const gone = []
+        for (const name of Object.keys(readyThumbs)) {
+            if (wanted[name]) kept[name] = true
+            else gone.push(name)
+        }
+        if (gone.length) readyThumbs = kept
+        if (!thumbsSwept) {
+            thumbsSwept = true
+            Quickshell.execDetached(["sh", "-c",
+                "dir=\"$1\"; shift; [ -d \"$dir\" ] || exit 0; for f in \"$dir\"/*; do [ -f \"$f\" ] || continue; name=${f##*/}; for k in \"$@\"; do [ \"$k\" = \"$name\" ] && continue 2; done; rm -f -- \"$f\"; done",
+                "sh", thumbDir].concat(Object.keys(wanted)))
+        } else if (gone.length) {
+            Quickshell.execDetached(["rm", "-f", "--"].concat(gone.map(name => thumbDir + "/" + name)))
+        }
     }
 
     // Decodes previews of the first images; a run in progress finishes first

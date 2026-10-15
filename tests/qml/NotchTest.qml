@@ -62,6 +62,12 @@ ShellRoot {
                              bluetooth: { available: false }, dnd: false, volume: { icon: "V", muted: false } }).map(item => item.id),
              ["network", "volume"], "desktop without battery or Bluetooth")
         T.eq(N.statusItems(undefined), [], "no state")
+        const battery = extra => N.statusItems({ battery: Object.assign({ present: true, percent: 12, icon: "B" }, extra) })[0]
+        T.eq([battery({ low: true }).low, battery({ low: true }).charging], [true, false], "a low battery")
+        T.eq([battery({ low: true, charging: true }).low, battery({ low: true, charging: true }).charging], [false, true],
+             "charging wins over low")
+        T.eq([battery({}).low, battery({ low: "yes" }).low], [false, false], "low only when said so")
+        T.eq(items[0].low, false, "a charging battery is not low")
 
         // Collapsed width: the dragged width is a floor, the content can push
         // past it, and the surface is the ceiling.

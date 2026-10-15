@@ -16,7 +16,17 @@ Singleton {
     readonly property var timeFormats: Logic.timeFormats
     readonly property var modules: Logic.modules
 
-    readonly property var options: Logic.options(path => SettingsService.value(path))
+    // Rebuilt on every settings write, whatever its key, and a new object
+    // generated all six config texts again (cava's gradient among them).
+    // Equal options hand back the previous object, which QML does not
+    // announce as a change; kept in a holder so reading it adds no dependency.
+    property var lastOptions: ({ value: null })
+    readonly property var options: {
+        const next = Logic.options(path => SettingsService.value(path))
+        if (JSON.stringify(next) === JSON.stringify(lastOptions.value)) return lastOptions.value
+        lastOptions.value = next
+        return next
+    }
     readonly property string starshipPath: Paths.configDir + "/starship.toml"
     readonly property string kittyPath: Paths.configDir + "/kitty.conf"
     readonly property string starshipText: Logic.starshipToml(options, SettingsService.accent)

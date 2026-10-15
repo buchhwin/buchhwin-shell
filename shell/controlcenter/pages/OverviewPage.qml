@@ -387,11 +387,18 @@ ColumnLayout {
                 // The same shape as the brightness tile beside it: one header
                 // line of icon, title and value, then a bar in the slider's
                 // footprint, so the two tiles line up instead of each finding
-                // its own rhythm.
+                // its own rhythm. The bar itself is the battery's, not the
+                // slider's track: a level is not a control, and the popup and
+                // this tile drew the same level 6 and 8 px thick.
+                // Charging, low (PowerService's, the level from Settings) and
+                // otherwise the tile's muted ink, like the brightness glyph.
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: Metrics.spaceMd
-                    ShellIcon { glyph: PowerService.icon; size: Metrics.iconLg; color: PowerService.charging ? Colors.success : Colors.mutedText }
+                    ShellIcon {
+                        glyph: PowerService.icon; size: Metrics.iconLg
+                        color: PowerService.charging ? Colors.success : PowerService.low ? Colors.danger : Colors.mutedText
+                    }
                     ShellText {
                         text: PowerService.hasBattery ? "Battery" : "Power supply"
                         role: "bodyLarge"
@@ -410,7 +417,7 @@ ColumnLayout {
                     Item {
                         Layout.fillWidth: true
                         visible: compact && PowerService.hasBattery
-                        implicitHeight: Metrics.sliderTrack
+                        implicitHeight: Metrics.progressTrack
                         Rectangle {
                             anchors.fill: parent
                             radius: height / 2
@@ -419,7 +426,8 @@ ColumnLayout {
                                 width: parent.width * PowerService.percent / 100
                                 height: parent.height
                                 radius: parent.radius
-                                color: PowerService.percent <= 15 && !PowerService.charging ? Colors.danger : Colors.accent
+                                color: PowerService.charging ? Colors.success
+                                    : PowerService.low ? Colors.danger : Colors.accent
                             }
                         }
                     }
@@ -437,14 +445,15 @@ ColumnLayout {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        height: Metrics.sliderTrack
+                        height: Metrics.progressTrack
                         radius: height / 2
                         color: Colors.track
                         Rectangle {
                             width: parent.width * PowerService.percent / 100
                             height: parent.height
                             radius: parent.radius
-                            color: PowerService.percent <= 15 && !PowerService.charging ? Colors.danger : Colors.accent
+                            color: PowerService.charging ? Colors.success
+                                : PowerService.low ? Colors.danger : Colors.accent
                         }
                     }
                 }

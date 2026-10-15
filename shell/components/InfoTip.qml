@@ -50,9 +50,12 @@ Item {
         // Quiet at rest: it is an offer, not an instruction. It brightens
         // under the pointer so that the wait before the bubble reads as
         // something happening rather than as nothing happening.
-        color: hover.hovered ? Colors.text : Colors.mutedText
-        opacity: hover.hovered ? 1 : Effects.mutedOpacity
-        Behavior on opacity { NumberAnimation { duration: Animations.hover; easing.type: Animations.easing } }
+        //
+        // Quiet is subtleText, the colour for marks: 3:1 or better on a card
+        // in both themes. mutedText faded to mutedOpacity was 2.5-2.9:1 in the
+        // light theme, under what a glyph that has to be found needs.
+        color: hover.hovered ? Colors.text : Colors.subtleText
+        Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
     }
 
     // A HoverHandler rather than a MouseArea: this must not take a press away

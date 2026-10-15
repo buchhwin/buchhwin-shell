@@ -113,8 +113,47 @@ Singleton {
     function setDefaultSink(node) { if (node) Pipewire.preferredDefaultAudioSink = node }
     function setDefaultSource(node) { if (node) Pipewire.preferredDefaultAudioSource = node }
 
+    // Binding a node is what fills in its `properties` and its live volume
+    // and mute; its name, description, type and stream flag are there
+    // without it. The default output and input are bound all the time (the
+    // bar, the OSD, the notch and the mic tile follow them), every other
+    // device and app stream only while something shows it: a bound stream
+    // reports every property and parameter change for nothing otherwise.
+    // Demand comes from the counters pages already hold - a stream row with
+    // its output selector (routing), Settings > Audio (the meter), the media
+    // player's volume (MprisService takes trackNodes) - and from the panels
+    // whose own rows take none: the volume and privacy popups and the
+    // control center's audio card. `micInUse` reads only the stream flags
+    // and names, so the mic indicators need no binding.
+    property int nodeTrackers: 0
+    function trackNodes() { nodeTrackers += 1 }
+    function untrackNodes() { nodeTrackers = Math.max(0, nodeTrackers - 1) }
+    readonly property var nodePanels: ["volumePopup", "privacyPopup", "controlCenter"]
+    readonly property bool nodesWanted: nodeTrackers > 0 || routingTrackers > 0 || meterTrackers > 0
+        || nodePanels.indexOf(PanelService.active) >= 0
+    // Released a moment after the last one leaves: a panel's `active` ends
+    // where its close animation starts, and the rows still on screen then
+    // must not lose their values; a quick reopen also binds nothing again.
+    property bool nodesBound: false
+    onNodesWantedChanged: {
+        if (nodesWanted) {
+            nodeRelease.stop()
+            nodesBound = true
+        } else {
+            nodeRelease.restart()
+        }
+    }
+    Component.onCompleted: nodesBound = nodesWanted
+    Timer { id: nodeRelease; interval: 2000; onTriggered: root.nodesBound = root.nodesWanted }
+
     PwObjectTracker {
-        objects: root.sinks.concat(root.sources, root.playbackStreams, root.captureStreams)
+        objects: {
+            const list = root.nodesBound ? root.sinks.concat(root.sources, root.playbackStreams, root.captureStreams) : []
+            for (const node of [root.sink, root.source]) {
+                if (node && list.indexOf(node) < 0) list.push(node)
+            }
+            return list
+        }
     }
 
     Process {

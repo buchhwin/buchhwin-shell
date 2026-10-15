@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Window
 import qs.theme
 
 // One UI select: a filled capsule showing the current value that expands into
@@ -11,13 +12,54 @@ ColumnLayout {
     property bool filterable: options.length > 12
     property bool expanded: false
     property string filter: ""
-    property real listHeight: 220
+    property real listHeight: Metrics.selectListHeight
     property bool previewFonts: false
     property string placeholder: ""
     property bool focusOnTab: false
     property string accessibleName: ""
+    // Dimmed, and then it neither opens nor steps, by key, click or screen
+    // reader - the pattern of ShellButton's and ShellToggle's `enabledState`.
+    property bool enabledState: true
     signal selected(string value)
     spacing: Metrics.spaceXs
+    opacity: enabledState ? 1 : Effects.disabledOpacity
+
+    // Opening and closing, from the header, the filter and the rows alike.
+    //
+    // A list with a filter hands the focus to the filter as it opens, so
+    // typing filters at once. Space used to open the font list and leave the
+    // focus on the header, where "jet" walked nothing and filtered nothing.
+    // Opened by a click, the filter takes the focus quietly - no ring, the way
+    // a panel's search field takes it as the panel opens (ShellTextField): the
+    // open list already marks the control. Closing hands the focus back to
+    // where it came from: the header for the keyboard, whatever held it before
+    // for the mouse, so a click on a row does not leave a ring on the header
+    // nobody tabbed to, nor the focus nowhere.
+    property Item returnFocus: null
+    property bool quietFilter: false
+    function openList(fromKeyboard) {
+        if (!root.enabledState || root.expanded) return
+        filterInput.text = ""
+        root.filter = ""
+        root.returnFocus = fromKeyboard ? header : Window.activeFocusItem
+        root.expanded = true
+        if (!root.filterable) return
+        root.quietFilter = !fromKeyboard
+        filterInput.forceActiveFocus(fromKeyboard ? Qt.TabFocusReason : Qt.MouseFocusReason)
+    }
+    function closeList() {
+        if (!root.expanded) return
+        // Read before the list goes: hiding the filter takes its focus away.
+        const back = filterInput.activeFocus ? root.returnFocus : null
+        root.expanded = false
+        root.returnFocus = null
+        if (back && back.visible) back.forceActiveFocus(Qt.OtherFocusReason)
+    }
+    function toggleList(fromKeyboard) {
+        if (root.expanded) root.closeList()
+        else root.openList(fromKeyboard)
+    }
+    onEnabledStateChanged: if (!enabledState) root.closeList()
 
     // The keys and the ring live on the header, not on this column, and a
     // panel that walks its controls (NavLogic) focuses the column it finds:
@@ -32,7 +74,7 @@ ColumnLayout {
 
     readonly property int currentIndex: options.findIndex(option => option.value === root.current)
     function step(delta) {
-        if (!options.length) return
+        if (!root.enabledState || !options.length) return
         const next = Math.max(0, Math.min(options.length - 1, (currentIndex < 0 ? 0 : currentIndex) + delta))
         if (options[next].value !== root.current) root.selected(options[next].value)
     }
@@ -55,7 +97,7 @@ ColumnLayout {
     function takeWalked() {
         const option = visibleOptions[walkIndex]
         if (option && option.value !== root.current) root.selected(option.value)
-        root.expanded = false
+        root.closeList()
     }
     onExpandedChanged: walked = -1
     onFilterChanged: walked = -1
@@ -68,15 +110,25 @@ ColumnLayout {
         id: header
         // The whole select is one tab stop; the arrows walk its values and
         // Space opens the list, like every other closed dropdown.
-        activeFocusOnTab: root.focusOnTab
+        activeFocusOnTab: root.focusOnTab && root.enabledState
         // Open, the arrows walk the list and Enter takes the row they are on;
         // closed, they walk the value itself, like every other dropdown.
-        Keys.onUpPressed: root.expanded ? root.walk(-1) : root.step(-1)
-        Keys.onDownPressed: root.expanded ? root.walk(1) : root.step(1)
+        // Disabled, the arrows go on to the panel: a select dimmed while it
+        // held the focus must not trap the walk between controls.
+        Keys.onUpPressed: event => {
+            if (!root.enabledState) event.accepted = false
+            else if (root.expanded) root.walk(-1)
+            else root.step(-1)
+        }
+        Keys.onDownPressed: event => {
+            if (!root.enabledState) event.accepted = false
+            else if (root.expanded) root.walk(1)
+            else root.step(1)
+        }
         Keys.onReturnPressed: event => { if (root.expanded) root.takeWalked(); else event.accepted = false }
         Keys.onEnterPressed: event => { if (root.expanded) root.takeWalked(); else event.accepted = false }
-        Keys.onSpacePressed: { root.expanded = !root.expanded; root.filter = "" }
-        Keys.onEscapePressed: event => { if (root.expanded) root.expanded = false; else event.accepted = false }
+        Keys.onSpacePressed: root.toggleList(true)
+        Keys.onEscapePressed: event => { if (root.expanded) root.closeList(); else event.accepted = false }
         FocusRing { active: header.activeFocus; controlRadius: header.radius }
         Accessible.role: Accessible.ComboBox
         Accessible.name: root.accessibleName
@@ -84,11 +136,14 @@ ColumnLayout {
         Layout.fillWidth: true
         implicitHeight: Metrics.controlHeight
         radius: Metrics.pillRadius(height)
-        color: headerMouse.pressed && headerMouse.containsMouse ? Colors.controlFillPressed
-            : headerMouse.containsMouse || root.expanded ? Colors.controlFillHover : Colors.controlFill
+        // A dimmed select does not light up under the pointer either.
+        readonly property bool hovered: headerMouse.containsMouse && root.enabledState
+        readonly property bool down: headerMouse.pressed && hovered
+        color: down ? Colors.controlFillPressed
+            : hovered || root.expanded ? Colors.controlFillHover : Colors.controlFill
         border.width: Metrics.borderWidth
         border.color: root.expanded ? Colors.accentBorder : "transparent"
-        scale: headerMouse.pressed && headerMouse.containsMouse ? Effects.pressScale : 1
+        scale: down ? Effects.pressScale : 1
         Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
         Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
 
@@ -114,8 +169,9 @@ ColumnLayout {
             id: headerMouse
             anchors.fill: parent
             hoverEnabled: true
+            enabled: root.enabledState
             cursorShape: Qt.PointingHandCursor
-            onClicked: { root.expanded = !root.expanded; root.filter = "" }
+            onClicked: root.toggleList(false)
         }
     }
 
@@ -135,11 +191,15 @@ ColumnLayout {
             spacing: Metrics.spaceXxs
 
             Rectangle {
+                id: filterBox
                 Layout.fillWidth: true
                 visible: root.filterable
                 implicitHeight: Metrics.controlHeightSm + Metrics.spaceXs
                 radius: Metrics.pillRadius(height)
                 color: Colors.controlFill
+                // The ring every other field shows, once the focus is in here
+                // from the keyboard (quiet after a click, see openList).
+                FocusRing { active: filterInput.activeFocus && !root.quietFilter; controlRadius: filterBox.radius }
                 TextInput {
                     id: filterInput
                     anchors.fill: parent
@@ -153,10 +213,35 @@ ColumnLayout {
                     font.family: Typography.family
                     font.pixelSize: Typography.smallSize
                     onTextChanged: root.filter = text
+                    onActiveFocusChanged: if (!activeFocus) root.quietFilter = false
+                    // The header's keys, from where the typing is: the arrows
+                    // walk what is left, Enter takes it, Escape closes the list
+                    // and hands the focus back (to the header, when the list
+                    // was opened from it). Enter with nothing left keeps the
+                    // list open, so the filter can be corrected.
+                    Keys.onUpPressed: root.walk(-1)
+                    Keys.onDownPressed: root.walk(1)
+                    Keys.onReturnPressed: if (root.visibleOptions.length) root.takeWalked()
+                    Keys.onEnterPressed: if (root.visibleOptions.length) root.takeWalked()
+                    Keys.onEscapePressed: root.closeList()
+                    Accessible.role: Accessible.EditableText
                     Accessible.name: "Filter"
                     // Read like text (4.5:1); subtleText is for marks, not words.
                     ShellText { visible: parent.text.length === 0; anchors.verticalCenter: parent.verticalCenter; text: "Filter …"; role: "small"; color: Colors.mutedText }
                 }
+            }
+
+            // A filter nothing matches says so, instead of an empty box under
+            // the field that reads as a list still loading.
+            ShellText {
+                Layout.fillWidth: true
+                Layout.leftMargin: Metrics.spaceMd
+                Layout.preferredHeight: Metrics.controlHeight
+                visible: root.filter.length > 0 && root.visibleOptions.length === 0
+                verticalAlignment: Text.AlignVCenter
+                text: "No matches"
+                role: "small"
+                muted: true
             }
 
             // Created only while expanded: long option lists (fonts) would
@@ -184,7 +269,7 @@ ColumnLayout {
                         title: modelData.label
                         selected: modelData.value === root.current
                         highlighted: index === root.walkIndex
-                        onClicked: { root.selected(modelData.value); root.expanded = false }
+                        onClicked: { root.selected(modelData.value); root.closeList() }
                     }
                 }
             }

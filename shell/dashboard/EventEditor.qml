@@ -33,7 +33,6 @@ ShellPanel {
     property var original: null
     readonly property bool locked: editing && Edit.timesLocked(event)
     readonly property bool form: !details || editing
-    property bool confirmDelete: false
     property var draft: Draft.defaultDraft(new Date(), new Date(), "")
     // How often the event repeats, as the editor shows it. The rule itself is
     // built by the helper: the editor only ever sends these fields.
@@ -85,7 +84,7 @@ ShellPanel {
     function startEdit() {
         if (!canChange) return
         CalendarService.resetSave()
-        confirmDelete = false
+        deleteButton.disarmNow()
         original = Edit.draftFor(event, CalendarService.identityLocation)
         originalRule = Rec.ruleDraft(CalendarService.identity, event.start)
         rule = Object.assign({}, originalRule)
@@ -99,23 +98,16 @@ ShellPanel {
         CalendarService.resetSave()
     }
 
-    function pressDelete() {
+    // The second click of the delete button: the first only arms it
+    // (ShellButton's `confirm`, the "click again" this editor started).
+    function deleteEvent() {
         if (!canChange || saving) return
-        if (!confirmDelete) {
-            CalendarService.resetSave()
-            confirmDelete = true
-            confirmReset.restart()
-            return
-        }
-        confirmDelete = false
         CalendarService.deleteEvent(root.scope)
     }
 
-    Timer { id: confirmReset; interval: 4000; onTriggered: root.confirmDelete = false }
-
     onWantedChanged: {
         editing = false
-        confirmDelete = false
+        deleteButton.disarmNow()
         scope = "single"
         if (wanted) {
             if (PanelService.args.mode === "details") return
@@ -256,7 +248,7 @@ ShellPanel {
                     focusOnTab: true
                     selectAllOnFocus: true
                     placeholder: "YYYY-MM-DD"
-                    border.color: Draft.parseDate(text) ? (inputActiveFocus ? Colors.accentBorder : Colors.border) : Colors.danger
+                    error: !Draft.parseDate(text)
                     onTextChanged: {
                         // Keep a one-day all-day event on one day while the date moves.
                         const endFollows = root.draft.endDate === root.draft.date
@@ -284,7 +276,7 @@ ShellPanel {
                     focusOnTab: true
                     selectAllOnFocus: true
                     placeholder: "YYYY-MM-DD"
-                    border.color: Draft.parseDate(text) ? (inputActiveFocus ? Colors.accentBorder : Colors.border) : Colors.danger
+                    error: !Draft.parseDate(text)
                     onTextChanged: root.update({ endDate: text })
                     onAccepted: root.submit()
                 }
@@ -302,7 +294,7 @@ ShellPanel {
                     focusOnTab: true
                     selectAllOnFocus: true
                     placeholder: "HH:MM"
-                    border.color: Draft.parseTime(text) ? (inputActiveFocus ? Colors.accentBorder : Colors.border) : Colors.danger
+                    error: !Draft.parseTime(text)
                     onTextChanged: {
                         // Moving the start keeps the duration.
                         const keep = root.currentDuration
@@ -319,7 +311,7 @@ ShellPanel {
                     focusOnTab: true
                     selectAllOnFocus: true
                     placeholder: "HH:MM"
-                    border.color: Draft.parseTime(text) && root.currentDuration !== 0 ? (inputActiveFocus ? Colors.accentBorder : Colors.border) : Colors.danger
+                    error: !Draft.parseTime(text) || root.currentDuration === 0
                     onTextChanged: root.update({ end: text })
                     onInputActiveFocusChanged: if (!inputActiveFocus && Draft.parseTime(text)) text = Draft.normalizeTime(text)
                     onAccepted: root.submit()
@@ -418,7 +410,7 @@ ShellPanel {
                     focusOnTab: true
                     selectAllOnFocus: true
                     placeholder: "YYYY-MM-DD"
-                    border.color: Draft.parseDate(text) ? (inputActiveFocus ? Colors.accentBorder : Colors.border) : Colors.danger
+                    error: !Draft.parseDate(text)
                     onTextChanged: root.setRule({ until: text })
                     onAccepted: root.submit()
                 }
@@ -595,14 +587,19 @@ ShellPanel {
             visible: root.details && !root.editing
             spacing: Metrics.spaceSm
             ShellButton {
+                id: deleteButton
                 icon: Icons.remove
-                text: root.saving ? "Deleting …" : root.confirmDelete ? "Click again to delete"
-                    : root.recurring && root.wholeSeries ? "Delete series" : "Delete"
+                text: root.saving ? "Deleting …" : root.recurring && root.wholeSeries ? "Delete series" : "Delete"
                 variant: "danger"
+                confirm: true
+                confirmText: "Click again to delete"
                 visible: root.canChange || root.saving
                 enabledState: root.canChange && !root.saving
                 focusOnTab: true
-                onClicked: root.pressDelete()
+                // Arming clears an earlier error or preview, as the first
+                // click always has.
+                onArmedChanged: if (armed) CalendarService.resetSave()
+                onClicked: root.deleteEvent()
             }
             Item { Layout.fillWidth: true }
             ShellButton { icon: Icons.leavesPanel; text: root.canChange ? "Merkuro" : "Open in Merkuro"; variant: root.canChange ? "ghost" : "accent"; focusOnTab: true; onClicked: CalendarService.openManager() }
@@ -622,12 +619,17 @@ ShellPanel {
             visible: root.form
             spacing: Metrics.spaceSm
             ShellText {
+                // What stops the save is an error and reads as one, like the
+                // save's own error above; "Saving …" and "No changes yet"
+                // are news, not faults, and stay quiet.
+                readonly property bool fault: !root.saving && !root.check.ok && root.saveState !== "error"
+                    && (root.editing || root.draft.title.trim().length > 0)
                 Layout.fillWidth: true
                 text: root.saving ? "Saving …"
-                    : !root.check.ok && root.saveState !== "error" && (root.editing || root.draft.title.trim().length) ? root.check.error
-                    : root.editing && !root.changedFields.length && root.saveState === "" ? "No changes yet." : ""
+                    : fault ? root.check.error
+                    : root.editing && !root.changedFields.length && root.saveState === "" ? "No changes yet" : ""
                 role: "small"
-                muted: true
+                color: fault ? Colors.danger : Colors.mutedText
                 elide: Text.ElideRight
             }
             ShellButton {

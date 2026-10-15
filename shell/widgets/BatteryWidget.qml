@@ -16,13 +16,15 @@ WidgetBase {
         && instance.options !== null && instance.options.glyph === "horizontal"
     glyph: lying && PowerService.hasBattery ? batteryGlyph : null
     icon: PowerService.icon
+    // Low is PowerService's, the level set in Settings > Power, so the glyph
+    // turns red where the warning comes and nowhere else.
     iconColor: PowerService.charging ? Colors.success
-        : PowerService.percent <= 15 && PowerService.onBattery ? Colors.danger : root.glyphInk
+        : PowerService.low ? Colors.danger : root.glyphInk
     label: PowerService.percent + "%"
     name: PowerService.hasBattery ? "Battery" : "Power"
     meter: PowerService.hasBattery ? PowerService.percent / 100 : -1
     meterColor: PowerService.charging ? Colors.success
-        : PowerService.percent <= 15 ? Colors.danger : Colors.accent
+        : PowerService.low ? Colors.danger : Colors.accent
     detail: PowerService.remainingLabel.length ? PowerService.remainingLabel : PowerService.stateLabel
 
     Component {

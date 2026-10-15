@@ -219,6 +219,24 @@ ShellRoot {
             const twin = LayoutService.duplicateProfile(root.studio, "Studio copy")
             T.eq(L.stateOf(LayoutService.config, twin).settings.terminal.fontSize, 17,
                  "a duplicate of the profile in use takes the settings as they are now")
+            // An undo step keeps only what undo puts back: the states, the
+            // saved notch presets and the markers come from the config at hand.
+            const step = JSON.parse(LayoutService.undoStack[LayoutService.undoStack.length - 1])
+            T.eq(Object.keys(step.config.profiles).filter(name => step.config.profiles[name].state !== undefined), [],
+                 "an undo step carries no profile's state")
+            T.ok(!("notchPresets" in step.config) && !("adopted" in step.config) && !("states" in step),
+                 "nor the notch presets, the markers or a removed profile's state")
+            // The one state undo cannot take from the config: a profile removed
+            // while the steps stay, which its own step hands back.
+            const twinState = L.stateOf(LayoutService.config, twin)
+            T.eq(LayoutService.removeProfile(twin), true, "removing a profile not in use")
+            const removal = JSON.parse(LayoutService.undoStack[LayoutService.undoStack.length - 1])
+            T.eq(Object.keys(removal.states || {}), [twin], "its step carries that profile's state and no other")
+            LayoutService.undo()
+            T.ok(LayoutService.profileNames.indexOf(twin) >= 0, "undo brings it back")
+            T.eq(L.stateOf(LayoutService.config, twin), twinState, "with the state it had")
+            T.ok(L.stateOf(LayoutService.config, "default") !== null && L.hasAdopted(LayoutService.config, "profileState"),
+                 "and the other states and the markers are the config's")
             T.eq(LayoutService.removeProfile(root.studio), true, "removing the profile in use")
             T.eq(LayoutService.activeProfile, "default", "switches to the first one left")
             T.eq(SettingsService.value("appearance.panelColor"), "#202020", "and puts its state back")

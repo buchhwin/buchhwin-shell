@@ -43,8 +43,11 @@ Singleton {
 
     // The brightness keys (`brightness up|down`, a global shortcut from
     // hypr/hyprland.lua): the brightnessctl call the bind used to run itself,
-    // then the re-read its `ipc call brightness refresh` tail asked for -
-    // amdgpu sends no udev event for it. A held key repeats about 25 times a
+    // then the re-read its `ipc call brightness refresh` tail asked for (the
+    // udev monitor below sees the change too - amdgpu does send a change
+    // uevent for every write, checked 15.10. - but only after its debounce,
+    // and it is what keeps a change made outside the shell in view, so it
+    // stays even where the keys re-read). A held key repeats about 25 times a
     // second, and every repeat started sh, brightnessctl and the Quickshell
     // IPC client; now it is brightnessctl alone. Presses that come while one
     // runs are added up and sent as one step when it is done (two presses up

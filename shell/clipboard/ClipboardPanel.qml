@@ -37,7 +37,7 @@ ShellPanel {
 
     ColumnLayout {
         width: parent.width
-        spacing: Metrics.spaceMd
+        spacing: Metrics.panelGap
 
         RowLayout {
             spacing: Metrics.spaceSm

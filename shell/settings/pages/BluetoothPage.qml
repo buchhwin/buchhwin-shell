@@ -67,6 +67,7 @@ ColumnLayout {
             model: root.known
             ListRow {
                 focusOnTab: true
+                level: 1
                 required property var modelData
                 Layout.fillWidth: true
                 icon: BluetoothService.deviceIcon(modelData)
@@ -117,6 +118,7 @@ ColumnLayout {
             model: BluetoothService.nearby
             ListRow {
                 focusOnTab: true
+                level: 1
                 required property var modelData
                 Layout.fillWidth: true
                 icon: BluetoothService.deviceIcon(modelData)

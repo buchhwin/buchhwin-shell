@@ -4,7 +4,8 @@ import qs.theme
 import qs.services
 WidgetBase {
     id: root
-    icon: NetworkService.activeVpns.length ? "󰖂" : "󰖂"
+    // One glyph for both states; the colour says whether a tunnel is up.
+    icon: "󰖂"
     iconColor: NetworkService.activeVpns.length ? Colors.success : root.mutedTextColor
     label: inGroup ? "" : (NetworkService.activeVpns.length ? NetworkService.activeVpns[0].name
         : NetworkService.vpns.length ? "VPN off" : "No VPN")

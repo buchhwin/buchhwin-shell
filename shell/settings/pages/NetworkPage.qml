@@ -59,6 +59,7 @@ ColumnLayout {
             model: ScriptModel { values: NetworkService.wifiEnabled ? NetworkService.networks : [] }
             ListRow {
                 focusOnTab: true
+                level: 1
                 required property var modelData
                 Layout.fillWidth: true
                 icon: NetworkService.signalIcon(modelData.signalStrength)
@@ -148,6 +149,7 @@ ColumnLayout {
             model: NetworkService.vpns
             ListRow {
                 focusOnTab: true
+                level: 1
                 required property var modelData
                 Layout.fillWidth: true
                 icon: "󰖂"

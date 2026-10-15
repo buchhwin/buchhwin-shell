@@ -827,10 +827,34 @@ Singleton {
         return values
     }
 
-    function beginChange() {
+    // A step keeps only what undo puts back. The profiles' stored states, the
+    // saved notch presets and the one-shot markers are taken from the config
+    // at hand when a step is undone (see undo), and the states - each
+    // profile's settings, notch and lock screen - were a third of every step
+    // with two profiles (10 of 30 KB, 15.10.), more with each profile, thirty
+    // steps deep. The one state undo reads from a step is that of a profile
+    // gone by then, which it brings back; only removeProfile takes one away
+    // with the steps kept, and it hands that state to its own step (`states`).
+    function undoConfig() {
+        const kept = Object.assign({}, config)
+        delete kept.notchPresets
+        delete kept.adopted
+        if (!config.profiles) return kept
+        kept.profiles = {}
+        for (const name of Object.keys(config.profiles)) {
+            const profile = Object.assign({}, config.profiles[name])
+            delete profile.state
+            kept.profiles[name] = profile
+        }
+        return kept
+    }
+
+    function beginChange(states) {
         if (readOnly) return
         const next = undoStack.slice()
-        next.push(JSON.stringify({ config: config, notch: notchSnapshot() }))
+        const step = { config: undoConfig(), notch: notchSnapshot() }
+        if (states) step.states = states
+        next.push(JSON.stringify(step))
         if (next.length > 30) next.shift()
         undoStack = next
     }
@@ -857,10 +881,14 @@ Singleton {
         // one applied: Ctrl+Z right after that took the applied state away,
         // and the next switch stored nothing for it. A marker says a
         // migration has run, and an older list would run it again. A profile
-        // the step brings back (a removal undone) keeps the state it had.
+        // the step brings back (a removal undone) keeps the state it had,
+        // which removeProfile handed to the step (the steps hold no others).
         for (const name of Object.keys(step.config.profiles || {})) {
             const now = config.profiles[name]
-            if (!now) continue
+            if (!now) {
+                if (step.states && step.states[name]) step.config.profiles[name].state = step.states[name]
+                continue
+            }
             if (now.state) step.config.profiles[name].state = now.state
             else delete step.config.profiles[name].state
         }
@@ -1280,7 +1308,11 @@ Singleton {
             enterProfile(JSON.parse(JSON.stringify(next)), next.activeProfile)
             return true
         }
-        beginChange()
+        // Its state leaves with it, and the step is the only way back.
+        const removed = config.profiles[name]
+        const states = {}
+        if (removed && removed.state) states[name] = removed.state
+        beginChange(Object.keys(states).length ? states : null)
         config = Logic.removeProfile(config, name)
         revision++
         changed()

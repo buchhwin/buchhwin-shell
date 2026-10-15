@@ -106,10 +106,10 @@ ShellPanel {
     }
     onFlatChanged: selected = Math.min(selected, Math.max(0, flat.length - 1))
 
-    Timer { id: refreshTimer; interval: 250; onTriggered: window.refresh() }
+    Timer { id: refreshTimer; interval: Animations.overviewRefresh; onTriggered: window.refresh() }
     Timer {
         id: pendingTimer
-        interval: 120
+        interval: Animations.overviewDispatchDelay
         onTriggered: if (window.pendingDispatch) { HyprCompat.dispatch(window.pendingDispatch); window.pendingDispatch = null }
     }
 
@@ -473,7 +473,7 @@ ShellPanel {
                                             }
                                             onDraggingChanged: if (!dragging) Qt.callLater(rehome)
                                             Timer {
-                                                interval: 2000
+                                                interval: Animations.overviewSentTimeout
                                                 running: thumb.sent
                                                 onTriggered: thumb.sent = false
                                             }

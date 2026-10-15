@@ -142,6 +142,7 @@ ColumnLayout {
                             spacing: 0
                             ListRow {
                                 id: row
+                                level: 1
                                 readonly property bool isMounted: DrivesService.mounted(volumeEntry.modelData)
                                 readonly property bool isLocked: DrivesService.locked(volumeEntry.modelData)
                                 Layout.fillWidth: true

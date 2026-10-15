@@ -195,6 +195,10 @@ Singleton {
     readonly property color warning: dark ? "#f2b84b" : "#95600e"
     // Success on surfaces that stay dark in both themes (notch, lock screen).
     readonly property color successOnDark: "#62d394"
+    // Danger on the same surfaces: a low battery in the notch's status block.
+    // The dark theme's danger, 7.3:1 on black; the light theme's would be
+    // 3.8:1 there and change with the theme on a surface that does not.
+    readonly property color dangerOnDark: "#f07171"
     // Background of warning badges (security updates).
     readonly property color warningSoft: Qt.rgba(warning.r, warning.g, warning.b, dark ? 0.18 : 0.14)
     readonly property color danger: dark ? "#f07171" : "#c53030"

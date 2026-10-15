@@ -43,9 +43,12 @@ Item {
         if (AudioService.micInUse) result.push({ icon: "󰍬", color: Colors.warning })
         if (NotificationService.dndActive) result.push({ icon: "󰂛", color: root.mutedTextColor })
         else if (NotificationService.unread > 0) result.push({ icon: "󰂞", color: Colors.accentForeground })
+        // A low battery is PowerService's low, in the danger colour every
+        // other battery uses. It had its own two steps here (amber from 20 %,
+        // red from 10 %) that no other surface drew; the escalation lives in
+        // the warnings, which grow more urgent at 10 % and 5 %.
         if (PowerService.hasBattery && PowerService.charging && !PowerService.full) result.push({ icon: "󰂄", color: Colors.success })
-        else if (PowerService.hasBattery && PowerService.onBattery && PowerService.percent <= 20)
-            result.push({ icon: PowerService.icon, color: PowerService.percent <= 10 ? Colors.danger : Colors.warning })
+        else if (PowerService.low) result.push({ icon: PowerService.icon, color: Colors.danger })
         return result
     }
     // Screen recording: red dot with the elapsed time, a click stops it. Shown

@@ -25,9 +25,14 @@ ColumnLayout {
         title: "Battery"
         description: PowerService.remainingLabel.length ? PowerService.remainingLabel : ""
 
+        // Charging, low or the page's ink, as in the control center's Power
+        // page: a state colour only when there is a state to show.
         RowLayout {
             spacing: Metrics.spaceMd
-            ShellIcon { glyph: PowerService.icon; size: Metrics.iconXl; color: PowerService.charging ? Colors.success : Colors.accentForeground }
+            ShellIcon {
+                glyph: PowerService.icon; size: Metrics.iconXl
+                color: PowerService.charging ? Colors.success : PowerService.low ? Colors.danger : Colors.text
+            }
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 0

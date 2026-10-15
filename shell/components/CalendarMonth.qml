@@ -30,6 +30,38 @@ ColumnLayout {
         selectedDate = today
     }
 
+    // A day chosen with the keys or the pointer. Choosing rebuilds the cells
+    // and destroys the delegate that did it, so everything is read first and
+    // the panel notified before that. A day chosen from the keyboard hands
+    // the focus on to the new cell of the same day; it would go with the old
+    // one, and the next arrow would start over at the panel's first control.
+    function choose(cell, refocus) {
+        const date = cell.modelData.date
+        const inMonth = cell.modelData.inMonth
+        root.daySelected(date)
+        root.selectedDate = date
+        if (!inMonth) {
+            root.year = date.getFullYear()
+            root.month = date.getMonth()
+        }
+        if (refocus) Qt.callLater(root.focusDay, root.key(date))
+    }
+
+    function focusDay(dayKey) {
+        for (let i = 0; i < days.count; ++i) {
+            const item = days.itemAt(i)
+            if (item && root.key(item.modelData.date) === dayKey) {
+                item.forceActiveFocus(Qt.TabFocusReason)
+                return
+            }
+        }
+    }
+
+    function backToToday() {
+        root.reset()
+        root.daySelected(root.today)
+    }
+
     function key(date) {
         return date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0")
     }
@@ -63,11 +95,25 @@ ColumnLayout {
             horizontalAlignment: Text.AlignHCenter
             text: SettingsService.locale.toString(new Date(root.year, root.month, 1), "MMMM yyyy")
             role: "title"
+            // A click on the month goes back to today. It had no key at all,
+            // so it is a stop for the panel's keys too (NavLogic stops on
+            // `focusOnTab` and asks `available`), and says what it does.
+            property bool focusOnTab: false
+            readonly property bool available: root.selectable
+            activeFocusOnTab: focusOnTab && root.selectable
+            Keys.onReturnPressed: root.backToToday()
+            Keys.onEnterPressed: root.backToToday()
+            Keys.onSpacePressed: root.backToToday()
+            Accessible.role: root.selectable ? Accessible.Button : Accessible.StaticText
+            Accessible.name: text
+            Accessible.description: root.selectable ? "Back to today" : ""
+            Accessible.onPressAction: if (root.selectable) root.backToToday()
+            FocusRing { active: parent.activeFocus; controlRadius: Metrics.radiusInner }
             MouseArea {
                 anchors.fill: parent
                 enabled: root.selectable
                 cursorShape: root.selectable ? Qt.PointingHandCursor : Qt.ArrowCursor
-                onClicked: { root.reset(); root.daySelected(root.today) }
+                onClicked: root.backToToday()
             }
         }
         ShellButton { toolTip: "Next month"; icon: Icons.forward; variant: "ghost"; compact: true; onClicked: root.shift(1) }
@@ -92,12 +138,26 @@ ColumnLayout {
         }
 
         Repeater {
+            id: days
             model: root.cells
             Item {
                 id: cell
                 required property var modelData
                 Layout.fillWidth: true
                 implicitHeight: Metrics.controlHeight
+                // A stop for the panel's keys like a ListRow, only where a day
+                // can be chosen: the arrows walk the grid, Return or Space
+                // chooses the day as the click does.
+                property bool focusOnTab: false
+                readonly property bool available: root.selectable
+                activeFocusOnTab: focusOnTab && root.selectable
+                Keys.onReturnPressed: root.choose(cell, true)
+                Keys.onEnterPressed: root.choose(cell, true)
+                Keys.onSpacePressed: root.choose(cell, true)
+                Accessible.role: root.selectable ? Accessible.Button : Accessible.StaticText
+                Accessible.name: SettingsService.locale.toString(cell.modelData.date, SettingsService.locale.dateFormat(Locale.LongFormat))
+                Accessible.description: cell.modelData.hasEvents ? "Has events" : ""
+                Accessible.onPressAction: if (root.selectable) root.choose(cell, false)
                 Rectangle {
                     anchors.centerIn: parent
                     width: Metrics.controlHeight
@@ -108,6 +168,7 @@ ColumnLayout {
                         : dayMouse.containsMouse ? Colors.hover : "transparent"
                     border.width: cell.modelData.selected && !cell.modelData.today ? Metrics.borderWidth : 0
                     border.color: Colors.accentBorder
+                    FocusRing { active: cell.activeFocus; controlRadius: parent.radius }
                 }
                 ShellText {
                     anchors.centerIn: parent
@@ -134,19 +195,7 @@ ColumnLayout {
                     enabled: root.selectable
                     hoverEnabled: root.selectable
                     cursorShape: root.selectable ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    // Changing the selection rebuilds the cells and destroys this
-                    // delegate, so read everything first and notify before that.
-                    onClicked: {
-                        const calendar = root
-                        const date = cell.modelData.date
-                        const inMonth = cell.modelData.inMonth
-                        calendar.daySelected(date)
-                        calendar.selectedDate = date
-                        if (!inMonth) {
-                            calendar.year = date.getFullYear()
-                            calendar.month = date.getMonth()
-                        }
-                    }
+                    onClicked: root.choose(cell, false)
                 }
             }
         }

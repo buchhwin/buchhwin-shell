@@ -5,6 +5,9 @@ import qs.theme
 // One UI tabs: a soft trough with a solid capsule that slides to the selected
 // segment. style "underline" (control-center tabs) slides an accent line
 // instead. "pill" is the settings choice control.
+//
+// A segment that draws only its icon (compact) still has its label: it is the
+// segment's name for a screen reader and the tooltip under the pointer.
 Item {
     id: root
     property var options: []          // [{ value, label, icon, badge }]
@@ -15,16 +18,23 @@ Item {
     // Background corner radius; embedded controls match their container.
     property real backgroundRadius: Metrics.pillRadius(implicitHeight)
     property bool focusOnTab: false
+    // Dimmed, and then no segment lights up or answers - not the mouse, not
+    // the arrows, not a screen reader - like ShellButton's `enabledState`.
+    property bool enabledState: true
     signal selected(string value)
 
     readonly property int currentIndex: options.findIndex(option => option.value === root.current)
     function step(delta) {
-        if (!options.length) return
+        if (!root.enabledState || !options.length) return
         const next = Math.max(0, Math.min(options.length - 1, (currentIndex < 0 ? 0 : currentIndex) + delta))
         if (options[next].value !== root.current) root.selected(options[next].value)
     }
+    function choose(value) {
+        if (root.enabledState) root.selected(value)
+    }
 
-    activeFocusOnTab: focusOnTab
+    activeFocusOnTab: focusOnTab && enabledState
+    opacity: enabledState ? 1 : Effects.disabledOpacity
     // One tab stop for the whole control; Left and Right move inside it. Up
     // and Down are left to the panel, as on the slider: a panel that walks
     // its controls with the arrows (NavLogic) stepped into the control and
@@ -88,7 +98,9 @@ Item {
         y: root.style === "underline" ? parent.height - height : Metrics.spaceXs
         height: root.style === "underline" ? Metrics.focusBorderWidth : parent.height - Metrics.spaceXs * 2
         radius: root.style === "underline" ? height : Metrics.pillRadius(height)
-        color: root.style === "underline" ? Colors.accent : Colors.segmentSelected
+        // The line is a mark, not a fill: the accent made readable against
+        // the surface (3:1), as every other accent line is.
+        color: root.style === "underline" ? Colors.accentLine : Colors.segmentSelected
         border.width: root.style === "underline" ? 0 : Metrics.borderWidth
         border.color: Colors.border
         Behavior on x { enabled: Animations.motionEnabled; SpringMotion { kind: "fast" } }
@@ -107,6 +119,10 @@ Item {
                 id: segment
                 required property var modelData
                 readonly property bool active: modelData.value === root.current
+                // Compact and not chosen: the glyph is all that is drawn.
+                readonly property bool iconOnly: root.compact && !segment.active
+                    && (segment.modelData.icon || "").length > 0
+                readonly property bool hovered: segmentMouse.containsMouse && root.enabledState
                 Layout.fillWidth: !root.compact
                 Layout.fillHeight: true
                 implicitWidth: segmentRow.implicitWidth + (root.compact ? Metrics.controlPaddingSm : Metrics.controlPadding) * 2
@@ -120,13 +136,29 @@ Item {
                 onWidthChanged: if (active) root.syncIndicator(segment)
                 Component.onCompleted: if (active) root.syncIndicator(segment)
 
+                // Named by its label whether the label is drawn or not.
+                Accessible.role: root.style === "underline" ? Accessible.PageTab : Accessible.RadioButton
+                Accessible.name: segment.modelData.label || ""
+                Accessible.checkable: true
+                Accessible.checked: segment.active
+                Accessible.onPressAction: root.choose(segment.modelData.value)
+
+                // The label a glyph stands for, under a resting pointer; a
+                // segment that draws its label has nothing to add.
+                ToolTipHost {
+                    id: tip
+                    anchorItem: segment
+                    text: segment.iconOnly && root.enabledState ? (segment.modelData.label || "") : ""
+                    onTextChanged: if (!text.length) release()
+                }
+
                 Rectangle {
                     anchors.fill: parent
                     anchors.topMargin: root.style === "pill" ? 0 : Metrics.spaceXs
                     anchors.bottomMargin: root.style === "pill" ? 0 : Metrics.spaceXs
                     radius: Metrics.pillRadius(height)
-                    color: segmentMouse.pressed && segmentMouse.containsMouse ? Colors.pressed
-                        : segmentMouse.containsMouse && !segment.active ? Colors.hover : "transparent"
+                    color: segmentMouse.pressed && segment.hovered ? Colors.pressed
+                        : segment.hovered && !segment.active ? Colors.hover : "transparent"
                     Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
                 }
 
@@ -149,7 +181,7 @@ Item {
                         color: segment.active ? Colors.accentForeground : Colors.mutedText
                     }
                     ShellText {
-                        visible: !root.compact || segment.active || !(segment.modelData.icon || "").length
+                        visible: !segment.iconOnly
                         text: segment.modelData.label
                         color: segment.active ? (root.style === "pill" ? Colors.text : Colors.accentForeground) : Colors.mutedText
                         // Cut the label rather than paint it over the
@@ -179,8 +211,14 @@ Item {
                     id: segmentMouse
                     anchors.fill: parent
                     hoverEnabled: true
+                    enabled: root.enabledState
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.selected(segment.modelData.value)
+                    onEntered: tip.arm()
+                    onExited: tip.release()
+                    onClicked: {
+                        tip.release()
+                        root.choose(segment.modelData.value)
+                    }
                 }
             }
         }

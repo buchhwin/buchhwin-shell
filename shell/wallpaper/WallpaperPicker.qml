@@ -97,7 +97,7 @@ ShellPanel {
     ColumnLayout {
         // anchors.fill, not width: the grid needs a height to fill.
         anchors.fill: parent
-        spacing: Metrics.spaceMd
+        spacing: Metrics.panelGap
 
         RowLayout {
             Layout.fillWidth: true
@@ -270,7 +270,7 @@ ShellPanel {
                             anchors.top: parent.top
                             anchors.right: parent.right
                             anchors.margins: Metrics.spaceXs
-                            width: Metrics.iconMd + Metrics.spaceXs
+                            width: Metrics.thumbBadge
                             height: width
                             radius: width / 2
                             color: Colors.accent
@@ -295,7 +295,7 @@ ShellPanel {
                             anchors.bottom: parent.bottom
                             anchors.left: parent.left
                             anchors.margins: Metrics.spaceXs
-                            width: Metrics.iconMd + Metrics.spaceXs
+                            width: Metrics.thumbBadge
                             height: width
                             radius: Metrics.radiusInner
                             color: picked ? Colors.accent : Colors.pill

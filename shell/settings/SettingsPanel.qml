@@ -118,11 +118,14 @@ ShellPanel {
             Layout.fillHeight: true
             spacing: Metrics.spaceSm
 
-            RowLayout {
-                spacing: Metrics.spaceSm
+            // The panels' header at their size, so "Settings" is as large as
+            // "Control center". The gear stays: this heads a list of pages,
+            // each with its icon, rather than a page.
+            PanelHeader {
+                Layout.fillWidth: true
                 Layout.bottomMargin: Metrics.spaceXs
-                ShellIcon { glyph: Icons.settings; size: Metrics.iconMd; color: Colors.accentForeground }
-                ShellText { text: "Settings"; role: "title" }
+                icon: Icons.settings
+                title: "Settings"
             }
 
             ShellTextField {
@@ -243,7 +246,7 @@ ShellPanel {
                 ColumnLayout {
                     id: pageColumn
                     width: contentFlick.width
-                    spacing: Metrics.spaceLg
+                    spacing: Metrics.panelGap
 
                     PanelHeader {
                         Layout.fillWidth: true
@@ -279,7 +282,7 @@ ShellPanel {
             // the scroll area is simply shorter while a footer is there.
             Loader {
                 Layout.fillWidth: true
-                Layout.topMargin: sourceComponent ? Metrics.spaceLg : 0
+                Layout.topMargin: sourceComponent ? Metrics.panelGap : 0
                 readonly property var page: pageLoader.item
                 sourceComponent: page && page.footer ? page.footer : null
             }

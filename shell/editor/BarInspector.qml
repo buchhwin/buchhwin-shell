@@ -17,7 +17,10 @@ EditorPanel {
     visible: pill !== null && editor.barMode
     title: panel.unit + (panel.place ? " · " + (panel.place.zone === "left" ? "Left" : panel.place.zone === "center" ? "Center" : "Right") : "")
 
-
+    // Every control is a Tab stop, top to bottom as drawn, like the panels'
+    // forms. From the editor itself Tab still walks the pills
+    // (EditLayer.barKey); these are the stops for a focus that is already
+    // among the controls, and the names a screen reader gives them.
     ColumnLayout {
         Layout.fillWidth: true
         spacing: Metrics.spaceXs
@@ -28,6 +31,7 @@ EditorPanel {
                 required property var modelData
                 required property int index
                 Layout.fillWidth: true
+                focusOnTab: true
                 compact: true
                 icon: (WidgetRegistry.type(modelData.type) || { icon: "󰘔" }).icon
                 title: (WidgetRegistry.type(modelData.type) || { label: modelData.type }).label
@@ -43,6 +47,8 @@ EditorPanel {
         spacing: Metrics.spaceSm
         SectionLabel { text: "Display" }
         SegmentedControl {
+            focusOnTab: true
+            accessibleName: "Display"
             Layout.fillWidth: true
             current: panel.currentItem ? panel.currentItem.display : "full"
             options: panel.currentItem ? WidgetRegistry.pillDisplays(panel.currentItem.type) : []
@@ -52,6 +58,8 @@ EditorPanel {
         // user asked to resize a tile, not only the whole strip.
         SectionLabel { text: "Item size" }
         SegmentedControl {
+            focusOnTab: true
+            accessibleName: "Item size"
             Layout.fillWidth: true
             current: panel.currentItem ? (panel.currentItem.size || "small") : "small"
             options: [{ value: "small", label: "Small" }, { value: "medium", label: "Medium" }, { value: "large", label: "Large" }]
@@ -61,6 +69,7 @@ EditorPanel {
             Layout.fillWidth: true
             spacing: Metrics.spaceXs
             ShellButton {
+                focusOnTab: true
                 icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Move item left"
                 enabledState: panel.editor.barItem > 0
                 onClicked: {
@@ -70,6 +79,7 @@ EditorPanel {
                 }
             }
             ShellButton {
+                focusOnTab: true
                 icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Move item right"
                 enabledState: panel.pill !== null && panel.editor.barItem < panel.pill.items.length - 1
                 onClicked: {
@@ -81,6 +91,7 @@ EditorPanel {
             Item { Layout.fillWidth: true }
             ShellButton {
                 visible: panel.pill !== null && panel.pill.items.length > 1
+                focusOnTab: true
                 icon: "󰤼"; text: "Split off"; compact: true
                 onClicked: {
                     LayoutService.barSplitItem(panel.pill.id, panel.editor.barItem)
@@ -90,6 +101,7 @@ EditorPanel {
         }
         ShellButton {
             Layout.fillWidth: true
+            focusOnTab: true
             icon: Icons.remove; text: "Remove item"; variant: "danger"
             onClicked: {
                 const id = panel.pill.id
@@ -104,6 +116,8 @@ EditorPanel {
         spacing: Metrics.spaceSm
         SectionLabel { text: "Zone" }
         SegmentedControl {
+            focusOnTab: true
+            accessibleName: "Zone"
             Layout.fillWidth: true
             current: panel.place ? panel.place.zone : "center"
             options: [{ value: "left", label: "Left" }, { value: "center", label: "Center" }, { value: "right", label: "Right" }]
@@ -112,13 +126,14 @@ EditorPanel {
         RowLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceXs
-            ShellButton { icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Move left"
+            ShellButton { focusOnTab: true; icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Move left"
                 onClicked: LayoutService.barMovePill(panel.pill.id, -1) }
-            ShellButton { icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Move right"
+            ShellButton { focusOnTab: true; icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Move right"
                 onClicked: LayoutService.barMovePill(panel.pill.id, 1) }
             Item { Layout.fillWidth: true }
             ShellButton {
                 visible: panel.place !== null && panel.place.index < LayoutService.bar[panel.place.zone].length - 1
+                focusOnTab: true
                 icon: "󰘞"; text: "Merge"; compact: true; toolTip: "Merge with the next " + panel.unit.toLowerCase()
                 onClicked: LayoutService.barMergeWithNext(panel.pill.id)
             }
@@ -132,6 +147,8 @@ EditorPanel {
         // in the editor. It is the bar's equivalent, so it belongs here too.
         SectionLabel { text: "Bar size" }
         SegmentedControl {
+            focusOnTab: true
+            accessibleName: "Bar size"
             Layout.fillWidth: true
             current: String(LayoutService.bar.scale)
             options: [{ value: "0.9", label: "Small" }, { value: "1", label: "Normal" }, { value: "1.15", label: "Large" }]
@@ -141,6 +158,7 @@ EditorPanel {
 
     ShellButton {
         Layout.fillWidth: true
+        focusOnTab: true
         icon: Icons.remove; text: "Remove " + panel.unit.toLowerCase(); variant: "danger"
         onClicked: {
             const id = panel.pill.id

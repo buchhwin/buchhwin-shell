@@ -75,7 +75,10 @@ Item {
         // past that they wrap. One unbroken line had no limit at all.
         width: label.width + Metrics.spaceSm * 2
         height: label.height + Metrics.spaceXs * 2
-        radius: Metrics.radiusSm
+        // A semantic radius like every other surface, so the corner setting
+        // moves it with the rest: a bubble of one line of small print is the
+        // size of a thumbnail or a swatch, not of a card.
+        radius: Metrics.radiusInner
         color: Colors.solidSurface
         border.width: Metrics.borderWidth
         border.color: Colors.panelBorder

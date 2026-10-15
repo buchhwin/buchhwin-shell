@@ -45,17 +45,23 @@ ShellCard {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         cursorShape: root.defaultAction ? Qt.PointingHandCursor : Qt.ArrowCursor
-        // Invoking an action can retire the notification, and this card with
-        // it, before the next statement runs ("ReferenceError: root is not
-        // defined"): what is needed afterwards is taken first.
         onClicked: event => {
             if (event.button === Qt.RightButton) { const card = root; card.notification.dismiss(); if (card) card.closed(); return }
-            const card = root
-            const action = root.defaultAction
-            if (action) action.invoke()
-            if (card) card.closed()
+            root.activate()
         }
     }
+
+    // The default action, from the pointer or the keys. Invoking an action can
+    // retire the notification, and this card with it, before the next
+    // statement runs ("ReferenceError: root is not defined"): what is needed
+    // afterwards is taken first.
+    function activate() {
+        const card = root
+        const action = root.defaultAction
+        if (action) action.invoke()
+        if (card) card.closed()
+    }
+    FocusRing { active: picture.activeFocus; controlRadius: root.radius }
 
     ColumnLayout {
         id: content
@@ -70,9 +76,27 @@ ShellCard {
             spacing: Metrics.spaceMd
 
             Item {
+                id: picture
                 Layout.preferredWidth: Metrics.iconXl
                 Layout.preferredHeight: Metrics.iconXl
                 Layout.alignment: Qt.AlignTop
+                // The click on the card from the keys: a stop for the panel's
+                // keys (NavLogic stops on `focusOnTab`), only on a card with a
+                // default action, and Return or Space invokes it. On the
+                // picture rather than on the card, because NavLogic does not
+                // look inside a stop and the card's own buttons have to stay
+                // reachable; the ring goes round the card, which is what acts.
+                property bool focusOnTab: false
+                readonly property bool available: root.defaultAction !== null
+                activeFocusOnTab: focusOnTab && available
+                Keys.onReturnPressed: root.activate()
+                Keys.onEnterPressed: root.activate()
+                Keys.onSpacePressed: root.activate()
+                Accessible.role: Accessible.Button
+                Accessible.ignored: !available
+                Accessible.name: root.notification.summary || root.notification.appName || "Notification"
+                Accessible.description: root.notification.body
+                Accessible.onPressAction: if (available) root.activate()
                 Image {
                     id: image
                     anchors.fill: parent
@@ -94,8 +118,11 @@ ShellCard {
                     ShellText { Layout.fillWidth: true; text: root.notification.appName || "Notification"; role: "caption" }
                     ShellButton {
                         toolTip: "Dismiss"
+                        // The compact size the notification centre's group
+                        // buttons have, not a step under it: a 26 px close on
+                        // each card below a 30 px "Dismiss all" read as two
+                        // sizes of the same button.
                         icon: Icons.close; variant: "ghost"; compact: true
-                        implicitHeight: Metrics.controlHeightSm - Metrics.spaceXs
                         onClicked: { const card = root; card.notification.dismiss(); if (card) card.closed() }
                     }
                 }

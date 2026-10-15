@@ -40,7 +40,7 @@ ShellPanel {
 
     ColumnLayout {
         width: parent.width
-        spacing: Metrics.spaceMd
+        spacing: Metrics.panelGap
 
         PanelHeader {
             Layout.fillWidth: true

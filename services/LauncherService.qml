@@ -83,15 +83,20 @@ Singleton {
         "kitty": "launch-kitty.sh"
     })
 
+    // Sentence case, and what follows a colon is a value, so it starts small
+    // too: "Timer: stop", "Screenshot: region". Half of them had said
+    // "Screenshot: Region" and "Toggle Dark Mode" beside "Focus: on". Names
+    // keep their capitals: Do Not Disturb and Night Light, as every panel
+    // writes them, and a notch preset's own label.
     readonly property var commands: [
         { title: "Control center", keywords: "control center audio wifi bluetooth kontrollzentrum wlan", icon: Icons.settings, run: () => PanelService.open("controlCenter") },
         { title: "Notifications", keywords: "notifications history benachrichtigungen verlauf", icon: "󰂚", run: () => PanelService.open("notifications") },
         { title: "Dashboard", keywords: "calendar clock weather time kalender uhr wetter", icon: "󰃭", run: () => PanelService.open("dashboard") },
         { title: "Refresh weather", keywords: "weather refresh open-meteo wetter aktualisieren", icon: "󰖐", run: () => { WeatherService.refresh(); PanelService.open("dashboard") } },
         { title: "Open calendar in Merkuro", keywords: "calendar events google akonadi kalender termine", icon: "󰸗", run: () => CalendarService.openManager() },
-        { title: "Desktop mode: Widgets", keywords: "mode widgets desktop modus", icon: Icons.edit, run: () => LayoutService.setDesktopMode("widgets") },
-        { title: "Desktop mode: Bar", keywords: "mode bar pills top panel modus leiste oben", icon: "󰘔", run: () => LayoutService.setDesktopMode("pills") },
-        { title: "Desktop mode: Notch", keywords: "mode notch island dynamic time modus kerbe insel uhr", icon: "󱂩", run: () => LayoutService.setDesktopMode("notch") },
+        { title: "Desktop mode: widgets", keywords: "mode widgets desktop modus", icon: Icons.edit, run: () => LayoutService.setDesktopMode("widgets") },
+        { title: "Desktop mode: bar", keywords: "mode bar pills top panel modus leiste oben", icon: "󰘔", run: () => LayoutService.setDesktopMode("pills") },
+        { title: "Desktop mode: notch", keywords: "mode notch island dynamic time modus kerbe insel uhr", icon: "󱂩", run: () => LayoutService.setDesktopMode("notch") },
         { title: "Notch: Island", keywords: "notch preset island pills workspaces status kerbe insel vorlage arbeitsflächen", icon: "󱂩", preset: "island", run: () => LayoutService.applyNotchPreset("island") },
         { title: "Notch: Classic", keywords: "notch preset classic time clock only kerbe klassisch vorlage uhr zeit", icon: "󱂩", preset: "classic", run: () => LayoutService.applyNotchPreset("classic") },
         { title: "Edit layout", keywords: "widgets pills bar notch editor arrange layout bearbeiten anordnen leiste", icon: Icons.edit, run: () => { PanelService.close(); LayoutService.editMode = true } },
@@ -104,31 +109,31 @@ Singleton {
         { title: "Do Not Disturb: until tomorrow", keywords: "dnd quiet night nicht stören ruhe nacht morgen", icon: "󰖔", run: () => NotificationService.setDnd("tomorrow") },
         { title: "Do Not Disturb: on", keywords: "dnd quiet nicht stören ruhe", icon: "󰂛", run: () => NotificationService.setDnd("manual") },
         { title: "Do Not Disturb: off", keywords: "dnd nicht stören", icon: "󰂚", run: () => NotificationService.setDnd("off") },
-        { title: "Toggle Dark Mode", keywords: "theme dark light dunkelmodus hell dunkel", icon: "󰔎", run: () => SettingsService.set("appearance.theme", SettingsService.theme === "dark" ? "light" : "dark") },
+        { title: "Toggle dark mode", keywords: "theme dark light dunkelmodus hell dunkel", icon: "󰔎", run: () => SettingsService.set("appearance.theme", SettingsService.theme === "dark" ? "light" : "dark") },
         { title: "Next wallpaper", keywords: "wallpaper next hintergrundbild nächstes", icon: "󰸉", run: () => WallpaperService.next(1) },
         // The five modes, not profiles: these called setActiveProfile with a
         // mode's name and did nothing (15.10.).
-        { title: "Mode: Minimal", keywords: "mode modus profile layout profil", icon: Icons.edit, run: () => LayoutService.setActiveMode("minimal") },
-        { title: "Mode: Work", keywords: "mode modus profile layout profil arbeit", icon: Icons.edit, run: () => LayoutService.setActiveMode("work") },
-        { title: "Mode: Gaming", keywords: "mode modus profile layout games profil spiele", icon: "󰊴", run: () => LayoutService.setActiveMode("gaming") },
-        { title: "Mode: Laptop", keywords: "mode modus profile layout profil", icon: "󰌢", run: () => LayoutService.setActiveMode("laptop") },
-        { title: "Mode: Docked", keywords: "mode modus profile layout monitor display profil", icon: "󰍹", run: () => LayoutService.setActiveMode("docked") },
-        { title: "Animations: Full", keywords: "animation full fast animationen voll schnell", icon: "󰓅", run: () => SettingsService.set("appearance.animationMode", "full") },
-        { title: "Animations: Reduced", keywords: "animation reduced motion animationen reduziert", icon: "󰾆", run: () => SettingsService.set("appearance.animationMode", "reduced") },
+        { title: "Mode: minimal", keywords: "mode modus profile layout profil", icon: Icons.edit, run: () => LayoutService.setActiveMode("minimal") },
+        { title: "Mode: work", keywords: "mode modus profile layout profil arbeit", icon: Icons.edit, run: () => LayoutService.setActiveMode("work") },
+        { title: "Mode: gaming", keywords: "mode modus profile layout games profil spiele", icon: "󰊴", run: () => LayoutService.setActiveMode("gaming") },
+        { title: "Mode: laptop", keywords: "mode modus profile layout profil", icon: "󰌢", run: () => LayoutService.setActiveMode("laptop") },
+        { title: "Mode: docked", keywords: "mode modus profile layout monitor display profil", icon: "󰍹", run: () => LayoutService.setActiveMode("docked") },
+        { title: "Animations: full", keywords: "animation full fast animationen voll schnell", icon: "󰓅", run: () => SettingsService.set("appearance.animationMode", "full") },
+        { title: "Animations: reduced", keywords: "animation reduced motion animationen reduziert", icon: "󰾆", run: () => SettingsService.set("appearance.animationMode", "reduced") },
         { title: "Toggle Night Light", keywords: "night light blue light warm nachtlicht nachtmodus blaulicht", icon: "󰖔", run: () => NightLightService.toggle() },
         { title: "Focus: on", keywords: "focus concentration quiet widgets fokus konzentration ruhe", icon: "󰽥", run: () => AdaptiveService.setFocus(true) },
         { title: "Focus: off", keywords: "focus concentration fokus konzentration", icon: "󰽥", run: () => AdaptiveService.setFocus(false) },
         { title: "Overview", keywords: "overview windows workspaces expose übersicht fenster", icon: Icons.edit, run: () => PanelService.open("overview") },
         { title: "Clipboard", keywords: "clipboard history copy zwischenablage verlauf kopieren", icon: Icons.copy, run: () => PanelService.open("clipboard") },
-        { title: "Screenshot: Region", keywords: "screenshot capture region selection bildschirmfoto foto bereich auswahl", icon: "󰩭", run: () => { PanelService.close(); screenshotDelay.mode = "region"; screenshotDelay.restart() } },
-        { title: "Screenshot: Screen", keywords: "screenshot capture screen monitor bildschirmfoto foto bildschirm", icon: "󰹑", run: () => { PanelService.close(); screenshotDelay.mode = "screen"; screenshotDelay.restart() } },
+        { title: "Screenshot: region", keywords: "screenshot capture region selection bildschirmfoto foto bereich auswahl", icon: "󰩭", run: () => { PanelService.close(); screenshotDelay.mode = "region"; screenshotDelay.restart() } },
+        { title: "Screenshot: screen", keywords: "screenshot capture screen monitor bildschirmfoto foto bildschirm", icon: "󰹑", run: () => { PanelService.close(); screenshotDelay.mode = "screen"; screenshotDelay.restart() } },
         { title: "Record region", keywords: "screen recording record region video capture bildschirmaufnahme aufnahme bereich", icon: "󰑊", run: () => { PanelService.close(); RecordingService.startSoon("region") } },
         { title: "Record screen", keywords: "screen recording record screen monitor video capture bildschirmaufnahme aufnahme bildschirm", icon: "󰑋", run: () => { PanelService.close(); RecordingService.startSoon("screen") } },
         { title: "Stop recording", keywords: "screen recording stop video bildschirmaufnahme aufnahme beenden", icon: "󰓛", run: () => RecordingService.stop() },
         { title: "Lock", keywords: "lock sperren", icon: "󰌾", run: () => SessionService.run("lock") },
-        { title: "Fingerprint unlock: Automatic", keywords: "fingerprint unlock lock screen lid dock automatic fingerabdruck entsperren sperrbildschirm deckel automatisch", icon: "󰈷", run: () => FingerprintService.setMode("auto") },
-        { title: "Fingerprint unlock: On", keywords: "fingerprint unlock lock screen on fingerabdruck entsperren sperrbildschirm an ein", icon: "󰈷", run: () => FingerprintService.setMode("on") },
-        { title: "Fingerprint unlock: Off", keywords: "fingerprint unlock lock screen password off fingerabdruck entsperren sperrbildschirm passwort aus", icon: "󰈷", run: () => FingerprintService.setMode("off") },
+        { title: "Fingerprint unlock: automatic", keywords: "fingerprint unlock lock screen lid dock automatic fingerabdruck entsperren sperrbildschirm deckel automatisch", icon: "󰈷", run: () => FingerprintService.setMode("auto") },
+        { title: "Fingerprint unlock: on", keywords: "fingerprint unlock lock screen on fingerabdruck entsperren sperrbildschirm an ein", icon: "󰈷", run: () => FingerprintService.setMode("on") },
+        { title: "Fingerprint unlock: off", keywords: "fingerprint unlock lock screen password off fingerabdruck entsperren sperrbildschirm passwort aus", icon: "󰈷", run: () => FingerprintService.setMode("off") },
         { title: "Stay awake: on", keywords: "caffeine idle awake koffein wach bleiben", icon: "󰅶", run: () => IdleService.stayAwake = true },
         { title: "Stay awake: off", keywords: "caffeine idle awake koffein wach bleiben", icon: "󰾪", run: () => IdleService.stayAwake = false },
         { title: "Sleep", keywords: "suspend sleep bereitschaft", icon: "󰤄", run: () => SessionService.run("suspend") },

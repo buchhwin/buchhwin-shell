@@ -158,7 +158,11 @@ Singleton {
     readonly property int sliderHandle: 20
     // What a slider is worth when nothing tells it to fill its row.
     readonly property int sliderWidth: 160
-    // Progress bars that are not sliders (battery, rain, OSD level).
+    // Progress bars that are not sliders (battery, rain, OSD level). The
+    // battery's level bar is this in the popup and on the control center's
+    // tile alike; they were 6 and 8 px (meterHeight, sliderTrack) for the same
+    // number. The bar widget's meter is WidgetBase's, shared with volume and
+    // the system meters, and stays theirs.
     readonly property int progressTrack: 5
     // Microphone level bar in Settings > Audio.
     readonly property int meterHeight: 6
@@ -460,4 +464,15 @@ Singleton {
     readonly property real coverFallbackGlyph: iconXl * 2
     readonly property real statColumnWidth: iconXl * 1.5
     readonly property real overviewSearchWidth: launcherWidth * 0.7
+
+    // Shared controls.
+    // How tall an open select's list grows before it scrolls (ShellSelect):
+    // five rows and part of a sixth, so a list that scrolls looks like one.
+    readonly property int selectListHeight: 220
+
+    // Wallpaper thumbnails.
+    // The marks in a thumbnail's corners - the tick on the one that is
+    // shown, the star, the slideshow tick - in Settings > Wallpaper and in the
+    // picker alike. Written as `iconMd + spaceXs` five times over two files.
+    readonly property int thumbBadge: iconMd + spaceXs
 }

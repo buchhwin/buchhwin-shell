@@ -47,7 +47,7 @@ QtObject {
     }
 
     property Timer arm: Timer {
-        interval: 2500
+        interval: Animations.startupQuiet
         running: true
         onTriggered: announcer.armed = true
     }

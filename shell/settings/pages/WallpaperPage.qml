@@ -313,7 +313,7 @@ ColumnLayout {
                         anchors.top: parent.top
                         anchors.right: parent.right
                         anchors.margins: Metrics.spaceSm
-                        width: Metrics.iconMd + Metrics.spaceXs
+                        width: Metrics.thumbBadge
                         height: width
                         radius: width / 2
                         color: Colors.accent
@@ -339,7 +339,7 @@ ColumnLayout {
                         anchors.top: parent.top
                         anchors.left: parent.left
                         anchors.margins: Metrics.spaceSm
-                        width: Metrics.iconMd + Metrics.spaceXs
+                        width: Metrics.thumbBadge
                         height: width
                         radius: width / 2
                         color: Colors.pill
@@ -361,7 +361,7 @@ ColumnLayout {
                         anchors.bottom: parent.bottom
                         anchors.left: parent.left
                         anchors.margins: Metrics.spaceSm
-                        width: Metrics.iconMd + Metrics.spaceXs
+                        width: Metrics.thumbBadge
                         height: width
                         radius: Metrics.radiusInner
                         color: picked ? Colors.accent : Colors.pill

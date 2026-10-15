@@ -43,6 +43,7 @@ ShellCard {
         cursorShape: Qt.PointingHandCursor
         onClicked: root.clicked()
     }
+    FocusRing { active: nowPlaying.activeFocus; controlRadius: root.radius }
 
     ColumnLayout {
         id: column
@@ -84,8 +85,26 @@ ShellCard {
             }
 
             ColumnLayout {
+                id: nowPlaying
                 Layout.fillWidth: true
                 spacing: Metrics.spaceXxs
+                // The card's click from the keys: a stop for the panel's keys
+                // (NavLogic stops on `focusOnTab`), Return or Space opens what
+                // the click opens. On what is playing rather than on the card,
+                // because NavLogic does not look inside a stop and the
+                // transport buttons in the card have to stay reachable; the
+                // ring goes round the card, which is what opens.
+                property bool focusOnTab: false
+                readonly property bool available: root.clickOpens
+                activeFocusOnTab: focusOnTab && root.clickOpens
+                Keys.onReturnPressed: root.clicked()
+                Keys.onEnterPressed: root.clicked()
+                Keys.onSpacePressed: root.clicked()
+                Accessible.role: Accessible.Button
+                Accessible.ignored: !root.clickOpens
+                Accessible.name: MprisService.hasPlayer ? MprisService.title : "Nothing playing"
+                Accessible.description: MprisService.artist
+                Accessible.onPressAction: if (root.clickOpens) root.clicked()
                 ShellText { Layout.fillWidth: true; text: MprisService.hasPlayer ? MprisService.title : "Nothing playing"; role: "bodyLarge" }
                 ShellText { Layout.fillWidth: true; text: MprisService.artist; role: "small"; muted: true; visible: text.length > 0 }
                 // The album is the third line, and the first to go: a short

@@ -96,12 +96,27 @@ ColumnLayout {
         hint: "Scroll or swipe on the collapsed notch: the date on the left, what is playing on the right"
         ShellToggle { focusOnTab: true; checked: NotchService.swipe; onToggled: value => root.set("swipe", value) }
     }
+    // The delays say their value after the slider, like every other slider
+    // in Settings; it used to be the row's hint, which is only read once the
+    // pointer has rested on the "i" for a second. What is shown is what a
+    // release stores: the value in steps of 10 ms, live while it is dragged.
+    function delayText(slider, stored) {
+        return Math.round((slider.pressed ? slider.liveValue : stored) / 10) * 10 + " ms"
+    }
+    // Wide enough for the longest value, so the sliders keep their length
+    // while the number grows a digit under the pointer, and the two of them
+    // end in the same place.
+    TextMetrics {
+        id: delayWidth
+        font: openValue.font
+        text: NotchLogic.CLOSE_DELAY.max + " ms"
+    }
     SettingRow {
         id: openRow
         Layout.fillWidth: true
         visible: root.mode === "hover"
         label: "Open after"
-        hint: Math.round(openSlider.pressed ? openSlider.liveValue : NotchService.openDelay) + " ms"
+        hint: "How long the pointer rests on the notch before it opens"
         ShellSlider {
             id: openSlider
             focusOnTab: true
@@ -110,12 +125,20 @@ ColumnLayout {
             value: NotchService.openDelay
             onReleased: value => root.set("openDelay", Math.round(value / 10) * 10)
         }
+        ShellText {
+            id: openValue
+            text: root.delayText(openSlider, NotchService.openDelay)
+            role: "small"
+            muted: true
+            horizontalAlignment: Text.AlignRight
+            Layout.minimumWidth: Math.ceil(delayWidth.advanceWidth)
+        }
     }
     SettingRow {
         Layout.fillWidth: true
         visible: root.mode !== "off"
         label: "Close after"
-        hint: Math.round(closeSlider.pressed ? closeSlider.liveValue : NotchService.closeDelay) + " ms once the pointer leaves"
+        hint: "Once the pointer leaves the notch"
         ShellSlider {
             id: closeSlider
             focusOnTab: true
@@ -123,6 +146,13 @@ ColumnLayout {
             from: NotchLogic.CLOSE_DELAY.min; to: NotchLogic.CLOSE_DELAY.max
             value: NotchService.closeDelay
             onReleased: value => root.set("closeDelay", Math.round(value / 10) * 10)
+        }
+        ShellText {
+            text: root.delayText(closeSlider, NotchService.closeDelay)
+            role: "small"
+            muted: true
+            horizontalAlignment: Text.AlignRight
+            Layout.minimumWidth: Math.ceil(delayWidth.advanceWidth)
         }
     }
     // Shown whatever the shape: a pill carries the same glyphs as a notch.

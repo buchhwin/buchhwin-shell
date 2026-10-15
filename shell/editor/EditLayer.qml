@@ -140,12 +140,32 @@ Variants {
                 LayoutService.barSetDisplay(barPill, barItem, options[(options.indexOf(item.display) + 1) % options.length])
             }
 
+            // The keys back to the editor itself, not to the control in it
+            // that had them last. Tab reaches the controls in notch mode (the
+            // other modes keep Tab for their selection), and two things would
+            // keep them there: forceActiveFocus() on a focus scope hands focus
+            // straight back to that control, and a control that is hidden keeps
+            // its focus and its keys - Left on the desktop-mode switch would go
+            // on switching modes in widget mode, where it moves the widget.
+            function takeFocus() {
+                const chain = []
+                let item = editorRoot.Window.activeFocusItem
+                while (item && item !== editorRoot) {
+                    chain.push(item)
+                    item = item.parent
+                }
+                // Only what lies inside the editor: the window's own root
+                // holds focus too, and clearing that would leave no keys at all.
+                if (item === editorRoot) chain.forEach(entry => entry.focus = false)
+                editorRoot.forceActiveFocus()
+            }
+
             // Created by edit mode itself now, so the change has already
             // happened when this exists.
             Component.onCompleted: if (LayoutService.editMode) {
                 PanelService.close()
                 PanelService.useFocusedScreen()
-                editorRoot.forceActiveFocus()
+                editorRoot.takeFocus()
             }
             Connections {
                 target: LayoutService
@@ -153,7 +173,7 @@ Variants {
                     if (LayoutService.editMode) {
                         PanelService.close()
                         PanelService.useFocusedScreen()
-                        editorRoot.forceActiveFocus()
+                        editorRoot.takeFocus()
                     } else {
                         editorRoot.selection = []
                         editorRoot.pickerOpen = false
@@ -196,11 +216,19 @@ Variants {
                 selection = []
             }
 
+            // Escape steps back, one thing at a time, in every mode; the last
+            // step closes the editor. Ctrl+Z and Enter are taken in
+            // Keys.onPressed below, before the mode decides anything else.
             Keys.onEscapePressed: {
                 // A drag is what Escape cancels first, everywhere: closing the
                 // editor out from under a held item would write the drop.
                 if (LayoutService.arrangeDragging.length) notchOverlay.cancelAll()
-                else if (pickerOpen) pickerOpen = false
+                // A control Tab reached hands the keys back to the editor.
+                else if (editorRoot.Window.activeFocusItem !== editorRoot) takeFocus()
+                // Only a picker that is on screen: it stays "open" in notch
+                // mode, where it is hidden, and the first Escape there used to
+                // close it out of sight and do nothing anyone could see.
+                else if (pickerOpen && !notchMode) pickerOpen = false
                 else if (selection.length) selection = []
                 else if (barPill.length) selectBar("", -1)
                 else LayoutService.editMode = false
@@ -251,14 +279,22 @@ Variants {
 
             // The desktop mode can also change from outside the editor
             // (Super+Alt+D), so the selection is cleared on the change itself.
+            // The keys come back to the editor too: each mode has its own, and
+            // a switch Tab reached in one mode must not keep them in the next.
             Connections {
                 target: LayoutService
                 function onDesktopModeChanged() {
                     editorRoot.selection = []
                     editorRoot.selectBar("", -1)
+                    editorRoot.takeFocus()
                 }
             }
 
+            // Ctrl+Z and Enter mean the same in every mode, A wherever there
+            // is a picker; the rest is the mode's. Notch mode has no keys of
+            // its own - it is arranged with the pointer, on the notch - so
+            // everything else goes on to the window: Tab then walks the option
+            // cards and the toolbar, and Escape has its own handler above.
             Keys.onPressed: event => {
                 const ctrl = (event.modifiers & Qt.ControlModifier) !== 0
                 const step = (event.modifiers & Qt.ShiftModifier) ? Metrics.gridSize : 1
@@ -297,7 +333,7 @@ Variants {
             MouseArea {
                 anchors.fill: parent
                 onPressed: {
-                    editorRoot.forceActiveFocus()
+                    editorRoot.takeFocus()
                     editorRoot.selection = []
                     editorRoot.pickerOpen = false
                     editorRoot.selectBar("", -1)
@@ -379,7 +415,12 @@ Variants {
                         color: LayoutService.readOnly ? Colors.warning : Colors.mutedText
                         Layout.rightMargin: Metrics.spaceSm
                     }
+                    // Tab stops, left to right. Tab only gets here where the
+                    // mode leaves it free (notch mode); widgets and the bar
+                    // use it to walk their own selection.
                     SegmentedControl {
+                        focusOnTab: true
+                        accessibleName: "Profile"
                         style: "pill"
                         current: LayoutService.activeMode
                         options: LayoutService.modeNames.map(name => ({
@@ -390,6 +431,8 @@ Variants {
                     }
                     // The desktop mode decides what this editor edits.
                     SegmentedControl {
+                        focusOnTab: true
+                        accessibleName: "Desktop mode"
                         style: "pill"
                         current: LayoutService.desktopMode
                         options: [{ value: "widgets", label: "Widgets", icon: Icons.edit },
@@ -399,24 +442,27 @@ Variants {
                     }
                     ShellButton {
                         visible: !editorRoot.notchMode
+                        focusOnTab: true
                         icon: Icons.add; text: "Add"
                         variant: editorRoot.pickerOpen ? "accent" : "surface"
                         onClicked: editorRoot.pickerOpen = !editorRoot.pickerOpen
                     }
                     ShellButton {
                         visible: editorRoot.widgetsMode
+                        focusOnTab: true
                         icon: Icons.grid
                         variant: editorRoot.gridEnabled ? "accent" : "surface"
                         toolTip: editorRoot.gridEnabled ? "Stop snapping to the grid" : "Snap to the grid"
                         onClicked: editorRoot.gridEnabled = !editorRoot.gridEnabled
                     }
                     ShellButton {
+                        focusOnTab: true
                         icon: Icons.undo
                         enabledState: LayoutService.undoStack.length > 0
                         toolTip: "Undo"
                         onClicked: LayoutService.undo()
                     }
-                    ShellButton { text: "Done"; variant: "accent"; onClicked: LayoutService.editMode = false }
+                    ShellButton { focusOnTab: true; text: "Done"; variant: "accent"; onClicked: LayoutService.editMode = false }
                 }
             }
 
@@ -433,7 +479,11 @@ Variants {
                 wrapMode: Text.Wrap
                 // One sentence for both surfaces: the bar leaves out what only
                 // free placement can do rather than saying it differently.
-                text: editorRoot.notchMode ? "Drag to reorder what the notch carries · ↑ ↓ send an item to the other row · Ctrl+Z undoes · Switch the mode above · Enter done · Esc back"
+                // The notch's line names keys only, and only keys that do
+                // something: what the pointer does there is in the hint under
+                // the notch's cards. Its "↑ ↓" read like arrow keys and were
+                // the small buttons on the items.
+                text: editorRoot.notchMode ? "Tab walks the controls · Ctrl+Z undoes · Enter done · Esc back"
                     : editorRoot.barMode ? "Drag or arrow keys · Tab selects · A adds · S changes the look · Del removes · Ctrl+Z undoes · Esc back"
                     : "Drag or arrow keys · Alt disables snapping · Shift+Click multi-selects · Tab selects · A adds · S changes the look · +/− resizes · G grid · Del removes · Ctrl+Z undoes · Esc back"
                 role: "small"

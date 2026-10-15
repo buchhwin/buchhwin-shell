@@ -16,9 +16,17 @@ ColumnLayout {
             anchors.fill: parent
             anchors.margins: Metrics.spaceLg
             spacing: Metrics.spaceSm
+            // The glyph shows a state only when there is one: charging, or low
+            // (PowerService's level, the one the warning uses). Otherwise it is
+            // the page's ink, as the bar widget's is. The accent on the
+            // Network and Bluetooth pages says "on", and running on battery is
+            // not something switched on - in the accent it read as a setting.
             RowLayout {
                 spacing: Metrics.spaceMd
-                ShellIcon { glyph: PowerService.icon; size: Metrics.iconXl; color: PowerService.charging ? Colors.success : Colors.accentForeground }
+                ShellIcon {
+                    glyph: PowerService.icon; size: Metrics.iconXl
+                    color: PowerService.charging ? Colors.success : PowerService.low ? Colors.danger : Colors.text
+                }
                 ColumnLayout {
                     spacing: 0
                     ShellText { text: PowerService.hasBattery ? PowerService.percent + "%" : "AC power"; role: "headline" }
@@ -48,8 +56,14 @@ ColumnLayout {
     ShellText {
         Layout.fillWidth: true
         Layout.leftMargin: Metrics.spaceSm
-        text: "Screen off, lock and sleep timeouts and what happens when the lid closes are in Settings > Power."
+        text: "Screen off, lock and sleep timeouts and what happens when the lid closes are in the power settings."
         role: "caption"
         wrapMode: Text.Wrap
+    }
+    // A way there rather than a path to type into a search: the same button
+    // the drives page has for its settings.
+    ShellButton {
+        icon: Icons.settings; text: "Power settings"; variant: "ghost"; compact: true
+        onClicked: PanelService.open("settings", { page: "power" })
     }
 }

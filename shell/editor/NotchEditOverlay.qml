@@ -19,6 +19,10 @@ import "../../services/LayoutLogic.js" as Logic
 // either can be dragged and an item can cross from one into the other.
 Item {
     id: overlay
+    // EditLayer's root. A press here hands it the keys with takeFocus(), not
+    // forceActiveFocus(): that would give them back to whichever option Tab
+    // reached last, and Left or Right would go on flipping that switch while
+    // the hand is on the notch.
     required property var editor
     readonly property string screenName: editor.screenName
 
@@ -347,7 +351,7 @@ Item {
                 property real pressY: 0
                 property bool moved: false
                 onPressed: mouse => {
-                    overlay.editor.forceActiveFocus()
+                    overlay.editor.takeFocus()
                     const point = mapToItem(overlay, mouse.x, mouse.y)
                     pressX = point.x
                     pressY = point.y
@@ -372,9 +376,10 @@ Item {
         }
     }
 
-    // The controls, on a layer of their own above every frame. They sit half
-    // outside their corner, which is inside the gap to the next item - and a
-    // frame drawn later would otherwise take the press meant for them.
+    // The controls, on a layer of their own above every frame. The remove
+    // button sits half outside its corner, which is inside the gap to the next
+    // item - and a frame drawn later would otherwise take the press meant for
+    // it.
     Repeater {
         model: overlay.items
         Item {
@@ -382,75 +387,86 @@ Item {
             required property var modelData
             readonly property var rect: overlay.rectOf("notch:" + modelData.id)
             readonly property bool sizing: overlay.sizeId === modelData.id
+            readonly property string label: NotchService.entry(modelData.type).label
+            // The buttons are the arranged panels' (QuickSlot, DashboardSlot):
+            // 30 px where there is room, shrinking with a short cell, and down
+            // to the 16 px the discs were, never so wide that the two on top
+            // of one item meet - the remove button takes half its width from
+            // the item, the move button all of it.
+            readonly property real button: Math.max(Metrics.iconSm, Math.min(Metrics.controlHeightSm,
+                height - Metrics.spaceXxs * 2, (width - Metrics.spaceXxs) * 2 / 3))
             visible: rect !== null && overlay.dragId.length === 0
             x: rect ? rect.x : 0
             y: rect ? rect.y : 0
             width: rect ? rect.width : 0
             height: rect ? rect.height : 0
 
-            // Takes the item off the notch. A disc rather than a button under
-            // the pointer: the drag surface below takes the hover away from
-            // anything on top of it, so a control that appears on hover hides
-            // itself the moment you reach for it. Half outside is what keeps
-            // it off a strip item barely taller than the disc.
-            Rectangle {
+            // Takes the item off the notch: the danger button with the remove
+            // glyph and a "Remove …" tip, as on every other surface that is
+            // arranged this way (it was a 16 px disc with a close cross and no
+            // name). Half outside is what keeps it off a strip item barely
+            // taller than the button, and it never leaves the screen above the
+            // notch. The danger wash is translucent, so it sits on the theme's
+            // own background: half of it lies outside the black notch, and
+            // over a light wallpaper a wash alone was gone. The backing takes
+            // the button's shape (the roundness setting) and dips with it, or
+            // a press left a ring of it behind.
+            Item {
                 id: drop
                 x: -width / 2
-                y: -height / 2
+                y: Math.max(-height / 2, chrome.rect ? -chrome.rect.y : 0)
                 visible: overlay.sizeId.length === 0
-                width: Metrics.iconSm
+                width: chrome.button
                 height: width
-                radius: width / 2
-                color: dropMouse.containsMouse ? Colors.danger : Colors.notchField
-                border.width: Metrics.borderWidth
-                border.color: Colors.danger
 
-                ShellIcon {
-                    anchors.centerIn: parent
-                    glyph: Icons.close
-                    size: Metrics.iconXs
-                    // Ink on the danger fill, not on the accent's: a light
-                    // accent picks dark ink, and the fill under it is red.
-                    color: dropMouse.containsMouse ? Colors.textOn(Colors.danger) : Colors.danger
-                }
-                MouseArea {
-                    id: dropMouse
+                Rectangle {
                     anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
+                    radius: dropButton.radius
+                    scale: dropButton.scale
+                    color: Colors.background
+                }
+                ShellButton {
+                    id: dropButton
+                    anchors.fill: parent
+                    icon: Icons.remove
+                    iconSize: Math.round(chrome.button / 2)
+                    variant: "danger"
+                    compact: true
+                    toolTip: "Remove " + chrome.label
                     onClicked: LayoutService.notchRemove(chrome.modelData.id)
                 }
             }
 
             // Sends the item to the other row. Dragging it there is not on
             // offer any more - only one shape is on screen at a time - so the
-            // move is a click, and it keeps the item's size with it.
-            Rectangle {
+            // move is a click, and it keeps the item's size with it. A button
+            // like the remove one, on the same solid backing; the arrow says
+            // which way and the tip says where.
+            Item {
                 id: hop
-                // Inside the tile, not half outside it like the other two: at
-                // the top right it would sit on the neighbour's remove disc,
-                // and two controls in one place is one too many.
+                // Inside the tile, not half outside it like the remove button:
+                // at the top right it would sit on the neighbour's, and two
+                // controls in one place is one too many.
                 x: parent.width - width - Metrics.spaceXxs
                 y: Metrics.spaceXxs
                 visible: overlay.sizeId.length === 0
-                width: Metrics.iconSm
+                width: chrome.button
                 height: width
-                radius: width / 2
-                color: hopMouse.containsMouse ? Colors.accent : Colors.notchField
-                border.width: Metrics.borderWidth
-                border.color: Colors.accent
 
-                ShellIcon {
-                    anchors.centerIn: parent
-                    glyph: overlay.zone === "collapsed" ? Icons.collapse : Icons.raise
-                    size: Metrics.iconXs
-                    color: hopMouse.containsMouse ? Colors.accentText : Colors.accent
-                }
-                MouseArea {
-                    id: hopMouse
+                Rectangle {
                     anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
+                    radius: hopButton.radius
+                    scale: hopButton.scale
+                    color: Colors.background
+                }
+                ShellButton {
+                    id: hopButton
+                    anchors.fill: parent
+                    icon: overlay.zone === "collapsed" ? Icons.collapse : Icons.raise
+                    iconSize: Math.round(chrome.button / 2)
+                    compact: true
+                    toolTip: overlay.zone === "collapsed" ? "Move " + chrome.label + " to the overview"
+                        : "Move " + chrome.label + " to the strip"
                     onClicked: LayoutService.notchMoveTo(chrome.modelData.id,
                         overlay.zone === "collapsed" ? "expanded" : "collapsed", 0)
                 }
@@ -458,7 +474,9 @@ Item {
 
             // Pull this and the item takes more columns and rows. The frame
             // follows while you pull and the size is written once, on release
-            // - one undo step, like a move.
+            // - one undo step, like a move. Accent and opaque, as ArrangeItem's
+            // corner is: the translucent fill it had showed whatever was under
+            // it, and half of it lies outside the notch.
             Rectangle {
                 id: handle
                 visible: overlay.resizable(chrome.modelData.id)
@@ -467,10 +485,15 @@ Item {
                 width: Metrics.iconSm
                 height: width
                 radius: width / 2
-                color: chrome.sizing || corner.containsMouse ? Colors.accent : Colors.notchField
+                color: chrome.sizing || corner.containsMouse ? Colors.accentHover : Colors.accent
                 border.width: Metrics.borderWidth
-                border.color: Colors.accent
+                border.color: Colors.accentLine
 
+                ToolTipHost {
+                    id: cornerTip
+                    anchorItem: handle
+                    text: "Drag to resize " + chrome.label
+                }
                 MouseArea {
                     id: corner
                     anchors.fill: parent
@@ -480,8 +503,11 @@ Item {
                     preventStealing: true
                     cursorShape: Qt.SizeFDiagCursor
                     property bool pulling: false
+                    onEntered: cornerTip.arm()
+                    onExited: cornerTip.release()
                     onPressed: {
-                        overlay.editor.forceActiveFocus()
+                        cornerTip.release()
+                        overlay.editor.takeFocus()
                         overlay.beginSize(chrome.modelData.id)
                         pulling = true
                     }
@@ -521,6 +547,8 @@ Item {
         border.width: overlay.shaping ? Metrics.focusBorderWidth : Metrics.borderWidth
         border.color: overlay.shaping ? Colors.accent : Colors.notchMutedText
 
+        // Opaque accent like the items' corners: half of it lies outside the
+        // notch, over whatever the wallpaper is.
         Rectangle {
             id: shapeHandle
             x: parent.width - width / 2
@@ -528,10 +556,15 @@ Item {
             width: Metrics.iconSm
             height: width
             radius: width / 2
-            color: overlay.shaping || shapeMouse.containsMouse ? Colors.accent : Colors.notchField
+            color: overlay.shaping || shapeMouse.containsMouse ? Colors.accentHover : Colors.accent
             border.width: Metrics.borderWidth
-            border.color: Colors.accent
+            border.color: Colors.accentLine
 
+            ToolTipHost {
+                id: shapeTip
+                anchorItem: shapeHandle
+                text: overlay.zone === "collapsed" ? "Drag to set the strip's width" : "Drag to size the overview"
+            }
             MouseArea {
                 id: shapeMouse
                 anchors.fill: parent
@@ -540,8 +573,11 @@ Item {
                 hoverEnabled: true
                 preventStealing: true
                 cursorShape: overlay.zone === "collapsed" ? Qt.SizeHorCursor : Qt.SizeFDiagCursor
+                onEntered: shapeTip.arm()
+                onExited: shapeTip.release()
                 onPressed: {
-                    overlay.editor.forceActiveFocus()
+                    shapeTip.release()
+                    overlay.editor.takeFocus()
                     overlay.beginShape()
                 }
                 onPositionChanged: mouse => {

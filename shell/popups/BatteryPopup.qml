@@ -47,9 +47,12 @@ PopupPanel {
                 }
             }
 
+            // The battery's bar is as thick here as on the control center's
+            // tile (`progressTrack`, the level bars' token), and it turns red at
+            // the same level as everywhere else.
             Rectangle {
                 Layout.fillWidth: true
-                implicitHeight: Metrics.meterHeight
+                implicitHeight: Metrics.progressTrack
                 radius: height / 2
                 color: Colors.track
                 Rectangle {
@@ -57,7 +60,7 @@ PopupPanel {
                     height: parent.height
                     radius: parent.radius
                     color: PowerService.charging ? Colors.success
-                        : PowerService.percent <= 15 ? Colors.danger : Colors.accent
+                        : PowerService.low ? Colors.danger : Colors.accent
                 }
             }
 

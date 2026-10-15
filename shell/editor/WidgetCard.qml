@@ -96,7 +96,7 @@ Item {
         preventStealing: true
 
         onPressed: event => {
-            card.editor.forceActiveFocus()
+            card.editor.takeFocus()
             card.editor.select(card.placementId, event.modifiers & Qt.ShiftModifier)
             const global = mapToItem(card.editor, event.x, event.y)
             card.pressPoint = Qt.point(global.x, global.y)

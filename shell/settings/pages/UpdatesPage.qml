@@ -104,6 +104,7 @@ ColumnLayout {
 
         ListRow {
             focusOnTab: true
+            level: 1
             Layout.fillWidth: true
             icon: "󰊢"
             active: UpdatesService.shellUpdatable
@@ -166,6 +167,7 @@ ColumnLayout {
 
         ListRow {
             focusOnTab: true
+            level: 1
             Layout.fillWidth: true
             icon: "󰏗"
             active: UpdatesService.packages.length > 0
@@ -224,6 +226,7 @@ ColumnLayout {
 
         ListRow {
             focusOnTab: true
+            level: 1
             Layout.fillWidth: true
             icon: "󰏖"
             active: UpdatesService.flatpaks.length > 0

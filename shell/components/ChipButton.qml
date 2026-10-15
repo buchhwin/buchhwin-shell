@@ -19,22 +19,28 @@ ShellCard {
     // chevron go, and the chip stops asking for a height the cell does not
     // have. A glyph and a word is still a chip; two lines cut in half is not.
     property bool compact: false
+    // Dimmed, and then it neither lights up nor answers: every way in asks,
+    // the keys and a screen reader as well as the mouse, the way QuickTile
+    // asks `available` and ShellButton `enabledState`.
+    property bool enabledState: true
     signal clicked()
 
     readonly property bool down: chipMouse.pressed && chipMouse.containsMouse
+    function activate() { if (root.enabledState) root.clicked() }
 
-    activeFocusOnTab: focusOnTab
-    Keys.onSpacePressed: root.clicked()
-    Keys.onReturnPressed: root.clicked()
-    Keys.onEnterPressed: root.clicked()
+    activeFocusOnTab: focusOnTab && enabledState
+    Keys.onSpacePressed: root.activate()
+    Keys.onReturnPressed: root.activate()
+    Keys.onEnterPressed: root.activate()
     Accessible.role: Accessible.Button
     Accessible.name: root.title
-    Accessible.onPressAction: root.clicked()
+    Accessible.onPressAction: root.activate()
     FocusRing { active: root.activeFocus; controlRadius: root.radius }
 
     interactive: true
-    hovered: chipMouse.containsMouse
-    pressed: down
+    hovered: chipMouse.containsMouse && root.enabledState
+    pressed: down && root.enabledState
+    opacity: enabledState ? 1 : Effects.disabledOpacity
     highlighted: active
     // A chip is a card, not a panel: same rounding as the tiles beside it.
     radius: Metrics.radiusCard
@@ -70,7 +76,8 @@ ShellCard {
         id: chipMouse
         anchors.fill: parent
         hoverEnabled: true
+        enabled: root.enabledState
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.clicked()
+        onClicked: root.activate()
     }
 }
