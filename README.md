@@ -19,9 +19,9 @@
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-lightgrey"></a>
 </p>
 
-https://github.com/user-attachments/assets/ed802a3a-7811-4f83-98b8-1682edcdbb9c
+https://github.com/user-attachments/assets/467c2b76-ef77-41a0-a527-854d903a536b
 
-<p align="center"><sub>Also on <a href="https://www.youtube.com/watch?v=5ngu3fTjsfU">YouTube</a>, in 1080p</sub></p>
+<p align="center"><sub>Also on <a href="https://www.youtube.com/watch?v=5ngu3fTjsfU">YouTube</a></sub></p>
 
 ## What it is
 
