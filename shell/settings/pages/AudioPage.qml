@@ -10,7 +10,7 @@ import qs.shell.controlcenter.pages
 // while the page is open, per-app volume and output, and device details.
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     // The level meter runs only while this page is on screen (the Settings
     // panel hides instead of destroying the page).

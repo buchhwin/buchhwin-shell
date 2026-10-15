@@ -12,7 +12,7 @@ import qs.shell.components
 // (scripts/launch-alacritty.sh).
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     readonly property var options: TerminalService.options
     readonly property var fontFamilies: {

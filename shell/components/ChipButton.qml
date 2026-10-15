@@ -39,20 +39,29 @@ ShellCard {
     // A chip is a card, not a panel: same rounding as the tiles beside it.
     radius: Metrics.radiusCard
     implicitHeight: root.compact ? Metrics.controlHeightSm : Metrics.tileHeight - Metrics.spaceSm
-    implicitWidth: chipRow.implicitWidth + Metrics.spaceLg * 2
+    // A chip without a glyph is a word on a capsule and gets the same air on
+    // both sides. Its air used to come from an empty glyph that still took
+    // its gap (20/20 when compact, 24/16 when not); TileContent leaves an
+    // empty glyph out, so the air is asked for here instead.
+    readonly property bool wordOnly: root.icon.length === 0
+    implicitWidth: chipRow.implicitWidth + (root.wordOnly ? Metrics.spaceXl : Metrics.spaceLg) * 2
 
     RowLayout {
         id: chipRow
         anchors.fill: parent
-        anchors.leftMargin: root.compact ? Metrics.spaceMd : Metrics.spaceLg
-        anchors.rightMargin: Metrics.spaceMd
+        anchors.leftMargin: root.wordOnly ? Metrics.spaceXl : root.compact ? Metrics.spaceMd : Metrics.spaceLg
+        anchors.rightMargin: root.wordOnly ? Metrics.spaceXl : Metrics.spaceMd
         spacing: Metrics.spaceSm
-        ShellIcon { glyph: root.icon; size: Metrics.iconMd; color: root.active ? Colors.accentForeground : Colors.mutedText }
-        ColumnLayout {
+        // The row's glyph, gap and two lines (TileContent), as on the tiles
+        // above the chips and the rows behind them.
+        TileContent {
             Layout.fillWidth: true
-            spacing: 0
-            ShellText { Layout.fillWidth: true; text: root.title; role: "small"; color: root.active ? Colors.accentForeground : Colors.text }
-            ShellText { Layout.fillWidth: true; text: root.subtitle; role: "caption"; visible: text.length > 0 && !root.compact }
+            icon: root.icon
+            title: root.title
+            subtitle: root.subtitle
+            singleLine: root.compact
+            iconColor: root.active ? Colors.accentForeground : Colors.mutedText
+            titleColor: root.active ? Colors.accentForeground : Colors.text
         }
         ShellIcon { visible: root.showChevron && !root.compact; glyph: root.leavesPanel ? Icons.leavesPanel : Icons.forward; size: Metrics.iconXs; color: Colors.mutedText }
     }

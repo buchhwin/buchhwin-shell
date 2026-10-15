@@ -41,10 +41,13 @@ function options(map) {
     const keys = Object.keys(map)
     const legacy = keys.filter(key => map[key] !== "").map(key => "keyword " + checkWord(key) + " " + legacyValue(map[key])).join(" ; ")
     const legacyEmpty = keys.filter(key => map[key] === "").map(checkWord)
-    // Build a nested Lua table; Lua option names use underscores.
+    // Build a nested Lua table; Lua option names use underscores. A dot is a
+    // level too: `general:col.active_border` is `general = { col = {
+    // active_border = ... } }`, where a key `col.active_border` would not
+    // even parse.
     const tree = {}
     for (const key of keys) {
-        const parts = checkWord(key).split(":").map(part => part.replace(/-/g, "_"))
+        const parts = checkWord(key).split(/[:.]/).map(part => part.replace(/-/g, "_"))
         let node = tree
         for (let i = 0; i < parts.length - 1; ++i) node = node[parts[i]] = node[parts[i]] || {}
         node[parts[parts.length - 1]] = { leaf: map[key] }

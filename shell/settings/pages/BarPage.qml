@@ -10,7 +10,7 @@ import qs.shell.components
 // be undone like layout edits.
 ColumnLayout {
     id: page
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     property string selectedPill: ""
     // The notch stores items by id, the chips speak in types.

@@ -24,7 +24,7 @@ PopupPanel {
 
     body: ColumnLayout {
         id: content
-        spacing: Metrics.panelGap
+        spacing: Metrics.pageGap
         readonly property bool adapterOn: BluetoothService.enabled
         Component.onCompleted: BluetoothService.setDiscovering(true)
         Component.onDestruction: BluetoothService.setDiscovering(false)

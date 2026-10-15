@@ -10,7 +10,7 @@ import qs.shell.components
 // the editor (Super + Alt + E); every change is undoable like a layout edit.
 ColumnLayout {
     id: page
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     readonly property int revision: LayoutService.revision
     readonly property var typeOptions: WidgetRegistry.availableTypes()

@@ -8,7 +8,7 @@ import qs.shell.components
 
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
     property var info: ({})
 
     Process {

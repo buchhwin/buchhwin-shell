@@ -18,7 +18,7 @@ PopupPanel {
     onFooterClicked: PanelService.open("settings", { page: "audio" })
 
     body: ColumnLayout {
-        spacing: Metrics.panelGap
+        spacing: Metrics.pageGap
 
         CardSection {
             Layout.fillWidth: true
@@ -88,7 +88,16 @@ PopupPanel {
             }
             Repeater {
                 model: AudioService.playbackStreams
-                StreamRow { required property var modelData; node: modelData; showOutput: false; width: parent.width }
+                // Inset like the output rows above (ListRow's spaceLg), so the
+                // app icons line up with the device icons instead of sitting
+                // at the card's padding.
+                StreamRow {
+                    required property var modelData
+                    node: modelData
+                    showOutput: false
+                    x: Metrics.spaceLg
+                    width: parent.width - Metrics.spaceLg * 2
+                }
             }
         }
 

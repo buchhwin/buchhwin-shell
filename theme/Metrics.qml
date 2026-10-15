@@ -175,6 +175,13 @@ Singleton {
     // The gap between the blocks of a panel. Same step as spaceMd; the name
     // says where it belongs, so a panel root column uses this one.
     readonly property int panelGap: spaceMd
+    // The gap between the cards and sections of a page: a control center
+    // page, a popup's body, a settings page. Settings had 16 for it and the
+    // panels 12, so the same two cards sat further apart on Settings > Network
+    // than on the control center's Network page. The panels' step, because
+    // the control center's grid is measured in it (quickGridUnit) and the
+    // pages behind its tiles should not open looser than the grid itself.
+    readonly property int pageGap: spaceMd
     readonly property int controlCenterWidth: 640
     // How narrow and how wide the control center may be dragged.
     readonly property int controlCenterMinWidth: 360
@@ -342,7 +349,12 @@ Singleton {
     // a value you already know you changed, and shorter than a notification,
     // which you may have to read.
     readonly property int notchTrackTimeout: 3200
-    readonly property int notchEar: 7
+    // The ears follow Settings > Appearance > Shell corners like every other
+    // corner (7 and 14 at the designed 20): a square shell with a round notch
+    // read as two themes. The collapsed body's own radius is a setting of the
+    // notch (a preset's bodyRadius, `notchRadius` its fallback); NotchService
+    // scales it on the way to the screen, so a preset keeps its number.
+    readonly property int notchEar: Math.round(7 * cornerScale)
     readonly property int notchRadius: 16
     // Workspace style "pills": narrow standing capsules, the active one
     // wider, in a slot narrower than a dot's so five of them stay a short
@@ -385,8 +397,12 @@ Singleton {
     // The widest the overview may be dragged, and therefore the width the
     // surface must be able to hold.
     readonly property int notchMaxExpandedWidth: notchWideWidth
-    readonly property int notchExpandedEar: 14
-    readonly property int notchExpandedRadius: 34
+    readonly property int notchExpandedEar: Math.round(14 * cornerScale)
+    // The expanded body follows its fields the way a panel follows its cards
+    // (radiusPanel): the fields' radius plus the 18 the notch has always had
+    // over it, so 34 at the designed setting, square at square, and above it
+    // only the fields' part grows instead of pulling the corner away from them.
+    readonly property int notchExpandedRadius: panelRadius(18)
     // How far below the top edge a pill sits, and how far above the windows.
     // Kept small on purpose: the space over it and the space under it are the
     // same, so every pixel counts twice.

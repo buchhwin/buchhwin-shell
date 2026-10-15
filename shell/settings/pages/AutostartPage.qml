@@ -6,7 +6,7 @@ import qs.services
 import qs.shell.components
 
 ColumnLayout {
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
     property string addId: ""
 
     readonly property var appOptions: DesktopEntries.applications.values

@@ -3,9 +3,9 @@ import qs.theme
 import qs.services
 import qs.shell.components
 
-// VPN connections with a switch each (network and VPN popups). A card like
-// every other group of rows; `showLabel: false` is for a popup that already
-// says VPN in its header.
+// VPN connections with a switch each (network and VPN popups, the control
+// center's Network page). A card like every other group of rows;
+// `showLabel: false` is for a popup that already says VPN in its header.
 ScrollList {
     id: root
     property bool showLabel: true

@@ -9,7 +9,7 @@ import qs.shell.components
 // Flatpak update for the user installation, automatic check settings.
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     // Keeps the "last checked" text ticking while the page is open.
     PageActivity {

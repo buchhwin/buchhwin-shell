@@ -9,7 +9,7 @@ import qs.shell.components
 // applies it and asks to keep it, otherwise it reverts after 15 seconds.
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     readonly property var monitors: DisplayService.draft
     readonly property var enabledMonitors: monitors.filter(monitor => !monitor.disabled)

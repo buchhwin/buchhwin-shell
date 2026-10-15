@@ -26,7 +26,7 @@ WidgetBase {
     iconColor: root.dnd || root.wifiOff ? Colors.warning : root.textColor
     label: ""
 
-    name: "Quick settings"
+    name: "Control center"
     detail: root.dnd ? "Do Not Disturb"
         : root.wifiOff ? "Wi-Fi off"
         : root.nightLight ? "Night Light"

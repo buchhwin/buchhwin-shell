@@ -12,7 +12,7 @@ import qs.shell.components
 // page is shown.
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     readonly property var status: KdeConnectService.status
 

@@ -9,7 +9,7 @@ import qs.shell.components
 // type a command) and a searchable list of every binding Hyprland knows.
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     property bool recording: false
     property var heldMods: []

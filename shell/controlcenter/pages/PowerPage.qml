@@ -6,7 +6,7 @@ import qs.services
 import qs.shell.components
 
 ColumnLayout {
-    spacing: Metrics.panelGap
+    spacing: Metrics.pageGap
 
     ShellCard {
         Layout.fillWidth: true

@@ -25,7 +25,7 @@ ColumnLayout {
     // The panel this page sits in, for its unclipped overlay: the drag ghost
     // has to be able to leave the card, which clips.
     property var panel: null
-    spacing: Metrics.panelGap
+    spacing: Metrics.pageGap
     // The columns follow the panel's width, so a panel dragged wider gets
     // another column rather than wider tiles.
     readonly property int columns: Arrange.columnsFor(width, Metrics.quickGridCell, Metrics.quickGridColumns)

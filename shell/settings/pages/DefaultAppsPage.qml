@@ -9,7 +9,7 @@ import qs.shell.components
 // starts with Super+B, Super+E and Super+Enter.
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     readonly property var icons: ({
         browser: "󰖟", email: "󰇮", files: Icons.folder, terminal: "󰆍", text: "󰈙",

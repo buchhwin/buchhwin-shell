@@ -8,7 +8,7 @@ import "../../../services/wallpaper/WallpaperLogic.js" as Logic
 
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
     // "" = all monitors, otherwise a screen name.
     property string target: ""
     readonly property string targetPath: target.length ? WallpaperService.currentFor(target) : WallpaperService.current
@@ -19,8 +19,8 @@ ColumnLayout {
     GridLayout {
         Layout.fillWidth: true
         columns: width >= Metrics.wideWidth - Metrics.settingsSidebarWidth ? 2 : 1
-        columnSpacing: Metrics.spaceLg
-        rowSpacing: Metrics.spaceLg
+        columnSpacing: Metrics.pageGap
+        rowSpacing: Metrics.pageGap
 
         SettingsSection {
             Layout.fillWidth: true

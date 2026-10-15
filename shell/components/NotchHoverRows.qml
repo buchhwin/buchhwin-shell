@@ -45,7 +45,7 @@ ColumnLayout {
     // touched by them.
     readonly property var buttonOptions: [
         { value: "none", label: "Nothing" }, { value: "dashboard", label: "Dashboard" },
-        { value: "controlCenter", label: "Quick settings" }, { value: "notifications", label: "Notifications" },
+        { value: "controlCenter", label: "Control center" }, { value: "notifications", label: "Notifications" },
         { value: "launcher", label: "Launcher" }, { value: "clipboard", label: "Clipboard" },
         { value: "mediaPopup", label: "Media" }, { value: "playPause", label: "Play / pause" },
         { value: "overview", label: "Workspaces overview" }

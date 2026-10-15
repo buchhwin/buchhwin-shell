@@ -27,7 +27,7 @@ PopupPanel {
 
     body: ColumnLayout {
         id: media
-        spacing: Metrics.panelGap
+        spacing: Metrics.pageGap
         readonly property var player: MprisService.active
         readonly property bool seekable: player !== null && player.lengthSupported && player.length > 0
         readonly property var entry: player && player.desktopEntry ? DesktopEntries.byId(player.desktopEntry) : null

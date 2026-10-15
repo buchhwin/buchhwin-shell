@@ -9,7 +9,7 @@ import qs.shell.components
 // Dialogs opened here return to this page.
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     readonly property var back: ({ page: "network" })
 

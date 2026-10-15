@@ -7,7 +7,7 @@ import qs.shell.components
 
 ColumnLayout {
     id: page
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     // Idle, lid and automatic profile settings exist once for battery and
     // once for the charger; the switch below picks the set these rows edit.

@@ -17,9 +17,12 @@ Text {
         : role === "pageTitle" ? Typography.pageTitleSize
         : role === "display" ? Typography.displaySize
         : Typography.bodySize
-    font.weight: role === "title" || role === "headline" || role === "pageTitle" ? Typography.regular
+    // A card's title in medium: at regular a list's name ("Networks",
+    // "Output") was the rows' own text a few pixels bigger and read as one
+    // more row. Headlines stay regular; they lead on size alone.
+    font.weight: role === "headline" || role === "pageTitle" ? Typography.regular
         : role === "display" ? Typography.light
-        : role === "label" ? Typography.medium
+        : role === "title" || role === "label" ? Typography.medium
         : Typography.regular
     font.letterSpacing: role === "label" ? Typography.captionTracking : 0
     font.capitalization: role === "label" ? Font.AllUppercase : Font.MixedCase

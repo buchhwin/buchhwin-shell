@@ -6,7 +6,7 @@ import qs.shell.components
 
 ColumnLayout {
     readonly property CalendarDemand calendarDemand: CalendarDemand {}
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     SettingsSection {
         Layout.fillWidth: true

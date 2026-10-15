@@ -6,7 +6,7 @@ import qs.shell.components
 
 ColumnLayout {
     id: root
-    spacing: Metrics.panelGap
+    spacing: Metrics.pageGap
     Component.onCompleted: BluetoothService.setDiscovering(true)
     Component.onDestruction: BluetoothService.setDiscovering(false)
 

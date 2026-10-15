@@ -4,10 +4,11 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import qs.shell.popups
 
 ColumnLayout {
     id: root
-    spacing: Metrics.panelGap
+    spacing: Metrics.pageGap
     Component.onCompleted: NetworkService.setScanning(true)
     Component.onDestruction: NetworkService.setScanning(false)
 
@@ -88,20 +89,10 @@ ColumnLayout {
         }
     }
 
-    SectionLabel { text: "VPN"; visible: NetworkService.vpns.length > 0; Layout.leftMargin: Metrics.spaceSm }
-    Repeater {
-        model: NetworkService.vpns
-        ListRow {
-            required property var modelData
-            Layout.fillWidth: true
-            icon: "󰖂"
-            title: modelData.name
-            subtitle: modelData.active ? "Connected" : "Off"
-            active: modelData.active
-            ShellToggle { checked: modelData.active; accessibleName: modelData.name; onToggled: value => NetworkService.setVpn(modelData.uuid, value) }
-            onClicked: NetworkService.setVpn(modelData.uuid, !modelData.active)
-        }
-    }
+    // The tunnels in a titled card like the networks above them, and the
+    // same list the network popup shows: a label over bare rows read as a
+    // different kind of list from the card beside it.
+    VpnList { Layout.fillWidth: true }
 
     ShellButton {
         icon: Icons.settings; compact: true; variant: "ghost"

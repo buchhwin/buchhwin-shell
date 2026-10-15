@@ -5,7 +5,7 @@ import qs.services
 import qs.shell.components
 
 ColumnLayout {
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     // A touchpad may have been connected since the page was last on screen,
     // and VS Code's own scroll setting may have changed.

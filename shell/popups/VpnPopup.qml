@@ -19,7 +19,7 @@ PopupPanel {
     onWantedChanged: if (wanted) NetworkService.refresh()
 
     body: ColumnLayout {
-        spacing: Metrics.panelGap
+        spacing: Metrics.pageGap
 
         VpnList { Layout.fillWidth: true; showLabel: false }
 

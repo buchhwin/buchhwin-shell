@@ -164,7 +164,7 @@ Variants {
                      to: window.expanded ? window.overviewHeight
                          : window.displaying ? window.displayHeight : NotchService.bodyHeight }
         NotchValue { id: bodyEar; minimum: Metrics.notchEar; to: window.expanded ? Metrics.notchExpandedEar : Metrics.notchEar }
-        NotchValue { id: bodyRadius; minimum: NotchService.bodyRadius; to: window.expanded ? Metrics.notchExpandedRadius : NotchService.bodyRadius }
+        NotchValue { id: bodyRadius; minimum: NotchService.drawnBodyRadius; to: window.expanded ? Metrics.notchExpandedRadius : NotchService.drawnBodyRadius }
         // The body's geometry, shared by the outline, the pill and the shadow.
         readonly property var bodyShape: Logic.geometry(window.width / 2,
             bodyWidth.value, bodyHeight.value, bodyEar.value, bodyRadius.value)
@@ -393,7 +393,7 @@ Variants {
         // The caster reaches above the top edge by the corner radius, so the
         // notch's square top corners cast nothing onto the screen; the pill
         // is detached and rounded all the way round.
-        readonly property real shadowReach: NotchService.pill ? 0 : NotchService.bodyRadius
+        readonly property real shadowReach: NotchService.pill ? 0 : NotchService.drawnBodyRadius
         Rectangle {
             id: shadowCaster
             visible: false
@@ -454,7 +454,7 @@ Variants {
             y: window.shapeTop
             width: Math.max(0, window.bodyShape.right - window.bodyShape.left)
             height: Math.max(0, window.bodyShape.bottom)
-            radius: Logic.pillRadius(height, NotchService.bodyRadius, Metrics.notchExpandedRadius, window.expanded)
+            radius: Logic.pillRadius(height, NotchService.drawnBodyRadius, Metrics.notchExpandedRadius, window.expanded)
             color: Colors.notch
         }
 

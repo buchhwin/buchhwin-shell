@@ -23,7 +23,7 @@ PopupPanel {
     onWantedChanged: if (wanted) NetworkService.refresh()
 
     body: ColumnLayout {
-        spacing: Metrics.panelGap
+        spacing: Metrics.pageGap
         Component.onCompleted: NetworkService.setScanning(true)
         Component.onDestruction: NetworkService.setScanning(false)
 

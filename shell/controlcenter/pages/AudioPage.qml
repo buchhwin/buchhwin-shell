@@ -10,8 +10,8 @@ import qs.shell.components
 GridLayout {
     id: root
     columns: width >= Metrics.compactWidth ? 2 : 1
-    columnSpacing: Metrics.panelGap
-    rowSpacing: Metrics.panelGap
+    columnSpacing: Metrics.pageGap
+    rowSpacing: Metrics.pageGap
 
     CardSection {
         Layout.fillWidth: true

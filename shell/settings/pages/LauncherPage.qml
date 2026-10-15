@@ -10,7 +10,7 @@ import "../../../services/launcher/Pinned.js" as Pinned
 // Settings > Launcher: what the launcher does besides finding apps.
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
     readonly property string engine: SettingsService.value("launcher.searchEngine")
     readonly property string modeOrder: SettingsService.value("launcher.modeOrder")
     readonly property var modeIds: LauncherService.allModes.map(mode => mode.id)

@@ -12,7 +12,7 @@ import "../../../services/wallpaper/WallpaperLogic.js" as WallpaperLogic
 // into the theme - which needs root and stays an explicit step.
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     // The wallpaper the greeter will get. Empty is "the one this session has",
     // which is what the installer already falls back to; a path pins it.

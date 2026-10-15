@@ -20,7 +20,7 @@ PopupPanel {
     onFooterClicked: PanelService.open("settings", { page: "audio" })
 
     body: ColumnLayout {
-        spacing: Metrics.panelGap
+        spacing: Metrics.pageGap
 
         CardSection {
             Layout.fillWidth: true

@@ -38,6 +38,10 @@ Singleton {
     // the theme's own sizes.
     readonly property int bodyHeight: NotchLogic.bodySize(SettingsService.value("notch.bodyHeight"), NotchLogic.BODY_HEIGHT, Metrics.notchHeight)
     readonly property int bodyRadius: NotchLogic.bodySize(SettingsService.value("notch.bodyRadius"), NotchLogic.BODY_RADIUS, Metrics.notchRadius)
+    // The radius the body is drawn with: the setting under the shell corner
+    // scale, as every other corner is (Metrics.cornerScale, 1 at the designed
+    // 20). `bodyRadius` stays the stored number, which is what a preset saves.
+    readonly property int drawnBodyRadius: Math.round(bodyRadius * Metrics.cornerScale)
     readonly property int bodyPadding: NotchLogic.bodySize(SettingsService.value("notch.bodyPadding"), NotchLogic.BODY_PADDING, Metrics.notchPadding)
     // ---- the size of the two shapes ---------------------------------------
     // Both are dragged in the layout editor: the strip only horizontally - its

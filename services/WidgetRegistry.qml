@@ -83,7 +83,7 @@ Singleton {
                   defaults: { anchorX: "left", x: 0.15, y: 0.95, style: "capsule" } },
         // A way into the control center that is not a keyboard shortcut, and a
         // readout of what is on while it is closed.
-        "quickPanel": { pillDisplay: "icon", label: "Quick settings", icon: "󰕮", category: "desktop",
+        "quickPanel": { pillDisplay: "icon", label: "Control center", icon: "󰕮", category: "desktop",
                         file: "QuickPanelWidget.qml", sizes: ["small", "medium", "large"],
                         action: "controlCenter", available: true,
                         defaults: { anchorX: "right", x: 0.76, y: 0.02, style: "capsule" } },

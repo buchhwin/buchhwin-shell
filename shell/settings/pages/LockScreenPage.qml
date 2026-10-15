@@ -12,7 +12,7 @@ import "../../../services/fingerprint/FingerprintLogic.js" as FingerprintLogic
 // with Delete and a guided enrollment.
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     // Finger selector shown before an enrollment starts.
     property bool enrollOpen: false

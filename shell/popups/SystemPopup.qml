@@ -17,7 +17,7 @@ PopupPanel {
     onFooterClicked: SystemStatsService.openMonitor()
 
     body: ColumnLayout {
-        spacing: Metrics.panelGap
+        spacing: Metrics.pageGap
         Component.onCompleted: { SystemStatsService.track(); SystemStatsService.trackProcesses() }
         Component.onDestruction: { SystemStatsService.untrack(); SystemStatsService.untrackProcesses() }
 

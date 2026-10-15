@@ -9,8 +9,8 @@ import "../../../services/appearance/AnimationLogic.js" as AnimationLogic
 GridLayout {
     id: root
     columns: width >= Metrics.wideWidth - Metrics.settingsSidebarWidth ? 2 : 1
-    columnSpacing: Metrics.spaceLg
-    rowSpacing: Metrics.spaceLg
+    columnSpacing: Metrics.pageGap
+    rowSpacing: Metrics.pageGap
 
     readonly property var accents: Colors.accentChoices
     readonly property var fontFamilies: {

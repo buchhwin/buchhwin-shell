@@ -9,7 +9,7 @@ import qs.shell.components
 // everything and powers the drive off. MTP phones follow in their own card.
 ColumnLayout {
     id: root
-    spacing: Metrics.panelGap
+    spacing: Metrics.pageGap
 
     readonly property bool empty: DrivesService.drives.length === 0 && DrivesService.phones.length === 0
     // At the control center's narrowest (360) Unmount, Lock and Open beside

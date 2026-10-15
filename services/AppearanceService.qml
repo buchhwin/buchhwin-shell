@@ -30,6 +30,11 @@ Singleton {
         return known[name] || name.replace(/[_-]+/g, " ")
     }
 
+    // The accent as Hyprland's six hex digits, with the theme's fallback
+    // (Colors.accent) for anything that is not a colour.
+    readonly property string accentHex: /^#[0-9a-fA-F]{6}$/.test(SettingsService.accent)
+        ? SettingsService.accent.slice(1).toLowerCase() : "4f8ff7"
+
     function applyHyprland() {
         const blurSize = Math.round(2 + SettingsService.blurStrength * 10)
         HyprCompat.setOptions({
@@ -37,6 +42,10 @@ Singleton {
             "decoration:blur:size": blurSize,
             "decoration:rounding": SettingsService.windowRadius,
             "general:border_size": SettingsService.borderEnabled ? SettingsService.borderSize : 0,
+            // The focused window's border in the accent, at the alpha the
+            // files ship (cc). They can only ship a fixed blue, and the
+            // border stayed blue whatever the accent was (15.10.).
+            "general:col.active_border": "rgba(" + root.accentHex + "cc)",
             "general:gaps_in": SettingsService.gapsIn,
             "general:gaps_out": SettingsService.gapsOut,
             // Decided by how many screens there are, not by taste - see
@@ -113,6 +122,7 @@ Singleton {
         function onWindowRadiusChanged() { debounce.restart() }
         function onBorderEnabledChanged() { debounce.restart() }
         function onBorderSizeChanged() { debounce.restart() }
+        function onAccentChanged() { debounce.restart() }
         function onGapsInChanged() { debounce.restart() }
         function onGapsOutChanged() { debounce.restart() }
         function onAnimationModeChanged() { debounce.restart() }

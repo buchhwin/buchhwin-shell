@@ -10,7 +10,7 @@ import qs.shell.components
 // every 10 s while the page is shown.
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     PageActivity {
         onOpened: AccountsService.track()

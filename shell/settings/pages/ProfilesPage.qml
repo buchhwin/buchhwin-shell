@@ -11,7 +11,7 @@ import "../../../services/profile/ProfileLogic.js" as Profile
 // rows per profile turns the page into a wall by the second one.
 ColumnLayout {
     id: page
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     readonly property var modeOptions: LayoutService.modeNames.map(name => ({
         value: name,

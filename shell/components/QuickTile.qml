@@ -107,8 +107,9 @@ ShellCard {
         ShellText {
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
+            // The title the row form has (TileContent): a tile keeps one
+            // text size whatever shape its cell gives it.
             text: root.title
-            role: "bodyLarge"
         }
         ShellText {
             Layout.fillWidth: true
@@ -143,18 +144,14 @@ ShellCard {
         anchors.rightMargin: Metrics.spaceMd
         spacing: Metrics.spaceMd
 
-        ShellIcon {
-            Layout.preferredWidth: Metrics.iconLg + Metrics.spaceXs
-            glyph: root.icon
-            size: Metrics.iconLg
-            color: root.checked ? Colors.accentForeground : Colors.mutedText
-        }
-
-        ColumnLayout {
+        // The row's own glyph, gap and two lines (TileContent), so a tile
+        // and the rows on the page it opens read as one family.
+        TileContent {
             Layout.fillWidth: true
-            spacing: Metrics.spaceXxs
-            ShellText { Layout.fillWidth: true; text: root.title; role: "bodyLarge" }
-            ShellText { Layout.fillWidth: true; text: root.subtitle; role: "small"; muted: true; visible: text.length > 0 }
+            icon: root.icon
+            title: root.title
+            subtitle: root.subtitle
+            iconColor: root.checked ? Colors.accentForeground : Colors.mutedText
         }
 
         ColumnLayout {

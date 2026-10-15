@@ -22,7 +22,7 @@ PopupPanel {
     onFooterClicked: ColorPickerService.clearHistory()
 
     body: ColumnLayout {
-        spacing: Metrics.spaceMd
+        spacing: Metrics.pageGap
 
         ShellButton {
             focusOnTab: true

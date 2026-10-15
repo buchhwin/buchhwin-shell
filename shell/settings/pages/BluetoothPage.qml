@@ -8,7 +8,7 @@ import qs.shell.components
 // pairing dialog opened while this page is shown returns here.
 ColumnLayout {
     id: root
-    spacing: Metrics.spaceLg
+    spacing: Metrics.pageGap
 
     readonly property var adapter: BluetoothService.adapter
     readonly property var known: BluetoothService.connected.concat(BluetoothService.paired)

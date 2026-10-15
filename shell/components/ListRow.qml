@@ -97,29 +97,14 @@ Rectangle {
         anchors.rightMargin: root.compact ? Metrics.spaceMd : Metrics.spaceLg
         spacing: Metrics.spaceMd
 
-        Image {
-            visible: root.iconSource.length > 0
-            Layout.preferredWidth: Metrics.iconLg
-            Layout.preferredHeight: Metrics.iconLg
-            source: root.iconSource
-            sourceSize.width: Metrics.iconLg * 2
-            sourceSize.height: Metrics.iconLg * 2
-            fillMode: Image.PreserveAspectFit
-            // Theme icons (image://icon) must load on the GUI thread.
-            asynchronous: !String(source).startsWith("image://")
-        }
-        ShellIcon {
-            visible: root.icon.length > 0 && root.iconSource.length === 0
-            Layout.preferredWidth: Metrics.iconLg
-            glyph: root.icon
-            size: Metrics.iconMd
-            color: root.active || root.selected ? Colors.accentForeground : Colors.mutedText
-        }
-        ColumnLayout {
+        TileContent {
             Layout.fillWidth: true
-            spacing: 0
-            ShellText { Layout.fillWidth: true; text: root.title; color: root.active ? Colors.accentForeground : Colors.text }
-            ShellText { Layout.fillWidth: true; text: root.subtitle; role: "small"; muted: true; visible: text.length > 0 }
+            icon: root.icon
+            iconSource: root.iconSource
+            title: root.title
+            subtitle: root.subtitle
+            iconColor: root.active || root.selected ? Colors.accentForeground : Colors.mutedText
+            titleColor: root.active ? Colors.accentForeground : Colors.text
         }
         ShellText {
             visible: root.trailingText.length > 0
