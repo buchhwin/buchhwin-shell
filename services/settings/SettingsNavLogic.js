@@ -15,6 +15,7 @@ const PAGES = [
     { id: "profiles", icon: "󰒓", subtitle: "Profiles and the five modes each one has", title: "Profiles", keywords: "profile profiles mode modes minimal work gaming laptop docked switch automatic duplicate reset rename remove factory state profil profile modus modi wechseln automatisch duplizieren zurücksetzen umbenennen entfernen werkszustand" },
     { id: "desktop", icon: "󱂵", subtitle: "Clock, clipboard, screen recording and removable drives", title: "Desktop extras", keywords: "clock hints indicators osd volume brightness clipboard history screen recording video removable drives usb stick sd card external disk uhr hinweise anzeige zwischenablage aufnahme laufwerke" },
     { id: "widgets", subtitle: "Choose the desktop mode and arrange the widgets on your wallpaper", title: "Widgets", icon: "󰕰", keywords: "widgets desktop mode layout editor clock date weather calendar arrange move group style add remove edit modus oberfläche anordnen verschieben gruppieren stil hinzufügen entfernen bearbeiten" },
+    { id: "dock", subtitle: "Pinned and running apps at the edge of the screen", title: "Dock", icon: "\u{f1888}", keywords: "dock taskbar task bar pinned pins running apps favorites favourites autohide auto-hide intellihide hide magnification zoom edge taskleiste angeheftet laufende programme ausblenden vergrößerung rand" },
     { id: "bar", subtitle: "Choose the desktop mode, workspaces and build your own bar", title: "Bar & Notch", icon: "󰘔", keywords: "bar pills notch island desktop mode panel top leiste modus oben kerbe insel workspaces arbeitsflächen" },
     { id: "notifications", subtitle: "Popups, history and Do Not Disturb", title: "Notifications", icon: "󰂚", keywords: "dnd do not disturb popup benachrichtigungen nicht stören" },
     { id: "launcher", subtitle: "Web search and file search in the launcher", title: "Launcher", icon: "󰍉", keywords: "launcher search web engine duckduckgo google startpage wikipedia url address files plocate suche suchmaschine web adresse dateien starter" },
@@ -45,7 +46,7 @@ const GROUPS = [
     { key: "personalization", title: "Personalization", pages: ["appearance", "wallpaper", "lockScreen", "login"] },
     // Bar & Notch before Widgets: both shipped profiles run the notch, so the
     // bar page is the one in use and Widgets mostly says "hidden" there.
-    { key: "desktop", title: "Desktop", pages: ["profiles", "bar", "widgets", "desktop", "notifications", "launcher", "shortcuts"] },
+    { key: "desktop", title: "Desktop", pages: ["profiles", "bar", "widgets", "dock", "desktop", "notifications", "launcher", "shortcuts"] },
     { key: "connectivity", title: "Connectivity", pages: ["network", "bluetooth", "kdeConnect"] },
     { key: "devices", title: "Devices", pages: ["displays", "audio", "input", "power"] },
     { key: "apps", title: "Apps", pages: ["terminal", "defaultApps", "autostart"] },

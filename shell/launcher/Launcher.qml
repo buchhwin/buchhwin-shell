@@ -716,7 +716,7 @@ ShellPanel {
                         onRightClicked: if (modelData.appId) LauncherService.togglePin(modelData.appId)
                         ShellIcon {
                             visible: modelData.appId !== undefined && LauncherService.isPinned(modelData.appId)
-                            glyph: "󰐃"
+                            glyph: Icons.pin
                             size: Metrics.iconXs
                             color: Colors.accentForeground
                         }

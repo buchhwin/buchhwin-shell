@@ -276,6 +276,7 @@ hl.bind(keyFor("SUPER + K"), shell("dashboard toggle"), { description = "Dashboa
 hl.bind(keyFor("SUPER + M"), shell("powerMenu toggle"), { description = "Session menu" })
 hl.bind(keyFor("SUPER + W"), shell("overview toggle"), { description = "Overview" })
 hl.bind(keyFor("SUPER + SHIFT + W"), shell("wallpaperPicker toggle"), { description = "Wallpaper picker" })
+hl.bind(keyFor("SUPER + SHIFT + D"), shell("dock toggle"), { description = "Dock" })
 hl.bind(keyFor("SUPER + SHIFT + C"), shell("colorPicker pick"), { description = "Pick a color off the screen" })
 -- Alt+Tab switcher: releasing Alt focuses the selection (transparent, so apps
 -- still see the release; a confirm without an open switcher does nothing).
@@ -421,7 +422,7 @@ hl.layer_rule({ name = "buchhwin-scrim-noblur", match = { namespace = "^(buchhwi
 -- namespace is shared with the full-screen picking overlay that does not
 -- animate itself. One regex without a comma: the conf parser in
 -- scripts/lib/checks.py splits a layerrule at its first comma.
-hl.layer_rule({ name = "buchhwin-self-animated", match = { namespace = "^(buchhwin-(batteryPopup|bluetoothPopup|clipboard|controlCenter|dashboard|driveUnlock|emoji|eventEditor|eventsPopup|launcher|mediaPopup|networkPopup|notifications|overview|pairing|powerMenu|privacyPopup|profilePopup|settings|shortcutSheet|systemPopup|volumePopup|vpnPopup|wallpaperPicker|weatherPopup|welcome|wifiPassword|switcher|osd))$" }, no_anim = true })
+hl.layer_rule({ name = "buchhwin-self-animated", match = { namespace = "^(buchhwin-(batteryPopup|bluetoothPopup|clipboard|controlCenter|dashboard|driveUnlock|emoji|eventEditor|eventsPopup|launcher|mediaPopup|networkPopup|notifications|overview|pairing|powerMenu|privacyPopup|profilePopup|settings|shortcutSheet|systemPopup|volumePopup|vpnPopup|wallpaperPicker|weatherPopup|welcome|wifiPassword|switcher|osd|dockMenu))$" }, no_anim = true })
 -- Citrix opens its own dialogs ("disconnect / log off", class Wfica, title
 -- exactly "wfica") on a workspace of its choosing, such as 1 while the
 -- session sits on 2, which looks like a hung session. Floating, centred and

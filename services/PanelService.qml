@@ -66,7 +66,12 @@ Singleton {
     }
 
     function open(panelId, options) {
-        useFocusedScreen()
+        // `onScreen`: a panel that belongs to a place on one screen (the
+        // dock's menu, beside its icon) opens there, wherever the focus is.
+        const wanted = options && typeof options.onScreen === "string"
+            ? Quickshell.screens.find(item => item.name === options.onScreen) : null
+        if (wanted) screenName = wanted.name
+        else useFocusedScreen()
         // Switching panels: close the old one before the arguments change, so
         // it keeps its own placement (anchorX …) during its close animation.
         if (active.length && active !== panelId) active = ""

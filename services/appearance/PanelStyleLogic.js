@@ -38,7 +38,8 @@ var GROUPS = [
     { key: "popups", label: "Pill popups & dialogs" },
     { key: "pillBar", label: "Pill bar" },
     { key: "widgets", label: "Desktop widgets" },
-    { key: "osd", label: "Volume & brightness OSD" }
+    { key: "osd", label: "Volume & brightness OSD" },
+    { key: "dock", label: "Dock" }
 ]
 
 // ShellPanel ids whose group has another name. Unknown ids (pill popups,

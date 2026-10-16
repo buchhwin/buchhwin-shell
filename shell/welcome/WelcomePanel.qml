@@ -28,7 +28,7 @@ ShellPanel {
     readonly property var steps: [
         {
             icon: "󰋜", title: "Welcome",
-            text: "This is buchhwin-shell. There is no menu bar and no dock: everything has a key, and every key opens the same thing every time.",
+            text: "This is buchhwin-shell. There is no menu bar, and the dock is off until you want it: everything has a key, and every key opens the same thing every time.",
             keys: [], action: ""
         },
         {

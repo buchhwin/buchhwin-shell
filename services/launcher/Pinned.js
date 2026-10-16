@@ -76,3 +76,31 @@ function move(text, id, delta) {
     list.splice(to, 0, moved)
     return list.join(",")
 }
+
+// The dock's drag: `id` to `index` of the list it ends up in (the place it
+// is dropped on, counted without it), clamped into the list. An id that is
+// not pinned leaves the list as it is.
+function moveTo(text, id, index) {
+    const list = ids(text)
+    const name = String(id || "")
+    const from = list.indexOf(name)
+    if (from < 0) return list.join(",")
+    list.splice(from, 1)
+    const to = Math.max(0, Math.min(list.length, Math.round(Number(index) || 0)))
+    list.splice(to, 0, name)
+    return list.join(",")
+}
+
+// An app dropped among the pins: pinned at that place, or moved there when
+// it is pinned already. At the limit nothing new gets in - `full` says so
+// before, for the hint.
+function insertAt(text, id, index) {
+    const name = String(id || "")
+    if (!name.length) return ids(text).join(",")
+    if (has(text, name)) return moveTo(text, name, index)
+    const list = ids(text)
+    if (list.length >= LIMIT) return list.join(",")
+    const to = Math.max(0, Math.min(list.length, Math.round(Number(index) || 0)))
+    list.splice(to, 0, name)
+    return list.join(",")
+}

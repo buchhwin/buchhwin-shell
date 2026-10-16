@@ -5,7 +5,7 @@ import "../../services/settings/SettingsNavLogic.js" as N
 
 ShellRoot {
     Component.onCompleted: {
-        T.eq(N.PAGES.length, 26, "all pages listed")
+        T.eq(N.PAGES.length, 27, "all pages listed")
         T.ok(N.PAGES.every(page => typeof page.subtitle === "string" && page.subtitle.length > 0), "every page carries its own subtitle")
         T.ok(N.PAGES.every(page => !/\.$/.test(page.subtitle)), "a subtitle is a label, not a sentence")
         T.eq(N.ungroupedPages(), [], "every page is in exactly one group")
@@ -34,6 +34,10 @@ ShellRoot {
              "sidebar sections in their order")
         T.eq(N.step(all, "kdeConnect", 1), "displays", "Connectivity follows Desktop, nothing in between")
         T.eq(N.step(all, "calendar", 1), "accounts", "Calendar sits next to Accounts, where its calendars come from")
+        T.eq(N.step(all, "widgets", 1), "dock", "the dock follows the widgets")
+        T.eq(N.step(all, "dock", 1), "desktop", "and the desktop extras follow it")
+        T.eq(N.pageIds(N.rows("taskleiste")), ["dock"], "German finds the dock")
+        T.eq(N.pageIds(N.rows("dock")), ["profiles", "dock"], "dock finds the dock and the profiles' docked mode")
         T.eq(N.pageIds(N.rows("dashboard")), ["weather", "calendar"], "the old group name still finds weather and calendar")
         T.eq(N.pageIds(N.rows("lock fingerprint")), ["lockScreen"], "every word must match")
         // Page titles are sentence case, like the section titles under them,

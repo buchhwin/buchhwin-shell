@@ -48,6 +48,9 @@ Singleton {
     function isPinned(id) { return Pinned.has(pinnedStored, id) }
     function togglePin(id) { return SettingsService.set("launcher.pinned", Pinned.toggle(pinnedStored, id)) }
     function movePinned(id, delta) { return SettingsService.set("launcher.pinned", Pinned.move(pinnedStored, id, delta)) }
+    // The dock's drag: a pin to a place, an app pinned at one.
+    function movePinnedTo(id, index) { return SettingsService.set("launcher.pinned", Pinned.moveTo(pinnedStored, id, index)) }
+    function pinAt(id, index) { return SettingsService.set("launcher.pinned", Pinned.insertAt(pinnedStored, id, index)) }
 
     readonly property var categories: [
         { name: "All", icon: "󰀻", keys: [] },
@@ -200,6 +203,14 @@ Singleton {
             usage = Usage.record(usage, app.id, Date.now())
             usageFile.setText(Usage.serialize(usage))
         }
+    }
+
+    // One of an entry's desktop actions (New Window, a web app's "New
+    // message" …), started the way the entry is (LaunchLogic.actionContext).
+    function launchAction(app, action) {
+        const context = Launch.actionContext(app, action, appOverrides, name => Paths.script(name))
+        if (context) Quickshell.execDetached(context)
+        else if (action && typeof action.execute === "function") action.execute()
     }
 
     FileView {

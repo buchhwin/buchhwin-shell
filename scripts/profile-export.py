@@ -47,7 +47,7 @@ DROP = {
     "calendar.hiddenCalendars", "calendar.newEventCalendar",
     "display", "input.kbLayout", "input.kbVariant",
     "desktop.settingsMoveX", "desktop.settingsMoveY",
-    "power", "lock.fingerprint",
+    "power", "lock.fingerprint", "dock.screens",
 }
 # Paths that are kept, home-relative.
 PATHS = {"wallpaper.path", "wallpaper.folder", "wallpaper.slideshowFolder", "login.wallpaper", "recording.folder"}

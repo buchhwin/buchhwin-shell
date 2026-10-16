@@ -46,6 +46,9 @@ ShellRoot {
         T.eq(row(legacyRows, "Super+Left drag").title, "Move window", "mouse bind")
         T.eq(row(legacyRows, "Release Alt").title, "Switch to selected window", "release bind")
         T.eq(row(legacyRows, "Super+Shift+S").group, "screenshots", "screenshot group")
+        T.eq([S.describeExec("quickshell --path /opt/b ipc call dock toggle").title,
+              S.describeExec("quickshell --path /opt/b ipc call dock toggle").group], ["Dock", "panels"],
+             "the dock's key in the conf dialect, which has no description")
         T.eq([S.describeExec("quickshell --path /opt/b ipc call recording toggle region").title,
               S.describeExec("quickshell --path /opt/b ipc call recording toggle screen").title,
               S.describeExec("quickshell --path /opt/b ipc call recording toggle screen").group],

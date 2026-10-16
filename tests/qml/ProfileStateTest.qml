@@ -38,6 +38,9 @@ ShellRoot {
         T.ok(P.isProfileSetting("notch.bodyHeight") && P.isProfileSetting("notch.hoverMode"), "and the notch's options")
         T.ok(P.isProfileSetting("notch.displayOsd"), "a group name is matched whole (notch.displayOsd is not display.*)")
         T.ok(!P.isProfileSetting("appearance.blurStrength"), "a mode-scoped leaf is the mode's")
+        T.ok(P.isProfileSetting("dock.enabled") && P.isProfileSetting("dock.visibility") && P.isProfileSetting("panelOpacity.dock"),
+             "the dock is a profile's")
+        T.ok(P.isGlobalSetting("dock.screens") && !P.isProfileSetting("dock.screens"), "but its screens are the machine's")
         T.eq(["weather.lat", "weather.lon", "weather.locationName", "weather.autoLocate", "input.kbLayout",
               "input.kbVariant", "display.x11Scale", "display.xwaylandSharp", "onboarding.completed",
               "calendar.hiddenCalendars", "calendar.newEventCalendar", "colorPicker.history",

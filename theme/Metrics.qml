@@ -499,6 +499,38 @@ Singleton {
     // five rows and part of a sixth, so a list that scrolls looks like one.
     readonly property int selectListHeight: 220
 
+    // The dock (shell/dock/Dock.qml). The icon size and the margin from the
+    // edge are settings (dock.iconSize, dock.margin); these are the rest.
+    // Padding inside the body around the icons, and the gap between two.
+    readonly property int dockPadding: 6
+    readonly property int dockGap: 6
+    // The room before the first running app that is not pinned, where the
+    // separator line stands.
+    readonly property int dockSeparatorRoom: 10
+    readonly property int dockSeparatorLength: 28
+    // The strip at the screen edge that still takes the pointer while the
+    // dock is hidden.
+    readonly property int dockEdgeStrip: 2
+    // The name above an icon: its line and the gap to the body. The surface
+    // is this much thicker so the label never resizes it (pitfall 57).
+    readonly property int dockLabelHeight: 28
+    readonly property int dockLabelGap: 8
+    readonly property int dockLabelMaxWidth: 260
+    // Running dots: the dot, the active app's wider bar, the gap between.
+    readonly property int dockDot: 4
+    readonly property int dockDotActive: 12
+    readonly property int dockDotGap: 3
+    readonly property int dockMaxDots: 3
+    // Magnification: the icon under the pointer this much bigger, falling off
+    // over this many icon sizes.
+    readonly property real dockMagnifyScale: 1.5
+    readonly property real dockMagnifyReach: 2.5
+    // How near a window may come before it counts as touching the dock.
+    readonly property int dockCoverSlack: 4
+    // The app menu.
+    readonly property int dockMenuWidth: 300
+    readonly property int dockMenuWindows: 6
+
     // Wallpaper thumbnails.
     // The marks in a thumbnail's corners - the tick on the one that is
     // shown, the star, the slideshow tick - in Settings > Wallpaper and in the

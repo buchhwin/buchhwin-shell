@@ -75,7 +75,8 @@ Singleton {
             "popups": -1,
             "pillBar": -1,
             "widgets": -1,
-            "osd": -1
+            "osd": -1,
+            "dock": -1
         },
         "desktop": {
             "clockIndicators": true,
@@ -254,6 +255,22 @@ Singleton {
             // reason this is the only fixed thing on a search surface).
             "pinned": "",
             "showPinned": true
+        },
+        // The dock (shell/dock/Dock.qml): its own block next to the notch,
+        // the bar and the widgets, in any desktop mode, and off until it is
+        // switched on. Its apps are the launcher's pins (launcher.pinned) and
+        // what has windows. `screens` is a comma-string of output names, ""
+        // for all - this file cannot store a list - and the machine's, not a
+        // profile's (ProfileLogic.GLOBAL_SETTINGS).
+        "dock": {
+            "enabled": false,
+            "visibility": "intellihide",
+            "position": "bottom",
+            "iconSize": 48,
+            "margin": 8,
+            "screens": "",
+            "showRunning": true,
+            "magnification": false
         },
         "autostart": {
             "apps": "",
@@ -475,6 +492,10 @@ Singleton {
         "appearance.statusColors": ["status", "accent"],
         "wallpaper.order": ["sequential", "random"],
         "notch.hoverMode": ["hover", "click", "off"],
+        "dock.visibility": ["always", "intellihide", "hidden"],
+        "dock.position": ["bottom", "left", "right"],
+        "dock.iconSize": [40, 48, 56, 64],
+        "dock.margin": [0, 4, 8, 16],
         "notch.shape": ["notch", "pill"],
         "notch.clickAction": ["dashboard", "expand"],
         "notch.osdStyle": ["ring", "bar"],

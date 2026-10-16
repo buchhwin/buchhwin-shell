@@ -189,7 +189,7 @@ var GLOBAL_SETTINGS = ["configVersion", "notch.headerAdopted", "desktop.quickSiz
                        "colorPicker.history", "wallpaper.recentFolders",
                        "display", "input.kbLayout", "input.kbVariant",
                        "desktop.settingsMoveX", "desktop.settingsMoveY",
-                       "power", "lock.fingerprint"]
+                       "power", "lock.fingerprint", "dock.screens"]
 
 function isGlobalSetting(path) {
     const text = String(path || "")

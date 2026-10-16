@@ -70,6 +70,20 @@ ShellRoot {
         T.eq(Pinned.move("a,b,c", "c", 1), "a,b,c", "nor the last down")
         T.eq(Pinned.move("a,b,c", "gone", 1), "a,b,c", "and one that is not pinned moves nowhere")
 
+        // ---- the dock's drag ---------------------------------------------------
+        T.eq(Pinned.moveTo("a,b,c", "a", 2), "b,c,a", "to the end")
+        T.eq(Pinned.moveTo("a,b,c", "c", 0), "c,a,b", "to the front")
+        T.eq(Pinned.moveTo("a,b,c", "b", 1), "a,b,c", "to where it is: unchanged")
+        T.eq(Pinned.moveTo("a,b,c", "x", 0), "a,b,c", "an id that is not pinned changes nothing")
+        T.eq(Pinned.moveTo("a,b,c", "a", 9), "b,c,a", "an index past the end is the end")
+        T.eq(Pinned.moveTo("a,b,c", "c", -3), "c,a,b", "and one before the start the start")
+        T.eq(Pinned.insertAt("a,b", "c", 1), "a,c,b", "a new app goes where it was dropped")
+        T.eq(Pinned.insertAt("a,b", "a", 2), "b,a", "a pinned one is moved instead")
+        T.eq(Pinned.insertAt("a,b", "", 0), "a,b", "no id: nothing")
+        const ten = "p0,p1,p2,p3,p4,p5,p6,p7,p8,p9"
+        T.eq(Pinned.insertAt(ten, "x", 0), ten, "at the limit nothing new gets in")
+        T.eq(Pinned.insertAt(ten, "p9", 0), "p9,p0,p1,p2,p3,p4,p5,p6,p7,p8", "but a pinned one still moves")
+
         T.finish("PinnedTest")
     }
 }

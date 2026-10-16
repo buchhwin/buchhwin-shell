@@ -135,7 +135,15 @@ PanelWindow {
     // The notch's anchor is its centre, which is the clock again: a panel
     // that does not follow the clock does not follow that one either.
     readonly property bool notchAnchor: !!(openArgs && openArgs.fromNotch)
-    readonly property real anchorX: spotAlong >= 0 && !barVertical ? spotAlong
+    // A panel that stands beside what opened it whatever the bar or the
+    // notch say (the dock's menu): no bar spot, never out of the notch.
+    property bool followBarSpot: true
+    property bool outOfNotch: true
+    // Beside a thing on the left or the right edge (a side dock): the card's
+    // near edge, with anchorY for its height.
+    readonly property real anchorLeft: argNumber("anchorLeft")
+    readonly property real anchorRight: argNumber("anchorRight")
+    readonly property real anchorX: spotAlong >= 0 && !barVertical && followBarSpot ? spotAlong
         : argNumber("anchorX") >= 0 && (followClock || !notchAnchor) ? argNumber("anchorX")
         : followClock && placement === "top-right" && clockCentre >= 0 && clockCentre < screenW * 2 / 3
             ? clockCentre : -1
@@ -144,7 +152,7 @@ PanelWindow {
     // The third anchor concept, for a bar that runs down the screen: "beside
     // me, centred on this height". The x follows from which side the bar is
     // on, so it needs no second number.
-    readonly property real anchorY: spotAlong >= 0 && barVertical ? spotAlong : argNumber("anchorY")
+    readonly property real anchorY: spotAlong >= 0 && barVertical && followBarSpot ? spotAlong : argNumber("anchorY")
 
     // Where the bar says panels open, when it says anything: "widget" leaves
     // the pill's own anchor alone, the other three pin every panel to a place
@@ -173,7 +181,7 @@ PanelWindow {
     // with square top corners and the notch's ears, and the notch makes way
     // for it while it is open. Dialogs in the middle of the screen, a panel
     // the user drags and the overview are left where they are.
-    readonly property bool fromNotch: NotchService.panelsFromNotch && notchOrigin !== null && notchOrigin !== undefined
+    readonly property bool fromNotch: outOfNotch && NotchService.panelsFromNotch && notchOrigin !== null && notchOrigin !== undefined
         && showCard && !movable && !barVertical
         && (placement === "top-right" || placement === "top-center")
     readonly property int earSize: Metrics.notchExpandedEar
@@ -600,6 +608,8 @@ PanelWindow {
             readonly property real targetX: window.fromNotch ? Math.max(window.leftOffset + window.earSize,
                     Math.min(window.screenW - targetWidth - window.rightOffset - window.earSize, (window.screenW - targetWidth) / 2))
                 : window.placement === "center" ? (window.screenW - targetWidth) / 2
+                : window.anchorLeft >= 0 ? Math.max(0, Math.min(window.screenW - targetWidth, window.anchorLeft))
+                : window.anchorRight >= 0 ? Math.max(0, Math.min(window.screenW - targetWidth, window.anchorRight - targetWidth))
                 : window.anchorY >= 0
                     ? (window.barAtRight ? Math.max(window.leftOffset, window.screenW - window.rightOffset - targetWidth)
                                          : window.leftOffset)

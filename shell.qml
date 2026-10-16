@@ -13,6 +13,7 @@ import qs.shell.dashboard
 import qs.shell.settings
 import qs.shell.bar
 import qs.shell.notch
+import qs.shell.dock
 import qs.shell.network
 import qs.shell.bluetooth
 import qs.shell.drives
@@ -33,6 +34,7 @@ import "services/notch/NotchLogic.js" as NotchLogic
 import "services/appearance/AnimationLogic.js" as AnimationLogic
 import "services/shortcuts/ShellShortcuts.js" as ShellShortcuts
 import "services/display/DisplayLogic.js" as DisplayLogic
+import "services/dock/DockLogic.js" as DockLogic
 
 ShellRoot {
     id: root
@@ -85,6 +87,8 @@ ShellRoot {
     // A track change in the notch, for a few seconds. It has no surface of its
     // own: with no notch, or with the switch off, nothing happens.
     NotchTrackChange {}
+    // The dock: no surfaces while it is off (Dock.qml).
+    Dock {}
 
     ScrimLayer {}
 
@@ -591,6 +595,38 @@ ShellRoot {
         function close(): void { PanelService.close("overview") }
     }
 
+    // The dock (shell/dock/Dock.qml, DockService). `toggle` is Super+Shift+D:
+    // an off dock is switched on, one the key showed goes again, any other is
+    // shown with the keyboard on it. `get` and `rects` are counts, flags and
+    // places - never an app's name or a window's title.
+    IpcHandler {
+        id: dockIpc
+        target: "dock"
+        function toggle(): void {
+            if (DockService.toggleFromKey() === "on") osd.showMessage("Dock on", Icons.dock)
+        }
+        function reveal(): void { DockService.reveal() }
+        function conceal(): void { DockService.conceal() }
+        function setEnabled(on: bool): bool { return SettingsService.set("dock.enabled", on) }
+        function setOption(key: string, value: string): bool {
+            const parsed = DockLogic.optionValue(key, value)
+            return parsed !== null && SettingsService.set("dock." + key, parsed)
+        }
+        // By index, as `rects` lists them.
+        function activate(index: int): bool {
+            const app = DockService.items[index]
+            return app ? DockService.activate(app.key) : false
+        }
+        function menu(index: int): bool {
+            const app = DockService.items[index]
+            const name = DockLogic.revealTarget(DockService.focusedName(), DockService.screenNames)
+            const list = DockService.rectsOn[name] || []
+            return app && list[index] ? DockService.openMenu(app.key, name, list[index]) : false
+        }
+        function rects(): string { return DockService.describeRects() }
+        function get(): string { return DockService.describe() }
+    }
+
     IpcHandler {
         id: gesturesIpc
         target: "gestures"
@@ -962,6 +998,13 @@ ShellRoot {
     PrivacyPopup {}
     SystemPopup {}
     ProfilePopup {}
+    // Only while the dock is on: a panel is built at the start whether it
+    // opens or not, and this one has nothing to open without a dock
+    // (nested, 16.10.: 5-10 MB with the dock off).
+    LazyLoader {
+        active: SettingsService.value("dock.enabled") === true
+        DockMenu {}
+    }
     ColorPickerPopup {}
     ColorPickerOverlay {}
     IdentifyOverlay {}
@@ -980,7 +1023,7 @@ ShellRoot {
         overview: overviewIpc, wallpaperPicker: wallpaperPickerIpc, colorPicker: colorPickerIpc,
         switcher: switcherIpc, clipboard: clipboardIpc, emoji: emojiIpc, recording: recordingIpc,
         workspaces: workspacesIpc, kbdBacklight: kbdBacklightIpc, brightness: brightnessIpc,
-        gestures: gesturesIpc
+        gestures: gesturesIpc, dock: dockIpc
     })
     function runShortcut(name) {
         const call = ShellShortcuts.parse(name)

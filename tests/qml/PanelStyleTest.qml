@@ -12,7 +12,7 @@ ShellRoot {
              ["popups", "popups", "popups", "popups", "popups", "popups"], "dialogs, pill popups and unknown ids share a group")
         T.eq([P.groupFor("pillBar"), P.groupFor("osd"), P.groupFor("widgets"), P.groupFor("notificationPopups")],
              ["pillBar", "osd", "widgets", "notificationPopups"], "surface groups")
-        T.eq(P.GROUPS.length, 14, "all groups listed")
+        T.eq(P.GROUPS.length, 15, "all groups listed")
         T.ok(P.GROUPS.every(group => group.label.length > 0 && P.groupFor(group.key) === group.key), "every group has a label and maps to itself")
 
         T.near(P.effectiveOpacity("controlCenter", -1, 0.74), 0.74, "default follows the global value")

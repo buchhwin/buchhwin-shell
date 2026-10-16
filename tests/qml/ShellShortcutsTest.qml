@@ -14,7 +14,7 @@ ShellRoot {
         T.eq([S.runsOn("launcher.toggle", true), S.runsOn("launcher.toggle", false),
               S.runsOn("switcher.confirm", true), S.runsOn("switcher.confirm", false)],
              [true, false, false, true], "a key acts on press, the confirm on release")
-        T.eq(S.names().length, 51, "26 shell actions, 2 x 9 workspace keys and 7 swipes")
+        T.eq(S.names().length, 52, "27 shell actions, 2 x 9 workspace keys and 7 swipes")
         T.ok(S.names().indexOf("brightness.up") >= 0 && S.names().indexOf("brightness.down") >= 0, "the brightness keys")
         T.ok(S.names().indexOf("gestures.run.closePanel") >= 0, "the swipes")
         T.ok(S.names().indexOf("power.lidClosed") < 0, "the lid switches stay on exec")

@@ -219,4 +219,21 @@ Singleton {
     // A preview dropped on another workspace hides until the windows are read
     // again, and comes back after this long if the move never happened.
     readonly property int overviewSentTimeout: 2000
+
+    // The dock (shell/dock/Dock.qml). How long the pointer rests on the edge
+    // before a hidden dock comes, and how long it stays after the pointer
+    // left - or after a window came over it, shorter, so a window opening
+    // under it does not flicker it. Waits, not motion: not scaled.
+    readonly property int dockRevealDelay: 180
+    readonly property int dockHideDelay: 450
+    readonly property int dockCoverDelay: 150
+    // The windows are read again this long after the last compositor event,
+    // and every this long while a floating window - which moves without an
+    // event - is on a dock's workspace.
+    readonly property int dockCoverRefresh: 120
+    readonly property int dockCoverPoll: 1000
+    // The app's name over its icon.
+    readonly property int dockLabelDelay: 350
+    // Sliding in and out.
+    readonly property int dockSlide: travel(220)
 }

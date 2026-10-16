@@ -19,7 +19,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 AREAS = ["shell/notch", "shell/bar", "shell/widgets", "shell/overview", "shell/switcher",
-         "shell/notifications", "shell/osd"]
+         "shell/notifications", "shell/osd", "shell/dock"]
 FILES = ["shell.qml", "shell/popups/MediaPopup.qml", "shell/components/MediaCard.qml",
          "shell/components/NotchHoverRows.qml", "shell/components/ScrimLayer.qml"]
 

@@ -120,11 +120,17 @@ PanelWindow {
         } : null)
     }
 
-    readonly property var place: fromNotch !== null ? fromNotch
-        : Origin.atBottom(boxWidth, boxHeight,
+    // A dock shown at the bottom of this screen: the box stands above it
+    // rather than on it. Read only while the dock is on, so an OSD never
+    // starts the dock's service.
+    readonly property real dockLift: SettingsService.value("dock.enabled") === true ? DockService.liftFor(screenName) : 0
+    readonly property var bottomPlace: Origin.atBottom(boxWidth, boxHeight,
                           targetScreen ? targetScreen.width : 0,
                           targetScreen ? targetScreen.height : 0,
-                          Metrics.osdBottomMargin, Metrics.screenMargin)
+                          Math.max(Metrics.osdBottomMargin, dockLift + Metrics.spaceMd), Metrics.screenMargin)
+    readonly property var place: fromNotch !== null
+        ? (barAtBottom && dockLift > 0 ? { x: fromNotch.x, y: Math.max(0, fromNotch.y - dockLift) } : fromNotch)
+        : bottomPlace
 
     screen: targetScreen
     // Only once there is somewhere to be: a layer surface that is already

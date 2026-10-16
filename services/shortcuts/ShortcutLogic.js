@@ -33,7 +33,7 @@ var modifiers = [
 var titleGroups = {
     "Terminal": "apps", "Web browser": "apps", "File manager": "apps",
     "Launcher": "panels", "Control center": "panels", "Settings": "panels", "Notification center": "panels",
-    "Emoji picker": "panels", "Wallpaper picker": "panels", "Profiles and modes": "panels",
+    "Emoji picker": "panels", "Wallpaper picker": "panels", "Profiles and modes": "panels", "Dock": "panels",
     "All keyboard shortcuts": "panels", "Pick a color off the screen": "panels",
     "Desktop mode: widgets, bar, notch": "workspaces", "Mode: minimal, work, gaming, laptop, docked": "workspaces",
     "Dashboard": "panels", "Session menu": "panels", "Overview": "panels", "Clipboard history": "panels",
@@ -53,7 +53,7 @@ var panelTitles = {
     launcher: "Launcher", controlCenter: "Control center", settings: "Settings", notifications: "Notification center",
     dashboard: "Dashboard", powerMenu: "Session menu", overview: "Overview", clipboard: "Clipboard history",
     editor: "Layout editor", emoji: "Emoji picker", wallpaperPicker: "Wallpaper picker",
-    profile: "Profiles and modes", shortcuts: "All keyboard shortcuts"
+    profile: "Profiles and modes", shortcuts: "All keyboard shortcuts", dock: "Dock"
 }
 
 var keyLabels = {

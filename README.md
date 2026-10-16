@@ -26,7 +26,8 @@ https://github.com/user-attachments/assets/467c2b76-ef77-41a0-a527-854d903a536b
 ## What it is
 
 - **A quiet desktop.** One shape at a time: a notch at the top that expands on hover,
-  a bar of pills on any edge, or free-floating widgets.
+  a bar of pills on any edge, or free-floating widgets. An optional dock with your
+  pinned and running apps hides as soon as a window touches it.
 - **Panels for everything:** launcher (apps, files, commands, calculator, emoji),
   control center, dashboard with weather and calendar, notifications, clipboard
   history and a live workspace overview.
@@ -132,6 +133,7 @@ zsh and Starship setup and backs up existing files.
 | `Super` `Shift` `R` | Record a region (again to stop) |
 | `Super` `Shift` `C` | Pick a color off the screen |
 | `Super` `Shift` `W` | Wallpaper picker |
+| `Super` `Shift` `D` | Dock (turns it on, then shows it) |
 | `Super` `P` · `Alt` `P` | Profiles and modes · next mode |
 | `Super` `Alt` `D` | Desktop shape: widgets → bar → notch |
 | `Super` `Alt` `E` | Layout editor |

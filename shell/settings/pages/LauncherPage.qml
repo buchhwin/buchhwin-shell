@@ -156,7 +156,7 @@ ColumnLayout {
             Layout.fillWidth: true
             visible: LauncherService.pinnedApps.length === 0
             row: true
-            icon: "󰐃"
+            icon: Icons.pin
             title: "Nothing pinned yet"
         }
     }
