@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Hand text an X11 program copies on to the Wayland clipboard.
+"""Hand what an X11 program copies - text or a picture - on to the Wayland clipboard.
 
 Hyprland mirrors the clipboard between Wayland and XWayland, but an X11
 program that takes the clipboard while none of its windows has the focus is
@@ -9,15 +9,21 @@ window has it. Text copied in Citrix could not be pasted here (16.10.; the
 X11 clipboard held it, the Wayland one still the previous picture).
 
 This watches the X11 CLIPBOARD through XFixes and, when its owner changes,
-reads the text with xclip and hands it to wl-copy - only when it differs from
-what the Wayland clipboard already offers, which is also what keeps Hyprland's
-own mirror (Wayland to X11, whenever an X11 window gets the focus) from coming
-back here as a change. An X11 owner that goes away with text this put there
-(a password manager clearing its copy) clears the Wayland copy too.
+reads what it offers with xclip and hands it to wl-copy - only when it differs
+from what the Wayland clipboard already offers, which is also what keeps
+Hyprland's own mirror (Wayland to X11, whenever an X11 window gets the focus)
+from coming back here as a change. An X11 owner that goes away with something
+this put there (a password manager clearing its copy) clears the Wayland copy
+too.
 
-Text only. Quiet: without xclip, wl-copy or an X display it waits and prints
-nothing, and a display that goes away ends it without a word (the shell's log
-is checked for warnings).
+Text wins when both are offered (a spreadsheet's cells come as text and as a
+picture of them); a picture alone goes over as PNG or JPEG as offered, and a
+BMP or TIFF - what Windows programs hand out - is turned into PNG first, which
+Wayland programs take (with Pillow; without it, as it came).
+
+Quiet: without xclip, wl-copy or an X display it waits and prints nothing,
+and a display that goes away ends it without a word (the shell's log is
+checked for warnings).
 
   x11-clipboard-bridge.py --display :1
 """
@@ -34,31 +40,64 @@ import sys
 import time
 
 TIMEOUT = 2
+# A picture can be several megabytes, and the owner sends it in pieces.
+IMAGE_TIMEOUT = 8
 SETTLE = 0.12
+TEXT_TARGETS = ("UTF8_STRING", "text/plain;charset=utf-8", "STRING", "TEXT")
+IMAGE_TARGETS = ("image/png", "image/jpeg", "image/bmp", "image/x-bmp", "image/tiff")
+TO_PNG = ("image/bmp", "image/x-bmp", "image/tiff")
+TEXT_MIME = "text/plain;charset=utf-8"
 
 
 def digest(data):
     return hashlib.sha256(data).hexdigest() if data is not None else None
 
 
-def decide(x11_text, wayland_text, bridged, owner_gone):
+def pick(targets):
+    """(X11 target to read, MIME type to hand over) for what an owner offers,
+    text first; None when it offers neither."""
+    offered = set(targets)
+    for target in TEXT_TARGETS:
+        if target in offered:
+            return target, TEXT_MIME
+    for target in IMAGE_TARGETS:
+        if target in offered:
+            return target, "image/png" if target in TO_PNG else target
+    return None
+
+
+def to_png(data):
+    """A BMP or TIFF as PNG; None when Pillow is missing or cannot read it."""
+    try:
+        import io
+        from PIL import Image
+        with Image.open(io.BytesIO(data)) as image:
+            out = io.BytesIO()
+            image.save(out, format="PNG")
+            return out.getvalue()
+    except Exception:
+        return None
+
+
+def decide(x11_data, wayland_data, bridged, owner_gone):
     """What to do with one change: "copy", "clear" or "skip".
 
-    x11_text / wayland_text are the bytes each side offers as text (None when
-    it offers none), bridged the digest of the last text this handed over.
+    x11_data / wayland_data are the bytes each side offers in the type that
+    is handed over (None when it offers none), bridged the digest of the
+    last thing this handed over in that type.
     """
     if owner_gone:
-        return "clear" if bridged is not None and digest(wayland_text) == bridged else "skip"
-    if not x11_text:
+        return "clear" if bridged is not None and digest(wayland_data) == bridged else "skip"
+    if not x11_data:
         return "skip"
-    if x11_text == wayland_text:
+    if x11_data == wayland_data:
         return "skip"
     return "copy"
 
 
-def run(command, env=None):
+def run(command, env=None, timeout=TIMEOUT):
     try:
-        result = subprocess.run(command, capture_output=True, timeout=TIMEOUT, env=env)
+        result = subprocess.run(command, capture_output=True, timeout=timeout, env=env)
     except (OSError, subprocess.SubprocessError):
         return None
     return result.stdout if result.returncode == 0 else None
@@ -69,7 +108,7 @@ def hand_over(command, data=None):
     open in it, or waiting for its output would wait for that."""
     try:
         result = subprocess.run(command, input=data, stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL, timeout=TIMEOUT)
+                                stderr=subprocess.DEVNULL, timeout=IMAGE_TIMEOUT)
     except (OSError, subprocess.SubprocessError):
         return False
     return result.returncode == 0
@@ -84,6 +123,15 @@ class XFixesSelectionNotifyEvent(ctypes.Structure):
 
 class XEvent(ctypes.Union):
     _fields_ = [("type", ctypes.c_int), ("selection", XFixesSelectionNotifyEvent), ("pad", ctypes.c_long * 24)]
+
+
+def wayland(mime):
+    """What the Wayland clipboard offers in this type, as it is (no newline
+    taken off a picture)."""
+    command = ["wl-paste", "--type", mime]
+    if mime == TEXT_MIME:
+        command[1:1] = ["--no-newline"]
+    return run(command, timeout=IMAGE_TIMEOUT if mime != TEXT_MIME else TIMEOUT)
 
 
 def wait_forever():
@@ -131,6 +179,7 @@ def main(argv=None):
     libxfixes.XFixesSelectSelectionInput(display, libx11.XDefaultRootWindow(display), clipboard, 1 | 2 | 4)
 
     x11_env = dict(os.environ, DISPLAY=args.display)
+    # (MIME type, digest) of the last thing handed over.
     bridged = None
     event = XEvent()
     while True:
@@ -145,16 +194,27 @@ def main(argv=None):
             libx11.XNextEvent(display, ctypes.byref(event))
             if event.type == event_base.value:
                 owner = event.selection.owner
-        wayland_text = run(["wl-paste", "--no-newline", "--type", "text/plain"])
         if owner == 0:
-            if decide(None, wayland_text, bridged, True) == "clear":
+            if bridged and decide(None, wayland(bridged[0]), bridged[1], True) == "clear":
                 hand_over(["wl-copy", "--clear"])
                 bridged = None
             continue
-        x11_text = run(["xclip", "-selection", "clipboard", "-o", "-t", "UTF8_STRING"], env=x11_env)
-        if decide(x11_text, wayland_text, bridged, False) == "copy":
-            if hand_over(["wl-copy", "--type", "text/plain;charset=utf-8"], data=x11_text):
-                bridged = digest(x11_text)
+        targets = run(["xclip", "-selection", "clipboard", "-o", "-t", "TARGETS"], env=x11_env)
+        choice = pick(targets.decode("utf-8", "replace").split()) if targets else None
+        if not choice:
+            continue
+        target, mime = choice
+        x11_data = run(["xclip", "-selection", "clipboard", "-o", "-t", target], env=x11_env,
+                       timeout=TIMEOUT if mime == TEXT_MIME else IMAGE_TIMEOUT)
+        if x11_data and target in TO_PNG:
+            converted = to_png(x11_data)
+            if converted is None:
+                mime = target
+            else:
+                x11_data = converted
+        if decide(x11_data, wayland(mime), None, False) == "copy":
+            if hand_over(["wl-copy", "--type", mime], data=x11_data):
+                bridged = (mime, digest(x11_data))
 
 
 if __name__ == "__main__":
