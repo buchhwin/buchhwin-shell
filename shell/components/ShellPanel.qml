@@ -1,5 +1,6 @@
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Hyprland
 import QtQuick
 import QtQuick.Effects
 import QtQuick.Shapes
@@ -333,7 +334,32 @@ PanelWindow {
     implicitHeight: surfaceRect.height
     WlrLayershell.namespace: "buchhwin-" + panelId
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: wanted ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+    // **A click beside the panel on another monitor closes it too** (the
+    // user, 16.10.: the control center stayed open on the first screen while
+    // they clicked on the second). The scrim catches such a click only on the
+    // panel's own screen - it is one surface, there - and a catcher on every
+    // other screen would be a full-screen buffer per monitor (two 4K ones at
+    // the desk) mapped with every open. Hyprland's focus grab says the same
+    // with no surface at all: a press anywhere outside the windows it holds,
+    // on any monitor, clears it, and the press goes on to what was clicked.
+    //
+    // The grab does nothing for a layer with *exclusive* keyboard focus -
+    // Hyprland keeps that one focused whatever is clicked (probed nested:
+    // no `cleared` with Exclusive, `cleared` with OnDemand). So while a panel
+    // grabs, it asks for keyboard focus on demand; the grab hands it the keys
+    // itself, at once and without a click (probed too: keys arrived with an
+    // application window focused before). A panel that stays open on an
+    // outside click (Settings) keeps the exclusive focus and no grab.
+    readonly property bool grabsOutside: wanted && shown && PanelService.outsideCloses
+    WlrLayershell.keyboardFocus: !wanted ? WlrKeyboardFocus.None
+        : grabsOutside ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive
+    HyprlandFocusGrab {
+        windows: [window]
+        active: window.grabsOutside
+        // A grab let go of (a close, a handover, a panel that keeps itself
+        // open) closes nothing.
+        onCleared: if (window.wanted && PanelService.outsideCloses) PanelService.close()
+    }
 
     onWantedChanged: {
         if (wanted) {

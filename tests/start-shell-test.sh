@@ -180,8 +180,11 @@ check '[[ $(cat "$COUNT") == 1 ]]' "a clean exit stops (got $(cat "$COUNT"))"
 if grep -q '^THP_enabled:' /proc/self/status; then
   : > "$SB/thp"; echo 0 > "$COUNT"; THP_SEEN="$SB/thp" bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
   check '[[ $(cat "$SB/thp") == 0 ]]' "the shell starts with huge pages off (THP_enabled $(cat "$SB/thp"))"
+  # "on" leaves the shell as the process that started it is: a test run
+  # from a program the shell started has them off already (inherited).
+  inherited=$(awk '/^THP_enabled:/ { print $2 }' /proc/self/status)
   : > "$SB/thp"; echo 0 > "$COUNT"; BUCHHWIN_SHELL_THP=on THP_SEEN="$SB/thp" bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
-  check '[[ $(cat "$SB/thp") == 1 ]]' "BUCHHWIN_SHELL_THP=on keeps them (THP_enabled $(cat "$SB/thp"))"
+  check '[[ $(cat "$SB/thp") == "$inherited" ]]' "BUCHHWIN_SHELL_THP=on leaves them as they were (THP_enabled $(cat "$SB/thp"), started with $inherited)"
 fi
 
 # SIGTERM is a request, not a fault
