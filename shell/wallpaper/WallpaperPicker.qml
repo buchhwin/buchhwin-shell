@@ -85,15 +85,20 @@ ShellPanel {
     // to each other instead made them fight: the view kept its old index
     // across a close, pushed it back after the reset, and the picker reopened
     // on whatever had been chosen last.
-    function select(index) {
+    //
+    // `reveal` scrolls the grid to the selection: for the keys, the open and
+    // a filter, never for the pointer. A tile under the pointer is on screen
+    // already, and pulling a half-shown one fully into view moved the grid
+    // under a resting pointer, which then rested on another tile (16.10.:
+    // scrolling "snapped back").
+    function select(index, reveal) {
         grid.currentIndex = Math.max(0, Math.min(index, root.items.length - 1))
+        if (reveal !== false) grid.positionViewAtIndex(grid.currentIndex, GridView.Contain)
     }
 
     function move(delta) {
         select(Logic.moveIndex(root.currentIndex, delta, root.items.length, root.columns))
     }
-
-    onCurrentIndexChanged: grid.positionViewAtIndex(currentIndex, GridView.Contain)
     onWantedChanged: {
         if (wanted) {
             // The field, not the query: the panel's body lives on between
@@ -234,7 +239,12 @@ ShellPanel {
             // the open selects (ShellPanel sets it first).
             model: root.shown ? root.items : []
             boundsBehavior: Flickable.StopAtBounds
-            ScrollFeel { view: grid }
+            // A view follows its current item by itself (probed 16.10.: a
+            // GridView without a highlight scrolled a half-shown current tile
+            // fully into view). Here the selection follows the pointer, so
+            // only `select(index)` decides when the grid moves.
+            highlightFollowsCurrentItem: false
+            ScrollFeel { id: feel; view: grid }
             // One direction only: the view is the owner, `root.currentIndex`
             // is what everything else reads.
             onCurrentIndexChanged: root.currentIndex = currentIndex
@@ -298,9 +308,18 @@ ShellPanel {
                             hoverEnabled: true
                             acceptedButtons: Qt.LeftButton | Qt.RightButton
                             cursorShape: Qt.PointingHandCursor
-                            onEntered: root.select(tile.index)
+                            // A tile gliding under a resting pointer is
+                            // "entered" too (hover is delivered again every
+                            // frame): only a still grid selects, and the next
+                            // real move does once it stops.
+                            function point() {
+                                if (!tile.selected && Logic.hoverSelects(feel.scrolling, grid.moving))
+                                    root.select(tile.index, false)
+                            }
+                            onEntered: point()
+                            onPositionChanged: point()
                             onClicked: mouse => {
-                                root.select(tile.index)
+                                root.select(tile.index, false)
                                 if (mouse.button === Qt.RightButton) WallpaperService.toggleFavourite(tile.modelData.path)
                                 else root.apply(tile.modelData)
                             }

@@ -97,6 +97,9 @@ ShellRoot {
         T.eq(W.pickerItems(folder, [], "zzz").length, 0, "a query that matches nothing")
         T.eq(W.pickerItems([], marks, "").length, 0, "an empty folder")
 
+        T.ok(W.hoverSelects(false, false), "a resting grid selects under the pointer")
+        T.ok(!W.hoverSelects(true, false), "a wheel glide does not select what passes the pointer")
+        T.ok(!W.hoverSelects(false, true), "a drag or fling does not either")
         T.eq(W.moveIndex(0, 1, 7, 3), 1, "right moves one on")
         T.eq(W.moveIndex(6, 1, 7, 3), 6, "right stops at the last image")
         T.eq(W.moveIndex(0, -1, 7, 3), 0, "left stops at the first image")

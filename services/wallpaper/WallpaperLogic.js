@@ -296,6 +296,15 @@ function moveIndex(index, delta, count, columns) {
     return target < 0 || target >= count ? current : target
 }
 
+// Whether the pointer over a tile selects it. Not while the grid is moving -
+// a wheel glide, a fling, a drag: Qt delivers hover again on every frame
+// something moves under a resting pointer, so each tile gliding past it was
+// "entered", and the selection went along with the scroll. The next real
+// move of the pointer selects once the grid is still.
+function hoverSelects(scrolling, moving) {
+    return !scrolling && !moving
+}
+
 // ---- the folder --------------------------------------------------------------
 // ~/.config/user-dirs.dirs → the pictures directory, "" when it does not say.
 // The file is shell syntax written by xdg-user-dirs-update:
