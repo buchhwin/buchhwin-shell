@@ -169,10 +169,21 @@ ShellRoot {
         T.eq(page.contentY, 480, "as a notch: 120 px")
         page.contentY = 360
         page.contentY = 1550
+        T.eq(pageFeel.handle(root.phase(Qt.ScrollBegin)), false, "a swipe begins")
         T.eq(pageFeel.handle(root.finger(-30)), true, "a swipe near the end is used")
         T.eq(page.contentY, 1600, "and stops at the end")
-        T.eq(pageFeel.handle(root.finger(-30)), false, "at the end the swipe goes on to what is around the list")
-        T.eq(pageFeel.handle(root.wheel(-120)), false, "and so does the wheel")
+        // Handed on, the Flickable added this update to where the swipe
+        // began and the list jumped back there (pitfall 105).
+        T.eq(pageFeel.handle(root.finger(-30)), true, "the rest of a swipe this list carried stays with it at the end")
+        T.eq(page.contentY, 1600, "and moves nothing")
+        T.eq(pageFeel.handle(root.phase(Qt.ScrollEnd)), false, "the swipe ends")
+        T.eq(pageFeel.handle(root.phase(Qt.ScrollBegin)), false, "a new one begins at the end")
+        T.eq(pageFeel.handle(root.finger(-30)), false, "one that never moved the list goes on to what is around it")
+        T.eq(pageFeel.handle(root.finger(30)), true, "until it turns back: then the list takes it")
+        T.eq(pageFeel.handle(root.finger(-30)), true, "and keeps it, to the end again")
+        T.eq(pageFeel.handle(root.phase(Qt.ScrollEnd)), false, "the swipe ends")
+        page.contentY = 1600
+        T.eq(pageFeel.handle(root.wheel(-120)), false, "the wheel at the end goes on as before")
         T.eq(page.contentY, 1600, "nothing moved")
         T.eq(pageFeel.handle(root.wheel(120)), true, "up from the end is used again")
         T.eq(pageFeel.handle(root.phase(Qt.ScrollBegin)), false, "a swipe's start is everybody's news, never kept")

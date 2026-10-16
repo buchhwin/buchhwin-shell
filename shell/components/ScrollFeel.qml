@@ -66,6 +66,14 @@ MouseArea {
     })
     // The current swipe's movement per axis, for the speed it lifts at.
     property var samples: ({ y: [], x: [] })
+    // This view moved for the current swipe: the rest of it stays here, the
+    // end of the list included - the way a browser latches a gesture to the
+    // scroller it started on. Handed on at the end, a swipe's updates reached
+    // the Flickable, which had kept its position from the swipe's begin and
+    // added the one update it saw to *that*: a list scrolled to its end with
+    // the touchpad jumped back to where the swipe began (replayed from a live
+    // recording, 16.10.: 522 and 438 px back; testing.md pitfall 105).
+    property bool latched: false
 
     function now() { return Date.now() }
 
@@ -168,11 +176,13 @@ MouseArea {
         if (phase === Qt.ScrollBegin) {
             stopAll()
             samples = { y: [], x: [] }
+            latched = false
             return false
         }
         if (phase === Qt.ScrollEnd) {
             release("y")
             release("x")
+            latched = false
             return false
         }
         // A touchpad's stream comes in phases (begin, updates, end - the
@@ -186,6 +196,13 @@ MouseArea {
             : [wheelAxis("y", event.angleDelta.y), wheelAxis("x", event.angleDelta.x)]
         const used = results.some(result => result.length > 0)
         if (used) settle.restart()
+        // A swipe this view carried is kept to its end, with nowhere left to
+        // go; one it never moved for (it began at the end) goes on to the
+        // list around it, as before.
+        if (finger) {
+            if (used) latched = true
+            else if (latched) return true
+        }
         return used
     }
 
