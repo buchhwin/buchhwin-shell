@@ -40,6 +40,40 @@ ShellRoot {
         const listLike = { length: 2, 0: "code", 1: "--new-window" }
         T.eq(Launch.launchContext({ id: "code", command: listLike }, overrides, script).command,
              ["/s/launch-app.sh", "code", "code", "--new-window"], "a list-like command is copied")
+        // Web apps and browser actions go through the browser's launcher
+        // (wallet, --password-store), with the entry's arguments after it.
+        const outlook = { id: "brave-faolnafnngnfdaknnbpnkhgohbobgegn-Default",
+            command: ["/opt/brave-bin/brave", "--profile-directory=Default", "--app-id=faolnafnngnfdaknnbpnkhgohbobgegn"] }
+        T.eq(Launch.launchContext(outlook, overrides, script).command,
+             ["/s/launch-brave.sh", "--profile-directory=Default", "--app-id=faolnafnngnfdaknnbpnkhgohbobgegn"],
+             "a Brave web app starts through launch-brave.sh")
+        T.eq(Launch.launchContext({ id: "chrome-abc-Default", command: ["/opt/google/chrome/google-chrome", "--app-id=abc"] },
+             overrides, script).command, ["/s/launch-chrome.sh", "--app-id=abc"], "a Chrome web app through launch-chrome.sh")
+        T.eq(Launch.launchContext({ id: "chromium-app", command: ["chromium", "--app=https://example.org"] },
+             overrides, script).command, ["/s/launch-chromium-browser.sh", "--app=https://example.org"], "Chromium the same")
+        T.eq(Launch.launchContext({ id: "brave-beta-app", command: ["brave-browser-beta", "--app-id=x"] },
+             overrides, script).command[0], "/s/launch-app.sh", "a beta build is another browser: not the stable launcher")
+        T.eq(Launch.launchContext({ id: "bravery", command: ["/usr/bin/bravery"] }, overrides, script).command[0],
+             "/s/launch-app.sh", "only the exact program names")
+        const message = { id: "Neue-Nachricht", name: "Neue Nachricht", command: outlook.command.concat(
+            ["--app-launch-url-for-shortcuts-menu-item=https://outlook.office.com/mail/deeplink/compose"]) }
+        T.eq(Launch.actionContext(outlook, message, overrides, script).command,
+             ["/s/launch-brave.sh"].concat(message.command.slice(1)), "a web app's action through launch-brave.sh")
+        const braveEntry = { id: "brave-browser", command: ["brave"] }
+        T.eq(Launch.actionContext(braveEntry, { id: "new-private-window", command: ["brave", "--incognito"] }, overrides, script).command,
+             ["/s/launch-brave.sh", "--incognito"], "an override's action keeps the override, arguments after it")
+        T.eq(Launch.actionContext({ id: "kitty", command: ["kitty"] }, { id: "new", command: ["kitty", "--single-instance"] },
+             overrides, script).command, ["/s/launch-kitty.sh", "--single-instance"], "kitty's action through launch-kitty.sh")
+        T.eq(Launch.actionContext({ id: "kitty", command: ["kitty"] }, { id: "other", command: ["kitten", "ssh"] },
+             overrides, script).command, ["/s/launch-app.sh", "kitty", "kitten", "ssh"], "an action running another program goes the usual way")
+        T.eq(Launch.actionContext({ id: "org.kde.dolphin", command: ["dolphin"], workingDirectory: "/srv" },
+             { id: "new", command: ["dolphin", "--new-window"] }, overrides, script),
+             { command: ["/s/launch-app.sh", "org.kde.dolphin", "dolphin", "--new-window"], workingDirectory: "/srv" },
+             "a plain action: launch-app.sh with the entry's id and directory")
+        T.eq(Launch.actionContext({ id: "htop", command: ["htop"], runInTerminal: true }, { id: "tree", command: ["htop", "-t"] },
+             overrides, script).command, ["/s/launch-terminal.sh", "--", "htop", "-t"], "a terminal entry's action in the terminal")
+        T.eq(Launch.actionContext(outlook, { id: "none", command: [] }, overrides, script), null, "an empty action: nothing")
+        T.eq(Launch.actionContext(outlook, null, overrides, script), null, "no action")
         T.finish("LauncherTest")
     }
 }
