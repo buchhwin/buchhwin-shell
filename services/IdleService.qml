@@ -80,12 +80,27 @@ Singleton {
     // 10:31:33 and `systemd-logind: Suspending...` at 10:31:47, with no lid
     // event in between. The user's answer was to open and close the lid once,
     // which is a real lid event and therefore reaches the shell.
+    //
+    // Suspend waits for the lid to stay shut a moment. A lid shut and opened
+    // again at once is a hand carrying the laptop off a dock, and a suspend
+    // asked for at the first edge went through all the same: on 16.10. the
+    // lid closed at 15:46:52.8, opened 0.3 s later, and the machine slept with
+    // the lid open - where opening it cannot wake it, so it looked dead until
+    // it was switched off. The lock and the screen still act at once.
     function lidClosed() {
-        if (lidAction === "suspend") SessionService.run("suspend")
+        if (lidAction === "suspend") lidSuspendDelay.restart()
         else if (lidAction === "lock") SessionService.run("lock")
         else if (lidAction === "screenOff") DisplayService.setLidClosed(true)
     }
-    function lidOpened() { DisplayService.setLidClosed(false) }
+    function lidOpened() {
+        lidSuspendDelay.stop()
+        DisplayService.setLidClosed(false)
+    }
+    Timer {
+        id: lidSuspendDelay
+        interval: 2000
+        onTriggered: if (root.lidAction === "suspend") SessionService.run("suspend")
+    }
 
     // What a lid switch never says: that it was already shut when the session
     // started. Hyprland's `bindl` is an edge, so a session that begins with the
