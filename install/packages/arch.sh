@@ -26,6 +26,9 @@ packages=(
   # org.freedesktop.DBus.Error.ServiceUnknown" and run at normal priority
   rtkit
   plocate jq curl grim slurp swappy wl-clipboard cliphist gammastep
+  # xclip: reads what an X11 program (Citrix) copied, for the clipboard
+  # bridge (scripts/x11-clipboard-bridge.py)
+  xclip
   swaylock swayidle kdialog udisks2 wireguard-tools
   # checkupdates: the update check (scripts/updates-check.sh); it syncs its
   # copy of the database through fakeroot and stops without it, which

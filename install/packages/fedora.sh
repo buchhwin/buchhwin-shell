@@ -24,6 +24,9 @@ packages=(
   # the backends the shell drives
   brightnessctl wireplumber pipewire-utils playerctl NetworkManager
   plocate jq curl grim slurp swappy wl-clipboard cliphist gammastep
+  # xclip: reads what an X11 program (Citrix) copied, for the clipboard
+  # bridge (scripts/x11-clipboard-bridge.py)
+  xclip
   swaylock swayidle kdialog udisks2 wireguard-tools
   # setpriv: the shell's long-running helpers die with it (--pdeathsig).
   # util-linux requires util-linux-core, so setpriv is there whichever of the

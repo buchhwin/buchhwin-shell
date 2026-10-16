@@ -176,4 +176,24 @@ Singleton {
         running: root.enabled && !root.recordersRestarting
         command: Paths.bound(["wl-paste", "--type", "image", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"])
     }
+
+    // Text an X11 program copies, handed on to the Wayland clipboard
+    // (scripts/x11-clipboard-bridge.py): Hyprland mirrors an X11 clipboard
+    // only while an X11 window has the focus, and Citrix's client sets it as
+    // its window loses the focus - copied in Citrix, it could not be pasted
+    // here (16.10.). Not tied to the history: pasting is the point, not
+    // keeping. Restarted after a pause if it ever ends, like the monitors.
+    readonly property string x11Display: Quickshell.env("DISPLAY") || ""
+    property bool bridgePaused: false
+    Process {
+        stderr: ErrorLog { label: "ClipboardService.x11Bridge" }
+        running: root.x11Display.length > 0 && !root.bridgePaused
+        command: Paths.bound(["python3", "-I", Paths.script("x11-clipboard-bridge.py"), "--display", root.x11Display])
+        onRunningChanged: {
+            if (running || root.x11Display.length === 0 || root.bridgePaused) return
+            root.bridgePaused = true
+            bridgeRestart.restart()
+        }
+    }
+    Timer { id: bridgeRestart; interval: 5000; onTriggered: root.bridgePaused = false }
 }

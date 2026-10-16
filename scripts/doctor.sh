@@ -123,7 +123,7 @@ fi
 # Terminal extras that follow the shell accent (Settings > Terminal writes
 # their configuration): both from Fedora's and Arch's repositories, only cava
 # from Leap's.
-for extra in cmatrix cava; do
+for extra in cmatrix cava xclip; do
   if command -v "$extra" >/dev/null 2>&1; then
     printf 'ok       %s: %s\n' "$extra" "$(command -v "$extra")"
   else
