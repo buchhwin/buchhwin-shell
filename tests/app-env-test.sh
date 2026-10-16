@@ -152,6 +152,9 @@ stub notify-send 'cat "'"$sandbox"'/answer" 2>/dev/null || true'
 stub systemd-run 'while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done; shift; exec "$@"'
 stub systemctl "case \"\$*\" in *show-environment*) printf 'QT_QPA_PLATFORMTHEME=kde\n' ;; esac; exit 0"
 stub systemd-escape 'for a in "$@"; do last=$a; done; printf "%s\n" "$last"'
+# The user manager is there when its socket is (launch-app.sh).
+mkdir -p "$sandbox/runtime/systemd"
+python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$sandbox/runtime/systemd/private"
 # The editor and the session's xdg-open note the environment they got.
 stub swappy "env > '$sandbox/swappy.env'"
 stub xdg-open "env > '$sandbox/xdg-open.env'"

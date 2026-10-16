@@ -52,7 +52,38 @@ id=${1:?usage: launch-app.sh [--unit NAME] <desktop-id> <command> [args...]}
 shift
 (( $# )) || { printf 'launch-app: nothing to run for %s\n' "$id" >&2; exit 2; }
 id=${id%.desktop}
-if command -v systemd-run >/dev/null 2>&1 && systemctl --user show --property=Version >/dev/null 2>&1; then
+
+# On the path of every start, so without a process of its own (16.10.: the
+# two questions below cost 18 ms of a terminal's 340 to its window).
+#
+# The user manager is there when its own socket is: systemd-run --user and
+# systemctl --user talk to it at $XDG_RUNTIME_DIR/systemd/private, and there
+# is nothing to start a unit with when it is missing (a container, a login
+# without a user manager). Asking `systemctl --user show` took 12 ms.
+manager_running() {
+  [[ -n ${XDG_RUNTIME_DIR:-} && -S $XDG_RUNTIME_DIR/systemd/private ]]
+}
+# A unit name part the way systemd-escape writes it (6 ms as a process):
+# letters, digits, ':' and '_' stay, a '.' stays unless it comes first, '/'
+# becomes '-', and every other byte - '-' too - is \xNN.
+unit_escape() {
+  local LC_ALL=C text=$1 char code i
+  escaped=""
+  for (( i = 0; i < ${#text}; i++ )); do
+    char=${text:i:1}
+    if [[ $char == / ]]; then
+      escaped+=-
+    elif [[ $char == [A-Za-z0-9:_] || ( $char == . && i -gt 0 ) ]]; then
+      escaped+=$char
+    else
+      printf -v code '%d' "'$char"
+      printf -v char '\\x%02x' $(( code & 255 ))
+      escaped+=$char
+    fi
+  done
+}
+
+if command -v systemd-run >/dev/null 2>&1 && manager_running; then
   if [[ -n $unit ]]; then
     forward=()
     for name in WAYLAND_DISPLAY DISPLAY XAUTHORITY HYPRLAND_INSTANCE_SIGNATURE XDG_CONFIG_HOME XDG_STATE_HOME \
@@ -63,8 +94,9 @@ if command -v systemd-run >/dev/null 2>&1 && systemctl --user show --property=Ve
     exec systemd-run --user --quiet --collect --slice=app.slice --unit="$unit" \
       --description="$id (buchhwin-shell)" "${forward[@]}" -- "$@"
   fi
+  unit_escape "$id"
   exec systemd-run --user --scope --quiet --slice=app.slice \
-    --unit="app-buchhwin-$(systemd-escape -- "$id")-$$.scope" -- "$@"
+    --unit="app-buchhwin-$escaped-$$.scope" -- "$@"
 fi
 if [[ -n $unit ]]; then
   # No user manager to give it a unit: out of the caller's tree all the same.

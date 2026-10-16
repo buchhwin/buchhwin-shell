@@ -7,11 +7,26 @@ set -euo pipefail
 # session launchers (KWallet, Zsh profile, the terminal opacity). Without a
 # default terminal, scripts/launch-terminal.sh decides, as it does for the
 # shell's own terminals.
-project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+# One process for the path rather than three (readlink, dirname, a subshell):
+# this is the start of every Super+Enter.
+self=$(readlink -f -- "${BASH_SOURCE[0]}")
+project_dir=${self%/*/*}
 category=${1:?usage: launch-default.sh browser|files|terminal}
 shift
 
-desktop_id=$(python3 "$project_dir/scripts/default-apps.py" get "$category" 2>/dev/null || true)
+# The terminal is looked up in bash (scripts/lib/default-terminal.sh, the
+# same rule as default-apps.py, 85 ms faster); anything it cannot answer for
+# certain, and the browser and the file manager (mimeapps.list), ask Python.
+desktop_id=""
+asked=false
+if [[ $category == terminal && -r $project_dir/scripts/lib/default-terminal.sh ]]; then
+  # shellcheck source=lib/default-terminal.sh
+  source "$project_dir/scripts/lib/default-terminal.sh"
+  if desktop_id=$(default_terminal); then asked=true; fi
+fi
+if ! $asked; then
+  desktop_id=$(python3 "$project_dir/scripts/default-apps.py" get "$category" 2>/dev/null || true)
+fi
 case $desktop_id in
   brave-browser.desktop | com.brave.Browser.desktop) exec "$project_dir/scripts/launch-brave.sh" "$@" ;;
   google-chrome.desktop | com.google.Chrome.desktop) exec "$project_dir/scripts/launch-chrome.sh" "$@" ;;

@@ -4,7 +4,9 @@ set -euo pipefail
 # Start Kitty with this session's appearance and a dedicated Zsh profile, so
 # Fastfetch and history stay independent from other desktop sessions. The
 # palette follows the shell theme (dark, light or automatic).
-project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+# One process for the path, not three: this is on the path of every terminal.
+self=$(readlink -f -- "${BASH_SOURCE[0]}")
+project_dir=${self%/*/*}
 # `--unit NAME` first: the window runs as a transient user service of that
 # name, outside the caller's process tree (scripts/launch-app.sh) - for the
 # terminals of Settings > Updates (through scripts/launch-terminal.sh when
@@ -16,8 +18,14 @@ if [[ ${1:-} == --unit ]]; then
 fi
 settings="${XDG_CONFIG_HOME:-$HOME/.config}/buchhwin-shell/settings.json"
 theme=dark
+personal_shell=false
+# Both answers from one jq (one process less on every kitty start), apart by
+# a unit separator: a tab is blank to `read` and would swallow an empty field.
 if command -v jq >/dev/null 2>&1 && [[ -r $settings ]]; then
-  theme=$(jq -r '.appearance.theme // "dark"' "$settings" 2>/dev/null || printf dark)
+  if answers=$(jq -r '"\(.appearance.theme // "dark")\u001f\(.terminal.personalShell // false)"' "$settings" 2>/dev/null); then
+    IFS=$'\x1f' read -r theme personal_shell <<<"$answers" || true
+  fi
+  [[ -n $theme ]] || theme=dark
 fi
 if [[ $theme == auto ]]; then
   hour=$((10#$(date +%H)))
@@ -34,10 +42,6 @@ overrides="${XDG_CONFIG_HOME:-$HOME/.config}/buchhwin-shell/kitty.conf"
 # The session's own zsh configuration, unless Settings > Terminal says to use
 # the account's ~/.zshrc (terminal.personalShell) - then zsh starts as it would
 # anywhere else and the prompt settings are the account's business.
-personal_shell=false
-if command -v jq >/dev/null 2>&1 && [[ -r $settings ]]; then
-  personal_shell=$(jq -r '.terminal.personalShell // false' "$settings" 2>/dev/null || printf false)
-fi
 if [[ $personal_shell == true ]]; then
   unset ZDOTDIR
 else

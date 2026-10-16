@@ -250,7 +250,7 @@ check 'lacks app MALLOC_ARENA_MAX && lacks app mesa_glthread && lacks app GALLIU
 check 'has app QT_QPA_PLATFORMTHEME=kde && lacks app BUCHHWIN_APP_ENV_UNSET && lacks app BUCHHWIN_APP_QPA_THEME' \
   "but the session's platform theme, and no record"
 # an exported value wins - for the shell, and it was the session's anyway
-envcase MALLOC_ARENA_MAX=4
+envcase -u QT_QPA_PLATFORMTHEME MALLOC_ARENA_MAX=4
 check 'has shell MALLOC_ARENA_MAX=4 && has app MALLOC_ARENA_MAX=4 && lacks app mesa_glthread' "an exported value is kept for both"
 check 'lacks app QT_QPA_PLATFORMTHEME' "and a session without a platform theme gives the application none"
 # started by something that came from a shell (a reload from a terminal the

@@ -9,7 +9,9 @@ set -euo pipefail
 # without it the opacity reaches the default background only, and anything
 # that paints its cells black itself (cmatrix, Arch's build has no
 # use_default_colors) stays an opaque block. The rest is the user's.
-project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+# One process for the path, not three: this is on the path of every terminal.
+self=$(readlink -f -- "${BASH_SOURCE[0]}")
+project_dir=${self%/*/*}
 # `--unit NAME` first, as for launch-kitty.sh: the window runs as a transient
 # user service of that name (scripts/launch-app.sh) - the terminals of
 # Settings > Updates, through scripts/launch-terminal.sh.

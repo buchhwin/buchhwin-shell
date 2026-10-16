@@ -60,6 +60,9 @@ term myterm -e
 data="$sandbox/data"; config="$sandbox/config"; runtime="$sandbox/runtime"
 mkdir -p "$data/applications" "$sandbox/sysdata" "$config" "$runtime"
 chmod 700 "$runtime"
+# The user manager is there when its socket is (launch-app.sh).
+mkdir -p "$runtime/systemd"
+python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$runtime/systemd/private"
 entry() {
   printf '[Desktop Entry]\nType=Application\nName=%s\nExec=%s\nCategories=System;TerminalEmulator;\n' "${1%.desktop}" "$2" \
     > "$data/applications/$1"

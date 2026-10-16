@@ -143,6 +143,7 @@ printf '== Session actions\n'
 "$project_dir/tests/shell-control-test.sh"
 "$project_dir/tests/launch-app-test.sh"
 "$project_dir/tests/launch-terminal-test.sh"
+"$project_dir/tests/launch-default-test.sh"
 "$project_dir/tests/app-env-test.sh"
 "$project_dir/tests/wallet-unlock-test.sh"
 "$project_dir/tests/x11-dpi-test.sh"

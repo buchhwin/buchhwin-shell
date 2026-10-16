@@ -25,8 +25,15 @@ stub systemctl "case \"\$*\" in *show-environment*) cat \"$sandbox/session-env\"
 # come from whoever runs this test - a terminal or an editor the shell
 # started has them - and would change what every launch below runs with.
 unset MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME
-# systemd-escape: the last argument with its dashes escaped.
-stub systemd-escape 'for a in "$@"; do last=$a; done; printf "%s\n" "$last" | sed "s/-/\\\\x2d/g"'
+# The user manager is there when its socket is (launch-app.sh): one in the
+# sandbox's runtime directory, so the result does not depend on whether the
+# machine running this has a user manager (CI's container has none).
+mkdir -p "$sandbox/run/systemd"
+python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$sandbox/run/systemd/private"
+export XDG_RUNTIME_DIR="$sandbox/run"
+# launch-app.sh escapes the unit name itself now; a systemd-escape it still
+# called would show up in the log.
+stub systemd-escape 'exit 1'
 stub xdg-settings 'echo com.brave.Browser.desktop'
 # The browsers, the notification a refused start sends, and the bus: the
 # wallet is open unless a case below says otherwise.
@@ -53,6 +60,21 @@ check 'grep -qE "^systemd-run --user --scope --quiet --slice=app.slice --unit=ap
 check 'grep -qE "unit=app-buchhwin-com\.brave\.Browser-[0-9]+\.scope -- true$" "$calls"' "the .desktop suffix is dropped from the id"
 status=0; "$project_dir/scripts/launch-app.sh" only-an-id >/dev/null 2>&1 || status=$?
 check '[[ $status -eq 2 ]]' "an id without a command is refused"
+check '! grep -q "^systemd-escape" "$calls"' "the unit name is escaped without systemd-escape"
+# Its escaping is systemd-escape's, byte for byte, where the real one exists.
+if [[ -x /usr/bin/systemd-escape ]]; then
+  source <(sed -n '/^unit_escape() {/,/^}/p' "$project_dir/scripts/launch-app.sh")
+  for name in Alacritty brave-browser org.kde.okular .hidden 'a b' 'Ü-x' crx_abc a/b x:y_z.1 'a.b-c~d' "tab$(printf '\t')x" '-lead' 'trail.'; do
+    unit_escape "$name"
+    expected=$(/usr/bin/systemd-escape -- "$name")
+    check '[[ $escaped == "$expected" ]]' "escaping $name: $escaped, systemd-escape says $expected"
+  done
+fi
+# A user manager without its socket - a container, a login without one: the
+# command runs as it is, with systemd-run on PATH.
+: > "$calls"
+out=$(XDG_RUNTIME_DIR="$sandbox/no-manager" "$project_dir/scripts/launch-app.sh" kitty printf alone)
+check '[[ $out == alone ]] && ! grep -q "^systemd-run" "$calls"' "no manager socket: the command runs without a unit"
 # No systemd-run anywhere: the command runs as it is.
 mkdir -p "$sandbox/min"; ln -s /usr/bin/printf "$sandbox/min/printf" 2>/dev/null || true
 : > "$calls"
@@ -75,7 +97,7 @@ check '! grep -qE "^(MALLOC_ARENA_MAX|mesa_glthread|GALLIUM_THREAD|QS_ICON_THEME
 check 'grep -qx "QT_QPA_PLATFORMTHEME=kde" <<<"$out"' "the session's platform theme is back"
 check '! grep -q "^BUCHHWIN_APP_" <<<"$out"' "and the record goes with them"
 check 'grep -q "^PATH=" <<<"$out"' "a name outside the shell's own is never unset"
-out=$(env MALLOC_ARENA_MAX=4 BUCHHWIN_APP_ENV_UNSET="mesa_glthread" BUCHHWIN_APP_QPA_THEME= mesa_glthread=false \
+out=$(env -u QT_QPA_PLATFORMTHEME MALLOC_ARENA_MAX=4 BUCHHWIN_APP_ENV_UNSET="mesa_glthread" BUCHHWIN_APP_QPA_THEME= mesa_glthread=false \
   "$project_dir/scripts/launch-app.sh" org.kde.dolphin env)
 check 'grep -qx "MALLOC_ARENA_MAX=4" <<<"$out" && ! grep -q "^mesa_glthread=" <<<"$out"' "a value the session exported stays"
 check '! grep -q "^QT_QPA_PLATFORMTHEME=" <<<"$out"' "no platform theme where the session had none"
@@ -128,6 +150,22 @@ check '[[ $run_line == *"--setenv=ZDOTDIR=$project_dir/zsh "* ]]' "with the sess
 : > "$calls"
 XDG_CONFIG_HOME="$sandbox/kitty-cfg" "$project_dir/scripts/launch-kitty.sh" --hold true
 check 'grep -qE "^systemd-run --user --scope .*--unit=app-buchhwin-kitty-[0-9]+\.scope -- kitty " "$calls"' "without --unit kitty keeps its scope"
+check '! grep -q "colors-light.conf" "$calls"' "no settings: kitty is dark"
+# The light theme and the account's own zsh, both read by one jq.
+mkdir -p "$sandbox/kitty-light/buchhwin-shell"
+printf '{ "appearance": { "theme": "light" }, "terminal": { "personalShell": true } }\n' \
+  > "$sandbox/kitty-light/buchhwin-shell/settings.json"
+stub kitty 'printf "ZDOTDIR=%s\n" "${ZDOTDIR:-}" >> "'"$calls"'"'
+: > "$calls"
+ZDOTDIR=/elsewhere XDG_CONFIG_HOME="$sandbox/kitty-light" "$project_dir/scripts/launch-kitty.sh"
+check 'grep -q -- "--config $project_dir/terminal/colors-light.conf" "$calls" && grep -qx "ZDOTDIR=" "$calls"' \
+  "light theme and the personal shell: the light colours, no session zsh ($(tr '\n' ' ' < "$calls"))"
+printf '{ "appearance": { "theme": "dark" } }\n' > "$sandbox/kitty-light/buchhwin-shell/settings.json"
+: > "$calls"
+XDG_CONFIG_HOME="$sandbox/kitty-light" "$project_dir/scripts/launch-kitty.sh"
+check '! grep -q "colors-light.conf" "$calls" && grep -qx "ZDOTDIR=$project_dir/zsh" "$calls"' \
+  "dark and no personal shell: the session's zsh ($(tr '\n' ' ' < "$calls"))"
+stub kitty
 # No user manager: still out of the caller's tree (setsid), and nothing waits.
 mkdir -p "$sandbox/min2"
 for tool in sh setsid; do ln -sf "$(command -v "$tool")" "$sandbox/min2/$tool"; done
