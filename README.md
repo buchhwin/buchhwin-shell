@@ -27,7 +27,8 @@ https://github.com/user-attachments/assets/467c2b76-ef77-41a0-a527-854d903a536b
 
 - **A quiet desktop.** One shape at a time: a notch at the top that expands on hover,
   a bar of pills on any edge, or free-floating widgets. An optional dock with your
-  pinned and running apps hides as soon as a window touches it.
+  pinned and running apps hides as soon as a window touches it - or runs along the
+  whole edge as a taskbar, with the fastfetch Saturn as its start menu.
 - **Panels for everything:** launcher (apps, files, commands, calculator, emoji),
   control center, dashboard with weather and calendar, notifications, clipboard
   history and a live workspace overview.

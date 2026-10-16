@@ -100,7 +100,7 @@ PopupPanel {
                             : NetworkService.securityLabel(modelData)
                         // Without returnArgs the dialog reopens this popup at the same place.
                         onClicked: NetworkService.activate(modelData)
-                        ShellIcon { visible: !NetworkService.isOpen(modelData); glyph: "󰌾"; size: Metrics.iconXs; color: Colors.mutedText }
+                        ShellIcon { visible: !NetworkService.isOpen(modelData); glyph: Icons.lock; size: Metrics.iconXs; color: Colors.mutedText }
                     }
                 }
             }

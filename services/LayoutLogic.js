@@ -1379,6 +1379,14 @@ function dockUnpin(dock, pin) {
     next.pins = next.pins.filter(item => item !== name)
     return next
 }
+// Whether any pill on the dock holds a widget of this type (the start button:
+// the start menu is built only for a dock that has one).
+function dockHasType(dock, type) {
+    if (!dock || typeof dock !== "object") return false
+    return ["left", "center", "right"].some(zone => Array.isArray(dock[zone]) && dock[zone].some(pill =>
+        pill && Array.isArray(pill.items) && pill.items.some(item => item && item.type === type)))
+}
+
 function dockPinned(dock, pin) {
     return copyDock(dock).pins.indexOf(String(pin || "").replace(/\.desktop$/, "")) >= 0
 }

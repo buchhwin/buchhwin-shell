@@ -71,4 +71,14 @@ Singleton {
     // Pinning an app to the dock and the launcher.
     readonly property string pin: "󰐃"
     readonly property string unpin: "󰐄"
+
+    // Leaving the session, and what is locked: the power menu, the lock
+    // screen's buttons, the launcher's commands and the start menu drew these
+    // five each on their own. `lock` is also the padlock on a secured network
+    // or an encrypted drive - the same thing, shut.
+    readonly property string lock: "󰌾"
+    readonly property string suspend: "󰤄"
+    readonly property string logout: "󰍃"
+    readonly property string reboot: "󰜉"
+    readonly property string poweroff: "󰐥"
 }

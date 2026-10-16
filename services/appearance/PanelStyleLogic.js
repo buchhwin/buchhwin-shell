@@ -47,8 +47,11 @@ var GROUPS = [
 var PANEL_GROUPS = {
     notifications: "notificationCenter",
     powerMenu: "sessionMenu",
-    // The emoji picker is a launcher with one kind of result in it.
-    emoji: "launcher"
+    // The emoji picker is a launcher with one kind of result in it, and the
+    // start menu a launcher with the pins and the places around it (not the
+    // dock's group, which may go to nothing).
+    emoji: "launcher",
+    startMenu: "launcher"
 }
 var FALLBACK_GROUP = "popups"
 

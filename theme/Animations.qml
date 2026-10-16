@@ -234,6 +234,8 @@ Singleton {
     readonly property int dockCoverPoll: 1000
     // The app's name over its icon.
     readonly property int dockLabelDelay: 350
+    // The start menu's "up 2 h 14 min", read again this often while it is open.
+    readonly property int startMenuUptimeRefresh: 60000
     // Sliding in and out.
     readonly property int dockSlide: travel(220)
     // An app the dock started breathes until its window shows: checked this

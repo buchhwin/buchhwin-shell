@@ -36,7 +36,7 @@ ShellPanel {
                 readonly property string key: String(root.openArgs.key || "")
                 readonly property var app: DockService.itemFor(key)
                 readonly property var entry: DockService.entryOf(app)
-                readonly property var rows: Logic.menuRows(app, entry ? entry.actions : [], LauncherService.pinnedFull,
+                readonly property var rows: Logic.menuRows(app, entry ? entry.actions : [], LayoutService.dockPinsFull,
                                                            Metrics.dockMenuWindows)
                 // The app went (its last window closed, it was unpinned).
                 onAppChanged: if (root.wanted && app === null) PanelService.close("dockMenu")
@@ -76,7 +76,7 @@ ShellPanel {
                             : modelData.kind === "close" ? (modelData.count > 1 ? "Close " + modelData.count + " windows" : "Close window")
                             : ""
                         subtitle: modelData.kind === "window" ? "Workspace " + modelData.workspace
-                            : modelData.kind === "pin" && modelData.enabled === false ? "At most 10 pinned apps" : ""
+                            : modelData.kind === "pin" && modelData.enabled === false ? "At most " + LayoutService.dockPinLimit + " apps on the dock" : ""
                         interactive: modelData.kind !== "more" && !(modelData.kind === "pin" && modelData.enabled === false)
                         onClicked: root.run(modelData)
                     }

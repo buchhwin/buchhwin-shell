@@ -69,6 +69,9 @@ ShellRoot {
         const dockPreset = L.sanitizeDockPreset(JSON.parse(dockFile.text()))
         T.eq([taskbar.id, taskbar.label, dockPreset.id, dockPreset.label], ["taskbar", "Taskbar", "dock", "Dock"], "both presets read")
         T.eq(types(taskbar.layout.left), ["start", "apps"], "taskbar: the start button, then the apps")
+        T.ok(L.dockHasType(taskbar.layout, "start"), "the taskbar has a start button")
+        T.ok(!L.dockHasType(L.defaultDock(), "start") && L.dockHasType(L.defaultDock(), "apps"), "the default dock has the apps only")
+        T.ok(!L.dockHasType(null, "start") && !L.dockHasType({ left: "junk", center: [null, { items: 3 }] }, "start"), "junk has none")
         T.eq(types(taskbar.layout.right), ["network+volume+battery", "notificationIndicator", "clock+date"],
              "taskbar: status, notifications and the clock on the right")
         T.eq(taskbar.layout.pins, ["@files", "@terminal", "@settings", "@browser"], "taskbar: files, terminal, Settings, browser")

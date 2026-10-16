@@ -84,7 +84,7 @@ ColumnLayout {
                     : NetworkService.isOpen(modelData) ? "Open"
                     : NetworkService.securityLabel(modelData)
                 onClicked: NetworkService.activate(modelData, { page: "network" })
-                ShellIcon { visible: !NetworkService.isOpen(modelData); glyph: "󰌾"; size: Metrics.iconXs; color: Colors.mutedText }
+                ShellIcon { visible: !NetworkService.isOpen(modelData); glyph: Icons.lock; size: Metrics.iconXs; color: Colors.mutedText }
             }
         }
     }

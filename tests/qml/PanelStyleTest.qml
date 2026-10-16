@@ -8,6 +8,7 @@ ShellRoot {
         T.eq(["settings", "controlCenter", "dashboard", "launcher", "clipboard"].map(P.groupFor),
              ["settings", "controlCenter", "dashboard", "launcher", "clipboard"], "panel ids that are group keys")
         T.eq([P.groupFor("notifications"), P.groupFor("powerMenu")], ["notificationCenter", "sessionMenu"], "renamed panel ids")
+        T.eq([P.groupFor("emoji"), P.groupFor("startMenu")], ["launcher", "launcher"], "the emoji picker and the start menu are launchers")
         T.eq([P.groupFor("wifiPassword"), P.groupFor("pairing"), P.groupFor("wifi"), P.groupFor("media"), P.groupFor(""), P.groupFor(undefined)],
              ["popups", "popups", "popups", "popups", "popups", "popups"], "dialogs, pill popups and unknown ids share a group")
         T.eq([P.groupFor("pillBar"), P.groupFor("osd"), P.groupFor("widgets"), P.groupFor("notificationPopups")],

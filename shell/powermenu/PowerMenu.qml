@@ -19,11 +19,11 @@ ShellPanel {
     property string pendingAction: ""
     property int focusIndex: 0
     readonly property var actions: [
-        { id: "lock", label: "Lock", icon: "󰌾", confirm: false },
-        { id: "suspend", label: "Sleep", icon: "󰤄", confirm: false },
-        { id: "logout", label: "Log out", icon: "󰍃", confirm: true },
-        { id: "reboot", label: "Restart", icon: "󰜉", confirm: true },
-        { id: "poweroff", label: "Shut down", icon: "󰐥", confirm: true }
+        { id: "lock", label: "Lock", icon: Icons.lock, confirm: false },
+        { id: "suspend", label: "Sleep", icon: Icons.suspend, confirm: false },
+        { id: "logout", label: "Log out", icon: Icons.logout, confirm: true },
+        { id: "reboot", label: "Restart", icon: Icons.reboot, confirm: true },
+        { id: "poweroff", label: "Shut down", icon: Icons.poweroff, confirm: true }
     ]
     readonly property var pending: actions.find(action => action.id === pendingAction) || null
 

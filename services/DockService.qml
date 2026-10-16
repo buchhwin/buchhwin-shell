@@ -479,11 +479,9 @@ Singleton {
     function openMenu(key, name, rect) {
         const item = itemFor(key)
         if (!item || !rect) return false
-        const args = { key: key, onScreen: name, originX: rect.x, originY: rect.y,
-                       originWidth: rect.width, originHeight: rect.height, fromDock: true }
-        if (position === "left") Object.assign(args, { anchorLeft: rect.x + rect.width + Metrics.spaceSm, anchorY: rect.y + rect.height / 2 })
-        else if (position === "right") Object.assign(args, { anchorRight: rect.x - Metrics.spaceSm, anchorY: rect.y + rect.height / 2 })
-        else Object.assign(args, { anchorX: rect.x + rect.width / 2, anchorBottom: rect.y - Metrics.spaceSm })
+        const args = Object.assign({ key: key, onScreen: name, originX: rect.x, originY: rect.y,
+                                     originWidth: rect.width, originHeight: rect.height },
+                                   Logic.panelAnchor(position, rect, Metrics.spaceSm))
         PanelService.open("dockMenu", args)
         return true
     }

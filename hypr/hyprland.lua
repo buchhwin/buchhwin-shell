@@ -422,7 +422,7 @@ hl.layer_rule({ name = "buchhwin-scrim-noblur", match = { namespace = "^(buchhwi
 -- namespace is shared with the full-screen picking overlay that does not
 -- animate itself. One regex without a comma: the conf parser in
 -- scripts/lib/checks.py splits a layerrule at its first comma.
-hl.layer_rule({ name = "buchhwin-self-animated", match = { namespace = "^(buchhwin-(batteryPopup|bluetoothPopup|clipboard|controlCenter|dashboard|driveUnlock|emoji|eventEditor|eventsPopup|launcher|mediaPopup|networkPopup|notifications|overview|pairing|powerMenu|privacyPopup|profilePopup|settings|shortcutSheet|systemPopup|volumePopup|vpnPopup|wallpaperPicker|weatherPopup|welcome|wifiPassword|switcher|osd|dockMenu))$" }, no_anim = true })
+hl.layer_rule({ name = "buchhwin-self-animated", match = { namespace = "^(buchhwin-(batteryPopup|bluetoothPopup|clipboard|controlCenter|dashboard|driveUnlock|emoji|eventEditor|eventsPopup|launcher|mediaPopup|networkPopup|notifications|overview|pairing|powerMenu|privacyPopup|profilePopup|settings|shortcutSheet|systemPopup|volumePopup|vpnPopup|wallpaperPicker|weatherPopup|welcome|wifiPassword|switcher|osd|dockMenu|startMenu))$" }, no_anim = true })
 -- Citrix opens its own dialogs ("disconnect / log off", class Wfica, title
 -- exactly "wfica") on a workspace of its choosing, such as 1 while the
 -- session sits on 2, which looks like a hung session. Floating, centred and

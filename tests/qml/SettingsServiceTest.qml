@@ -61,6 +61,8 @@ ShellRoot {
         T.eq(SettingsService.value("appearance.theme"), "dark", "and the setting keeps its default")
         T.eq(SettingsService.set("appearance.theme", "purple"), false, "a value outside the allowed list is refused")
         T.eq(SettingsService.value("appearance.theme"), "dark", "and the setting still keeps its default")
+        T.eq(SettingsService.value("dock.startOpens"), "startMenu", "the start button opens the start menu")
+        T.eq(SettingsService.set("dock.startOpens", "dashboard"), false, "and nothing but it or the launcher")
         const before = SettingsService.pendingText
         T.eq(SettingsService.set("nothing.here", 1), false, "an unknown key is refused")
         T.eq(SettingsService.pendingText, before, "nothing refused is written")

@@ -541,6 +541,27 @@ Singleton {
     readonly property int dockMenuWidth: 300
     readonly property int dockMenuWindows: 6
 
+    // The start button's Saturn (shell/components/SaturnGlyph.qml): about as
+    // tall as a glyph beside it, and as wide as the logo's proportions say
+    // (StartMenuLogic.SATURN, 177 by 100). Its halo on a dock that has gone
+    // see-through.
+    readonly property int startGlyphHeight: 20
+    readonly property int startGlyphWidth: Math.round(startGlyphHeight * 1.77)
+    readonly property real startGlyphHalo: 1.5
+    // The start menu (shell/startmenu): one size whatever it shows, so its
+    // surface never changes size while it is open (testing.md pitfall 57).
+    readonly property int startMenuWidth: 640
+    readonly property int startMenuHeight: 740
+    readonly property int startMenuMenuWidth: 260
+    readonly property int startMenuColumns: 5
+    readonly property int startMenuFrequentColumns: 2
+    readonly property int startMenuFrequent: 4
+    readonly property int startMenuTileHeight: 76
+    readonly property int startMenuPlaceColumns: 3
+    // PageUp/PageDown in All apps and the results: this many rows.
+    readonly property int startMenuPage: 8
+    readonly property int startMenuAvatar: 32
+
     // Wallpaper thumbnails.
     // The marks in a thumbnail's corners - the tick on the one that is
     // shown, the star, the slideshow tick - in Settings > Wallpaper and in the

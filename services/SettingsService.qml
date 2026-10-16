@@ -258,10 +258,10 @@ Singleton {
         },
         // The dock (shell/dock/Dock.qml): its own block next to the notch,
         // the bar and the widgets, in any desktop mode, and off until it is
-        // switched on. Its apps are the launcher's pins (launcher.pinned) and
-        // what has windows. `screens` is a comma-string of output names, ""
-        // for all - this file cannot store a list - and the machine's, not a
-        // profile's (ProfileLogic.GLOBAL_SETTINGS).
+        // switched on. What it holds - its pins, the apps, the start button,
+        // any widget - is layout.json's `dock`, not here. `screens` is a
+        // comma-string of output names, "" for all - this file cannot store a
+        // list - and the machine's, not a profile's (ProfileLogic.GLOBAL_SETTINGS).
         "dock": {
             "enabled": false,
             "visibility": "intellihide",
@@ -273,7 +273,10 @@ Singleton {
             "margin": 8,
             "screens": "",
             "showRunning": true,
-            "magnification": false
+            "magnification": false,
+            // What the start button opens: the start menu (shell/startmenu)
+            // or the launcher, as it did before there was a start menu.
+            "startOpens": "startMenu"
         },
         "autostart": {
             "apps": "",
@@ -500,6 +503,7 @@ Singleton {
         "dock.span": ["fit", "full"],
         "dock.iconSize": [40, 48, 56, 64],
         "dock.margin": [0, 4, 8, 16],
+        "dock.startOpens": ["startMenu", "launcher"],
         "notch.shape": ["notch", "pill"],
         "notch.clickAction": ["dashboard", "expand"],
         "notch.osdStyle": ["ring", "bar"],

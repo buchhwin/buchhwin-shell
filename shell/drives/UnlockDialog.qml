@@ -51,7 +51,7 @@ ShellPanel {
         PanelHeader {
             Layout.fillWidth: true
             role: "title"
-            icon: "󰌾"
+            icon: Icons.lock
             title: root.volume ? DrivesService.volumeTitle(root.volume) : "Encrypted volume"
             subtitle: root.drive ? "Encrypted · " + DrivesService.driveTitle(root.drive) : "Encrypted volume"
         }

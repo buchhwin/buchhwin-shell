@@ -264,6 +264,16 @@ Singleton {
     readonly property color pillBorder: surfaceDark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.12)
     // The dock's outline: fainter than a panel's - the dock stays on screen,
     // and a full panel border read as a frame around the apps.
+    // The fastfetch Saturn (the start button, the start menu's header), in
+    // the colours `ff` gives it in the session: the planet in the accent, the
+    // ring in the accent mixed half with white - which is exactly the pale
+    // blue of the shipped logo's second colour (#5fafff → #afd7ff). On a light
+    // panel the planet is the accent as text and the ring that pale mix
+    // darkened until it is a mark that reads (3:1).
+    readonly property color saturnRingMix: Qt.tint(accent, Qt.rgba(1, 1, 1, 0.5)) // style: ff's own mix, half white
+    readonly property color saturnPlanet: surfaceDark ? accentLine : accentForeground
+    readonly property color saturnRing: surfaceDark ? saturnRingMix
+        : Contrast.readable(String(saturnRingMix), String(contrastBase), 3)
     readonly property color dockBorder: surfaceDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.08)
     // Bar style "bar": item hover highlight and the line between item groups.
     readonly property color barItemHover: surfaceDark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.06)

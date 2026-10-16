@@ -128,6 +128,7 @@ Singleton {
     function dockPin(pin, index) { return changeDockLayout(Logic.dockPinAt, pin, index) }
     function dockUnpin(pin) { return changeDockLayout(Logic.dockUnpin, pin) }
     function dockPinned(pin) { return Logic.dockPinned(dockLayout, pin) }
+    readonly property bool dockHasStart: Logic.dockHasType(dockLayout, "start")
     readonly property int dockPinLimit: Logic.DOCK_PIN_LIMIT
     readonly property bool dockPinsFull: (dockLayout.pins || []).length >= Logic.DOCK_PIN_LIMIT
 
@@ -507,6 +508,21 @@ Singleton {
     function barItemRect(screenName, type) {
         if (!barShown) return null
         return barItemRects[screenName + "/" + type] || null
+    }
+
+    // The same for a widget on the dock - only the start button reports, so
+    // the start menu can come out of it when a key opens it.
+    property var dockItemRects: ({})
+    function reportDockItemRect(screenName, type, rect) {
+        const key = screenName + "/" + type
+        if (JSON.stringify(dockItemRects[key] || null) === JSON.stringify(rect)) return
+        const next = Object.assign({}, dockItemRects)
+        if (rect === null) delete next[key]
+        else next[key] = rect
+        dockItemRects = next
+    }
+    function dockItemRect(screenName, type) {
+        return dockItemRects[screenName + "/" + type] || null
     }
 
     function reportNotchRect(screenName, rect) {

@@ -1,4 +1,5 @@
 .pragma library
+.import "../system/UserDirsLogic.js" as UserDirs
 
 // Per-monitor wallpapers, favourites and the slideshow's own list
 // (wallpapers.json). Unit tested.
@@ -306,18 +307,10 @@ function hoverSelects(scrolling, moving) {
 }
 
 // ---- the folder --------------------------------------------------------------
-// ~/.config/user-dirs.dirs → the pictures directory, "" when it does not say.
-// The file is shell syntax written by xdg-user-dirs-update:
-//   XDG_PICTURES_DIR="$HOME/Bilder"
-// Only the $HOME form and absolute paths are taken; anything else is not ours
-// to evaluate.
+// ~/.config/user-dirs.dirs → the pictures directory, "" when it does not say
+// (services/system/UserDirsLogic.js reads the file's syntax).
 function picturesDir(text, home) {
-    const match = /^\s*XDG_PICTURES_DIR\s*=\s*"([^"\n]*)"\s*$/m.exec(String(text || ""))
-    if (!match) return ""
-    const value = match[1]
-    if (value.indexOf("$HOME/") === 0) return String(home || "") + value.slice(5)
-    if (value === "$HOME") return ""
-    return value.charAt(0) === "/" ? value : ""
+    return UserDirs.userDir(text, "PICTURES", home)
 }
 
 // The folder when the setting is empty: "Desktop" inside the pictures

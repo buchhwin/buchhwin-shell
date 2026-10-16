@@ -242,6 +242,19 @@ ColumnLayout {
             }
         }
         SettingRow {
+            label: "Start button"
+            hint: "What the Saturn on the dock opens: the start menu (pinned and frequent apps, all apps, your folders, lock and power) or the launcher."
+            SegmentedControl {
+                focusOnTab: true
+                enabledState: page.enabled
+                Layout.fillWidth: true
+                accessibleName: "Start button"
+                current: SettingsService.value("dock.startOpens") === "launcher" ? "launcher" : "startMenu"
+                options: [{ value: "startMenu", label: "Start menu" }, { value: "launcher", label: "Launcher" }]
+                onSelected: value => SettingsService.set("dock.startOpens", value)
+            }
+        }
+        SettingRow {
             label: "Pinned apps"
             hint: "At most " + LayoutService.dockPinLimit + "."
             ShellText {

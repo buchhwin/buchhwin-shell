@@ -34,12 +34,12 @@ ColumnLayout {
         description: "The screen behind the lock is blurred so nothing on it can be read. When to lock automatically is set under Power."
 
         RowLayout {
-            ShellIcon { glyph: "󰌾"; size: Metrics.iconLg; color: Colors.accentForeground }
+            ShellIcon { glyph: Icons.lock; size: Metrics.iconLg; color: Colors.accentForeground }
             ShellText { Layout.fillWidth: true; text: ShortcutService.keyHint("SUPER + L", true) + " locks the screen"; muted: true }
             ShellButton {
                 focusOnTab: true
                 text: "Lock now"
-                icon: "󰌾"
+                icon: Icons.lock
                 variant: "accent"
                 compact: true
                 onClicked: { PanelService.close(); SessionService.run("lock") }
@@ -159,7 +159,7 @@ ColumnLayout {
                     options: [
                         { value: "auto", label: "Automatic", icon: "󰌢" },
                         { value: "on", label: "On", icon: "󰈷" },
-                        { value: "off", label: "Off", icon: "󰌾" }
+                        { value: "off", label: "Off", icon: Icons.lock }
                     ]
                     onSelected: value => FingerprintService.setMode(value)
                 }

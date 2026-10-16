@@ -65,7 +65,26 @@ Singleton {
         overNotch = fromNotch === true
     }
 
+    // Panels built only for a feature that is on (shell.qml's LazyLoaders):
+    // opening one that is not there would raise the scrim over nothing, and
+    // the scrim catches the next click. Each ShellPanel says when it is there.
+    readonly property var lazyPanels: ["dockMenu", "startMenu"]
+    property var present: ({})
+    function reportPresent(panelId, on) {
+        if ((present[panelId] === true) === on) return
+        const next = Object.assign({}, present)
+        if (on) next[panelId] = true
+        else delete next[panelId]
+        present = next
+        // Unloaded while it was open (the dock switched off): put the scrim down.
+        if (!on && active === panelId) close(panelId)
+    }
+    function canOpen(panelId) {
+        return lazyPanels.indexOf(panelId) < 0 || present[panelId] === true
+    }
+
     function open(panelId, options) {
+        if (!canOpen(panelId)) return false
         // `onScreen`: a panel that belongs to a place on one screen (the
         // dock's menu, beside its icon) opens there, wherever the focus is.
         const wanted = options && typeof options.onScreen === "string"
@@ -78,6 +97,7 @@ Singleton {
         args = options || {}
         active = panelId
         scrimWanted = true
+        return true
     }
 
     // Dialogs (Wi-Fi password, pairing, event editor) opened over a panel

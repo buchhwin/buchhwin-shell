@@ -11,6 +11,9 @@ var SPANS = ["fit", "full"]
 var VISIBILITY = ["always", "intellihide", "hidden"]
 var ICON_SIZES = [40, 48, 56, 64]
 var MARGINS = [0, 4, 8, 16]
+// What the start button opens (`dock.startOpens`): the start menu, or the
+// launcher as it did before the start menu was there.
+var START_OPENS = ["startMenu", "launcher"]
 // Dots under an app: one per window, up to this many.
 var MAX_DOTS = 3
 // The smallest an icon is fitted down to when the edge runs out of room.
@@ -57,6 +60,7 @@ function optionValue(key, value) {
     case "visibility": return VISIBILITY.indexOf(text) >= 0 ? text : null
     case "position": return POSITIONS.indexOf(text) >= 0 ? text : null
     case "span": return SPANS.indexOf(text) >= 0 ? text : null
+    case "startOpens": return START_OPENS.indexOf(text) >= 0 ? text : null
     case "iconSize": return ICON_SIZES.indexOf(Number(text)) >= 0 && /^\d+$/.test(text) ? Number(text) : null
     case "margin": return MARGINS.indexOf(Number(text)) >= 0 && /^\d+$/.test(text) ? Number(text) : null
     // Output names (eDP-1, DP-8, HDMI-A-1), comma-separated; "" is every screen.
@@ -202,6 +206,21 @@ function menuRows(item, actions, pinnedFull, maxWindows) {
     }
     if (windows.length) rows.push({ kind: "close", count: windows.length })
     return rows
+}
+
+// ---- panels out of the dock -------------------------------------------------------
+// Where a panel opened from a place on the dock stands (`rect`, on the
+// screen): above it on a bottom dock, beside it on a side one, `gap` away,
+// centred on it along the edge. A pill's click, an app's menu and the start
+// menu opened without a click all come out of the dock this way.
+function panelAnchor(edge, rect, gap) {
+    if (!validRect(rect)) return {}
+    const space = Math.max(0, Number(gap) || 0)
+    if (edge === "left")
+        return { anchorY: Math.round(rect.y + rect.height / 2), anchorLeft: rect.x + rect.width + space, fromDock: true }
+    if (edge === "right")
+        return { anchorY: Math.round(rect.y + rect.height / 2), anchorRight: rect.x - space, fromDock: true }
+    return { anchorX: Math.round(rect.x + rect.width / 2), anchorBottom: rect.y - space, fromDock: true }
 }
 
 // ---- covered: intellihide ------------------------------------------------------------

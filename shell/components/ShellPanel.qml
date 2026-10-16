@@ -253,6 +253,10 @@ PanelWindow {
     // a grip that resizes the panel. Read only: the card places itself.
     readonly property alias cardRect: card
     signal escapePressed()
+    // A panel with steps of its own to go back through first (the start
+    // menu: its menu, then All apps): a function that returns true when it
+    // took the Escape, which then keeps the panel open.
+    property var escapeHandler: null
 
     function requestClose() { PanelService.close(panelId) }
     function escapeKey() {
@@ -262,6 +266,7 @@ PanelWindow {
             LayoutService.arrangeDragging = ""
             return
         }
+        if (typeof escapeHandler === "function" && escapeHandler() === true) return
         escapePressed()
         requestClose()
     }
@@ -320,7 +325,8 @@ PanelWindow {
     onCompactRectChanged: holdRect()
     onShownChanged: holdRect()
     onScreenChanged: heldRect = compactRect
-    Component.onCompleted: holdRect()
+    Component.onCompleted: { holdRect(); PanelService.reportPresent(panelId, true) }
+    Component.onDestruction: PanelService.reportPresent(panelId, false)
     // Origin and target together, so the morph is never cut off.
     readonly property rect compactRect: {
         if (screenW <= 0) return Qt.rect(0, 0, screenW, screenH)

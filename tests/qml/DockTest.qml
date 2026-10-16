@@ -38,6 +38,9 @@ ShellRoot {
         T.eq(D.optionValue("screens", ""), "", "no screens named: every screen")
         T.eq(D.optionValue("screens", "a b"), null, "no spaces in output names")
         T.eq(D.optionValue("nonsense", "1"), null, "an unknown key")
+        T.eq(D.optionValue("startOpens", "launcher"), "launcher", "the start button opens the launcher")
+        T.eq(D.optionValue("startOpens", "startMenu"), "startMenu", "or the start menu")
+        T.eq(D.optionValue("startOpens", "dashboard"), null, "nothing else")
 
         // ---- which app a window belongs to -------------------------------------------
         const outlook = entry("brave-faolnafnngnfdaknnbpnkhgohbobgegn-Default", "Outlook (PWA)", "crx_faolnafnngnfdaknnbpnkhgohbobgegn")
@@ -210,6 +213,21 @@ ShellRoot {
         T.eq(D.slotAt(60, [[0, 48], [54, 48]]), 1, "between")
         T.eq(D.slotAt(500, [[0, 48], [54, 48]]), 2, "past the last")
         T.eq(D.slotAt(5, []), 0, "no pins")
+
+        // ---- panels out of the dock -----------------------------------------------
+        const button = { x: 10, y: 1032, width: 40, height: 40 }
+        T.eq(D.panelAnchor("bottom", button, 6), { anchorX: 30, anchorBottom: 1026, fromDock: true }, "above a bottom dock, centred on it")
+        T.eq(D.panelAnchor("left", { x: 0, y: 500, width: 48, height: 41 }, 6),
+             { anchorY: 521, anchorLeft: 54, fromDock: true }, "beside a left one")
+        T.eq(D.panelAnchor("right", { x: 1872, y: 500, width: 48, height: 40 }, 6),
+             { anchorY: 520, anchorRight: 1866, fromDock: true }, "and a right one")
+        T.eq(D.panelAnchor("bottom", null, 6), {}, "no place: nothing to anchor to")
+        T.eq(D.panelAnchor("bottom", { x: 0, y: 0, width: 0, height: 40 }, 6), {}, "nor an empty one")
+        T.eq(D.panelAnchor("bottom", button, -3).anchorBottom, 1032, "no negative gap")
+        // A full dock's menu offers no pin: the dock's own limit, not the
+        // launcher's (DockMenu handed the launcher's flag before).
+        T.eq(D.menuRows({ entryId: "x", pinned: false, windows: [] }, [], true, 3).find(row => row.kind === "pin"),
+             { kind: "pin", enabled: false }, "the pin row is off while the dock's pins are full")
 
         T.finish("DockTest")
     }

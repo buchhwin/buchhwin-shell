@@ -268,9 +268,9 @@ Item {
             spacing: Metrics.spaceLg
             Repeater {
                 model: [
-                    { id: "suspend", glyph: "󰤄", label: "Sleep" },
-                    { id: "reboot", glyph: "󰜉", label: "Restart" },
-                    { id: "poweroff", glyph: "󰐥", label: "Shut down" }
+                    { id: "suspend", glyph: Icons.suspend, label: "Sleep" },
+                    { id: "reboot", glyph: Icons.reboot, label: "Restart" },
+                    { id: "poweroff", glyph: Icons.poweroff, label: "Shut down" }
                 ]
                 ColumnLayout {
                     id: powerButton

@@ -146,7 +146,7 @@ ColumnLayout {
                                 readonly property bool isMounted: DrivesService.mounted(volumeEntry.modelData)
                                 readonly property bool isLocked: DrivesService.locked(volumeEntry.modelData)
                                 Layout.fillWidth: true
-                                icon: row.isLocked ? "󰌾" : isMounted ? "󰉖" : Icons.folder
+                                icon: row.isLocked ? Icons.lock : isMounted ? "󰉖" : Icons.folder
                                 active: isMounted
                                 title: DrivesService.volumeTitle(volumeEntry.modelData)
                                 subtitle: DrivesService.volumeSubtitle(volumeEntry.modelData)

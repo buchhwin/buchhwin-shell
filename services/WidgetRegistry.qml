@@ -24,13 +24,15 @@ Singleton {
 
     readonly property var types: ({
         // The dock's own (shell/dock/Dock.qml): the pinned and running apps,
-        // and a start button that opens the launcher. Not offered on the
-        // desktop or the bar - the apps need the dock's surface around them.
+        // and a start button with the fastfetch Saturn that opens the start
+        // menu (shell/startmenu), or the launcher (`dock.startOpens`, see
+        // actionOf). Not offered on the desktop or the bar - the apps need the
+        // dock's surface around them.
         "apps": { label: "Apps", icon: Icons.window, category: "dock", dockOnly: true, pillDisplay: "full",
                   pillDisplays: ["full"], file: "AppsWidget.qml", sizes: ["small"], action: "", available: true,
                   noHighlight: true, defaults: {} },
         "start": { label: "Start button", icon: Icons.apps, category: "dock", dockOnly: true, pillDisplay: "icon",
-                   file: "StartWidget.qml", sizes: ["small", "medium", "large"], action: "launcher", available: true,
+                   file: "StartWidget.qml", sizes: ["small", "medium", "large"], action: "startMenu", available: true,
                    defaults: {} },
         "clock": { label: "Clock", icon: "󰥔", category: "time", file: "ClockWidget.qml",
                    sizes: ["small", "medium", "large"], action: "dashboard", available: true,
@@ -108,6 +110,17 @@ Singleton {
 
     function type(name) {
         return types[name] || null
+    }
+
+    // The panel a click on a widget of this type opens. The table's own
+    // `action`, but for the start button, which follows Settings > Dock >
+    // Start button: read here rather than written into `types`, which every
+    // pill reads its entry from - a change would re-evaluate them all.
+    function actionOf(name) {
+        const entry = types[name]
+        if (!entry) return ""
+        if (name === "start") return SettingsService.value("dock.startOpens") === "launcher" ? "launcher" : "startMenu"
+        return entry.action
     }
 
     function isAvailable(name) {

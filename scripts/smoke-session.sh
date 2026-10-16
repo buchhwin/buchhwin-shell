@@ -11,7 +11,7 @@ if [[ -r "$project_dir/scripts/lib/hyprland-prefix.sh" ]]; then source "$project
 # Every IpcHandler target shell.qml declares, in its order; only `show` is
 # read, nothing is called. tests/python/smoke_targets_test.py holds this list
 # to shell.qml in both directions.
-expected_targets=(desktop editor welcome emoji launcher controlCenter notifications powerMenu settings appTheme dashboard popup weather calendar network bluetooth kdeConnect fingerprint drives accounts updates recording shortcuts nightLight focus overview gestures colorPicker wallpaperPicker switcher clipboard brightness workspaces kbdBacklight power displays bar notch timer audio mode profile dock)
+expected_targets=(desktop editor welcome emoji launcher controlCenter notifications powerMenu settings appTheme dashboard popup weather calendar network bluetooth kdeConnect fingerprint drives accounts updates recording shortcuts nightLight focus overview gestures colorPicker wallpaperPicker switcher clipboard brightness workspaces kbdBacklight power displays bar notch timer audio mode profile dock startMenu)
 [[ -n ${BUCHHWIN_EXPECTED_TARGETS:-} ]] && read -r -a expected_targets <<<"$BUCHHWIN_EXPECTED_TARGETS"
 
 # Warnings from the environment or Quickshell itself rather than from this shell:

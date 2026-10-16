@@ -60,9 +60,17 @@ Singleton {
         { name: "Utilities", icon: "󰦪", keys: ["Utility", "TextEditor", "TerminalEmulator", "FileManager"] },
         { name: "Games", icon: "󰊴", keys: ["Game"] }
     ]
+    // What counts as an app: every entry that does not ask to be left out of
+    // menus. The launcher's results and categories and the start menu's lists
+    // all start here. Read it under a panel's `shown`: DesktopEntries rescans
+    // on any file made in $HOME, and each rescan is a new list.
+    function visibleApps() {
+        return DesktopEntries.applications.values.filter(app => app && !app.noDisplay)
+    }
+
     // Categories that contain at least one visible app, with their app count.
     readonly property var availableCategories: {
-        const visible = DesktopEntries.applications.values.filter(app => app && !app.noDisplay)
+        const visible = visibleApps()
         return categories.map(item => Object.assign({}, item, {
             count: item.keys.length ? visible.filter(app => inCategory(app, item)).length : visible.length
         })).filter(item => !item.keys.length || item.count > 0)
@@ -131,16 +139,16 @@ Singleton {
         { title: "Record region", keywords: "screen recording record region video capture bildschirmaufnahme aufnahme bereich", icon: "󰑊", run: () => { PanelService.close(); RecordingService.startSoon("region") } },
         { title: "Record screen", keywords: "screen recording record screen monitor video capture bildschirmaufnahme aufnahme bildschirm", icon: "󰑋", run: () => { PanelService.close(); RecordingService.startSoon("screen") } },
         { title: "Stop recording", keywords: "screen recording stop video bildschirmaufnahme aufnahme beenden", icon: "󰓛", run: () => RecordingService.stop() },
-        { title: "Lock", keywords: "lock sperren", icon: "󰌾", run: () => SessionService.run("lock") },
+        { title: "Lock", keywords: "lock sperren", icon: Icons.lock, run: () => SessionService.run("lock") },
         { title: "Fingerprint unlock: automatic", keywords: "fingerprint unlock lock screen lid dock automatic fingerabdruck entsperren sperrbildschirm deckel automatisch", icon: "󰈷", run: () => FingerprintService.setMode("auto") },
         { title: "Fingerprint unlock: on", keywords: "fingerprint unlock lock screen on fingerabdruck entsperren sperrbildschirm an ein", icon: "󰈷", run: () => FingerprintService.setMode("on") },
         { title: "Fingerprint unlock: off", keywords: "fingerprint unlock lock screen password off fingerabdruck entsperren sperrbildschirm passwort aus", icon: "󰈷", run: () => FingerprintService.setMode("off") },
         { title: "Stay awake: on", keywords: "caffeine idle awake koffein wach bleiben", icon: "󰅶", run: () => IdleService.stayAwake = true },
         { title: "Stay awake: off", keywords: "caffeine idle awake koffein wach bleiben", icon: "󰾪", run: () => IdleService.stayAwake = false },
-        { title: "Sleep", keywords: "suspend sleep bereitschaft", icon: "󰤄", run: () => SessionService.run("suspend") },
-        { title: "Log out …", keywords: "logout log out abmelden", icon: "󰍃", run: () => PanelService.open("powerMenu", { confirm: "logout" }) },
-        { title: "Restart …", keywords: "reboot restart neustarten neu starten", icon: "󰜉", run: () => PanelService.open("powerMenu", { confirm: "reboot" }) },
-        { title: "Shut down …", keywords: "shutdown shut down poweroff ausschalten herunterfahren", icon: "󰐥", run: () => PanelService.open("powerMenu", { confirm: "poweroff" }) }
+        { title: "Sleep", keywords: "suspend sleep bereitschaft", icon: Icons.suspend, run: () => SessionService.run("suspend") },
+        { title: "Log out …", keywords: "logout log out abmelden", icon: Icons.logout, run: () => PanelService.open("powerMenu", { confirm: "logout" }) },
+        { title: "Restart …", keywords: "reboot restart neustarten neu starten", icon: Icons.reboot, run: () => PanelService.open("powerMenu", { confirm: "reboot" }) },
+        { title: "Shut down …", keywords: "shutdown shut down poweroff ausschalten herunterfahren", icon: Icons.poweroff, run: () => PanelService.open("powerMenu", { confirm: "poweroff" }) }
     // A notch preset is a command only once its file has read (LayoutService
     // loads the built-in ones asynchronously); before that, or with the file
     // missing, it would be a command that does nothing.
@@ -228,8 +236,7 @@ Singleton {
         const q = query.trim().toLowerCase()
         const now = Date.now()
         const filter = categories.find(item => item.name === category)
-        return DesktopEntries.applications.values
-            .filter(app => app && !app.noDisplay)
+        return visibleApps()
             .filter(app => inCategory(app, filter))
             .map(app => ({
                 app: app,

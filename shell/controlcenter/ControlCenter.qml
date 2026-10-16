@@ -113,7 +113,7 @@ ShellPanel {
                 onClicked: LayoutService.quickEditing = !LayoutService.quickEditing
             }
             ShellButton { icon: Icons.settings; variant: "ghost"; iconSize: Metrics.iconMd; toolTip: "Settings"; onClicked: PanelService.open("settings") }
-            ShellButton { icon: "󰐥"; variant: "ghost"; iconSize: Metrics.iconMd; toolTip: "Power"; onClicked: PanelService.open("powerMenu") }
+            ShellButton { icon: Icons.poweroff; variant: "ghost"; iconSize: Metrics.iconMd; toolTip: "Power"; onClicked: PanelService.open("powerMenu") }
         }
 
         // The panel caps its own height and clips, so the pages scroll rather

@@ -73,7 +73,7 @@ ShellPanel {
                     focusOnTab: true
                     id: secretField
                     Layout.fillWidth: true
-                    icon: "󰌾"
+                    icon: Icons.lock
                     placeholder: "Password (at least 8 characters)"
                     echoMode: root.showSecret ? TextInput.Normal : TextInput.Password
                     onAccepted: root.submit()

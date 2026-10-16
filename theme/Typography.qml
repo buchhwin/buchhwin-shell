@@ -31,6 +31,10 @@ Singleton {
     readonly property int pageTitleSize: size(26)
     // The initial in the lock screen avatar: a glyph, not a text role.
     readonly property int avatarInitialSize: size(34)
+    // The start menu's fastfetch Saturn: small enough to stand beside two
+    // lines of text, large enough that it is still letters.
+    readonly property int startAsciiSize: size(8)
+    readonly property int startAvatarInitialSize: size(15)
     readonly property int displaySize: size(56)
     // The charge in the battery popup: bigger than a headline, smaller than
     // the display size a clock takes.

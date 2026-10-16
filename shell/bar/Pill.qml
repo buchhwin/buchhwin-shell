@@ -8,6 +8,7 @@ import qs.shell.components
 import qs.shell.widgets
 import qs.shell.editor
 import "../../services/bar/BarLogic.js" as BarLogic
+import "../../services/dock/DockLogic.js" as DockLogic
 import "../../services/LayoutLogic.js" as LayoutLogic
 import "../../services/model/KeyedLogic.js" as Keyed
 
@@ -76,6 +77,11 @@ Rectangle {
             if (index < pill.items.length && surface === "bar")
                 LayoutService.reportBarItemRect(screenName, pill.items[index].type,
                     visible && segment && segment.visible ? screenRect(segment) : null)
+            // The start button the same way on the dock: the start menu
+            // opened by a key or IPC comes out of it too.
+            if (index < pill.items.length && surface === "dock" && pill.items[index].type === "start")
+                LayoutService.reportDockItemRect(screenName, "start",
+                    visible && segment && segment.visible ? screenRect(segment) : null)
         }
     }
 
@@ -96,6 +102,7 @@ Rectangle {
         for (let index = 0; index < pill.items.length; ++index) {
             LayoutService.reportSurfaceRect(screenName, pill.id + "#" + index, null)
             if (surface === "bar") LayoutService.reportBarItemRect(screenName, pill.items[index].type, null)
+            if (surface === "dock" && pill.items[index].type === "start") LayoutService.reportDockItemRect(screenName, "start", null)
         }
     }
 
@@ -369,12 +376,14 @@ Rectangle {
                                      : root.mapToItem(null, 0, root.height / 2).y + root.reportOrigin.y)
                         : (root.flat ? BarLogic.anchorAlong(topLeft.x, segment.width)
                                      : root.mapToItem(null, root.width / 2, 0).x + root.reportOrigin.x)
+                    // Out of the dock: above it at the bottom, beside it on a
+                    // side - and on the dock's own screen, which need not be
+                    // the focused one (the dock stays shown for a panel it
+                    // opened only on its screen, Dock.qml `panelFromHere`).
                     const anchor = root.surface !== "dock" ? (root.vertical ? { anchorY: along } : { anchorX: along })
-                        // Out of the dock: above it at the bottom, beside it on a side.
-                        : root.dockEdge === "left" ? { anchorY: along, anchorLeft: topLeft.x + box.width + Metrics.spaceSm, fromDock: true }
-                        : root.dockEdge === "right" ? { anchorY: along, anchorRight: topLeft.x - Metrics.spaceSm, fromDock: true }
-                        : { anchorX: along, anchorBottom: topLeft.y - Metrics.spaceSm, fromDock: true }
-                    PanelService.toggle(segment.entry.action, Object.assign(anchor, {
+                        : Object.assign(DockLogic.panelAnchor(root.dockEdge, { x: topLeft.x, y: topLeft.y, width: box.width, height: box.height },
+                                                              Metrics.spaceSm), { onScreen: root.screenName })
+                    PanelService.toggle(WidgetRegistry.actionOf(segment.modelData.type), Object.assign(anchor, {
                         originX: topLeft.x, originY: topLeft.y,
                         originWidth: box.width, originHeight: box.height
                     }, segment.entry.actionArgs || {}))

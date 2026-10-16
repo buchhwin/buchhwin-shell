@@ -22,6 +22,14 @@ ShellRoot {
         T.eq(Object.keys(many).length, U.MAX_ENTRIES, "history capped")
         T.ok(many["app0"] === undefined && many["app209"] !== undefined, "oldest entries dropped first")
         T.eq(U.parse(U.serialize(usage)), usage, "round trip")
+        // The start menu's frequent apps.
+        const ranked = { a: { count: 3, last: now - day }, b: { count: 5, last: now }, c: { count: 3, last: now },
+                         old: { count: 10, last: now - 60 * day }, today: { count: 1, last: now } }
+        T.eq(U.top(ranked, now), ["b", "c", "a", "today", "old"], "by frecency, a tie by the last start")
+        T.eq(U.top(ranked, now, 2), ["b", "c"], "a limit")
+        T.eq(U.top({}, now), [], "nothing started yet")
+        T.eq(U.top({ x: { count: 2, last: now }, y: { count: 2, last: now } }, now), ["x", "y"], "equal ones by id")
+        T.ok(U.top(ranked, now).indexOf("old") > U.top(ranked, now).indexOf("today"), "ten starts two months ago rank behind one today")
         T.finish("UsageTest")
     }
 }

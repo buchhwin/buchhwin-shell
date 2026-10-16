@@ -14,6 +14,7 @@ import qs.shell.settings
 import qs.shell.bar
 import qs.shell.notch
 import qs.shell.dock
+import qs.shell.startmenu
 import qs.shell.network
 import qs.shell.bluetooth
 import qs.shell.drives
@@ -181,6 +182,40 @@ ShellRoot {
         function toggle(): void { PanelService.toggle("emoji") }
         function open(): void { PanelService.open("emoji") }
         function close(): void { PanelService.close("emoji") }
+    }
+
+    // The start menu (shell/startmenu). `get` and `rects` are counts, flags
+    // and places, never an app's or the user's name.
+    IpcHandler {
+        id: startMenuIpc
+        target: "startMenu"
+        function toggle(): void {
+            if (PanelService.isOpen("startMenu")) PanelService.close("startMenu")
+            else root.openStartMenu("home")
+        }
+        function open(): void { root.openStartMenu("home") }
+        // "home" or "all".
+        function openView(view: string): bool {
+            if (view !== "home" && view !== "all") return false
+            if (PanelService.isOpen("startMenu") && startMenuLoader.item) startMenuLoader.item.openView(view)
+            else root.openStartMenu(view)
+            return true
+        }
+        function close(): void { PanelService.close("startMenu") }
+        function get(): string {
+            const menu = startMenuLoader.item
+            return JSON.stringify(Object.assign({ loaded: menu !== null && menu !== undefined },
+                                                menu ? JSON.parse(menu.describe()) : {}))
+        }
+        // The start button and the card on the screen the menu is on (or the
+        // focused one), screen-local.
+        function rects(): string {
+            const menu = startMenuLoader.item
+            const focused = PanelService.focusedScreen()
+            const name = PanelService.isOpen("startMenu") ? PanelService.screenName : focused ? focused.name : ""
+            return JSON.stringify({ screen: name, button: LayoutService.dockItemRect(name, "start"),
+                                    card: menu && PanelService.isOpen("startMenu") ? menu.cardPlace() : null })
+        }
     }
 
     IpcHandler {
@@ -1012,6 +1047,30 @@ ShellRoot {
     LazyLoader {
         active: SettingsService.value("dock.enabled") === true
         DockMenu {}
+    }
+    // The start menu: only for a dock with a start button that opens it
+    // (Settings > Dock > Start button), or once IPC asked for it - a dock
+    // without one pays nothing for it.
+    property bool startMenuDemanded: false
+    LazyLoader {
+        id: startMenuLoader
+        active: root.startMenuDemanded || (SettingsService.value("dock.enabled") === true && LayoutService.dockHasStart
+            && SettingsService.value("dock.startOpens") !== "launcher")
+        StartMenu {}
+    }
+    // Out of the dock's start button when there is one on that screen,
+    // in the middle of it otherwise. Built first if it is not.
+    function openStartMenu(view) {
+        startMenuDemanded = true
+        Qt.callLater(() => {
+            const screen = PanelService.focusedScreen()
+            const name = screen ? screen.name : ""
+            const button = LayoutService.dockItemRect(name, "start")
+            const args = { onScreen: name, startView: view }
+            if (button) Object.assign(args, DockLogic.panelAnchor(SettingsService.value("dock.position"), button, Metrics.spaceSm),
+                                      { originX: button.x, originY: button.y, originWidth: button.width, originHeight: button.height })
+            PanelService.open("startMenu", args)
+        })
     }
     ColorPickerPopup {}
     ColorPickerOverlay {}

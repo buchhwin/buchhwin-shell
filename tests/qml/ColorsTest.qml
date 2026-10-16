@@ -112,8 +112,18 @@ ShellRoot {
                 // A switch that is on and a slider's level stand off the card.
                 T.ok(contrast(Colors.accentFill, Colors.cardBase) >= (theme === "light" ? 3 : 1.5), label + ": the accent fill on a card")
                 T.ok(contrast(Colors.knob, Colors.accentFill) >= (theme === "light" ? 3 : 1), label + ": the knob on the fill")
+                // The fastfetch Saturn: two colours that read on the panel
+                // and from each other.
+                T.ok(contrast(Colors.saturnPlanet, Colors.contrastBase) >= (theme === "light" ? 4.5 : 3), label + ": the Saturn's planet " + hex(Colors.saturnPlanet))
+                T.ok(contrast(Colors.saturnRing, Colors.contrastBase) >= 3, label + ": its ring " + hex(Colors.saturnRing))
+                T.ok(contrast(Colors.saturnPlanet, Colors.saturnRing) > 1.15, label + ": planet and ring apart " + contrast(Colors.saturnPlanet, Colors.saturnRing))
             }
         }
+        // `ff`'s second colour: the accent mixed half with white, which is
+        // the shipped logo's pale blue for its sky blue.
+        set("dark", "auto", "#5fafff")
+        T.eq(hex(Colors.saturnRingMix), "#afd7ff", "ff's ring colour for the logo's own blue")
+        T.eq([hex(Colors.saturnPlanet), hex(Colors.saturnRing)], ["#5fafff", "#afd7ff"], "on a dark panel the Saturn is fastfetch's")
         set("light", "auto", "#4f8ff7")
         T.eq(hex(Colors.accentFill), hex(Colors.accentLine), "light switches and sliders fill with the 3:1 line")
         T.near(Colors.accentSoft.a, 0.26, "the light tint is the line at 0.26", 0.005)

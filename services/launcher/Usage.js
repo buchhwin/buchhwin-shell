@@ -52,3 +52,13 @@ function boost(usage, id, now) {
     const value = frecency(usage, id, now)
     return value > 0 ? Math.min(15, 5 * Math.log(1 + value)) : 0
 }
+
+// The apps used most, by frecency, then the one started last, then by id so
+// equal ones keep their order. The start menu's "Frequent" row. Apps whose
+// score has decayed to nothing are not listed.
+function top(usage, now, limit) {
+    const ids = Object.keys(usage || {}).filter(id => frecency(usage, id, now) > 0)
+    ids.sort((a, b) => frecency(usage, b, now) - frecency(usage, a, now)
+        || usage[b].last - usage[a].last || (a < b ? -1 : a > b ? 1 : 0))
+    return limit === undefined ? ids : ids.slice(0, Math.max(0, Number(limit) || 0))
+}
