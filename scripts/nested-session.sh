@@ -9,6 +9,8 @@ set -euo pipefail
 #
 #   scripts/nested-session.sh start [WIDTHxHEIGHT] [SCALE]   prints env lines
 #   scripts/nested-session.sh stop
+# BUCHHWIN_NESTED_FRESH=1 starts from an empty sandbox (see below; the deploy
+# does), BUCHHWIN_NESTED_LUA=1 with hypr/hyprland.lua.
 
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
 # shellcheck source=lib/hyprland-prefix.sh
@@ -91,6 +93,39 @@ mkdir -p -m 700 -- "$base"
 if [[ ! -O $base || -L $base ]]; then
   printf 'nested-session: %s is not a directory of this user; not using it\n' "$base" >&2
   exit 1
+fi
+# BUCHHWIN_NESTED_FRESH=1 starts from an empty sandbox: the config, state and
+# cache of the last run are removed first. They outlive the session (pitfall
+# 92) - a wallpaper path another profile left failed a good deploy, a bar mode
+# a failed smoke run left switched carried into the next one - and a first
+# start (a fresh layout, the migrations) is otherwise never what a run tests.
+# Only a sandbox this script built before (its hypr/hyprland.conf and
+# hyprland.log are there), and only once nothing of it runs any more; else
+# it is kept, and said. settings.json is
+# seeded with the welcome tour done: it opens by itself a few seconds after a
+# first start, over whatever the test opened (pitfall 102: written before the
+# start, never under a running shell).
+if [[ ${BUCHHWIN_NESTED_FRESH:-0} == 1 ]]; then
+  fresh=1
+  if [[ -f $base/hypr/hyprland.conf && -f $base/hyprland.log ]]; then
+    # stop_nested has just sent them TERM; a scan of /proc takes ~0.3 s.
+    running=""
+    for _ in {1..10}; do
+      running=$(sandbox_pids | grep -vx "$$" || true)
+      [[ -z $running ]] && break
+      sleep 0.2
+    done
+    if [[ -n $running ]]; then
+      printf 'nested-session: processes of %s still run (%s); keeping its state\n' "$base" "$(tr '\n' ' ' <<<"$running")" >&2
+      fresh=0
+    else
+      rm -rf -- "$base/config" "$base/state" "$base/cache"
+    fi
+  fi
+  if (( fresh )) && [[ ! -e $base/config/buchhwin-shell/settings.json ]]; then
+    mkdir -p -- "$base/config/buchhwin-shell"
+    printf '{ "configVersion": 1, "onboarding": { "completed": true } }\n' > "$base/config/buchhwin-shell/settings.json"
+  fi
 fi
 mkdir -p -- "$base/config" "$base/state" "$base/cache" "$base/hypr"
 # Never share the host's Akonadi configuration with the sandbox: an Akonadi

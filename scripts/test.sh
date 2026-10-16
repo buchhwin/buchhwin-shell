@@ -28,16 +28,23 @@ printf '== Shell scripts\n'
 # bash -n only parses its first file argument, so check each file. The ones
 # without a .sh name are listed by hand: the user's `buchhwin` command and
 # the nested key tool, whose parse error the smoke test would only report as
-# "tool cannot build" (a skip), and the session's xdg-open.
+# "tool cannot build" (a skip), and the session's xdg-open. The installers'
+# sourced parts (install/lib, install/packages) were parsed only when
+# bootstrap-test happened to source them.
 for script in "$project_dir"/scripts/*.sh "$project_dir"/install/*.sh \
+  "$project_dir"/install/lib/*.sh "$project_dir"/install/packages/*.sh \
   "$project_dir"/tests/*.sh "$project_dir/session/buchhwin-shell-session" \
   "$project_dir"/scripts/lib/*.sh "$project_dir/scripts/nested-pointer" \
   "$project_dir/scripts/nested-keys" "$project_dir/scripts/buchhwin" "$project_dir/session/bin/xdg-open"; do
   bash -n "$script"
 done
 sh -n "$project_dir/session/buchhwin-shell-session-wrapper"
-zsh -n "$project_dir/zsh/.zshrc"
-zsh -n "$project_dir/shell-completion/_buchhwin"
+# Every terminal of the session sources buchhwin.zsh (through zsh/.zshrc, and
+# a personal .zshrc as shell.zsh): a slip there breaks every terminal's start.
+for script in "$project_dir/zsh/.zshrc" "$project_dir/zsh/buchhwin.zsh" "$project_dir/zsh/plasma.zshrc" \
+  "$project_dir/shell-completion/_buchhwin"; do
+  zsh -n "$script"
+done
 sh -n "$project_dir/session/pam/buchhwin-lid-closed"
 
 printf '== Hyprland configuration\n'

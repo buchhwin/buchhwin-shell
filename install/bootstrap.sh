@@ -72,9 +72,11 @@ aur_packages=()
 # category:desktop-id, read off a working installation rather than guessed.
 # Set through scripts/default-apps.py, which writes a session-local
 # buchhwin-shell-mimeapps.list - Plasma's own defaults are untouched.
+# The file manager first: it is the one a session without a choice gets
+# wrong (step 7).
 app_defaults=(
-  "browser:brave-browser.desktop"
   "files:org.kde.dolphin.desktop"
+  "browser:brave-browser.desktop"
   "terminal:kitty.desktop"
   "video:vlc.desktop"
   "music:vlc.desktop"
@@ -122,6 +124,32 @@ if $list_packages; then
 fi
 
 say() { printf '\n%s\n' "$1"; }
+
+# Step 7 for one category: the default it should have, unless it has one.
+# One that is not installed is skipped and said so: Brave comes from the AUR
+# on Arch (step 3b goes on without a helper or after a failed build), and
+# default-apps.py refuses an id it cannot find - under set -e that ended the
+# run at the browser, before the file manager was ever set (Super+E opened a
+# terminal, the bug this step is for).
+app_default() {
+  local category=$1 desktop_id=$2 current
+  current=$("$defaults_tool" get "$category" 2>/dev/null || true)
+  # kitty's package registers kitty-open.desktop for inode/directory, and
+  # without a choice of anyone's that system default won over Dolphin
+  # (mimeinfo.cache order): Super+E opened a terminal, on Leap and on Arch.
+  # It is kitty's "open here" helper, not a file manager. default-apps.py
+  # passes over it in the system's cache now; named in a mimeapps.list
+  # (Plasma's), it is still no file manager for this session.
+  [[ $category == files && $current == kitty-open.desktop ]] && current=""
+  if [[ -n $current ]]; then
+    printf '  %-9s keeps %s\n' "$category" "$current"
+  elif "$defaults_tool" set "$category" "$desktop_id" >/dev/null 2>&1; then
+    printf '  + %-9s %s\n' "$category" "$desktop_id"
+  else
+    printf '  %-9s %s is not installed; skipped\n' "$category" "$desktop_id"
+  fi
+}
+
 run() {
   if $apply; then
     printf '  + %s\n' "$*"
@@ -281,18 +309,7 @@ else
     category=${entry%%:*}
     desktop_id=${entry#*:}
     if $apply; then
-      current=$("$defaults_tool" get "$category" 2>/dev/null || true)
-      # kitty's package registers kitty-open.desktop for inode/directory, and
-      # without a choice of anyone's that system default wins over Dolphin
-      # (mimeinfo.cache order): Super+E opened a terminal, on Leap and on Arch.
-      # It is kitty's "open here" helper, not a file manager.
-      [[ $category == files && $current == kitty-open.desktop ]] && current=""
-      if [[ -n $current ]]; then
-        printf '  %-9s keeps %s\n' "$category" "$current"
-      else
-        printf '  + %-9s %s\n' "$category" "$desktop_id"
-        "$defaults_tool" set "$category" "$desktop_id" >/dev/null
-      fi
+      app_default "$category" "$desktop_id"
     else
       printf '  %-9s %s (only if the category has none)\n' "$category" "$desktop_id"
     fi

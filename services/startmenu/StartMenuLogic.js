@@ -16,8 +16,28 @@
 // laid out and every run stays at its column whatever the font does between
 // them (the README banner is made the same way). `columns` is where the last
 // run ends.
+//
+// The logo may be the user's own (textLogo below), so it is kept to
+// LOGO_LIMIT - a long file would be thousands of Texts, built with every
+// open - and terminal colour codes (a raw logo's) are dropped: its two
+// colours are the planet's and the ring's. Not text at all (an image named
+// by its path): no logo.
+var LOGO_LIMIT = { rows: 30, columns: 80 }
+// The room the header has for it: the shipped Saturn's 55 x 15 cells. A
+// larger logo is drawn smaller to fit (SaturnAscii), a smaller one as it is.
+var LOGO_BOX = { rows: 15, columns: 55 }
+
+function looksLikeText(text) {
+    const value = String(text || "")
+    if (value.indexOf("\u0000") >= 0) return false
+    const controls = value.replace(/[\n\r\t\u001b]/g, "").replace(/[^\u0001-\u001f\u007f]/g, "").length
+    return controls * 20 <= value.length
+}
+
 function asciiRuns(text) {
-    const lines = String(text || "").replace(/\r/g, "").split("\n")
+    const raw = String(text || "")
+    if (!looksLikeText(raw)) return { rows: 0, columns: 0, runs: [] }
+    const lines = raw.replace(/\r/g, "").replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "").split("\n").slice(0, LOGO_LIMIT.rows)
     while (lines.length && !lines[lines.length - 1].replace(/\$[1-9]/g, "").trim().length) lines.pop()
     const runs = []
     let columns = 0
@@ -38,6 +58,7 @@ function asciiRuns(text) {
                 }
                 if (next === "$") ++index
             }
+            if (column >= LOGO_LIMIT.columns) break
             if (character === " " || character === "\t") {
                 run = null
             } else if (run && run.tone === tone) {
@@ -51,6 +72,93 @@ function asciiRuns(text) {
         }
     }
     return { rows: lines.length, columns: columns, runs: runs }
+}
+
+// ---- which logo ----------------------------------------------------------------
+// The menu follows the user's fastfetch: the text logo its configuration
+// (the shell's fastfetch.jsonc, Settings > Terminal) draws, else the user's
+// own copy of the Saturn in the config directory, else the one the shell
+// ships. fastfetch's logo types as scripts/fastfetch-image.py reads them:
+// "file"/"file-raw" name a text file, "data"/"data-raw" are the text itself,
+// the image types and the named logos ("builtin", "small", "none") are no
+// text logo; with no type ("auto") a path that is not an image's is one.
+var TEXT_LOGO_TYPES = ["file", "file-raw"]
+var DATA_LOGO_TYPES = ["data", "data-raw"]
+var IMAGE_SUFFIXES = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"]
+
+// JSONC as fastfetch writes it: // and /* */ comments and trailing commas,
+// outside strings (fastfetch-image.py's strip_jsonc, the same walk).
+function stripJsonc(text) {
+    const source = String(text || "")
+    let out = ""
+    let comma = false
+    let index = 0
+    while (index < source.length) {
+        const character = source.charAt(index)
+        if (character === '"') {
+            let end = index + 1
+            while (end < source.length && source.charAt(end) !== '"') end += source.charAt(end) === "\\" ? 2 : 1
+            if (comma) { out += ","; comma = false }
+            out += source.slice(index, end + 1)
+            index = end + 1
+            continue
+        }
+        if (source.startsWith("//", index)) {
+            const end = source.indexOf("\n", index)
+            index = end < 0 ? source.length : end
+            continue
+        }
+        if (source.startsWith("/*", index)) {
+            const end = source.indexOf("*/", index + 2)
+            index = end < 0 ? source.length : end + 2
+            continue
+        }
+        if (character === ",") {
+            if (comma) out += ","
+            comma = true
+        } else if (/\s/.test(character)) {
+            out += character
+        } else {
+            // A comma right before a closing bracket was a trailing one.
+            if (comma && character !== "}" && character !== "]") out += ","
+            comma = false
+            out += character
+        }
+        ++index
+    }
+    return comma ? out + "," : out
+}
+
+function expandHome(path, home) {
+    const text = String(path || "")
+    if (text === "~") return String(home || "")
+    return text.indexOf("~/") === 0 ? String(home || "") + text.slice(1) : text
+}
+
+// The text logo a fastfetch configuration draws: { path } for a file,
+// { text } for one written into it, {} for none (or no configuration).
+function textLogo(configText, home) {
+    let config = null
+    try { config = JSON.parse(stripJsonc(configText)) } catch (error) { return {} }
+    const logo = config && typeof config === "object" ? config.logo : null
+    if (!logo || typeof logo !== "object" || typeof logo.source !== "string" || !logo.source.length) return {}
+    const kind = typeof logo.type === "string" && logo.type.length ? logo.type.toLowerCase() : "auto"
+    if (DATA_LOGO_TYPES.indexOf(kind) >= 0) return { text: logo.source }
+    const path = expandHome(logo.source, home)
+    if (TEXT_LOGO_TYPES.indexOf(kind) >= 0) return { path: path }
+    if (kind !== "auto") return {}
+    const lower = path.toLowerCase()
+    if (IMAGE_SUFFIXES.some(suffix => lower.endsWith(suffix)) || path.indexOf("/") < 0) return {}
+    return { path: path }
+}
+
+// The files to try, in order, each once: the configuration's, the user's
+// Saturn, the shipped one.
+function logoPaths(logo, userCopy, shipped) {
+    const result = []
+    for (const path of [logo && logo.path, userCopy, shipped])
+        if (typeof path === "string" && path.length && result.indexOf(path) < 0) result.push(path)
+    return result
 }
 
 // ---- the Saturn on the start button ----------------------------------------
@@ -179,6 +287,17 @@ function move(state, key, zones, page) {
     return { zone: zone.id, index: index }
 }
 
+// Escape, one step at a time: the app's or the power menu, then the query,
+// then All apps, then the menu closes. The field itself clears what was
+// typed since it took the focus; a query it already held then (a focus that
+// went and came back) it passes on, and this step clears it.
+function escapeStep(menuOpen, query, view) {
+    if (menuOpen) return "menu"
+    if (String(query || "").length) return "query"
+    if (view === "all") return "view"
+    return "close"
+}
+
 // ---- frequent -----------------------------------------------------------------
 // The apps used most (ids ranked by Usage.top) that are still installed, meant
 // to be shown and not pinned already.
@@ -193,6 +312,28 @@ function frequent(rankedIds, entries, pinnedIds, limit) {
         if (result.length >= most) break
         if (byId[id] && pinned.indexOf(id) < 0 && result.indexOf(byId[id]) < 0) result.push(byId[id])
     }
+    return result
+}
+
+// ---- suggested ------------------------------------------------------------------
+// With nothing pinned the menu suggests what the dock pins by default: the
+// session's file manager, terminal and browser (Settings > Default apps,
+// default-apps.py's categories: [{ id: "terminal", current: "Alacritty.desktop" } …])
+// and the shell's own Settings. Each app once, only what is installed and
+// shown; a right click pins it. `lookup(id)` is DesktopEntries.byId.
+var SUGGESTED = ["files", "terminal", "browser"]
+
+function suggested(categories, lookup) {
+    const list = Array.prototype.slice.call(categories || [])
+    const result = []
+    for (const category of SUGGESTED) {
+        const found = list.find(item => item && item.id === category)
+        const id = found && found.current ? String(found.current).replace(/\.desktop$/, "") : ""
+        const entry = id.length && typeof lookup === "function" ? lookup(id) : null
+        if (entry && entry.id && !entry.noDisplay && !result.some(item => item.entry && item.entry.id === entry.id))
+            result.push({ kind: "app", entry: entry })
+    }
+    result.push({ kind: "settings" })
     return result
 }
 

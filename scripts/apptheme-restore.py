@@ -16,11 +16,21 @@ kwriteconfig6 (entries added since are deleted), apps are told the palette
 changed, the GNOME keys are set again and, when all of that succeeded, the
 state file forgets the saved values (the next login saves them again). Only
 kwriteconfig6 on kdeglobals colour entries, plasma-apply-colorscheme (older
-state files without a backup), the palette notification and the two gsettings
-keys the shell sets are run. Nested test sessions never run anything.
+state files without a backup), the palette notification and the three gsettings
+keys the shell sets are run, and the GTK files below are written back. Nested
+test sessions never run anything.
 
 `--snapshot` prints the colour entries of kdeglobals as JSON (read-only); the
 shell stores that output as the backup.
+
+GTK 3 and 4 take their dark variant and the icon theme from
+~/.config/gtk-{3.0,4.0}/settings.ini, and the Breeze theme draws with the
+colours of the user's gtk.css (`@import 'colors.css';`, written by Plasma's
+kded for its own scheme). While "Apps follow theme" is on, the shell changes
+those two keys and leaves a colors.css of the other brightness out of gtk.css
+(`--gtk DIR JSON`); `--gtk-snapshot` prints what is there now (read-only), and
+the restore writes the saved values back. Only files that exist are touched,
+through a symbolic link to the file it names, with its permissions kept.
 """
 
 import argparse
@@ -33,7 +43,7 @@ import sys
 import tempfile
 
 GNOME_SCHEMA = "org.gnome.desktop.interface"
-GNOME_KEYS = ("color-scheme", "gtk-theme")
+GNOME_KEYS = ("color-scheme", "gtk-theme", "icon-theme")
 NOTIFY_COMMAND = ["dbus-send", "--session", "--type=signal", "/KGlobalSettings",
                   "org.kde.KGlobalSettings.notifyChange", "int32:0", "int32:0"]
 # Keys outside the colour groups that plasma-apply-colorscheme writes.
@@ -44,6 +54,18 @@ COLOR_GROUP = re.compile(r"^(Colors|ColorEffects):[A-Za-z]+$")
 SUBGROUP = re.compile(r"^[A-Za-z]+$")
 KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 VALUE = re.compile(r"^[^\\\x00-\x1f\x7f]{0,200}$")
+# The GTK side (AppThemeLogic.js has the same names and rules).
+GTK_DIRS = ("gtk-3.0", "gtk-4.0")
+GTK_HELPER = "apptheme-restore.py"
+INI_KEYS = {"preferDark": "gtk-application-prefer-dark-theme", "iconTheme": "gtk-icon-theme-name"}
+INI_VALUE = re.compile(r"^\S(?:[^\x00-\x1f\x7f]{0,126}\S)?$")
+IMPORT_LINE = "@import 'colors.css';"
+IMPORT = re.compile(r"""^\s*@import\s+(?:url\(\s*)?['"]colors\.css['"]\s*\)?\s*;\s*$""")
+# An import left out is commented, not deleted, so the line comes back as it
+# was - and a gtk.css the restore never reached still says why.
+LEFT_OUT = re.compile(r"^/\* buchhwin-shell, Apps follow theme: (.*) \*/$")
+# The window background of the palette, else the view's.
+PALETTE = re.compile(r"@define-color\s+(theme_bg_color_breeze|content_view_bg_breeze)\s+#([0-9a-fA-F]{6})\s*;")
 
 
 def config_home():
@@ -178,27 +200,220 @@ def valid_command(command):
             and command[3] in GNOME_KEYS and not command[4].startswith("-"))
 
 
+# ---- GTK files ----------------------------------------------------------------
+
+def ini_settings(text, keys):
+    """{key: value} of [Settings] for `keys`, None for a key it lacks."""
+    found = {key: None for key in keys}
+    group = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("["):
+            group = line[1:-1].strip() if line.endswith("]") else None
+            continue
+        if group == "Settings" and "=" in line and not line.startswith(("#", ";")):
+            key, value = line.split("=", 1)
+            if key.strip() in found and found[key.strip()] is None:
+                found[key.strip()] = value.strip()
+    return found
+
+
+def edit_ini(text, changes):
+    """settings.ini with `changes` ({key: value, or None to remove}) in [Settings].
+
+    Every other line is kept as it is; a key that is missing goes to the end of
+    the group.
+    """
+    out = []
+    group = None
+    done = set()
+    seen = False
+    end = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("["):
+            if group == "Settings" and end is None:
+                end = len(out)
+            group = line[1:-1].strip() if line.endswith("]") else None
+            seen = seen or group == "Settings"
+            out.append(raw)
+            continue
+        if group == "Settings" and "=" in line and not line.startswith(("#", ";")):
+            key = line.split("=", 1)[0].strip()
+            if key in changes:
+                if key not in done and changes[key] is not None:
+                    out.append(f"{key}={changes[key]}")
+                done.add(key)
+                continue
+        out.append(raw)
+    if group == "Settings" and end is None:
+        end = len(out)
+    missing = [f"{key}={value}" for key, value in changes.items() if key not in done and value is not None]
+    if missing and not seen:
+        out = ["[Settings]"] + missing + ([""] + out if out else [])
+    elif missing:
+        while end > 0 and not out[end - 1].strip():
+            end -= 1
+        out[end:end] = missing
+    return "\n".join(out) + ("\n" if text.endswith("\n") or not text else "")
+
+
+def edit_import(text, wanted):
+    """gtk.css with the colors.css import, or with it commented out."""
+    lines = text.split("\n")
+    if not wanted:
+        return "\n".join(f"/* buchhwin-shell, Apps follow theme: {line} */" if IMPORT.match(line) else line for line in lines)
+    if any(IMPORT.match(line) for line in lines):
+        return text
+    if any(LEFT_OUT.match(line) and IMPORT.match(LEFT_OUT.match(line).group(1)) for line in lines):
+        return "\n".join(LEFT_OUT.match(line).group(1) if LEFT_OUT.match(line) and IMPORT.match(LEFT_OUT.match(line).group(1))
+                         else line for line in lines)
+    return IMPORT_LINE + ("\n" + text if text else "\n")
+
+
+def palette_dark(text):
+    """Whether a colors.css is a dark palette; None when it does not say."""
+    colours = dict(PALETTE.findall(text))
+    value = colours.get("theme_bg_color_breeze") or colours.get("content_view_bg_breeze")
+    if not value:
+        return None
+    red, green, blue = (int(value[index:index + 2], 16) for index in (0, 2, 4))
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue < 128
+
+
+def read_text(path):
+    try:
+        return path.read_text() if path.is_file() else None
+    except OSError:
+        return None
+
+
+def gtk_snapshot(home=None):
+    """What --gtk-snapshot prints: per GTK folder the keys of the files it has."""
+    base = home or config_home()
+    result = {}
+    for directory in GTK_DIRS:
+        entry = {}
+        settings = read_text(base / directory / "settings.ini")
+        if settings is not None:
+            values = ini_settings(settings, INI_KEYS.values())
+            for name, key in INI_KEYS.items():
+                # A value the helper could not write back is not reported, so
+                # it is never changed.
+                if values[key] is None or INI_VALUE.match(values[key]):
+                    entry[name] = values[key]
+        css = read_text(base / directory / "gtk.css")
+        if css is not None:
+            entry["colorsImport"] = any(IMPORT.match(line) for line in css.splitlines())
+        colors = read_text(base / directory / "colors.css")
+        dark = palette_dark(colors) if colors is not None else None
+        if dark is not None:
+            entry["colorsDark"] = dark
+        if entry:
+            result[directory] = entry
+    return result
+
+
+def valid_gtk_values(values):
+    """The changes `--gtk` may make: the two keys (a value or None) and the import."""
+    if not isinstance(values, dict) or not values:
+        return False
+    for name, value in values.items():
+        if name in INI_KEYS:
+            if value is not None and not (isinstance(value, str) and INI_VALUE.match(value)):
+                return False
+        elif name == "colorsImport":
+            if not isinstance(value, bool):
+                return False
+        else:
+            return False
+    return True
+
+
+def write_kept(path, text):
+    """Write a file that exists: through a symbolic link, permissions kept."""
+    real = path.resolve()
+    mode = os.stat(real).st_mode & 0o7777
+    write_atomic(real, text, mode)
+
+
+def apply_gtk(directory, values, home=None):
+    """Change one GTK folder's files as `values` says; only files that exist."""
+    if directory not in GTK_DIRS or not valid_gtk_values(values):
+        raise ValueError(f"refused: {directory} {values!r}")
+    base = (home or config_home()) / directory
+    changes = {INI_KEYS[name]: value for name, value in values.items() if name in INI_KEYS}
+    settings = base / "settings.ini"
+    text = read_text(settings)
+    if changes and text is not None:
+        edited = edit_ini(text, changes)
+        if edited != text:
+            write_kept(settings, edited)
+    css = base / "gtk.css"
+    text = read_text(css)
+    if "colorsImport" in values and text is not None:
+        edited = edit_import(text, values["colorsImport"])
+        if edited != text:
+            write_kept(css, edited)
+
+
+def gtk_saved(saved):
+    """The validated GTK values of a state file's saved block, or {}."""
+    gtk = saved.get("gtk") if isinstance(saved, dict) else None
+    if not isinstance(gtk, dict):
+        return {}
+    result = {}
+    for directory in GTK_DIRS:
+        entry = gtk.get(directory)
+        if not isinstance(entry, dict):
+            continue
+        clean = {name: value for name, value in entry.items()
+                 if (name in INI_KEYS and (value is None or (isinstance(value, str) and INI_VALUE.match(value))))
+                 or (name == "colorsImport" and isinstance(value, bool))}
+        if clean:
+            result[directory] = clean
+    return result
+
+
+def gtk_restore_commands(saved, current):
+    """[GTK_HELPER, "--gtk", DIR, JSON] for the saved values that differ now."""
+    commands = []
+    for directory, before in gtk_saved(saved).items():
+        now = current.get(directory)
+        if not isinstance(now, dict):
+            continue
+        changes = {name: value for name, value in before.items() if name in now and now[name] != value}
+        if changes:
+            commands.append([GTK_HELPER, "--gtk", directory, json.dumps(changes, separators=(",", ":"))])
+    return commands
+
+
 def should_restore(state):
     return isinstance(state, dict) and state.get("applied") is True and state.get("restoreOnLogout") is not False
 
 
-def restore_commands(state, current=None):
+def restore_commands(state, current=None, gtk_current=None):
     """Commands to run for a parsed state file; empty when there is nothing to do.
 
     With a colour backup, kdeglobals is restored from it (plus the palette
-    notification) instead of re-applying the saved scheme.
+    notification) instead of re-applying the saved scheme. The GTK files come
+    last, from the saved values (this helper writes them itself).
     """
     if not should_restore(state):
         return []
     commands = state.get("restore")
     commands = [command for command in commands if valid_command(command)] if isinstance(commands, list) else []
-    backup = backup_entries(state.get("saved"))
+    saved = state.get("saved")
+    gtk = []
+    if gtk_saved(saved):
+        gtk = gtk_restore_commands(saved, gtk_current if gtk_current is not None else gtk_snapshot())
+    backup = backup_entries(saved)
     if backup is None:
-        return commands
+        return commands + gtk
     kde = kde_restore_commands(backup, current if current is not None else snapshot()["entries"])
     if kde:
         kde.append(list(NOTIFY_COMMAND))
-    return kde + [command for command in commands if command[0] != "plasma-apply-colorscheme"]
+    return kde + [command for command in commands if command[0] != "plasma-apply-colorscheme"] + gtk
 
 
 def forgotten(state):
@@ -207,11 +422,13 @@ def forgotten(state):
             "saved": None, "restore": []}
 
 
-def write_atomic(path, text):
+def write_atomic(path, text, mode=None):
     handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=".apptheme.")
     try:
         with os.fdopen(handle, "w") as stream:
             stream.write(text)
+        if mode is not None:
+            os.chmod(temporary, mode)
         os.replace(temporary, path)
     except BaseException:
         pathlib.Path(temporary).unlink(missing_ok=True)
@@ -232,14 +449,31 @@ def main(argv=None):
     parser.add_argument("--state", type=pathlib.Path, default=None, help="state file (default: XDG state dir)")
     parser.add_argument("--dry-run", action="store_true", help="print the commands, change nothing")
     parser.add_argument("--snapshot", action="store_true", help="print the kdeglobals colour entries as JSON")
+    parser.add_argument("--gtk-snapshot", action="store_true", help="print the GTK settings.ini keys and colors.css import as JSON")
+    parser.add_argument("--gtk", nargs=2, metavar=("DIR", "JSON"), help="change gtk-3.0 or gtk-4.0 as JSON says")
     args = parser.parse_args(argv)
 
     if args.snapshot:
         print(json.dumps(snapshot(), separators=(",", ":")))
         return 0
+    if args.gtk_snapshot:
+        print(json.dumps(gtk_snapshot(), separators=(",", ":")))
+        return 0
 
     if not args.dry_run and nested_environment():
         print("apptheme-restore: skipped in a nested test session", file=sys.stderr)
+        return 0
+
+    if args.gtk:
+        try:
+            values = json.loads(args.gtk[1])
+            if args.dry_run:
+                print(json.dumps([GTK_HELPER, "--gtk", args.gtk[0], json.dumps(values, separators=(",", ":"))]))
+            else:
+                apply_gtk(args.gtk[0], values)
+        except (OSError, ValueError) as error:
+            print(f"apptheme-restore: GTK files: {error}", file=sys.stderr)
+            return 1
         return 0
 
     path = args.state or state_path()
@@ -261,11 +495,15 @@ def main(argv=None):
             print(json.dumps(command))
             continue
         try:
-            result = subprocess.run(command, timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                                    text=True, env=env)
-            failed = result.returncode != 0
-            detail = result.stderr.strip()
-        except (OSError, subprocess.TimeoutExpired) as error:
+            if command[0] == GTK_HELPER:
+                apply_gtk(command[2], json.loads(command[3]))
+                failed, detail = False, ""
+            else:
+                result = subprocess.run(command, timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                        text=True, env=env)
+                failed = result.returncode != 0
+                detail = result.stderr.strip()
+        except (OSError, ValueError, subprocess.TimeoutExpired) as error:
             failed, detail = True, str(error)
         if failed:
             print(f"apptheme-restore: {command[0]} failed: {detail}", file=sys.stderr)

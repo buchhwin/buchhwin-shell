@@ -158,6 +158,18 @@ ShellRoot {
         T.eq(D.lidPending(docked, panelOff, ""), docked, "no laptop panel, nothing to hold")
         T.eq(D.lidPending(docked, [{ name: "DP-2", disabled: false }], "eDP-1"), docked, "a panel the compositor does not list")
 
+        // What applying the saved layout does (savedTarget). Without a
+        // monitors.json the startup apply was marked done, and a lid shut
+        // at login before the first monitors were read left the panel on:
+        // no file is still a plan for a shut lid.
+        const atLogin = [{ name: "eDP-1", disabled: false }, { name: "DP-2", disabled: false }]
+        const noFile = D.savedTarget(atLogin, null, "eDP-1", true, true)
+        T.ok(noFile !== null, "no monitors.json and the lid shut: there is something to do")
+        T.eq(noFile.target.map(m => m.disabled), [true, false], "the panel goes off behind the lid")
+        T.eq(noFile.base, atLogin, "from the monitors as they are")
+        T.eq(D.savedTarget(atLogin, null, "eDP-1", false, true), null, "no file and the lid open: nothing")
+        T.eq(D.savedTarget([], null, "eDP-1", true, true), null, "no monitors read yet: nothing")
+
         // ---- Keep with the lid shut (16.10.) ---------------------------
         //
         // Docked with the lid shut, the lid has switched the panel off at
@@ -192,6 +204,15 @@ ShellRoot {
              "lid open at the desk: the screens stay where they were kept")
         T.eq(reopened.find(m => m.name === "eDP-1").disabled, false, "and the panel is on")
         T.eq(D.repairSaved(keptShut, reopened, "eDP-1"), null, "a file kept with the lid shut needs no correction")
+        // The same file at a restart with the lid shut, before the lid is
+        // known: the panel that is off now is held off (savedTarget's `held`).
+        const restart = D.savedTarget(lidShut, keptShut, "eDP-1", false, false)
+        T.eq([restart.held, restart.target.find(m => m.name === "eDP-1").disabled], [true, true],
+             "the lid not known yet: an off panel is held off, and says so")
+        const known = D.savedTarget(lidShut, keptShut, "eDP-1", false, true)
+        T.eq([known.held, known.target.find(m => m.name === "eDP-1").disabled], [false, false], "known open: the saved on")
+        T.eq(D.savedTarget(lidShut, keptShut, "eDP-1", true, false).target.find(m => m.name === "eDP-1").disabled, true,
+             "known shut: off behind the lid")
         // The finding's case: laptop on the desk, lid open, a projector
         // plugged in - the target had the panel off.
         const projector = D.parseMonitors(JSON.stringify([

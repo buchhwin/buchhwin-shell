@@ -30,16 +30,10 @@ Singleton {
     // So the path is checked once per change, here, rather than by each
     // consumer. A data: url is handed straight through; an http(s) one is
     // fetched (below); only a path can be checked, and only a path goes stale.
+    // Any other scheme is no cover (MediaLogic.artKind): handed on, Qt itself
+    // would fetch it in every consumer, the lock screen included.
     readonly property string rawArtUrl: active ? (active.trackArtUrl || "") : ""
     property string artUrl: ""
-
-    function localPath(url) {
-        const text = String(url || "")
-        if (text.indexOf("file://") !== 0) return ""
-        // A bare "%" in a file name is a malformed escape and throws; the
-        // undecoded path is the better guess then.
-        try { return decodeURIComponent(text.slice(7)) } catch (error) { return text.slice(7) }
-    }
 
     // Remote art is fetched by curl into the cache and consumers load the file.
     // Qt's own HTTP/2 client fails against Spotify's image CDN (the shell log:
@@ -47,19 +41,22 @@ Singleton {
     // Image bound to the url shows nothing and the record has no label);
     // curl is told --http1.1 and never sees the problem. One fetch per track
     // change, here, not one per Image. Covers older than 30 days are swept
-    // from the directory with the first fetch of a session.
+    // from the directory with the first fetch of a session. A cover is a
+    // picture, not a download: curl takes http(s) only, redirects included,
+    // stops past 20 MB (or at 15 s), and a fetch that fails leaves no part
+    // file behind for the sweep.
     readonly property string coverDir: Paths.cacheDir + "/covers"
     property bool coversSwept: false
-    function remote(url) { return /^https?:\/\//.test(String(url || "")) }
 
     function checkArt() {
         // The value is read here and not through a property bound to the same
         // thing: a change handler is not promised that a derived binding has
         // caught up, which this project has already paid for once.
         const url = rawArtUrl
-        const path = localPath(url)
-        if (!remote(url) && !path.length) {
-            artUrl = url
+        const kind = Logic.artKind(url)
+        const path = Logic.artPath(url)
+        if (kind === "data" || kind === "none" || (kind === "file" && !path.length)) {
+            artUrl = kind === "data" ? url : ""
             return
         }
         artUrl = ""
@@ -74,13 +71,15 @@ Singleton {
         }
         artCheck.stale = false
         artCheck.pending = url
-        if (remote(url)) {
+        if (kind === "remote") {
             const file = coverDir + "/" + Qt.md5(url) + ".img"
             const sweep = coversSwept ? "" : 'find "$1" -type f -mtime +30 -delete 2>/dev/null; '
             coversSwept = true
             artCheck.command = ["sh", "-c",
                 'mkdir -p -- "$1" && ' + sweep
-                + '{ test -s "$2" || { curl -fsSL --http1.1 --max-time 15 -o "$2.part" -- "$3" && mv -f -- "$2.part" "$2"; }; }',
+                + '{ test -s "$2" || { curl -fsSL --http1.1 --proto =http,https --proto-redir =http,https'
+                + ' --max-filesize 20M --max-time 15 -o "$2.part" -- "$3" && mv -f -- "$2.part" "$2"; }'
+                + ' || { rm -f -- "$2.part"; exit 1; }; }',
                 "sh", coverDir, file, url]
             artCheck.file = file
         } else {
@@ -114,7 +113,7 @@ Singleton {
                 root.artUrl = code === 0 ? "file://" + artCheck.file : ""
                 return
             }
-            root.artUrl = code === 0 ? artCheck.pending : ""
+            root.artUrl = code === 0 ? Logic.artFileUrl(artCheck.pending) : ""
         }
     }
     readonly property bool playing: active !== null && active.isPlaying

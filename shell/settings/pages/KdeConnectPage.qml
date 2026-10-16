@@ -258,7 +258,9 @@ ColumnLayout {
                     }
                     ShellButton {
                         focusOnTab: true
-                        icon: deviceItem.modelData.locked ? "󰍁" : Icons.lock
+                        // What the button does: the open padlock to unlock,
+                        // the shut one to lock (Icons.unlock, Icons.lock).
+                        icon: deviceItem.modelData.locked ? Icons.unlock : Icons.lock
                         text: deviceItem.modelData.locked ? "Unlock phone" : "Lock phone"
                         compact: true
                         visible: KdeConnectService.supports(deviceItem.modelData, "lockdevice")

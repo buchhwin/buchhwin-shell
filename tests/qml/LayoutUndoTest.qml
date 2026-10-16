@@ -81,6 +81,24 @@ ShellRoot {
         T.eq(L.dndAfterUndo({ dnd: "" }, "manual", {}), "", "a switch that found it on, or set nothing, leaves it")
         T.eq(L.dndAfterUndo(undefined, "manual", undefined), "", "and so does a step that is no switch")
 
+        // ---- the settings a step puts back -----------------------------------
+        // Every step carries the notch's options (undoKeys); a dock preset's
+        // step also carries the dock.* options it changed. Undone, the
+        // layout came back and the taskbar's options stayed: the old dock
+        // stretched along the whole edge with a reserved zone.
+        const keys = ["notch.reserve", "desktop.quickWidth"]
+        const presetStep = { notch: { "notch.reserve": true, "desktop.quickWidth": 0, "notch.other": 1 },
+                             settings: { "dock.visibility": "intellihide", "dock.span": "fit", "dock.iconSize": 48,
+                                         "dock.margin": 8, "dock.enabled": false } }
+        T.eq(L.undoSettings(presetStep, keys),
+             { "notch.reserve": true, "desktop.quickWidth": 0, "dock.visibility": "intellihide", "dock.span": "fit",
+               "dock.iconSize": 48, "dock.margin": 8, "dock.enabled": false },
+             "a preset undone: the carried keys and the dock's options, the dock off again")
+        T.eq(L.undoSettings({ notch: { "notch.reserve": false } }, keys), { "notch.reserve": false },
+             "an ordinary step: only the carried keys - Settings > Dock since is not taken back")
+        T.eq(L.undoSettings({ settings: { "dock.span": null } }, keys), {}, "nothing for a value that is not there")
+        T.eq(L.undoSettings(null, keys), {}, "no step, nothing")
+
         // ---- a preset's description -----------------------------------------
         // Island's own text is 143 characters; the sanitizer cut it at 120.
         const islandData = JSON.parse(islandFile.text())

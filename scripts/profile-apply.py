@@ -35,6 +35,11 @@ there already (an earlier switch, or a built-in profile applied today), the
 day's state is kept and nothing is written. The texts come from the shell
 rather than from disk because the shell writes the new files before a copy
 started from here could read the old ones.
+
+Backups are the user's alone: settings.json holds where the user lives (the
+weather's place), so a backup directory is made 0700 and every copy in it
+0600, and the backup directories of earlier runs (0755, their copies 0644)
+are closed the same way as they are met.
 """
 import argparse
 import datetime
@@ -57,6 +62,11 @@ BACKED_UP = ["settings.json", "layout.json",
 FILE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 # How often a backup name that another run took first is chosen again.
 BACKUP_ATTEMPTS = 5
+# A backup directory and the copies in it: the user's alone.
+PRIVATE_DIR = 0o700
+PRIVATE_FILE = 0o600
+# The names this script gives its backup directories (see free_name).
+BACKUP_DIR_NAME = re.compile(r"^backup-[0-9]{4}-[0-9]{2}-[0-9]{2}(-[0-9]{6}(-[0-9]+)?)?$")
 
 
 def default_apps_module():
@@ -80,6 +90,35 @@ def free_name(base, stamp_day, stamp_time):
     return candidate
 
 
+def close_old_backups(backup_dir):
+    """Take the group's and the others' bits off the backup directories of earlier runs.
+
+    Only directories with the names this script gives (never a link, never
+    anything else in the state directory), and only their own mode: what is
+    inside a 0700 directory is out of anyone else's reach, whatever its mode.
+    A directory that cannot be changed is left; it is no reason to stop.
+    """
+    try:
+        entries = list(os.scandir(backup_dir))
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            if not BACKUP_DIR_NAME.match(entry.name) or not entry.is_dir(follow_symlinks=False):
+                continue
+            mode = entry.stat(follow_symlinks=False).st_mode & 0o777
+            if mode & 0o077:
+                os.chmod(entry.path, mode & PRIVATE_DIR)
+        except OSError:
+            continue
+
+
+def private_copy(source, target):
+    """shutil.copy2, then the copy made the user's alone (copy2 takes the source's mode along)."""
+    shutil.copy2(source, target)
+    os.chmod(target, PRIVATE_FILE)
+
+
 def backup(config_dir, backup_dir, now):
     """(backup directory or None, names copied). Nothing to copy creates nothing."""
     # Normalised, not resolved: a settings.json that is a link (a dotfiles
@@ -94,13 +133,14 @@ def backup(config_dir, backup_dir, now):
     for attempt in range(BACKUP_ATTEMPTS):
         target = free_name(backup_dir / "backup", now.strftime("%Y-%m-%d"), now.strftime("%H%M%S"))
         try:
-            target.mkdir(parents=True)
+            target.mkdir(mode=PRIVATE_DIR, parents=True)
             break
         except FileExistsError:
             if attempt == BACKUP_ATTEMPTS - 1:
                 raise
+    close_old_backups(backup_dir)
     for path in present:
-        shutil.copy2(path, target / path.name)
+        private_copy(path, target / path.name)
     return target, [path.name for path in present]
 
 
@@ -114,16 +154,18 @@ def daily_backup(texts, backup_dir, now):
     present = {name: texts[name] for name in DAILY
                if isinstance(texts.get(name), str) and texts[name].strip()}
     target = backup_dir / ("backup-" + now.strftime("%Y-%m-%d"))
+    close_old_backups(backup_dir)
     if target.exists():
         return None, [], True
     if not present:
         return None, [], False
     try:
-        target.mkdir(parents=True)
+        target.mkdir(mode=PRIVATE_DIR, parents=True)
     except FileExistsError:
         # Made a moment ago by another run (profile-apply for a built-in
         # profile entered by the same switch): that one is the day's.
         return None, [], True
+    # write_atomic's mkstemp makes each file 0600 already.
     for name, text in present.items():
         write_atomic(target / name, text)
     return target, sorted(present), False

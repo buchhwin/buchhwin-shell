@@ -6,6 +6,7 @@ import "power/PowerSourceLogic.js" as PowerSourceLogic
 import "wallpaper/WallpaperLogic.js" as WallpaperLogic
 import "appearance/AnimationLogic.js" as AnimationLogic
 import "notch/NotchLogic.js" as NotchLogic
+import "lock/LockLogic.js" as LockLogic
 
 // User preferences in ~/.config/buchhwin-shell/settings.json. Missing keys fall
 // back to defaults; only known primitive values are written back.
@@ -170,7 +171,11 @@ Singleton {
             "expandedHeight": 0,
             // The big time and the long date became an item; this remembers
             // that an existing notch was given one, so it happens once.
-            "headerAdopted": false
+            "headerAdopted": false,
+            // A screen whose dock is a whole-edge taskbar carrying the status
+            // or the clock: the notch strip there keeps its own clock, Wi-Fi
+            // and battery ("keep") or leaves them to the taskbar ("hide").
+            "dockDuplicates": "keep"
         },
         "workspaces": {
             "mode": "open",
@@ -327,7 +332,12 @@ Singleton {
             "previewGit": true,
             // Kitty reads the account's own ~/.zshrc instead of the session's
             // (scripts/launch-kitty.sh); the prompt settings then do nothing.
-            "personalShell": false
+            "personalShell": false,
+            // A new Alacritty window comes from one running Alacritty
+            // (`alacritty msg create-window` into an `alacritty --daemon`)
+            // rather than from a process of its own each time - faster, one
+            // process. scripts/launch-alacritty.sh reads it with jq.
+            "alacrittyDaemon": true
         },
         // The colours picked off the screen, newest first. A comma-string,
         // because `sanitizedNode` turns a stored array into {"0": ...} on the
@@ -517,6 +527,7 @@ Singleton {
         "workspaces.mode": ["open", "gapless", "fixed"],
         "workspaces.style": ["numbers", "dots", "pills", "activeDot"],
         "notch.fullscreen": ["hide", "show"],
+        "notch.dockDuplicates": ["keep", "hide"],
         "workspaces.count": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         "weather.unit": ["celsius", "fahrenheit"],
         "lock.fingerprint": ["auto", "on", "off"],
@@ -655,9 +666,11 @@ Singleton {
             root.fileText = root.pendingText
         }
     }
+    // The copy is as private as the file (see keepPrivate).
     Process {
         id: unreadableBackup
-        command: ["cp", "-f", "--", settingsFile.path, settingsFile.path + ".bad"]
+        command: ["sh", "-c", "cp -f -- \"$1\" \"$2\" && chmod 600 -- \"$2\"", "sh",
+                  settingsFile.path, settingsFile.path + ".bad"]
         stderr: ErrorLog { label: "SettingsService.unreadableBackup" }
         onExited: if (root.pendingText.length) writeTimer.restart()
     }
@@ -744,14 +757,32 @@ Singleton {
         loaded = true
     }
 
+    // settings.json is the user's alone (0600), like the clipboard's
+    // database: it holds where they live (the weather place and its
+    // coordinates), and a home that is not 0700 - older openSUSE, a shared or
+    // an NFS home - shows every file in it. The atomic write keeps a file's
+    // mode through the replace, so this is once at the first read and once
+    // after the first write of a start (a file this start created, or a write
+    // that crossed the read's chmod). Not from the lock process, which only
+    // reads the file and runs no command.
+    property bool privateRead: false
+    property bool privateWritten: false
+    function keepPrivate(written) {
+        if (LockLogic.lockProcess(Quickshell.shellId) || (written ? privateWritten : privateRead)) return
+        if (written) privateWritten = true
+        else privateRead = true
+        Quickshell.execDetached(["chmod", "600", "--", settingsFile.path])
+    }
+
     FileView {
         id: settingsFile
         path: Paths.configDir + "/settings.json"
         atomicWrites: true
         watchChanges: true
         printErrors: false
-        onLoaded: root.load()
+        onLoaded: { root.load(); root.keepPrivate(false) }
         onLoadFailed: { root.applyEarly(); root.loaded = true }
         onFileChanged: reload()
+        onSaved: root.keepPrivate(true)
     }
 }

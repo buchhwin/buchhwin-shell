@@ -65,26 +65,88 @@ Singleton {
         overNotch = fromNotch === true
     }
 
-    // Panels built only for a feature that is on (shell.qml's LazyLoaders):
-    // opening one that is not there would raise the scrim over nothing, and
-    // the scrim catches the next click. Each ShellPanel says when it is there.
-    readonly property var lazyPanels: ["dockMenu", "startMenu"]
+    // Panels built on demand (shell.qml's LazyLoaders): a panel is built at the
+    // start whether it opens or not (testing.md pitfall 101), and these may
+    // never open in a session - the dock's menu, the start menu, the tour
+    // after the first start. Each ShellPanel says when it is there.
+    //
+    // Opening one that is not there asks for it (`demanded`, which its loader
+    // reads alongside its feature), and the open waits for the panel to report
+    // in (`pending`). Neither `active` nor the scrim moves before: a scrim
+    // raised for a panel that is not there dims over nothing and catches the
+    // next click (pitfall 110). A loader whose feature is off builds nothing,
+    // and then nothing opens.
+    readonly property var lazyPanels: ["dockMenu", "startMenu", "welcome"]
+    // How many of each panel there are: counted, not flagged, because a
+    // loader switched off and on again builds the new one before the old one
+    // is gone (it is deleted at the end of the turn), and the old one's
+    // goodbye must not take the new one's place with it.
     property var present: ({})
+    property var demanded: ({})
+    // { panel, args }: the open that waits for its panel, or null.
+    property var pending: null
+    function isPresent(panelId) { return (present[panelId] || 0) > 0 }
     function reportPresent(panelId, on) {
-        if ((present[panelId] === true) === on) return
+        const count = Math.max(0, (present[panelId] || 0) + (on ? 1 : -1))
         const next = Object.assign({}, present)
-        if (on) next[panelId] = true
+        if (count > 0) next[panelId] = count
         else delete next[panelId]
         present = next
+        // Built for an open that waits: it runs once the panel is complete
+        // (this is called from inside its creation), unless another open or a
+        // close came first.
+        if (on && pending && pending.panel === panelId) Qt.callLater(openPending)
+        if (count > 0) return
+        if (pending && pending.panel === panelId) pending = null
         // Unloaded while it was open (the dock switched off): put the scrim down.
-        if (!on && active === panelId) close(panelId)
+        if (active === panelId) close(panelId)
     }
     function canOpen(panelId) {
-        return lazyPanels.indexOf(panelId) < 0 || present[panelId] === true
+        return lazyPanels.indexOf(panelId) < 0 || isPresent(panelId)
+    }
+    function demand(panelId) {
+        if (lazyPanels.indexOf(panelId) < 0 || demanded[panelId] === true) return
+        const next = Object.assign({}, demanded)
+        next[panelId] = true
+        demanded = next
+    }
+    // The panel's feature went off (shell.qml): its loader lets it go, and it
+    // is built again only when it is opened again.
+    function release(panelId) {
+        if (demanded[panelId] !== true) return
+        const next = Object.assign({}, demanded)
+        delete next[panelId]
+        demanded = next
+    }
+    function openPending() {
+        if (!pending) return
+        const waiting = pending
+        pending = null
+        open(waiting.panel, waiting.args)
+    }
+    // Not built by the next turn: its loader's feature is off. The open is
+    // dropped rather than left to fire whenever the panel is built later.
+    function dropUnbuilt() {
+        if (pending && !isPresent(pending.panel)) pending = null
     }
 
     function open(panelId, options) {
-        if (!canOpen(panelId)) return false
+        if (!canOpen(panelId)) {
+            if (lazyPanels.indexOf(panelId) < 0) return false
+            // Set before the demand: a LazyLoader builds its item at once
+            // (`active` loads synchronously; while the shell itself is still
+            // being built, within the same turn), and the panel reports in
+            // from inside that.
+            pending = { panel: panelId, args: options || {} }
+            demand(panelId)
+            if (!isPresent(panelId)) Qt.callLater(dropUnbuilt)
+            return true
+        }
+        pending = null
+        // Kept once opened, until its feature goes (release): the tour's
+        // loader, for one, would let it go the moment it marks itself
+        // completed, in the middle of its closing.
+        demand(panelId)
         // `onScreen`: a panel that belongs to a place on one screen (the
         // dock's menu, beside its icon) opens there, wherever the focus is.
         const wanted = options && typeof options.onScreen === "string"
@@ -117,8 +179,14 @@ Singleton {
     }
 
     function close(panelId) {
+        // An open still waiting for its panel is closed as well.
+        if (pending && (panelId === undefined || pending.panel === panelId)) pending = null
         if (panelId === undefined || active === panelId) {
-            const back = panelId !== undefined && args ? args.returnTo : null
+            const returnTo = panelId !== undefined && args ? args.returnTo : null
+            // The panel underneath may have gone meanwhile (the start menu
+            // unloaded with the dock while a pairing dialog was over it):
+            // then there is nothing to hand back to.
+            const back = returnTo && canOpen(returnTo.panel) ? returnTo : null
             active = ""
             args = {}
             // Only a close with nothing behind it takes the scrim down: a

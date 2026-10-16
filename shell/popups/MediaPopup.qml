@@ -14,7 +14,10 @@ PopupPanel {
     id: root
     panelId: "mediaPopup"
     backdropSource: MprisService.artUrl
-    cardWidth: Metrics.popupMediaWidth
+    // Wide for a player beside its cover; with nothing playing a popup's own
+    // width and a centred empty state, rather than a 580 px card with
+    // "Nothing playing" and a dead transport in its top left corner.
+    cardWidth: MprisService.hasPlayer ? Metrics.popupMediaWidth : Metrics.popupWidth
 
     // A transport control is the shell's ghost button; one that is switched
     // on (shuffle, loop) is the accent one, the way every other toggled
@@ -40,8 +43,22 @@ PopupPanel {
         Component.onCompleted: MprisService.trackers += 1
         Component.onDestruction: MprisService.trackers = Math.max(0, MprisService.trackers - 1)
 
+        EmptyState {
+            Layout.fillWidth: true
+            Layout.topMargin: Metrics.spaceLg
+            Layout.bottomMargin: Metrics.spaceLg
+            visible: !MprisService.hasPlayer
+            icon: "󰎆"
+            title: "Nothing playing"
+            description: "Music and videos from an app show up here"
+        }
+
+        // The player, its cover and its transport: only for a player. The
+        // faded Play disc it showed without one read like the accent's
+        // "selected" tint on a light card, not like a disabled button.
         RowLayout {
             Layout.fillWidth: true
+            visible: MprisService.hasPlayer
             spacing: Metrics.spaceLg
 
             Rectangle {

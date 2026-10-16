@@ -9,9 +9,15 @@ work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 
 printf 'Looking up the latest %s release …\n' "$repo"
-url=$(curl -fsSL --connect-timeout 15 --max-time 300 "https://api.github.com/repos/$repo/releases/latest" \
-  | grep -oE '"browser_download_url": *"[^"]*macOS\.tar\.xz"' \
-  | sed -E 's/.*"(https[^"]+)"/\1/' | head -n1)
+# The answer first, then the search in it: a grep that finds nothing exits 1,
+# and inside a pipe under pipefail that ended the script before it could say
+# why (the terminal showed only "[exit status 1]").
+release=$(curl -fsSL --connect-timeout 15 --max-time 300 "https://api.github.com/repos/$repo/releases/latest") || {
+  printf 'GitHub did not answer (offline, or its rate limit); try again later.\n' >&2
+  exit 1
+}
+url=$(grep -oE '"browser_download_url": *"[^"]*macOS\.tar\.xz"' <<<"$release" \
+  | sed -E 's/.*"(https[^"]+)"/\1/' | head -n1) || url=""
 if [[ -z $url ]]; then
   printf 'Could not find macOS.tar.xz in the latest release.\n' >&2
   exit 1

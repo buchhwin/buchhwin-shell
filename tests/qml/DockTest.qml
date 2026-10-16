@@ -6,7 +6,7 @@ import "../../services/model/KeyedLogic.js" as Keyed
 
 // The dock's arithmetic (services/dock/DockLogic.js): which app a window
 // belongs to, the order of the apps, what a click does, when a window covers
-// the dock, when it shows, its geometry and its drag.
+// the dock, when it shows, its geometry, its keys and its drag.
 ShellRoot {
     function entry(id, name, startupClass, icon) { return { id: id, name: name || id, startupClass: startupClass || "", icon: icon || id } }
     function win(address, cls, seq, extra) {
@@ -104,6 +104,17 @@ ShellRoot {
         T.eq(D.newWindowAction([{ id: "new-private-window" }, { id: "new-window" }]), "new-window", "the new window action, not the private one")
         T.eq(D.newWindowAction([{ id: "Neue-Nachricht" }]), "", "none")
         T.eq(D.newWindowAction(null), "", "no actions")
+        // The ids on this machine (ui-dock#9): VS Code's and Alacritty's own
+        // actions did what "New window" does, and the menu listed both.
+        T.eq(D.newWindowAction([{ id: "new-empty-window", command: ["/usr/bin/code", "--new-window"] }], ["/usr/bin/code"]),
+             "new-empty-window", "VS Code's new empty window")
+        T.eq(D.newWindowAction([{ id: "New", command: ["alacritty"] }], ["alacritty"]), "New",
+             "Alacritty's bare New runs its own program")
+        T.eq(D.newWindowAction([{ id: "New", command: ["libreoffice", "--writer"] }], ["soffice"]), "",
+             "a bare New of another program may be a document: not")
+        T.eq(D.newWindowAction([{ id: "new", command: ["kate"] }], []), "", "and not without the entry's own command")
+        T.eq(D.newWindowAction([{ id: "new-instance" }]), "new-instance", "a new instance")
+        T.eq(D.newWindowAction([{ id: "new-document" }]), "", "a new document is no window")
 
         // ---- the menu -------------------------------------------------------------------
         const menuItem = { entryId: "brave-browser", pinned: false, windows: [{ address: "0x1", workspace: 2 }, { address: "0x2", workspace: 3 }, { address: "0x3", workspace: 3 }] }
@@ -112,7 +123,16 @@ ShellRoot {
         T.eq(rows[4].id, "new-private-window", "the new window action is not listed twice")
         T.eq(rows[2].count, 1, "one more window")
         T.eq(rows[6].count, 3, "close counts every window")
-        T.eq(D.menuRows(menuItem, [], true).find(row => row.kind === "pin"), { kind: "pin", enabled: false }, "ten pinned: Pin is off")
+        T.eq(D.menuRows(menuItem, [], true).find(row => row.kind === "pin"), { kind: "pin", enabled: false, reason: "full" },
+             "the pins full: Pin is off, and says why")
+        const alacritty = { entryId: "Alacritty", pinned: true, windows: [] }
+        T.eq(D.menuRows(alacritty, [{ id: "New", name: "New Terminal", command: ["alacritty"] }], false, 3, ["alacritty"])
+                 .map(row => row.kind), ["new", "unpin"], "Alacritty's New Terminal is not listed beside New window")
+        T.eq(D.menuRows({ entryId: "x", pinned: false, pinnable: false, windows: [{ address: "0x1" }] }, [], false)
+                 .find(row => row.kind === "pin"), { kind: "pin", enabled: false, reason: "hidden" },
+             "an entry the dock could not draw once pinned: Pin is off")
+        T.eq(D.menuRows({ entryId: "default:files", special: "choose", pinned: true, windows: [] }, [], false).map(row => row.kind),
+             ["unpin"], "a default's placeholder: only unpin")
         T.eq(D.menuRows({ entryId: "a", pinned: true, windows: [] }, [], false).map(row => row.kind), ["new", "unpin"], "a pinned app not running")
         T.eq(D.menuRows({ entryId: "", pinned: false, windows: [{ address: "0x1" }] }, [], false).map(row => row.kind), ["window", "close"],
              "an app without an entry: its windows and close")
@@ -158,32 +178,29 @@ ShellRoot {
         T.eq(D.maskKind({ active: true, revealed: true }), "body", "shown: its body")
         T.eq(D.maskKind({ active: true, revealed: false }), "strip", "hidden: the strip at the edge")
         T.eq(D.maskKind({ active: true, revealed: false, reserves: true }), "none", "a reserving dock is never hidden but under fullscreen")
+        T.eq(D.maskKind({ active: true, revealed: true, dragging: true }), "window", "a drag keeps the whole surface")
+        T.eq(D.maskKind({ active: false, revealed: true, dragging: true }), "none", "but not under fullscreen")
         T.eq(D.revealTarget("B", ["A", "B"]), "B", "the key shows it on the focused screen")
         T.eq(D.revealTarget("C", ["A", "B"]), "A", "or the first screen with a dock")
         T.eq(D.revealTarget("C", []), "", "or nowhere")
 
         // ---- geometry -------------------------------------------------------------------
-        const m = { icon: 48, pad: 6, gap: 6, margin: 8, headroom: 40, windowGap: 12, strip: 2, count: 3, room: 1920, sep: -1, sepRoom: 0 }
-        let g = D.geometry("bottom", m, false)
-        T.eq(g.thickness, 8 + 60 + 40, "thickness: margin, body, headroom")
-        T.eq(g.length, 6 + 48 * 3 + 6 * 2 + 6, "length: the icons, their gaps and the padding")
-        T.eq(g.body, { x: Math.round((1920 - 168) / 2), y: 108 - 8 - 60, width: 168, height: 60 }, "bottom: centred, a margin above the edge")
-        T.eq(g.strip.y + g.strip.height, g.thickness, "the strip lies on the screen edge")
-        T.eq(g.hit.y + g.hit.height, g.thickness, "the pointer on the edge under the dock is on it")
-        T.eq(g.zone, 0, "intellihide reserves nothing")
-        T.eq(D.geometry("bottom", m, true).zone, 2 * 8 + 60 - 12, "always: the body and a margin each side, less the window gap")
-        T.eq(g.reach, 68, "how far it reaches into the screen")
-        g = D.geometry("left", Object.assign({}, m, { room: 1200 }), false)
-        T.eq([g.body.x, g.body.width, g.body.height], [8, 60, 168], "left: a margin from the edge, the body across")
-        g = D.geometry("right", Object.assign({}, m, { room: 1200 }), false)
-        T.eq(g.body.x + g.body.width, g.thickness - 8, "right: a margin from the right edge")
-        T.eq(D.geometry("top", m, false).edge, "bottom", "an unknown edge is the bottom")
-        const many = Object.assign({}, m, { count: 40, room: 1000 })
-        g = D.geometry("bottom", many, false)
-        T.ok(g.icon < 48 && g.length <= 1000, "too many apps: smaller icons, still on the screen (" + g.icon + ", " + g.length + ")")
-        T.eq(g.thickness, D.geometry("bottom", m, false).thickness, "and the surface keeps its thickness")
         T.eq(D.fit(0, 48, 6, 100, 6), 48, "no apps: the setting")
         T.eq(D.fit(1000, 48, 6, 100, 6), D.MIN_ICON, "never below the smallest")
+        T.eq(D.fit(3, 48, 6, 1000, 0), 48, "room enough: the setting")
+        // ui-dock#6: the room the apps have, measured without them, and the
+        // icons fitted into it - a side dock under the notch (1172 px) with
+        // 24 apps, and a portrait taskbar whose right zone holds the status.
+        T.eq(D.appsRoom(1172 - 16, 6, 12, [{ apps: false, length: 0 }, { apps: true, beside: 20 }, { apps: false, length: 0 }]),
+             1156 - 12 - 20, "the body less its padding and the apps' own padding")
+        const portrait = D.appsRoom(1270, 6, 12, [{ apps: true, beside: 80 }, { apps: false, length: 0 }, { apps: false, length: 300 }])
+        T.eq(portrait, 1270 - 12 - 80 - 300 - 12, "less the start button beside them, the right zone and one gap")
+        const fitted = D.fit(24, 40, 6, portrait, 0)
+        T.ok(fitted < 40 && D.layout(24, fitted, 6, null, 0, -1, 0).length <= portrait,
+             "24 apps fit beside the status zone (" + fitted + " px)")
+        T.eq(D.appsRoom(1920, 6, 12, [{ apps: false, length: 100 }, { apps: false, length: 0 }, { apps: false, length: 0 }]), -1,
+             "no apps zone: no room to fit")
+        T.eq(D.appsRoom(100, 6, 12, [{ apps: true, beside: 400 }]), 0, "never below nothing")
         const lay = D.layout(3, 48, 8, [1, 1, 1], 0, -1, 0)
         T.eq([lay.offsets, lay.length], [[0, 56, 112], 160], "layout: offsets and length")
         T.eq(D.layout(3, 48, 8, null, 4, 2, 10).offsets, [4, 60, 126], "a separator's room before the first running app")
@@ -201,6 +218,55 @@ ShellRoot {
         T.eq(D.magnify(-1, [10, 20], 1.6, 96), [1, 1], "the pointer away: all at rest")
         T.eq(D.magnify(10, [10], 1, 96), [1], "no magnification at 1")
 
+        // ---- the key ---------------------------------------------------------------------
+        T.eq(D.keyAction({ enabled: false, target: "A" }), "on", "an off dock is switched on")
+        T.eq(D.keyAction({ enabled: true, target: "A", hotkey: "", fullscreen: false }), "shown", "shown with the keyboard")
+        T.eq(D.keyAction({ enabled: true, target: "A", hotkey: "A" }), "hidden", "again: hidden")
+        T.eq(D.keyAction({ enabled: true, target: "A", hotkey: "A", peeking: true }), "shown",
+             "after the look \"on\" gave it, the key gives it the keyboard")
+        // svc-io#8: under a fullscreen window nothing is armed.
+        T.eq(D.keyAction({ enabled: true, target: "A", hotkey: "", fullscreen: true }), "fullscreen", "under fullscreen: nothing")
+        T.eq(D.keyAction({ enabled: true, target: "" }), "none", "no screen with a dock")
+        // svc-io#7: the dock's menu holds the keys and gives them back on Escape.
+        T.eq(D.keysAfterPanel("dockMenu", false, false), { keep: true, withMenu: true }, "the menu opens: it holds the keys")
+        T.eq(D.keysAfterPanel("", true, true), { keep: true, withMenu: false }, "closed with Escape: back to the dock")
+        T.eq(D.keysAfterPanel("", true, false), { keep: false, withMenu: false }, "closed by a click elsewhere: let go")
+        T.eq(D.keysAfterPanel("launcher", true, false), { keep: false, withMenu: false }, "another panel: let go")
+        T.eq(D.keysAfterPanel("launcher", false, false), { keep: false, withMenu: false }, "any panel takes the keys")
+        T.eq(D.keysAfterPanel("", false, false), { keep: true, withMenu: false }, "a close of nothing: nothing")
+        // The start button in the keys' ring.
+        T.eq(D.keyRange(4, "before"), { low: -1, high: 3 }, "a start button before the apps")
+        T.eq(D.keyRange(4, "after"), { low: 0, high: 4 }, "and after them")
+        T.eq(D.keyRange(4, ""), { low: 0, high: 3 }, "none")
+        T.eq(D.keyRange(0, ""), { low: 0, high: 0 }, "no apps")
+        T.ok(D.keyOnStart(-1, 4, "before") && D.keyOnStart(4, 4, "after") && !D.keyOnStart(0, 4, "before") && !D.keyOnStart(-1, 4, ""),
+             "where the start button is in the ring")
+
+        // ---- events --------------------------------------------------------------------
+        T.ok(D.COVER_EVENTS.indexOf("activewindowv2") < 0, "a focus change re-reads no window (perf#1)")
+        T.ok(D.COVER_EVENTS.indexOf("moveworkspacev2") >= 0 && D.COVER_EVENTS.indexOf("moveworkspace") >= 0,
+             "a workspace moved to another monitor does (svc-io#5)")
+
+        // ---- a default with no app ------------------------------------------------------
+        const glyphs = { files: "F", terminal: "T", browser: "B" }
+        T.eq(D.defaultPlaceholder("@files", false, glyphs), { id: "default:files", name: "File manager", icon: "", startupClass: "",
+                                                            pin: "@files", special: "default", glyph: "F" },
+             "not read yet: its place and glyph, a click starts the default")
+        T.eq(D.menuRows(D.build([D.defaultPlaceholder("@files", false, glyphs)], [], look)[0], [], false).map(row => row.kind),
+             ["unpin"], "and its menu has no New window that would start nothing, only unpin")
+        T.eq(D.defaultPlaceholder("@browser", true, glyphs).special, "choose", "read and none: a click asks for one")
+        T.eq(D.defaultPlaceholder("@browser", true, glyphs).name, "Choose a web browser", "and says so")
+        T.eq(D.defaultPlaceholder("org.kde.dolphin", true, glyphs), null, "an app id has no placeholder")
+        const placeholderItem = D.build([D.defaultPlaceholder("@terminal", false, glyphs)], [], look)[0]
+        T.eq([placeholderItem.key, placeholderItem.pin, placeholderItem.glyph, placeholderItem.pinned],
+             ["app:default:terminal", "@terminal", "T", true], "it stays on the dock as a pin")
+        T.eq(D.clickTarget(placeholderItem, "", []).action, "launch", "and can be clicked")
+
+        // ---- zones ---------------------------------------------------------------------
+        const shownPills = [{ hasContent: true, visible: false }, { hasContent: false, visible: false }, { hasContent: true, visible: false }]
+        T.eq(D.shownCount(shownPills), 2, "pills counted by their own condition, not by visible (ui-dock#0)")
+        T.eq(D.shownFlags([null].concat(shownPills)), [false, true, false, true], "and flagged the same way")
+
         // ---- drag -------------------------------------------------------------------------
         const pins = ["a", "b", "c"]
         T.eq(D.dropPlan({ entryId: "a", pinned: true }, 2, pins, 10), { action: "move", id: "a", index: 2 }, "a pin to the end")
@@ -213,6 +279,35 @@ ShellRoot {
         T.eq(D.slotAt(60, [[0, 48], [54, 48]]), 1, "between")
         T.eq(D.slotAt(500, [[0, 48], [54, 48]]), 2, "past the last")
         T.eq(D.slotAt(5, []), 0, "no pins")
+        // svc-io#6: the slot is counted over the pins shown, the plan over
+        // the stored ones, which hold one the dock cannot draw.
+        const stored = ["gone-app", "@files", "@terminal", "@settings", "@browser"]
+        const shown = ["@files", "@terminal", "@settings", "@browser"]
+        let at = D.storedSlot(1, shown, stored, "@files")
+        T.eq(D.dropPlan({ pin: "@files", pinned: true }, at, stored, 12), { action: "move", id: "@files", index: 2 },
+             "Files dropped behind Terminal moves there")
+        at = D.storedSlot(3, shown, stored, "@files")
+        T.eq(D.dropPlan({ pin: "@files", pinned: true }, at, stored, 12), { action: "move", id: "@files", index: 4 }, "and to the end")
+        T.eq(D.storedSlot(0, shown, stored, "@browser"), 1, "first among the shown: before the first shown pin")
+        T.eq(D.storedSlot(1, ["a", "b"], ["a", "b"], "x"), 1, "a running app dropped among the pins")
+        // ui-dock#8: pulled off the dock.
+        const pinned = { pin: "a", pinned: true }, running = { pin: "b", pinned: false }
+        T.eq(D.dragOutcome(pinned, 10, 48, 1, 1.5), "drop", "near the dock: a drop")
+        T.eq(D.dragOutcome(pinned, 60, 48, 1, 1.5), "none", "off the dock, not far: nothing")
+        T.eq(D.dragOutcome(pinned, 80, 48, 1, 1.5), "unpin", "far off the dock: unpinned")
+        T.eq(D.dragOutcome(running, 200, 48, 1, 1.5), "none", "a running app has no pin to lose")
+        T.eq(D.dragOutcome(pinned, Infinity, 48, 1, 1.5), "none", "a drag the system took away does nothing")
+        T.eq(D.unpinDistance(40, 1.5, 28), 28, "the unpin distance stays within the room above the dock")
+        T.eq([D.unpinDistance(40, 1.5, Infinity), D.unpinDistance(40, 1.5, 0)], [60, 60], "with room to spare: 1.5 icons")
+        T.eq(D.dragOutcome(pinned, 30, 40, 1, 1.5, 28), "unpin", "a pull just past the room's limit unpins")
+        T.eq(D.dragOutcome(pinned, 20, 40, 1, 1.5, 28), "drop", "a shorter one is still a move")
+        T.ok(D.dragAway(pinned, 72, 48, 1.5) && !D.dragAway(pinned, 71, 48, 1.5) && !D.dragAway(pinned, Infinity, 48, 1.5),
+             "where the label starts to say so")
+        // Pulled straight off the dock: a drag, though it moved nothing along
+        // the dock - counted along alone the pull never began one.
+        T.ok(D.dragStarts(0, 3, 3), "pulled out past the icon: a drag")
+        T.ok(D.dragStarts(-3, 0, 3) && D.dragStarts(3, 0, 3), "moved along: a drag")
+        T.ok(!D.dragStarts(2, 2, 3) && !D.dragStarts(0, 0, 3), "a wobble on the icon stays a click")
 
         // ---- panels out of the dock -----------------------------------------------
         const button = { x: 10, y: 1032, width: 40, height: 40 }
@@ -224,10 +319,22 @@ ShellRoot {
         T.eq(D.panelAnchor("bottom", null, 6), {}, "no place: nothing to anchor to")
         T.eq(D.panelAnchor("bottom", { x: 0, y: 0, width: 0, height: 40 }, 6), {}, "nor an empty one")
         T.eq(D.panelAnchor("bottom", button, -3).anchorBottom, 1032, "no negative gap")
+        // D2: the gap off the dock's body, not off the item inside it - the
+        // start menu stood flush on the taskbar.
+        const taskbar = { x: 0, y: 1149, width: 1920, height: 51 }
+        const start = { x: 8, y: 1157, width: 60, height: 35 }
+        T.eq(D.panelAnchor("bottom", start, 16, taskbar), { anchorX: 38, anchorBottom: 1133, fromDock: true },
+             "above the taskbar's top line by the gap")
+        T.eq(D.panelAnchor("left", { x: 12, y: 500, width: 40, height: 40 }, 16, { x: 8, y: 300, width: 52, height: 600 }),
+             { anchorY: 520, anchorLeft: 76, fromDock: true }, "beside a left dock's body")
+        T.eq(D.panelAnchor("right", { x: 1870, y: 500, width: 40, height: 40 }, 16, { x: 1860, y: 300, width: 52, height: 600 }),
+             { anchorY: 520, anchorRight: 1844, fromDock: true }, "and a right one's")
+        T.eq(D.panelAnchor("bottom", start, 16, { x: 0, y: 0, width: 0, height: 0 }).anchorBottom, 1157 - 16,
+             "no body known: off the item, as before")
         // A full dock's menu offers no pin: the dock's own limit, not the
         // launcher's (DockMenu handed the launcher's flag before).
         T.eq(D.menuRows({ entryId: "x", pinned: false, windows: [] }, [], true, 3).find(row => row.kind === "pin"),
-             { kind: "pin", enabled: false }, "the pin row is off while the dock's pins are full")
+             { kind: "pin", enabled: false, reason: "full" }, "the pin row is off while the dock's pins are full")
 
         T.finish("DockTest")
     }

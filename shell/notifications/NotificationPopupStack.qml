@@ -7,6 +7,7 @@ import qs.theme
 import qs.services
 import "../../services/origin/OriginLogic.js" as Origin
 import "../../services/notifications/NotificationLogic.js" as Logic
+import "../components/PanelPlaceLogic.js" as Place
 
 // Up to three popups directly below the clock on the focused monitor - or out
 // of the notch, when there is one: a notification belongs to the notch, and
@@ -61,9 +62,23 @@ PanelWindow {
         // A bar on a side takes nothing off the top, so it must not be
         // subtracted from it.
         !barAtBottom && !barVertical && window.barBottom >= 0 ? window.barBottom + Metrics.spaceSm : 0)
-    readonly property var place: fromNotch !== null ? fromNotch
+    readonly property var settled: fromNotch !== null ? fromNotch
         : Origin.atTopRight(Metrics.notificationWidth, targetScreen ? targetScreen.width : 0,
                             cornerTop, Metrics.screenMargin)
+    // The dock beyond the bar, or beside the corner: the stack stands clear
+    // of it rather than over it - a bottom bar's popups came up right where
+    // the dock stands beyond it, and the corner ones covered a right dock
+    // (round 12, ui-rest#4; the OSD already did this). Read only while the
+    // dock is on, so a popup never starts the dock's service (pitfall 101).
+    readonly property var dockState: SettingsService.value("dock.enabled") === true
+        ? Object.assign({ position: DockService.position, shown: DockService.shownOn[screenName] === true,
+             reach: DockService.reachOn[screenName] || 0 },
+           Place.dockSpan(DockService.bodies[screenName], DockService.position,
+                          targetScreen ? targetScreen.x : 0, targetScreen ? targetScreen.y : 0))
+        : null
+    readonly property var place: Place.clearOfDock(settled, Metrics.notificationWidth, window.implicitHeight,
+        targetScreen ? targetScreen.width : 0, targetScreen ? targetScreen.height : 0,
+        dockState, barEdge, barBottom, Metrics.spaceSm)
 
     // The notch can be the display itself, and then the newest popup appears
     // *in* it and this stack stays away. Only the newest: the notch is a strip
@@ -138,9 +153,11 @@ PanelWindow {
                 // it appears, which is the motion a panel growing out of a
                 // pill already makes. `opacity` is the progress, so there is
                 // one animation rather than three that have to agree.
-                readonly property var homeward: window.fromNotch && Animations.motionEnabled
+                // From where the stack really stands (`place`, which keeps off
+                // the dock), so the card still lands on its origin.
+                readonly property var homeward: window.fromNotch && window.place && Animations.motionEnabled
                     ? Origin.offsetTo(window.notch,
-                                      { x: window.fromNotch.x, y: window.fromNotch.y + card.y,
+                                      { x: window.place.x, y: window.place.y + card.y,
                                         width: card.width, height: card.height })
                     : null
                 transformOrigin: Item.Center

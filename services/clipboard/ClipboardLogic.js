@@ -11,14 +11,22 @@
 // run under umask 077, which cliphist inherits when it creates the database,
 // and a database from before is set to 0600 as they start; the previews'
 // directory is made 0700, and what is decoded into it 0600.
+//
+// The previews from before that fix were left as they were: their directory
+// 0755 and the decoded pictures in it 0644, until a panel opened with an image
+// preview missing (only that run chmodded the directory, and never a file in
+// it). So the recorders take the previews' directory too as they start: the
+// group's and the others' bits come off it and off everything in it.
 
 // A recorder's argv (or the wipe's, which creates a missing database too),
 // run through a shell that sets the mode first and then becomes the command
 // itself (exec), so the command line start-shell.sh looks for when it reaps
-// helpers stays the recorder's own.
-function privately(dbPath, command) {
-    return ["sh", "-c", "umask 077; [ -e \"$1\" ] && chmod 600 -- \"$1\"; shift; exec \"$@\"", "sh", dbPath]
-        .concat(command)
+// helpers stays the recorder's own. `previewsDir` is optional (the wipe
+// removes the directory instead); a directory that is not there is left so.
+function privately(dbPath, command, previewsDir) {
+    return ["sh", "-c",
+        "umask 077; [ -e \"$1\" ] && chmod 600 -- \"$1\"; [ -n \"$2\" ] && [ -d \"$2\" ] && chmod -R go= -- \"$2\" 2>/dev/null; shift 2; exec \"$@\"",
+        "sh", dbPath, previewsDir || ""].concat(command)
 }
 
 // Decodes previews: pairs of [cliphist id, file name]. A file that is there

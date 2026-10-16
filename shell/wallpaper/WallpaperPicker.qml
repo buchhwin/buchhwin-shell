@@ -16,9 +16,10 @@ import "../../services/wallpaper/WallpaperLogic.js" as Logic
 // asked for.
 //
 // Favourites come first, then the rest of the folder. Type to filter, left and
-// right to move, Ctrl+F marks a favourite. With several displays a segment
-// chooses which one the choice applies to. It opens on the chip (subfolder or
-// favourites) chosen last.
+// right to move, Ctrl+F marks a favourite, Ctrl+Up and Ctrl+Down walk the
+// chips, Tab reaches the buttons, the chips and the display choice. With
+// several displays a segment chooses which one the choice applies to. It
+// opens on the chip (subfolder or favourites) chosen last.
 ShellPanel {
     id: root
     keyForward: search
@@ -99,6 +100,38 @@ ShellPanel {
     function move(delta) {
         select(Logic.moveIndex(root.currentIndex, delta, root.items.length, root.columns))
     }
+
+    // Starring moves the image (favourites first): the selection stays on
+    // it, not on its old place (PickerSelection). `reveal` for the key; the
+    // pointer's right click leaves the grid where it is.
+    function toggleFavourite(item, reveal) {
+        if (!item) return
+        keeper.hold(item.path, reveal)
+        WallpaperService.toggleFavourite(item.path)
+        Qt.callLater(keeper.settle)
+    }
+    PickerSelection { id: keeper; view: grid; items: root.items }
+
+    // A chip, the way a click chooses it.
+    function chooseFilter(key) {
+        filter = key
+        awaitedFilter = ""
+        // Remembered for the next open, "All" included.
+        WallpaperService.setPickerFilter(key)
+        // The index is a place in the old list; after a filter it means
+        // nothing, and leaving it behind would open the grid part-way down
+        // for no reason.
+        select(0)
+    }
+    // Ctrl+Up and Ctrl+Down walk the chips from the search field, as they
+    // walk the launcher's categories.
+    function stepFilter(delta) {
+        if (filters.length < 2) return
+        const keys = filters.map(item => item.key)
+        const at = keys.indexOf(filter)
+        const next = keys[Math.max(0, Math.min(keys.length - 1, (at < 0 ? 0 : at) + delta))]
+        if (next !== filter) chooseFilter(next)
+    }
     onWantedChanged: {
         if (wanted) {
             // The field, not the query: the panel's body lives on between
@@ -117,8 +150,8 @@ ShellPanel {
     }
     // The folder is read asynchronously, so the list is usually still empty
     // when the picker opens; the selection has to come back into range once it
-    // arrives.
-    onItemsChanged: select(root.currentIndex)
+    // arrives. A change from a star is the keeper's to settle.
+    onItemsChanged: if (!keeper.holding) select(root.currentIndex)
 
     ColumnLayout {
         // anchors.fill, not width: the grid needs a height to fill.
@@ -131,29 +164,35 @@ ShellPanel {
             ShellTextField {
                 id: search
                 Layout.fillWidth: true
+                // In the Tab ring too, so Shift+Tab finds the way back.
+                focusOnTab: true
                 icon: Icons.search
                 placeholder: "Search wallpapers …"
                 onTextChanged: root.query = text
                 onAccepted: root.apply(root.items[root.currentIndex])
                 Keys.onLeftPressed: root.move(-1)
                 Keys.onRightPressed: root.move(1)
-                Keys.onUpPressed: root.move(-root.columns)
-                Keys.onDownPressed: root.move(root.columns)
+                Keys.onUpPressed: event => (event.modifiers & Qt.ControlModifier) ? root.stepFilter(-1) : root.move(-root.columns)
+                Keys.onDownPressed: event => (event.modifiers & Qt.ControlModifier) ? root.stepFilter(1) : root.move(root.columns)
                 Keys.onPressed: event => {
                     if (event.key === Qt.Key_F && (event.modifiers & Qt.ControlModifier)) {
-                        const item = root.items[root.currentIndex]
-                        if (item) WallpaperService.toggleFavourite(item.path)
+                        root.toggleFavourite(root.items[root.currentIndex], true)
                         event.accepted = true
                     }
                 }
             }
+            // Tab stops, like the chips and the display choice below: Tab
+            // and Shift+Tab from the field reach them (the arrows stay the
+            // grid's).
             ShellButton {
+                focusOnTab: true
                 icon: Icons.folder; text: "Folder"; compact: true
                 onClicked: { Quickshell.execDetached(["xdg-open", WallpaperService.folder]); PanelService.close("wallpaperPicker") }
             }
             // The KDE folder dialog is a window of its own; the picker holds
             // the keyboard, so it steps aside rather than sit on top of it.
             ShellButton {
+                focusOnTab: true
                 icon: Icons.modify; text: "Change"; compact: true
                 onClicked: { PanelService.close("wallpaperPicker"); WallpaperService.chooseFolder() }
             }
@@ -178,18 +217,10 @@ ShellPanel {
                     // what it has for exactly this - a row of choices in a
                     // place with no room for two lines.
                     compact: true
+                    focusOnTab: true
                     title: modelData.label
                     active: root.filter === modelData.key
-                    onClicked: {
-                        root.filter = modelData.key
-                        root.awaitedFilter = ""
-                        // Remembered for the next open, "All" included.
-                        WallpaperService.setPickerFilter(modelData.key)
-                        // The index is a place in the old list; after a filter
-                        // it means nothing, and leaving it behind would open
-                        // the grid part-way down for no reason.
-                        root.select(0)
-                    }
+                    onClicked: root.chooseFilter(modelData.key)
                 }
             }
         }
@@ -197,6 +228,8 @@ ShellPanel {
         SegmentedControl {
             Layout.fillWidth: true
             visible: Quickshell.screens.length > 1
+            focusOnTab: true
+            accessibleName: "Set it on"
             compact: true
             current: root.target
             options: [{ value: "", label: "All displays" }]
@@ -320,7 +353,7 @@ ShellPanel {
                             onPositionChanged: point()
                             onClicked: mouse => {
                                 root.select(tile.index, false)
-                                if (mouse.button === Qt.RightButton) WallpaperService.toggleFavourite(tile.modelData.path)
+                                if (mouse.button === Qt.RightButton) root.toggleFavourite(tile.modelData, false)
                                 else root.apply(tile.modelData)
                             }
                         }

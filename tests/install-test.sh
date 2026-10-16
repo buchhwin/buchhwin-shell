@@ -165,6 +165,25 @@ check '[[ $(readlink -f -- "$session") == "$dev" ]]' 'a worktree on another bran
 unknown=0; in_repohome "$dev/install/install.sh" --aply > /dev/null 2>&1 || unknown=$?
 check '[[ $unknown -eq 2 ]]' 'an unknown option is refused before anything happens'
 
+# ---- scripts/install-cursor-macos.sh ------------------------------------------
+# Settings > Appearance runs it in a held terminal, so what it prints is all the
+# user learns. A stand-in curl answers instead of GitHub - nothing reaches the
+# network - and the install stops with a reason either way, never a bare exit.
+cursor_bin="$sandbox/cursor-bin"
+mkdir -p "$cursor_bin"
+printf '#!/bin/sh\n[ -n "${CURL_FAIL:-}" ] && exit 22\nprintf %%s "$CURL_ANSWER"\n' > "$cursor_bin/curl"
+chmod +x "$cursor_bin/curl"
+cursor() {
+  env PATH="$cursor_bin:$PATH" HOME="$sandbox/cursor-home" XDG_DATA_HOME="$sandbox/cursor-home/data" "$@" \
+    "$project_dir/scripts/install-cursor-macos.sh" 2>&1
+}
+status=0; out=$(cursor CURL_ANSWER='{"assets": [{"browser_download_url": "https://example.invalid/macOS-v2.tar.xz"}]}') || status=$?
+check '[[ $status -eq 1 && $out == *"Could not find macOS.tar.xz in the latest release."* ]]' \
+  "a release without macOS.tar.xz says so (status $status: $out)"
+status=0; out=$(cursor CURL_FAIL=1) || status=$?
+check '[[ $status -eq 1 && $out == *"GitHub did not answer"* ]]' "no answer from GitHub says so (status $status: $out)"
+check '[[ ! -e $sandbox/cursor-home/data/icons ]]' "and nothing was installed"
+
 if [[ $failures -gt 0 ]]; then
   printf 'install test: %d failure(s)\n' "$failures" >&2
   exit 1

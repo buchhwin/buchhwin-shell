@@ -38,10 +38,13 @@ ColumnLayout {
                 focusOnTab: true
                 level: 1
                 required property var modelData
+                // The port as the title and the card beside "In use", as in
+                // the control center (AudioService.labelParts).
+                readonly property var parts: AudioService.labelParts(modelData, AudioService.sinks)
                 Layout.fillWidth: true
                 icon: AudioService.deviceIcon(modelData, false)
-                title: AudioService.label(modelData)
-                subtitle: modelData === AudioService.sink ? "In use" : ""
+                title: parts.title
+                subtitle: [parts.subtitle, modelData === AudioService.sink ? "In use" : ""].filter(part => part.length).join(" · ")
                 selected: modelData === AudioService.sink
                 onClicked: AudioService.setDefaultSink(modelData)
             }
@@ -78,10 +81,13 @@ ColumnLayout {
                 focusOnTab: true
                 level: 1
                 required property var modelData
+                // The port as the title and the card beside "In use", as in
+                // the control center (AudioService.labelParts).
+                readonly property var parts: AudioService.labelParts(modelData, AudioService.sources)
                 Layout.fillWidth: true
                 icon: AudioService.deviceIcon(modelData, true)
-                title: AudioService.label(modelData)
-                subtitle: modelData === AudioService.source ? "In use" : ""
+                title: parts.title
+                subtitle: [parts.subtitle, modelData === AudioService.source ? "In use" : ""].filter(part => part.length).join(" · ")
                 selected: modelData === AudioService.source
                 onClicked: AudioService.setDefaultSource(modelData)
             }
@@ -126,7 +132,7 @@ ColumnLayout {
                         width: parent.width * AudioService.inputLevel
                         height: parent.height
                         radius: parent.radius
-                        color: AudioService.inputPeak >= 0.98 ? Colors.warning : Colors.accent
+                        color: AudioService.inputPeak >= 0.98 ? Colors.warning : Colors.accentFill
                         // Linear on purpose: a new level arrives halfway through
                         // every glide, and an ease-out would land each step in
                         // its first frames and then wait - the stutter

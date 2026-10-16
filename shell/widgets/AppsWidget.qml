@@ -12,7 +12,8 @@ import "../../services/dock/DockLogic.js" as Logic
 // its labels and its magnification.
 //
 // The pill sets the properties every widget has; the icon size is the
-// dock's own setting.
+// dock's own setting - smaller only when the dock's edge has no room for all
+// of them (Dock.qml measures the room the other pills leave, DockLogic.fit).
 Item {
     id: root
 
@@ -30,7 +31,11 @@ Item {
     readonly property string edge: DockService.position
     readonly property var apps: DockService.items
     readonly property int firstRunning: apps.findIndex(app => !app.pinned)
-    readonly property real slot: DockService.iconSize
+    readonly property real room: screenName.length && DockService.appsRoomOn[screenName] !== undefined
+        ? DockService.appsRoomOn[screenName] : -1
+    readonly property real slot: room < 0 ? DockService.iconSize
+        : Logic.fit(apps.length, DockService.iconSize, Metrics.dockGap,
+                    room - (firstRunning > 0 ? Metrics.dockSeparatorRoom : 0), 0)
     readonly property bool keyboard: DockService.keyboardScreen === screenName && screenName.length > 0
 
     // ---- places along the row -------------------------------------------------
@@ -48,10 +53,17 @@ Item {
 
     implicitWidth: vertical ? slot : Math.max(slot, placed.length)
     implicitHeight: vertical ? Math.max(slot, placed.length) : slot
+    // Its length at rest, unmagnified: the dock's body at rest is measured
+    // with it (Dock.qml restBody).
+    readonly property real restAlong: Math.max(slot, rest.length)
+    onRestAlongChanged: if (screenName.length) DockService.reportAppsRest(screenName, restAlong)
+    onScreenNameChanged: if (screenName.length) DockService.reportAppsRest(screenName, restAlong)
 
+    // The pointer's place matters only to the magnification: without it a
+    // move along the row laid every icon out again for nothing.
     HoverHandler {
         id: hover
-        onPointChanged: root.pointerAlong = hovered ? (root.vertical ? point.position.y : point.position.x) : -1
+        onPointChanged: if (DockService.magnifies) root.pointerAlong = hovered ? (root.vertical ? point.position.y : point.position.x) : -1
         onHoveredChanged: if (!hovered) root.pointerAlong = -1
     }
 
@@ -68,7 +80,7 @@ Item {
 
     // Where a dragged app would land.
     Rectangle {
-        visible: root.dragging && root.dropSlot >= 0
+        visible: root.dragging && root.dropSlot >= 0 && !root.dragAway
         x: root.vertical ? 0 : root.dropAt - width / 2
         y: root.vertical ? root.dropAt - height / 2 : 0
         width: root.vertical ? root.slot : Metrics.focusBorderWidth
@@ -93,6 +105,7 @@ Item {
             height: size
             keyFocus: root.keyboard && DockService.keyIndex === index
             dragging: DockService.dragKey === modelData.key && root.dragging
+            removing: dragging && root.dragAway
             z: dragging ? 1 : 0
             onActivated: DockService.activate(modelData.key)
             onNewWindow: DockService.newWindow(modelData.key)
@@ -100,8 +113,9 @@ Item {
             onDragStarted: {
                 DockService.dragKey = modelData.key
                 DockService.dragScreen = root.screenName
+                root.dragIndex = index
             }
-            onDragMoved: along => root.dragTo(index, along)
+            onDragMoved: (along, acrossOut) => root.dragTo(index, along, acrossOut)
             onDragEnded: (along, acrossOut) => root.dragEnd(index, along, acrossOut)
             onHoveredChanged: root.labelFor(hovered ? index : -1)
         }
@@ -129,14 +143,20 @@ Item {
         return vertical ? { x: edge === "left" ? 0 : width - size, y: offset, width: size, height: size }
                         : { x: offset, y: height - size, width: size, height: size }
     }
+    // Outside the widget, in the room the dock's surface keeps for it, and
+    // kept on that surface (a taskbar's first app is at the screen's edge).
+    // While a pinned app is pulled off the dock it says what letting go does.
     DockLabel {
         z: 2
         edge: root.edge
-        anchorRect: root.labelIndex >= 0 && root.labelIndex < root.apps.length ? root.itemRect(root.labelIndex) : null
-        text: root.notice.length ? root.notice
+        readonly property int index: root.dragAway ? root.dragIndex : root.labelIndex
+        anchorRect: index >= 0 && index < root.apps.length ? root.itemRect(index) : null
+        // The menu's word for it.
+        text: root.dragAway ? "Unpin"
+            : root.notice.length ? root.notice
             : root.labelIndex >= 0 && root.apps[root.labelIndex] ? root.apps[root.labelIndex].name : ""
-        shown: (root.labelShown || root.notice.length > 0) && !root.dragging
-        clampToArea: false
+        shown: root.dragging ? root.dragAway : root.labelShown || root.notice.length > 0
+        clampToWindow: true
     }
 
     // ---- where the apps are, for `dock rects` (tests aim with it) -------------
@@ -184,16 +204,26 @@ Item {
     }
 
     // ---- drag ---------------------------------------------------------------
+    // Along the dock: among the pins (DockService.drop). Pulled away from the
+    // dock, a pinned app is unpinned when it is let go (DockLogic.dragOutcome)
+    // - it fades and its label says so first.
     readonly property bool dragging: DockService.dragKey.length > 0 && DockService.dragScreen === screenName
     property int dropSlot: -1
     property real dropAt: 0
+    property int dragIndex: -1
+    property bool dragAway: false
+    // How far a pull off the dock can go and still be on its surface: the
+    // room above a bottom dock for the names (Dock.qml `headroom`, less a
+    // little), the whole label width beside a side one.
+    readonly property real unpinRoom: vertical ? Infinity : Metrics.dockLabelHeight + Metrics.dockLabelGap - Metrics.spaceSm
     function pinSlots(skip) {
         const result = []
         for (let index = 0; index < apps.length; ++index)
             if (apps[index].pinned && index !== skip) result.push([placed.offsets[index], placed.sizes[index]])
         return result
     }
-    function dragTo(index, along) {
+    function dragTo(index, along, acrossOut) {
+        dragAway = Logic.dragAway(apps[index], acrossOut, slot, Metrics.dockUnpinReach, unpinRoom)
         const at = (vertical ? itemRect(index).y : itemRect(index).x) + along
         const pins = pinSlots(index)
         dropSlot = Logic.slotAt(at, pins)
@@ -202,15 +232,17 @@ Item {
     }
     function dragEnd(index, along, acrossOut) {
         const app = apps[index]
-        // Dropped off the dock: nothing happens.
-        if (app && dropSlot >= 0 && acrossOut < slot) {
-            if (DockService.drop(app.key, dropSlot) === "full") {
-                labelIndex = index
-                notice = "At most " + LayoutService.dockPinLimit + " pinned apps"
-                noticeTimer.restart()
-            }
+        const outcome = Logic.dragOutcome(app, acrossOut, slot, dropSlot, Metrics.dockUnpinReach, unpinRoom)
+        if (outcome === "unpin") {
+            DockService.unpinByDrag(app.key)
+        } else if (outcome === "drop" && DockService.drop(app.key, dropSlot) === "full") {
+            labelIndex = index
+            notice = "At most " + LayoutService.dockPinLimit + " pinned apps"
+            noticeTimer.restart()
         }
         dropSlot = -1
+        dragIndex = -1
+        dragAway = false
         DockService.dragKey = ""
         DockService.dragScreen = ""
     }

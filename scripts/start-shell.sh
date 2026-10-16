@@ -28,18 +28,84 @@ fi
 # signature is resolved here when it is missing, and only when exactly one
 # instance is running: a second one means a nested test session, and guessing
 # between them is how a test reaches the real session.
+#
+# The one instance must also be the display this script was given: started
+# from a Plasma terminal while a Hyprland runs on another seat or VT, its
+# signature with KWin's WAYLAND_DISPLAY is a shell on KWin talking to that
+# other compositor.
 if (( ! reap_only )) && [[ -z ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && command -v hyprctl >/dev/null 2>&1; then
-  if [[ $(hyprctl instances 2>/dev/null | grep -c '^instance ') == 1 ]]; then
-    HYPRLAND_INSTANCE_SIGNATURE=$(hyprctl instances 2>/dev/null | sed -n 's/^instance \(.*\):$/\1/p' | head -1)
-    export HYPRLAND_INSTANCE_SIGNATURE
+  listed=$(hyprctl instances 2>/dev/null) || listed=""
+  if [[ $(grep -c '^instance ' <<<"$listed") == 1 ]]; then
+    listed_socket=$(sed -n 's/^[[:space:]]*wl socket: *//p' <<<"$listed" | head -n1) || listed_socket=""
+    if [[ -n ${WAYLAND_DISPLAY:-} && -n $listed_socket && $listed_socket != "$WAYLAND_DISPLAY" ]]; then
+      printf 'start-shell: the Hyprland instance runs on %s, this is %s; not adopting it\n' "$listed_socket" "$WAYLAND_DISPLAY" >&2
+    else
+      HYPRLAND_INSTANCE_SIGNATURE=$(sed -n 's/^instance \(.*\):$/\1/p' <<<"$listed" | head -n1) || HYPRLAND_INSTANCE_SIGNATURE=""
+      if [[ -n $HYPRLAND_INSTANCE_SIGNATURE ]]; then export HYPRLAND_INSTANCE_SIGNATURE; fi
+    fi
   else
-    printf 'start-shell: no single Hyprland instance; the shell starts without one\n' >&2
+    printf 'start-shell: no single Hyprland instance\n' >&2
   fi
 fi
 
 state_dir=${XDG_STATE_HOME:-"$HOME/.local/state"}/buchhwin-shell
 log_file="$state_dir/quickshell.log"
 mkdir -p -- "$state_dir"
+
+# ---- no Hyprland, no shell ---------------------------------------------------
+# This is a Hyprland shell, and without a Hyprland to belong to it used to
+# start anyway, "without one". Run from a Plasma session - a deploy or a
+# reload from the desk where Citrix runs, an agent in an editor there - it
+# came up on KWin's display: its bar, notch and wallpaper over the Plasma
+# desktop, its notification server, clipboard watchers and lid inhibitor in
+# that session, and before that it SIGKILLed Plasma's own kded6 for holding
+# the tray name (round 12, scripts#0). So the shell starts only with a
+# signature whose compositor socket is there: the session's own (Hyprland
+# exports it to everything it starts, the login included) or the one
+# instance resolved above. A signature without its socket is a session that
+# is gone - one the user manager still remembers from the last Hyprland
+# login hands it to a Plasma terminal. The socket is waited for briefly, so
+# a start racing its compositor is not taken for that. A live one of a
+# Hyprland on another VT comes the same way, next to KWin's display: the
+# lock file Hyprland keeps beside its socket names its display (its pid,
+# then its socket; `hyprctl instances` reads it), and another display than
+# this one is no session here. Without that line nothing is said.
+#
+# BUCHHWIN_START_WITHOUT_HYPRLAND=1 is the tests' way past this: they run
+# stand-in shells outside any session, and say so.
+hyprland_socket() {
+  printf '%s/hypr/%s/.socket.sock' "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" "${HYPRLAND_INSTANCE_SIGNATURE:-}"
+}
+if (( ! reap_only )) && [[ ${BUCHHWIN_START_WITHOUT_HYPRLAND:-0} != 1 ]]; then
+  session_found=0
+  why=""
+  if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
+    for _ in {1..20}; do
+      if [[ -S $(hyprland_socket) ]]; then session_found=1; break; fi
+      sleep 0.1
+    done
+  fi
+  if (( session_found )) && [[ -n ${WAYLAND_DISPLAY:-} ]]; then
+    lock_display=$(sed -n 2p "$(dirname -- "$(hyprland_socket)")/hyprland.lock" 2>/dev/null) || lock_display=""
+    if [[ -n $lock_display && $lock_display != "$WAYLAND_DISPLAY" ]]; then
+      session_found=0
+      why="Hyprland $HYPRLAND_INSTANCE_SIGNATURE runs on $lock_display, this is $WAYLAND_DISPLAY"
+    fi
+  fi
+  if (( ! session_found )); then
+    if [[ -n $why ]]; then
+      :
+    elif [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
+      why="Hyprland $HYPRLAND_INSTANCE_SIGNATURE has no socket any more"
+    else
+      why="no Hyprland session found"
+    fi
+    printf 'start-shell: %s; not starting the shell (it starts with the next Hyprland login)\n' "$why" >&2
+    printf '%s start-shell: %s (WAYLAND_DISPLAY %s, XDG_CURRENT_DESKTOP %s); not starting the shell\n' \
+      "$(date -Is)" "$why" "${WAYLAND_DISPLAY:-unset}" "${XDG_CURRENT_DESKTOP:-unset}" >>"$log_file"
+    exit 1
+  fi
+fi
 
 # Is an instance of this configuration listed? The answer is captured and then
 # searched, never piped into `grep -q`: grep quits at its first match, the
@@ -205,8 +271,9 @@ window_started=$SECONDS
 stopping=0
 child=
 
-# Without a signature there is nothing to check against (a test, or a start
-# outside any session), and the answer is the one this script always gave.
+# Without a signature there is nothing to check against (only a test's start
+# gets this far without one, BUCHHWIN_START_WITHOUT_HYPRLAND), and the answer
+# is the one this script always gave.
 compositor_alive() {
   [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] || return 0
   [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket.sock" ]]
@@ -298,10 +365,14 @@ app_qpa_theme=${QT_QPA_PLATFORMTHEME:-}
 # crash in its Wayland teardown and KCrash starts it again at once. So a
 # kded6 found holding the name is ended with SIGKILL, which KCrash does not
 # see - only that process, checked by its name, and never from a nested test
-# session, whose shell must not touch the real one's bus. Plasma starts its
-# own kded6 and is not affected.
+# session, whose shell must not touch the real one's bus. Only inside a live
+# Hyprland session either: in a Plasma session the kded6 holding the name is
+# Plasma's own (the tray watcher, the network agent, every kded module), and
+# a test's start without Hyprland (BUCHHWIN_START_WITHOUT_HYPRLAND) is no
+# session at all.
 release_tray() {
   [[ ${BUCHHWIN_NESTED:-0} == 1 ]] && return 0
+  [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} && -S $(hyprland_socket) ]] || return 0
   command -v busctl >/dev/null 2>&1 || return 0
   local listed pid
   listed=$(busctl --user --auto-start=no list --no-pager 2>/dev/null) || return 0

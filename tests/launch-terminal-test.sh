@@ -5,7 +5,8 @@ set -euo pipefail
 # title and the command; in the foreground, through launch-app.sh (the
 # session's environment, a scope or --unit's service), and kitty when nothing
 # is set or the terminal is missing. Stub terminals record what they get; the
-# default comes from the real default-apps.py over a sandboxed XDG tree.
+# default comes from scripts/lib/default-terminal.sh - the real default-apps.py
+# where bash cannot be sure - over a sandboxed XDG tree.
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
 sandbox=$(mktemp -d "${TMPDIR:-/tmp}/buchhwin-terminaltest.XXXXXX")
 trap 'rm -rf -- "$sandbox"' EXIT
@@ -16,8 +17,13 @@ bin="$sandbox/bin"; sys="$sandbox/sys"; calls="$sandbox/calls.log"; argv="$sandb
 mkdir -p "$bin" "$sys"
 # Only these tools, so a terminal installed on this machine is never found
 # (or started) in place of a stub.
-for tool in bash sh python3 readlink dirname mktemp chmod rm env sed grep cat date head tail tr wc stat mv printf; do
+for tool in bash sh python3 readlink dirname mktemp mkdir chmod rm env sed grep cat date head tail tr wc stat mv printf; do
   ln -sf "$(type -P "$tool")" "$sys/$tool"
+done
+# What Alacritty's daemon start uses (scripts/launch-alacritty.sh), where the
+# machine has it: without them the window is a process of its own.
+for tool in setsid flock sleep; do
+  if tool_path=$(type -P "$tool"); then ln -sf "$tool_path" "$sys/$tool"; fi
 done
 stub() {
   printf '#!/bin/sh\nprintf "%%s %%s\\n" "%s" "$*" >> "%s"\n%s\n' "$1" "$calls" "${2:-exit 0}" > "$bin/$1"
@@ -80,8 +86,11 @@ entry org.example.MyTerm.desktop "env GDK_BACKEND=x11 myterm --new-window %u"
 entry org.example.Boxed.desktop "/usr/bin/flatpak run --branch=stable org.example.Boxed"
 use() { printf '%s\n' "$1" > "$config/buchhwin-shell-xdg-terminals.list"; }
 
-# The caller's own environment must not decide anything below.
-unset MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME RUN
+# The caller's own environment must not decide anything below - its display
+# neither: with one, Alacritty's windows go to its daemon (a case of its own
+# below).
+unset MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME RUN \
+  WAYLAND_DISPLAY DISPLAY HYPRLAND_INSTANCE_SIGNATURE
 export PATH="$bin:$sys" XDG_CONFIG_HOME="$config" XDG_DATA_HOME="$data" XDG_DATA_DIRS="$sandbox/sysdata" \
   XDG_RUNTIME_DIR="$runtime" HOME="$sandbox/home"
 launch=("$project_dir/scripts/launch-terminal.sh")
@@ -89,7 +98,7 @@ launch=("$project_dir/scripts/launch-terminal.sh")
 run() { : > "$calls"; rm -f -- "$argv" "$argv.env"; status=0; "${launch[@]}" "$@" </dev/null >"$sandbox/out" 2>&1 || status=$?; }
 # The recorded call equals the given words.
 got() { [[ -r $argv && $(cat "$argv") == "$(printf '%s\n' "$@")" ]]; }
-shown() { tr '\n' ' ' < "$argv" 2>/dev/null; }
+shown() { tr '\n' ' ' 2>/dev/null < "$argv"; }
 scope_of() { grep -qE "^systemd-run --user --scope .*--unit=app-buchhwin-$1-[0-9]+\.scope -- " "$calls"; }
 
 # ---- each terminal's words ------------------------------------------------------
@@ -105,6 +114,30 @@ check 'got alacritty -o window.opacity=0.8 -o colors.transparent_background_colo
   "and Alacritty still gets its options ($(shown))"
 run
 check 'got alacritty -o window.opacity=0.8 -o colors.transparent_background_colors=true' "no command: Alacritty with a shell ($(shown))"
+# With a display, the same words become a window of Alacritty's daemon
+# (scripts/launch-alacritty.sh; its own cases are in tests/launch-app-test.sh):
+# a stand-in that listens on its socket, and a `msg` that reaches it. A short
+# runtime directory, for the socket's 107 bytes.
+if [[ -x $sys/setsid ]]; then
+  drt=$(mktemp -d /tmp/buchhwin-alacritty.XXXXXX)
+  trap 'if [[ -r $drt/pids ]]; then while read -r pid; do kill "$pid" 2>/dev/null || true; done < "$drt/pids"; fi; rm -rf -- "$sandbox" "$drt"' EXIT
+  mkdir -p "$drt/systemd"
+  python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$drt/systemd/private"
+  {
+    printf '#!/bin/sh\n'
+    printf 'case $1 in\n'
+    printf '  --daemon) printf "%%s\\n" "$$" >> "%s"; exec python3 -c "import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(); time.sleep(60)" "$3" ;;\n' "$drt/pids"
+    printf '  msg) { printf "%%s\\n" "${0##*/}"; for a in "$@"; do printf "%%s\\n" "$a"; done; } > "%s"\n' "$argv"
+    printf '       exec python3 -c "import socket,sys; socket.socket(socket.AF_UNIX).connect(sys.argv[1])" "$3" ;;\n'
+    printf 'esac\nexit 1\n'
+  } > "$bin/alacritty"
+  chmod +x "$bin/alacritty"
+  WAYLAND_DISPLAY=wayland-9 HYPRLAND_INSTANCE_SIGNATURE=c0ffee_1700000000_42 XDG_RUNTIME_DIR="$drt" \
+    run --hold --title "System upgrade" -- sh -c 'echo hi'
+  check '[[ $status -eq 0 ]] && got alacritty msg --socket "$drt/buchhwin-alacritty-wayland-9-1700000000_42.sock" create-window --working-directory "$PWD" -o window.opacity=0.8 -o colors.transparent_background_colors=true --hold --title "System upgrade" -e sh -c "echo hi"' \
+    "with a display, Alacritty's daemon gets the window: --hold, --title, -e ($(shown))"
+  term alacritty -e
+fi
 
 use kitty.desktop
 entry kitty.desktop kitty
@@ -196,10 +229,23 @@ rm -f -- "$bin/konsole"
 run -- htop
 check "got kitty --config '$project_dir/kitty/kitty.conf' -o shell=zsh htop" "the chosen terminal not installed: kitty ($(shown))"
 term konsole -e
+# The terminal is found in bash; Python only answers what bash cannot be sure
+# of, an id with a dash that may be a directory (org/example/dashed.desktop).
 mv "$sys/python3" "$sandbox/python3.kept"
+printf '#!/bin/sh\nprintf "python3 %%s\\n" "$*" >> "%s"\nexec "%s" "$@"\n' "$calls" "$sandbox/python3.kept" > "$sys/python3"
+chmod +x "$sys/python3"
+run -- htop
+check 'got konsole --nofork -e htop && ! grep -q "^python3" "$calls"' "the terminal is found without Python ($(shown); $(grep "^python3" "$calls"))"
+mkdir -p "$data/applications/org/example"
+entry org/example/dashed.desktop dashed
+use org-example-dashed.desktop
+run -- htop
+check 'grep -q "^python3 .*default-apps.py get terminal" "$calls"' "a dashed id is asked of default-apps.py ($(grep "^python3" "$calls"))"
+rm -f -- "$sys/python3"
 run -- htop
 check "got kitty --config '$project_dir/kitty/kitty.conf' -o shell=zsh htop" "no python3 to ask: kitty ($(shown))"
 mv "$sandbox/python3.kept" "$sys/python3"
+rm -rf -- "$data/applications/org"
 # launch-default.sh's terminal without a default: the same answer.
 rm -f -- "$config/buchhwin-shell-xdg-terminals.list"
 : > "$calls"; rm -f -- "$argv"

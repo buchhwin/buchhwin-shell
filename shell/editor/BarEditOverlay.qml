@@ -164,6 +164,12 @@ Item {
             // Never filled: the frame lies on top of the real pill, so a fill
             // would hide what is being edited. The widget editor can fill
             // because it draws the widget inside its own card.
+            //
+            // On a flat surface (the taskbar, a bar of style "bar") the
+            // frames are the only sign of what can be dragged, so even an
+            // unselected one is a mark at 3:1 (Colors.editorFrame), not the
+            // divider line it was (Colors.border, 1.1-1.2:1). The selected one
+            // is the accent's line, thicker.
             Rectangle {
                 anchors.fill: parent
                 // While this pill is the one being dragged, the ghost under the
@@ -172,7 +178,7 @@ Item {
                 radius: Metrics.radiusCard
                 color: "transparent"
                 border.width: frame.selected ? Metrics.focusBorderWidth : Metrics.borderWidth
-                border.color: frame.selected ? Colors.accentLine : Colors.border
+                border.color: frame.selected ? Colors.accentLine : Colors.editorFrame
             }
 
             MouseArea {

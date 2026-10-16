@@ -13,6 +13,7 @@ EditorPanel {
     readonly property var place: editor.barPlace
     readonly property var pill: editor.barPillEntry
     readonly property var currentItem: pill !== null && editor.barItem >= 0 ? pill.items[editor.barItem] : null
+    readonly property bool itemSized: currentItem === null || currentItem === undefined || WidgetRegistry.pillSized(currentItem.type)
     // The bar's or the dock's: the editor says which (LayoutService.pill*).
     readonly property string target: editor.zoneTarget
     readonly property var zones: editor.zones
@@ -59,15 +60,26 @@ EditorPanel {
             onSelected: value => LayoutService.pillSetDisplay(panel.target, panel.pill.id, panel.editor.barItem, value)
         }
         // The size of this one item, on top of the bar's own size below: the
-        // user asked to resize a tile, not only the whole strip.
-        SectionLabel { text: "Item size" }
+        // user asked to resize a tile, not only the whole strip. Not for an
+        // item that sizes itself (WidgetRegistry `pillSized: false`, the
+        // dock's apps): a pick there wrote an undo step and changed nothing.
+        SectionLabel { visible: panel.itemSized; text: "Item size" }
         SegmentedControl {
+            visible: panel.itemSized
             focusOnTab: true
             accessibleName: "Item size"
             Layout.fillWidth: true
             current: panel.currentItem ? (panel.currentItem.size || "small") : "small"
             options: [{ value: "small", label: "Small" }, { value: "medium", label: "Medium" }, { value: "large", label: "Large" }]
             onSelected: value => LayoutService.pillSetItemSize(panel.target, panel.pill.id, panel.editor.barItem, value)
+        }
+        ShellText {
+            visible: !panel.itemSized
+            Layout.fillWidth: true
+            text: "Its icons follow the dock's icon size (Settings > Dock)."
+            role: "small"
+            color: Colors.mutedText
+            wrapMode: Text.Wrap
         }
         RowLayout {
             Layout.fillWidth: true

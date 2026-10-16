@@ -18,7 +18,12 @@ ColumnLayout {
             anchors.fill: parent
             anchors.margins: Metrics.spaceLg
             spacing: Metrics.spaceMd
-            ShellIcon { glyph: BluetoothService.icon; size: Metrics.iconLg; color: BluetoothService.enabled ? Colors.accentForeground : Colors.mutedText }
+            // The Wi-Fi page's box (NetworkPage), so the title stays put.
+            ShellIcon {
+                Layout.preferredWidth: Metrics.iconXl
+                glyph: BluetoothService.icon; size: Metrics.iconLg
+                color: BluetoothService.enabled ? Colors.accentForeground : Colors.mutedText
+            }
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 0

@@ -102,10 +102,33 @@ cat > "$SB/bin/systemctl" <<'Q'
 exit 0
 Q
 chmod +x "$SB/bin/systemd-run" "$SB/bin/systemctl"
+# hyprctl lists the instances in $HYPR_INSTANCES (a file, `hyprctl instances`
+# text), none unless a scenario says so - never the host's: with the real one
+# a test run inside the session resolved the session's own signature.
+cat > "$SB/bin/hyprctl" <<'Q'
+#!/usr/bin/env bash
+[[ ${1:-} == instances && -s ${HYPR_INSTANCES:-} ]] && cat "$HYPR_INSTANCES"
+exit 0
+Q
+chmod +x "$SB/bin/hyprctl"
+# A Hyprland of the test's own: its signature and socket under a runtime
+# directory of the sandbox. sig-alive has a socket, sig-gone none, and
+# sig-other is a live Hyprland on another display. The lock files are as
+# Hyprland writes them (pid, then socket).
+mkdir -p "$SB/run/hypr/sig-alive" "$SB/run/hypr/sig-gone" "$SB/run/hypr/sig-other"
+for sig in sig-alive sig-other; do
+  python3 -c "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])" "$SB/run/hypr/$sig/.socket.sock"
+done
+printf '1\nwayland-other\n' > "$SB/run/hypr/sig-other/hyprland.lock"
+printf '1\nwayland-test\n' > "$SB/run/hypr/sig-alive/hyprland.lock"
 real_pkill=$(command -v pkill)
+# The stand-in shells run outside any session, so the test says so
+# (BUCHHWIN_START_WITHOUT_HYPRLAND); the cases of the session check below
+# take it away again. No signature of the caller's reaches the script.
+unset HYPRLAND_INSTANCE_SIGNATURE HYPR_INSTANCES
 export PATH="$SB/bin:$PATH" XDG_STATE_HOME="$SB/state" COUNT="$SB/count" LINGER="$SB/linger" \
   HELD="$SB/held" PKILLS="$SB/pkills" STUB_CFG="$SB/cfg" SESSION_ENV="$SB/session-env" REPO="$PWD" \
-  WAYLAND_DISPLAY=wayland-test
+  WAYLAND_DISPLAY=wayland-test BUCHHWIN_START_WITHOUT_HYPRLAND=1
 # The shell's own settings and its record of them come from whoever runs this
 # test - a terminal or an editor the shell started has them - and would be
 # taken for the session's.
@@ -182,11 +205,56 @@ chmod +x "$SB/kded6"
 "$SB/kded6" & tray=$!
 disown "$tray"   # its SIGKILL is expected, not a job to report
 for _ in {1..20}; do [[ $(cat /proc/$tray/comm 2>/dev/null) == kded6 ]] && break; sleep 0.05; done
-echo 0 > "$COUNT"; BUCHHWIN_NESTED=1 TRAY_OWNER="$tray kded6" CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
-check 'kill -0 "$tray" 2>/dev/null' 'a nested session never ends the tray owner'
-echo 0 > "$COUNT"; TRAY_OWNER="$tray other" CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
-check 'kill -0 "$tray" 2>/dev/null' 'a tray owner that is not kded6 is left alone'
+# The session the tray belongs to: the test's own Hyprland, socket and all.
+in_session=(HYPRLAND_INSTANCE_SIGNATURE=sig-alive XDG_RUNTIME_DIR="$SB/run")
+
+# ---- no Hyprland, no shell (round 12, scripts#0) -------------------------------
+# A deploy or a reload run from Plasma started the shell on KWin's display and
+# SIGKILLed Plasma's kded6 for holding the tray name. Without a Hyprland to
+# belong to - none listed, a signature whose socket is gone, or one instance
+# on another display - nothing starts and the tray owner is left alone; the
+# opt-in of the tests starts a shell but still never touches the tray.
+shell_log="$SB/state/buchhwin-shell/quickshell.log"
+refused() {   # refused LABEL ENV...: refused with a note, nothing started, kded6 alive
+  local label=$1 rc=0; shift
+  echo 0 > "$COUNT"; : > "$SB/start.err"
+  env -u BUCHHWIN_START_WITHOUT_HYPRLAND "$@" TRAY_OWNER="$tray kded6" CRASHES=0 FINAL_EXIT=0 \
+    bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>"$SB/start.err" || rc=$?
+  check '[[ $rc -ne 0 && $(cat "$COUNT") == 0 ]]' "$label: the shell is not started (status $rc, $(cat "$COUNT") runs)"
+  check 'kill -0 "$tray" 2>/dev/null' "$label: and the kded6 holding the tray name is left alone"
+  check 'grep -q "not starting the shell" "$SB/start.err" && grep -q "not starting the shell" "$shell_log"' "$label: and it says so"
+}
+refused "no Hyprland at all (Plasma)" WAYLAND_DISPLAY=wayland-0 XDG_CURRENT_DESKTOP=KDE
+refused "a signature whose socket is gone" HYPRLAND_INSTANCE_SIGNATURE=sig-gone XDG_RUNTIME_DIR="$SB/run"
+# A Hyprland still running on another VT: the user manager hands its live
+# signature to a Plasma terminal, whose WAYLAND_DISPLAY is KWin's.
+refused "a live signature of another display" HYPRLAND_INSTANCE_SIGNATURE=sig-other XDG_RUNTIME_DIR="$SB/run"
+check 'grep -q "runs on wayland-other, this is wayland-test" "$SB/start.err"' 'and names both displays'
+printf 'instance sig-alive:\n\ttime: 1\n\tpid: 1\n\twl socket: wayland-other\n\n' > "$SB/instances"
+refused "the one instance on another display" HYPR_INSTANCES="$SB/instances" XDG_RUNTIME_DIR="$SB/run"
+check 'grep -q "runs on wayland-other, this is wayland-test" "$SB/start.err"' 'and names both displays'
+# the one instance on this display is the session: adopted, and started
+printf 'instance sig-alive:\n\ttime: 1\n\tpid: 1\n\twl socket: wayland-test\n\n' > "$SB/instances"
+echo 0 > "$COUNT"; : > "$SB/shell.env"
+env -u BUCHHWIN_START_WITHOUT_HYPRLAND HYPR_INSTANCES="$SB/instances" XDG_RUNTIME_DIR="$SB/run" ENVDUMP="$SB/shell.env" \
+  TRAY_OWNER="$tray other" CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
+check '[[ $(cat "$COUNT") == 1 ]] && grep -qx HYPRLAND_INSTANCE_SIGNATURE=sig-alive "$SB/shell.env"' \
+  "the one instance on this display is adopted and the shell starts ($(cat "$COUNT") runs)"
+# the session's own signature with its socket: started
+echo 0 > "$COUNT"
+env -u BUCHHWIN_START_WITHOUT_HYPRLAND "${in_session[@]}" TRAY_OWNER="$tray other" CRASHES=0 FINAL_EXIT=0 \
+  bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
+check '[[ $(cat "$COUNT") == 1 ]]' "the session's own signature starts the shell ($(cat "$COUNT") runs)"
+# the tests' opt-in starts the stand-in, and still leaves the tray alone
 echo 0 > "$COUNT"; TRAY_OWNER="$tray kded6" CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
+check '[[ $(cat "$COUNT") == 1 ]] && kill -0 "$tray" 2>/dev/null' "without a session the opt-in starts a shell and ends no kded6"
+
+echo 0 > "$COUNT"; env "${in_session[@]}" BUCHHWIN_NESTED=1 TRAY_OWNER="$tray kded6" CRASHES=0 FINAL_EXIT=0 \
+  bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
+check 'kill -0 "$tray" 2>/dev/null' 'a nested session never ends the tray owner'
+echo 0 > "$COUNT"; env "${in_session[@]}" TRAY_OWNER="$tray other" CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
+check 'kill -0 "$tray" 2>/dev/null' 'a tray owner that is not kded6 is left alone'
+echo 0 > "$COUNT"; env "${in_session[@]}" TRAY_OWNER="$tray kded6" CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
 for _ in {1..20}; do kill -0 "$tray" 2>/dev/null || break; sleep 0.05; done
 check '! kill -0 "$tray" 2>/dev/null' 'a kded6 holding the tray name is ended before the shell starts'
 check 'grep -q "ended kded6 (pid $tray)" "$SB/state/buchhwin-shell/quickshell.log"' 'and the log says so'
@@ -305,14 +373,11 @@ n=$(cat "$COUNT" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$COUNT"
 exit 139
 Q
 chmod +x "$SB/bin/quickshell"
-mkdir -p "$SB/run/hypr/sig-gone"
 echo 0 > "$COUNT"; HYPRLAND_INSTANCE_SIGNATURE=sig-gone XDG_RUNTIME_DIR="$SB/run" timeout 30 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
 check '[[ $(cat "$COUNT") == 1 ]]' "no compositor, no restart (got $(cat "$COUNT"))"
 check 'grep -q "the compositor is gone" "$SB/state/buchhwin-shell/quickshell.log"' 'and the log says so'
 
 # with the compositor's socket present the same crash is restarted
-mkdir -p "$SB/run/hypr/sig-alive"
-python3 -c "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])" "$SB/run/hypr/sig-alive/.socket.sock"
 cat > "$SB/bin/quickshell" <<'Q'
 #!/usr/bin/env bash
 [[ ${1:-} == list ]] && exit 1
@@ -337,7 +402,10 @@ chmod +x "$SB/bin/quickshell"
 echo 0 > "$COUNT"
 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1 &
 sup=$!
-sleep 1
+# Until the stand-in runs, not a fixed second: on a loaded machine the TERM
+# could land before there is a shell to forward it to.
+for _ in {1..100}; do [[ $(cat "$COUNT") == 1 ]] && break; sleep 0.05; done
+sleep 0.1
 kill -TERM "$sup"
 for _ in {1..50}; do kill -0 "$sup" 2>/dev/null || break; sleep 0.1; done
 check '! kill -0 "$sup" 2>/dev/null' 'the supervisor ends on SIGTERM'

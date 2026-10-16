@@ -27,6 +27,18 @@ if nested_mixed_environment; then
   printf 'reload-shell: for the nested session export both (and its XDG dirs) from scripts/nested-session.sh start\n' >&2
   exit 1
 fi
+# No Hyprland session here - a reload or a deploy run from Plasma, or with a
+# signature of a Hyprland that has gone: there is no shell of this session to
+# restart, and start-shell.sh would refuse the new one anyway (it used to
+# start it on KWin's display, and end Plasma's kded6 first; round 12,
+# scripts#0). Said, and nothing is stopped. Before the redirect below, so an
+# older session copy without the check is not reached either. Tests that run
+# stand-in shells outside any session say BUCHHWIN_START_WITHOUT_HYPRLAND=1.
+if [[ ${BUCHHWIN_START_WITHOUT_HYPRLAND:-0} != 1 ]] && ! hyprland_session >/dev/null; then
+  printf 'reload-shell: no Hyprland session here (WAYLAND_DISPLAY %s); the shell is left alone and starts with the next Hyprland login\n' \
+    "${WAYLAND_DISPLAY:-unset}" >&2
+  exit 1
+fi
 # Called from another checkout (the development repository while the session
 # runs from the stable worktree, see scripts/deploy.sh): act on the session's
 # own copy instead of starting or stopping a shell from this checkout.

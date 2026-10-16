@@ -66,7 +66,9 @@ GridLayout {
     // A level in the accent, and a level in a good state. On a light panel
     // the accent as a fill is its 3:1 line (Colors.accentFill): the shipped
     // teal itself is 1.08:1 on a light card, a level that is not there. On
-    // the notch, the accent made for black. Only the battery uses it so far.
+    // the notch, the accent made for black. Every level widget draws in it
+    // (the meter below, the volume, the system stats, the lit Wi-Fi bars;
+    // round 12, ui-rest#2 - only the battery did).
     readonly property color levelFill: onDark ? Colors.notchAccent : Colors.accentFill
     readonly property color successFill: onDark ? Colors.positiveOnDark : Colors.positiveFill
     // The groove behind the meter. The theme's track is made to sit on a
@@ -94,7 +96,7 @@ GridLayout {
     // A ratio between 0 and 1 drawn as a small bar from `medium` up. Below
     // zero there is none, which is most widgets.
     property real meter: -1
-    property color meterColor: Colors.accent
+    property color meterColor: levelFill
 
     // Across a vertical bar there is room for a short value - "79%", "21°",
     // a count, an elapsed "12:34" - and nothing longer: a window title,

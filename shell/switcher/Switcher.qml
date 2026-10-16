@@ -222,7 +222,11 @@ PanelWindow {
                     sourceSize.width: Metrics.switcherIconSize * 2
                     sourceSize.height: Metrics.switcherIconSize * 2
                     fillMode: Image.PreserveAspectFit
-                    // Theme icons (image://icon) must load on the GUI thread.
+                    // A theme icon (image://icon) on the GUI thread although it
+                    // could load off it (TileContent): a few cards per Alt+Tab,
+                    // and asynchronously they would come in without their app
+                    // icon for the first frames of a switcher that is often
+                    // gone again within half a second. Files load off it.
                     asynchronous: !String(source).startsWith("image://")
                 }
 

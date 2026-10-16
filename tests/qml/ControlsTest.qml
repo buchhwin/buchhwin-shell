@@ -130,6 +130,15 @@ ShellRoot {
             ShellTextField { id: secret; width: 300; echoMode: TextInput.Password; onAccepted: {} }
             ShellButton { id: elsewhere; text: "Elsewhere"; focusOnTab: true }
         }
+        // A link that goes somewhere carries its chevron after the words
+        // (round 12, D13 a), and an accent button that cannot act drops the
+        // accent (D14).
+        Row {
+            y: Metrics.controlHeightLg * 3
+            ShellButton { id: forwardLink; text: "All apps"; trailingIcon: Icons.forward; variant: "ghost" }
+            ShellButton { id: offAccent; icon: Icons.play; toolTip: "Play"; variant: "accent"; enabledState: false }
+            ShellButton { id: onAccent; icon: Icons.play; toolTip: "Play"; variant: "accent" }
+        }
     }
     Timer {
         id: laidOut
@@ -154,6 +163,22 @@ ShellRoot {
             T.eq([secret.inputActiveFocus, secret.savedText], [false, ""], "the focus gone, no copy of the passphrase is left")
             secret.text = ""
             T.eq(secret.revert(), false, "and nothing can put it back once the dialog has emptied the field")
+
+            // ---- button: a trailing glyph, an accent that is off ----------
+            const words = root.textItem(forwardLink, "All apps")
+            const chevron = root.find(forwardLink, child => child.glyph === Icons.forward)
+            T.ok(words !== null && chevron !== null && chevron.visible, "the link has its words and its chevron")
+            if (words && chevron) T.ok(chevron.x > words.x + words.width - 1, "the chevron comes after the words")
+            T.ok(forwardLink.implicitWidth >= words.implicitWidth + chevron.implicitWidth + forwardLink.sidePadding * 2,
+                 "and the button is wide enough for both")
+            T.eq(forwardLink.sidePadding, Metrics.controlPadding, "the air beside the words, for a margin that takes it back")
+            const leading = root.findAll(forwardLink, child => child.glyph !== undefined && child.visible)
+            T.eq(leading.length, 1, "no leading glyph without an icon")
+            T.ok(Qt.colorEqual(offAccent.color, Colors.surface2), "an accent button that cannot act is a grey disc, not a faded accent")
+            T.ok(Qt.colorEqual(offAccent.foreground, Colors.mutedText), "with the muted ink")
+            T.ok(offAccent.opacity < 1, "and dimmed like every disabled button")
+            T.ok(Qt.colorEqual(onAccent.color, Colors.accent) && Qt.colorEqual(onAccent.foreground, Colors.accentText),
+                 "one that can act keeps the accent")
             T.finish("ControlsTest")
         }
     }

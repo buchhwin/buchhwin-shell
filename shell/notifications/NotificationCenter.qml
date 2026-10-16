@@ -18,7 +18,12 @@ ShellPanel {
     // the screen - so a list that belongs in the corner opened dead centre.
     followClock: false
     cardWidth: Metrics.notificationCenterWidth
-    cardHeight: screenH - topOffset - Metrics.screenMargin
+    // All the room there is below where it starts: down to a bottom bar or
+    // the dock (ShellPanel's bottomOffset), or up to the bar or the notch out
+    // of the dock's bell. It used to measure to the screen's bottom margin
+    // and ran down over the taskbar, its bell, the clock and the tray
+    // (round 12, D1).
+    cardHeight: roomBelowTop
 
     // Group keys the user expanded ("N more").
     property var expanded: ({})

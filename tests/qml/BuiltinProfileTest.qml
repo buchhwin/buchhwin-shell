@@ -76,6 +76,13 @@ ShellRoot {
         T.eq(["bodyHeight", "bodyRadius", "bodyPadding"].map(key => raw.settings.notch[key]),
              [islandBody.bodyHeight, islandBody.bodyRadius, islandBody.bodyPadding],
              "its notch has the Island preset's body, so applying Island changes nothing about it")
+        T.eq(raw.settings.wallpaper.path, "", "no wallpaper path of the machine it was exported on")
+        // Minimal mode's dashboard: two columns of equal height, so the Today
+        // card under the weather is not cut off (round 12, D8).
+        const heightOf = type => raw.modes.minimal.dashboard.dashboard
+            .map(group => group.items[0]).find(item => item.type === type).h
+        T.eq([heightOf("weather"), heightOf("clock") + heightOf("calendar")], [4, heightOf("weather") + heightOf("events")],
+             "minimal mode's dashboard columns are balanced: weather 4, clock + calendar = weather + events")
         T.eq(L.sanitizeBuiltinProfile({ label: "x" }, "x"), null, "a file without modes is nothing to add")
         T.eq(L.sanitizeBuiltinProfile(raw, "Not A Slug"), null, "nor is one under an id that is not a profile name")
         T.eq(L.sanitizeBuiltinProfile({ modes: {}, defaultApps: { terminal: "../evil.desktop", files: "x" } }, "y").defaultApps,

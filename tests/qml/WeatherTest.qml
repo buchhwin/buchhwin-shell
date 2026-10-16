@@ -5,7 +5,57 @@ import "Harness.js" as T
 import "../../services/weather/WeatherLogic.js" as W
 
 ShellRoot {
+    id: root
     FileView { id: forecast; path: Qt.resolvedUrl("../fixtures/openmeteo-forecast.json").toString().replace("file://", ""); blockLoading: true }
+
+    // ---- the cache is the user's alone (security#8) ---------------------------
+    // Its key is the place's coordinates. Run on a file in the runner's
+    // sandboxed cache, never the real one, and without the service: the
+    // command it runs, then an atomic write over the file the way the service
+    // writes it (QSaveFile keeps the mode of the file it replaces).
+    readonly property string cache: Quickshell.env("XDG_CACHE_HOME") || ""
+    readonly property string dir: cache + "/weather-privacy"
+    readonly property string file: dir + "/weather.json"
+    property int step: 0
+    Process {
+        id: shell
+        property string output: ""
+        stdout: StdioCollector { onStreamFinished: shell.output = text }
+        onExited: next.start()
+    }
+    Timer { id: next; interval: 20; onTriggered: root.advance() }
+    FileView { id: written; atomicWrites: true; printErrors: false; onSaved: next.start() }
+    function run(command) {
+        shell.output = ""
+        shell.command = command
+        shell.running = true
+    }
+    function advance() {
+        step += 1
+        if (step === 1) {
+            run(["sh", "-c", "mkdir -p \"$1\" && printf '{}\\n' > \"$2\" && chmod 644 \"$2\"", "sh", dir, file])
+        } else if (step === 2) {
+            run(W.privateFileCommand(file))
+        } else if (step === 3) {
+            run(["stat", "-c", "%a", file])
+        } else if (step === 4) {
+            T.eq(shell.output.trim(), "600", "a cache from before is made the user's alone")
+            written.path = file
+            written.setText("{\"version\": 1}\n")
+        } else if (step === 5) {
+            run(["stat", "-c", "%a", file])
+        } else if (step === 6) {
+            T.eq(shell.output.trim(), "600", "and stays so through an atomic write")
+            run(W.privateFileCommand(dir + "/missing.json"))
+        } else if (step === 7) {
+            run(["sh", "-c", "[ -e \"$1\" ] && echo made || echo absent", "sh", dir + "/missing.json"])
+        } else if (step === 8) {
+            T.eq(shell.output.trim(), "absent", "a cache that is not there is not made")
+            run(["sh", "-c", "rm -rf -- \"$1\"", "sh", dir])
+        } else {
+            T.finish("WeatherTest")
+        }
+    }
 
     Component.onCompleted: {
         // Requests
@@ -92,6 +142,15 @@ ShellRoot {
         T.eq(W.firstResultFor("Bern", "Ber", found), null, "the previous query's places are not taken")
         T.eq([W.firstResultFor("Bern", "Bern", []), W.firstResultFor("B", "B", found), W.firstResultFor("", "", found)],
              [null, null, null], "nothing found, or nothing searched")
-        T.finish("WeatherTest")
+
+        T.eq(W.privateFileCommand("/c/weather.json").slice(-1), ["/c/weather.json"], "the cache's path is the last argument")
+        // A sandbox cache only: the runner sets one under its own temporary
+        // directory, and without it nothing here may run.
+        if (cache.indexOf("buchhwin-qmltest") < 0) {
+            T.ok(false, "XDG_CACHE_HOME is not the test runner's sandbox (" + cache + ")")
+            T.finish("WeatherTest")
+            return
+        }
+        advance()
     }
 }

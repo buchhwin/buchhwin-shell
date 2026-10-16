@@ -30,7 +30,9 @@ WidgetBase {
                     width: Metrics.signalBarWidth * root.scaleFactor
                     height: (Metrics.signalBarMin + index * Metrics.signalBarStep) * root.scaleFactor
                     radius: width / 3
-                    color: index < root.litBars ? Colors.accent : root.mutedTextColor
+                    // A level, so the accent made for a fill: the raw teal's
+                    // lit bars were all but gone on a light pill.
+                    color: index < root.litBars ? root.levelFill : root.mutedTextColor
                     opacity: index < root.litBars ? 1 : Effects.mutedOpacity
                 }
             }

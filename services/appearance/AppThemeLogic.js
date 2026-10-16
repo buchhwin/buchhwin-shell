@@ -3,10 +3,19 @@
 // Apps follow the shell theme and accent (Settings > Appearance, opt-in). KDE/Qt
 // apps get the Breeze colour scheme and/or the shell accent through
 // plasma-apply-colorscheme, GTK apps and the settings portal the GNOME
-// interface keys through gsettings. The values the session found before its
-// first change (including a backup of every kdeglobals colour entry, see
-// scripts/apptheme-restore.py --snapshot) are saved in apptheme.json and given
-// back when the options are turned off (or at logout and, after a crash, at the
+// interface keys through gsettings (colour scheme, theme, icon theme). GTK 3
+// takes its dark variant from ~/.config/gtk-3.0/settings.ini, not from
+// gsettings, and the Breeze theme draws with the colours of the user's
+// gtk.css (`@import 'colors.css'`), which Plasma's kded writes for its own
+// scheme - and kded does not run here, so GTK apps stayed dark when the shell
+// went light (round 12). While following, the two settings.ini keys (dark
+// variant, icon theme) follow too, and a colors.css of the other brightness
+// is left out of gtk.css, so the theme's own palette for the variant shows
+// (scripts/apptheme-restore.py --gtk; only files that exist). The values the
+// session found before its first change (including a backup of every
+// kdeglobals colour entry, see scripts/apptheme-restore.py --snapshot, and of
+// the GTK files, --gtk-snapshot) are saved in apptheme.json and given back
+// when the options are turned off (or at logout and, after a crash, at the
 // next Plasma login: scripts/apptheme-restore.py).
 // Unit tested (tests/qml/AppThemeTest.qml).
 
@@ -26,6 +35,10 @@ var GENERAL_KEYS = ["ColorScheme", "ColorSchemeHash", "AccentColor", "LastUsedCu
                     "accentColorFromWallpaper", "TintFactor", "TitlebarIsAccentColored"]
 var KDE_KEYS = ["contrast", "frameContrast"]
 var AUTOSTART_NAME = "buchhwin-shell-apptheme-restore.desktop"
+// The GTK files under ~/.config the helper reads and changes, and its
+// command, which the service runs as `python3 <scripts>/apptheme-restore.py`.
+var GTK_DIRS = ["gtk-3.0", "gtk-4.0"]
+var GTK_HELPER = "apptheme-restore.py"
 
 // "auto" is dark from 19:00 to 07:00 (same rule as theme/Colors.qml).
 function effectiveDark(theme, hours) {
@@ -74,6 +87,36 @@ function parseSchemes(text) {
         if (name.length && result.schemes.indexOf(name) < 0) result.schemes.push(name)
     }
     return result
+}
+
+// A settings.ini value the helper writes: one line, no space at either end
+// (same rule as apptheme-restore.py).
+function validIniValue(value) {
+    return typeof value === "string" && /^\S(?:[^\x00-\x1f\x7f]{0,126}\S)?$/.test(value)
+}
+
+// The GTK files as `--gtk-snapshot` prints them, per folder that has one:
+// { preferDark, iconTheme } (settings.ini; null for a key it does not have),
+// colorsImport (gtk.css imports colors.css), colorsDark (colors.css is a dark
+// palette). A key is missing when its file is. null when there is nothing.
+function validGtk(gtk) {
+    if (!gtk || typeof gtk !== "object") return null
+    const result = {}
+    for (const dir of GTK_DIRS) {
+        const entry = gtk[dir]
+        if (!entry || typeof entry !== "object") continue
+        const clean = {}
+        for (const key of ["preferDark", "iconTheme"])
+            if (key in entry && (entry[key] === null || validIniValue(entry[key]))) clean[key] = entry[key]
+        for (const key of ["colorsImport", "colorsDark"])
+            if (typeof entry[key] === "boolean") clean[key] = entry[key]
+        if (Object.keys(clean).length) result[dir] = clean
+    }
+    return Object.keys(result).length ? result : null
+}
+
+function parseGtk(text) {
+    try { return validGtk(JSON.parse(String(text || "").trim())) } catch (error) { return null }
 }
 
 // `gsettings range`: "enum" followed by quoted values.
@@ -132,6 +175,12 @@ function parseQuery(text) {
         .map(path => /([^/]+)\/gtk-3\.0(\/gtk\.css)?\/?$/.exec(path))
         .filter(match => match && !seen[match[1]] && (seen[match[1]] = true))
         .map(match => match[1])
+    // ".../icons/<name>/index.theme".
+    const seenIcons = {}
+    const icons = lines("icons")
+        .map(path => /([^/]+)\/index\.theme$/.exec(path))
+        .filter(match => match && !seenIcons[match[1]] && (seenIcons[match[1]] = true))
+        .map(match => match[1])
     return {
         plasma: tools.indexOf("plasma-apply-colorscheme") >= 0,
         gsettings: tools.indexOf("gsettings") >= 0,
@@ -142,7 +191,10 @@ function parseQuery(text) {
         gtkColorScheme: unquote(lines("gtkColorScheme")[0] || ""),
         colorSchemeRange: parseRange(joined("colorSchemeRange")),
         gtkTheme: unquote(lines("gtkTheme")[0] || ""),
-        themes: themes
+        themes: themes,
+        iconTheme: unquote(lines("iconTheme")[0] || ""),
+        icons: icons,
+        gtk: parseGtk(joined("gtk"))
     }
 }
 
@@ -178,6 +230,70 @@ function gtkThemeTarget(current, dark, installed) {
     return (installed || []).indexOf(fallback) >= 0 ? fallback : ""
 }
 
+// An icon theme follows only to its own other variant ("breeze-dark" <->
+// "breeze") when that is installed; any other choice stays. "" leaves it.
+function iconThemeTarget(current, dark, installed) {
+    const name = String(current || "")
+    if (!name.length || isDarkThemeName(name) === dark) return name
+    const candidates = dark ? [name + "-dark", name + "-Dark", name + "_dark"] : [name.replace(/[-_ ]dark$/i, "")]
+    for (const candidate of candidates) if ((installed || []).indexOf(candidate) >= 0) return candidate
+    return name
+}
+
+// settings.ini says "true" or "1" for the dark variant; anything else, or no
+// key, is the light one.
+function preferDarkValue(value) {
+    return /^(true|1|yes)$/i.test(String(value === null || value === undefined ? "" : value))
+}
+
+// What changes in each GTK folder for the theme: the dark-variant key and
+// the icon theme where settings.ini has them, and the colors.css import -
+// kept while its palette has the theme's brightness, left out while it has
+// the other (and only where gtk.css had it before the first change: `saved`).
+// { "gtk-3.0": { preferDark: "false", colorsImport: false }, … }.
+function gtkTargets(dark, query, saved) {
+    const q = query || {}
+    const now = validGtk(q.gtk) || {}
+    const before = validGtk(saved) || {}
+    const result = {}
+    for (const dir of Object.keys(now)) {
+        const entry = now[dir]
+        const target = {}
+        if ("preferDark" in entry && preferDarkValue(entry.preferDark) !== dark) target.preferDark = dark ? "true" : "false"
+        if (typeof entry.iconTheme === "string") {
+            const icon = iconThemeTarget(entry.iconTheme, dark, q.icons)
+            if (icon.length && icon !== entry.iconTheme) target.iconTheme = icon
+        }
+        if (typeof entry.colorsImport === "boolean" && (before[dir] || entry).colorsImport === true) {
+            const wanted = typeof entry.colorsDark !== "boolean" || entry.colorsDark === dark
+            if (wanted !== entry.colorsImport) target.colorsImport = wanted
+        }
+        if (Object.keys(target).length) result[dir] = target
+    }
+    return result
+}
+
+// The saved GTK values where they differ from now: what to give back.
+function gtkRestoreTargets(saved, current) {
+    const before = validGtk(saved) || {}
+    const now = validGtk(current) || {}
+    const result = {}
+    for (const dir of Object.keys(before)) {
+        if (!now[dir]) continue
+        const target = {}
+        for (const key of ["preferDark", "iconTheme", "colorsImport"])
+            if (key in before[dir] && key in now[dir] && before[dir][key] !== now[dir][key]) target[key] = before[dir][key]
+        if (Object.keys(target).length) result[dir] = target
+    }
+    return result
+}
+
+function gtkCommand(dir, values) { return [GTK_HELPER, "--gtk", dir, JSON.stringify(values)] }
+
+function gtkCommands(targetsByDir) {
+    return GTK_DIRS.filter(dir => targetsByDir && targetsByDir[dir]).map(dir => gtkCommand(dir, targetsByDir[dir]))
+}
+
 function colorSchemeCommand(name) { return ["plasma-apply-colorscheme", name] }
 function gsettingsCommand(key, value) { return ["gsettings", "set", GNOME_SCHEMA, key, value] }
 
@@ -187,7 +303,8 @@ function targets(dark, query) {
     return {
         colorScheme: q.plasma ? colorSchemeTarget(dark, q.schemes) : "",
         gtkColorScheme: q.gsettings ? gtkColorSchemeTarget(dark, q.colorSchemeRange) : "",
-        gtkTheme: q.gsettings ? gtkThemeTarget(q.gtkTheme, dark, q.themes) : ""
+        gtkTheme: q.gsettings ? gtkThemeTarget(q.gtkTheme, dark, q.themes) : "",
+        iconTheme: q.gsettings ? iconThemeTarget(q.iconTheme, dark, q.icons) : ""
     }
 }
 
@@ -199,6 +316,7 @@ function gnomeCommands(values, current) {
     const commands = []
     if (differs(values, current, "gtkColorScheme")) commands.push(gsettingsCommand("color-scheme", values.gtkColorScheme))
     if (differs(values, current, "gtkTheme")) commands.push(gsettingsCommand("gtk-theme", values.gtkTheme))
+    if (differs(values, current, "iconTheme")) commands.push(gsettingsCommand("icon-theme", values.iconTheme))
     return commands
 }
 
@@ -294,6 +412,14 @@ function afterCommands(query, commands, saved) {
             result.gtkColorScheme = command[4]
         } else if (command[3] === "gtk-theme") {
             result.gtkTheme = command[4]
+        } else if (command[3] === "icon-theme") {
+            result.iconTheme = command[4]
+        } else if (command[0] === GTK_HELPER && command[1] === "--gtk") {
+            const gtk = Object.assign({}, validGtk(result.gtk) || {})
+            let values = {}
+            try { values = JSON.parse(command[3]) } catch (error) { values = {} }
+            if (gtk[command[2]]) gtk[command[2]] = Object.assign({}, gtk[command[2]], values)
+            result.gtk = validGtk(gtk)
         }
     }
     return result
@@ -307,8 +433,28 @@ function snapshot(query) {
         accentColor: q.plasma ? colorToHex(q.accentColor) : "",
         kdeColors: q.plasma ? validBackup(q.kdeColors) : null,
         gtkColorScheme: q.gsettings ? String(q.gtkColorScheme || "") : "",
-        gtkTheme: q.gsettings ? String(q.gtkTheme || "") : ""
+        gtkTheme: q.gsettings ? String(q.gtkTheme || "") : "",
+        iconTheme: q.gsettings ? String(q.iconTheme || "") : "",
+        gtk: validGtk(q.gtk)
     }
+}
+
+// A saved state with what it lacks taken from now. A state written before
+// the icon theme and the GTK files followed has none of them, and a folder or
+// a key that appeared since has none either: neither was ever changed (only
+// what is there and saved is), so what is there now is what to give back.
+// The plan saves the completed values before anything runs.
+function completeSaved(saved, query) {
+    const q = query || {}
+    const result = Object.assign({}, saved)
+    if (!String(result.iconTheme || "").length && q.gsettings) result.iconTheme = String(q.iconTheme || "")
+    const now = validGtk(q.gtk)
+    if (now) {
+        const gtk = Object.assign({}, validGtk(result.gtk) || {})
+        for (const dir of Object.keys(now)) gtk[dir] = Object.assign({}, now[dir], gtk[dir] || {})
+        result.gtk = gtk
+    }
+    return validSaved(result) || result
 }
 
 function emptyState() {
@@ -320,8 +466,10 @@ function validSaved(saved) {
     const text = key => typeof saved[key] === "string" ? saved[key] : ""
     // Same key order as snapshot().
     const result = { colorScheme: text("colorScheme"), accentColor: colorToHex(saved.accentColor),
-                     kdeColors: validBackup(saved.kdeColors), gtkColorScheme: text("gtkColorScheme"), gtkTheme: text("gtkTheme") }
-    return result.colorScheme.length || result.gtkColorScheme.length || result.gtkTheme.length ? result : null
+                     kdeColors: validBackup(saved.kdeColors), gtkColorScheme: text("gtkColorScheme"), gtkTheme: text("gtkTheme"),
+                     iconTheme: text("iconTheme"), gtk: validGtk(saved.gtk) }
+    return result.colorScheme.length || result.gtkColorScheme.length || result.gtkTheme.length || result.iconTheme.length
+        || result.gtk !== null ? result : null
 }
 
 // Commands apptheme-restore.py may take from the state file; with a colour
@@ -369,11 +517,11 @@ function plan(options, query, state) {
     const accentOn = o.accentEnabled === true && isHex(o.accent)
     const q = query || {}
     if (follow || accentOn) {
-        const saved = previous.applied && previous.saved ? previous.saved : snapshot(q)
+        const saved = previous.applied && previous.saved ? completeSaved(previous.saved, q) : snapshot(q)
         const hasSaved = validSaved(saved) !== null
         let error = ""
-        let commands = follow ? gnomeCommands(targets(o.dark, q), q)
-            : previous.applied && previous.saved ? gnomeCommands(saved, q) : []
+        let commands = follow ? gnomeCommands(targets(o.dark, q), q).concat(gtkCommands(gtkTargets(o.dark, q, saved.gtk)))
+            : previous.applied && previous.saved ? gnomeCommands(saved, q).concat(gtkCommands(gtkRestoreTargets(saved.gtk, q.gtk))) : []
         if (q.plasma) {
             // Without a backup Plasma's colours could not be given back exactly.
             const canAccent = accentOn && !!saved.kdeColors
@@ -399,9 +547,9 @@ function plan(options, query, state) {
     }
     if (previous.applied && previous.saved) {
         const saved = previous.saved
-        const commands = saved.kdeColors && q.plasma
+        const commands = (saved.kdeColors && q.plasma
             ? kdeRestoreCommands(saved.kdeColors, q.kdeColors).concat(gnomeCommands(saved, q))
-            : commandsFor(saved, q)
+            : commandsFor(saved, q)).concat(gtkCommands(gtkRestoreTargets(saved.gtk, q.gtk)))
         return { action: "restore", commands: commands, error: "", state: forgottenState(keepOnLogout) }
     }
     return { action: "none", commands: [], error: "", state: forgottenState(keepOnLogout) }

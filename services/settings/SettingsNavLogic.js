@@ -18,7 +18,10 @@ const PAGES = [
     { id: "dock", subtitle: "Pinned and running apps at the edge of the screen", title: "Dock", icon: "\u{f1888}", keywords: "dock taskbar task bar pinned pins running apps favorites favourites autohide auto-hide intellihide hide magnification zoom edge taskleiste angeheftet laufende programme ausblenden vergrößerung rand start menu start button startmenü startmenue startknopf startschaltfläche saturn" },
     { id: "bar", subtitle: "Choose the desktop mode, workspaces and build your own bar", title: "Bar & Notch", icon: "󰘔", keywords: "bar pills notch island desktop mode panel top leiste modus oben kerbe insel workspaces arbeitsflächen" },
     { id: "notifications", subtitle: "Popups, history and Do Not Disturb", title: "Notifications", icon: "󰂚", keywords: "dnd do not disturb popup benachrichtigungen nicht stören" },
-    { id: "launcher", subtitle: "Web search and file search in the launcher", title: "Launcher", icon: "󰍉", keywords: "launcher search web engine duckduckgo google startpage wikipedia url address files plocate suche suchmaschine web adresse dateien starter" },
+    // Its pinned apps are the start menu's "Pinned" grid as well ("Pin to
+    // Start"), so the start menu's words find it too, beside the Dock page
+    // with its own pins.
+    { id: "launcher", subtitle: "Modes, pinned apps for the launcher and the start menu, web and file search", title: "Launcher", icon: "󰍉", keywords: "launcher search web engine duckduckgo google startpage wikipedia url address files plocate pin pinned pins pin to start start menu startmenü startmenue angeheftet anheften suche suchmaschine web adresse dateien starter" },
     { id: "shortcuts", subtitle: "Key combinations for the shell, windows and your own apps and commands", title: "Shortcuts", icon: "󰥻", keywords: "shortcuts keyboard shortcuts hotkeys keybindings key bindings keys custom command super tastenkürzel tastenkombination kurzbefehle tastatur" },
     { id: "weather", subtitle: "Location and display for the dashboard and weather widget", title: "Weather", icon: "󰖐", keywords: "place city location temperature open-meteo dashboard wetter ort stadt standort temperatur" },
     { id: "calendar", subtitle: "Events from the KDE calendars in the dashboard and next to the clock", title: "Calendar", icon: "󰸗", keywords: "events google akonadi merkuro dashboard kalender termine" },
@@ -29,7 +32,7 @@ const PAGES = [
     { id: "audio", subtitle: "Output, input and the volume of each app", title: "Audio", icon: "󰕾", keywords: "sound volume microphone ton lautstärke mikrofon" },
     { id: "input", subtitle: "Keyboard, touchpad, mouse and touchpad gestures", title: "Input", icon: "󰌌", keywords: "keyboard layout touchpad mouse pointer scrolling repeat rate gestures swipe pinch eingabe tastatur maus zeiger scrollen wiederholrate gesten wischen" },
     { id: "power", subtitle: "Battery and mains behavior, idle, sleep and the lid", title: "Power", icon: "󰁹", keywords: "battery charger plugged in ac profile screen off lock sleep lid close stay awake energie akku netzteil profil bildschirm aus sperren bereitschaft deckel zuklappen wach status colors colours green accent charging vpn statusfarben grün akzent laden" },
-    { id: "terminal", subtitle: "Starship prompt, Fastfetch and the look of kitty", title: "Terminal", icon: "󰆍", keywords: "kitty starship prompt zsh fastfetch font cursor transparency schrift transparenz" },
+    { id: "terminal", subtitle: "Starship prompt, Fastfetch, the look of kitty and Alacritty's windows", title: "Terminal", icon: "󰆍", keywords: "kitty alacritty daemon starship prompt zsh fastfetch font cursor transparency fast windows schrift transparenz schnell fenster" },
     { id: "defaultApps", subtitle: "Apps for links, files and the app hotkeys", title: "Default apps", icon: "󰀻", keywords: "default applications browser email file manager terminal text editor images pdf video music archives open with mime standard anwendungen standardprogramme öffnen mit" },
     { id: "autostart", subtitle: "Apps and services that start when you log in", title: "Autostart", icon: "󰒲", keywords: "startup login apps kde connect start anmelden" },
     { id: "accounts", subtitle: "Online accounts for calendars, contacts and mail", title: "Accounts", icon: "󰀉", keywords: "accounts account online google nextcloud caldav carddav dav groupware ical file imap pop3 mail email contacts calendar akonadi kde pim sync add remove wizard konten konto zugang hinzufügen entfernen synchronisieren kalender kontakte e-mail postfach" },
@@ -94,6 +97,18 @@ function rows(query, groups, pages) {
         }))
     }
     return result
+}
+
+// The index in `rowList` of the heading over the page `id` (the first row of
+// its group), -1 when the page is not listed. Revealing a page scrolls to
+// that heading where it fits, so the group's card is not cut square under
+// the search field with its name above the fold.
+function headingIndex(rowList, id) {
+    const list = rowList || []
+    const index = list.findIndex(row => row.kind === "page" && row.id === id)
+    for (let at = index; at >= 0; --at)
+        if (list[at].kind === "heading") return at
+    return -1
 }
 
 // Page ids of the rows in display order (headings skipped).

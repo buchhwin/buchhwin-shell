@@ -1369,7 +1369,13 @@ PRIVATE_PATTERNS = (
                                 re.IGNORECASE)),
     ("a private key", re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----")),
     ("a GitHub token", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})")),
-    ("a WireGuard private key", re.compile(r"\bPrivateKey\s*=\s*[A-Za-z0-9+/]{43}=")),
+    # By its shape, whatever it is called: 32 bytes in base64 are 43 characters
+    # and a "=", the last of them one of the 16 that leave the two spare bits
+    # zero. `PrivateKey =` alone missed PresharedKey, the helper's own
+    # lower-case reading, NetworkManager's private-key= and the JSON the
+    # Settings form and wireguard-helper.py pass around. A public key has the
+    # same shape and is no secret (below); invented ones say so on the line.
+    ("a WireGuard key", re.compile(r"(?<![A-Za-z0-9+/])[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=(?![A-Za-z0-9+/=])")),
     ("an e-mail address", re.compile(r"\b([A-Za-z0-9._%+-]+)@([A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})\b")),
 )
 # Berlin's centre as Open-Meteo's geocoding answers it (tests/qml/WeatherTest.qml
@@ -1381,6 +1387,10 @@ PUBLIC_DOMAINS = re.compile(r"(?:^|\.)(?:example\.(?:com|net|org)|example|invali
                             r"|\.(?:service|socket|target|timer|scope|slice|mount|automount|path|swap|device)$",
                             re.IGNORECASE)
 PRIVATE_MARK = re.compile(r"private-data:\s*(?:public|invented)")
+# What a WireGuard-shaped value is called just before it, when that makes it
+# no secret: a public key (PublicKey =, "publicKey":, public-key=, "public":)
+# or a SHA-256 digest (sha256-..., as in a Subresource Integrity attribute).
+PUBLIC_KEY_NAME = re.compile(r"(?:public[-_ ]?key|\bpublic\b)[\"']?\s*[:=]\s*[\"']?$|sha256[-:]$", re.IGNORECASE)
 
 
 def private_findings(text, homes=()):
@@ -1397,6 +1407,8 @@ def private_findings(text, homes=()):
                     continue
                 if kind in ("coordinates", "a coordinate") and \
                         set(re.findall(r"\d{1,3}\.\d+", match.group(0))) <= PUBLIC_COORDINATES:
+                    continue
+                if kind == "a WireGuard key" and PUBLIC_KEY_NAME.search(line[:match.start()]):
                     continue
                 found.append((number, kind))
         for pattern in home_patterns:

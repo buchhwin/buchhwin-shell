@@ -5,6 +5,7 @@ import qs.theme
 import "LayoutLogic.js" as Logic
 import "notch/NotchLogic.js" as NotchLogic
 import "notch/NotchDisplay.js" as NotchDisplay
+import "dock/DockLogic.js" as DockLogic
 
 // Shared state of the notch (desktop mode "notch", shell/notch/Notch.qml):
 // its settings, the expansion requested over IPC (tests cannot hover) and a
@@ -73,6 +74,29 @@ Singleton {
     readonly property var collapsedTypes: collapsedItems.map(item => item.type)
     readonly property var expandedTypes: expandedItems.map(item => item.type)
     function shows(type) { return expandedTypes.indexOf(type) >= 0 }
+    // ---- beside a taskbar ---------------------------------------------------
+    // notch.dockDuplicates "hide": on a screen with a dock along the whole
+    // edge and always there, the strip leaves out the readouts that dock holds
+    // as well - the time, Wi-Fi, the battery twice on one screen otherwise
+    // (NotchLogic.dockDuplicateTypes). Read from the settings and the layout,
+    // never from DockService, and only with "hide": the default "keep" asks
+    // nothing of the dock, and a dock that is off builds nothing of its own.
+    readonly property string dockDuplicates: NotchLogic.dockDuplicates(SettingsService.value("notch.dockDuplicates"))
+    readonly property bool dockDuplicatesHidden: dockDuplicates === "hide"
+    readonly property var dockScreenNames: dockDuplicatesHidden
+        ? DockLogic.screensFor(SettingsService.value("dock.screens"), Quickshell.screens.map(screen => screen.name)) : []
+    readonly property var dockReadouts: dockDuplicatesHidden
+        ? NotchLogic.DOCK_READOUTS.filter(type => Logic.dockHasType(LayoutService.dockLayout, type)) : []
+    // The types the strip on this screen leaves out; [] with "keep".
+    function dockDuplicatesOn(screenName) {
+        if (!dockDuplicatesHidden) return []
+        return NotchLogic.dockDuplicateTypes(dockDuplicates, {
+            enabled: SettingsService.value("dock.enabled") === true,
+            span: SettingsService.value("dock.span"),
+            visibility: SettingsService.value("dock.visibility"),
+            screens: dockScreenNames
+        }, dockReadouts, screenName, arranging)
+    }
     // While the notch is arranged it shows both of its lists at once and every
     // item in them, whether or not it has anything to say: an item left out
     // would make the indices the drop maths produces count a shorter list.
@@ -202,6 +226,7 @@ Singleton {
         for (const screen of Quickshell.screens) covered[screen.name] = HyprlandService.fullscreenReport(screen)
         return JSON.stringify({ mode: LayoutService.desktopMode, reserve: reserve, fullscreen: fullscreen, hoverMode: hoverMode,
                                 clickAction: clickAction, openDelay: openDelay, closeDelay: closeDelay, accentGlyphs: accentGlyphs,
+                                dockDuplicates: dockDuplicates,
                                 bodyHeight: bodyHeight, bodyRadius: bodyRadius, bodyPadding: bodyPadding,
                                 presets: LayoutService.notchPresets.length,
                                 forced: forcedScreens.join(","), mediaPreview: mediaPreview, weatherTrackers: WeatherService.trackers,

@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Services.Pipewire
 import QtQuick
 import "audio/AudioRoutingLogic.js" as Routing
+import "audio/AudioLabelLogic.js" as Labels
 
 // PipeWire devices and application streams, per-app output routing and the
 // microphone level meter of Settings > Audio.
@@ -73,6 +74,26 @@ Singleton {
     function label(node) {
         if (!node) return "No device"
         return node.description || node.nickname || node.name || "Audio device"
+    }
+
+    // The label as a row shows it, { title, subtitle }: the port as the
+    // title ("Speaker", "Digital Microphone") and the card under it, so the
+    // part that tells two devices apart is not the part a narrow row cuts
+    // off (AudioLabelLogic). `list` is the node's own list, sinks or sources.
+    function labelParts(node, list) {
+        if (!node) return { title: label(node), subtitle: "" }
+        const props = node.properties || {}
+        const others = Array.prototype.slice.call(list || []).filter(other => other !== node).map(other => label(other))
+        return Labels.split(label(node), props["device.profile.description"] || "", others)
+    }
+    // The device on a line of its own beside a state ("In use · Digital
+    // Microphone"): the port where the card goes without saying, else the
+    // whole label (AudioLabelLogic.shortName).
+    function shortLabel(node, list) {
+        if (!node) return label(node)
+        const props = node.properties || {}
+        const others = Array.prototype.slice.call(list || []).filter(other => other !== node).map(other => label(other))
+        return Labels.shortName(label(node), props["device.profile.description"] || "", others)
     }
 
     function streamLabel(node) {

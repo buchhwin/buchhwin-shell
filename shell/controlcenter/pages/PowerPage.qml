@@ -25,7 +25,10 @@ ColumnLayout {
             // Status colors asks for it.
             RowLayout {
                 spacing: Metrics.spaceMd
+                // The Wi-Fi page's box (NetworkPage), so the figure beside
+                // it starts where the Wi-Fi and Bluetooth titles do.
                 ShellIcon {
+                    Layout.preferredWidth: Metrics.iconXl
                     glyph: PowerService.icon; size: Metrics.iconXl
                     color: PowerService.charging ? Colors.positive : PowerService.low ? Colors.danger : Colors.text
                 }

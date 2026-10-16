@@ -8,8 +8,15 @@ ShellRoot {
         const day = 86400000
         const now = 1800000000000
         T.eq(U.parse("{bad"), {}, "broken file")
-        T.eq(U.parse(JSON.stringify({ version: 1, apps: { "kitty": { count: 3, last: now }, "bad id": { count: 1, last: now }, "zero": { count: 0, last: now } } })),
+        T.eq(U.parse(JSON.stringify({ version: 1, apps: { "kitty": { count: 3, last: now }, "bad\nid": { count: 1, last: now }, "": { count: 1, last: now },
+                                                         "zero": { count: 0, last: now } } })),
              { "kitty": { count: 3, last: now } }, "invalid entries dropped")
+        // The Citrix entries here have spaces and a `$` in their ids; the old
+        // letters-and-dots rule dropped their history at every start.
+        const citrix = "Citrix_subscribed_XenApp 7.x.RDS-Buchhwin $S101-255"
+        T.eq(Object.keys(U.parse(U.serialize(U.record({}, citrix, now)))), [citrix], "any desktop id survives a restart")
+        T.eq(Object.getPrototypeOf(U.parse("{\"version\":1,\"apps\":{\"__proto__\":{\"count\":1,\"last\":1}}}")), Object.prototype,
+             "an id that is a prototype is no entry")
         let usage = U.record(U.record({}, "kitty", now - day), "kitty", now)
         T.eq(usage.kitty, { count: 2, last: now }, "launches counted")
         T.near(U.frecency(usage, "kitty", now + 14 * day), 1, "half-life after 14 days", 1e-9)

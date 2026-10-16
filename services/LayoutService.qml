@@ -97,8 +97,14 @@ Singleton {
         return true
     }
 
-    function barAddPill(zone, type, display) { return changeBar(Logic.addPill, zone, type, display || defaultDisplay(type)) }
-    function barAddItem(pillId, type, display) { return changeBar(Logic.addItem, pillId, type, display || defaultDisplay(type)) }
+    function barAddPill(zone, type, display) {
+        if (!pillTypeAllowed("bar", type)) return false
+        return changeBar(Logic.addPill, zone, type, display || defaultDisplay(type))
+    }
+    function barAddItem(pillId, type, display) {
+        if (!pillTypeAllowed("bar", type)) return false
+        return changeBar(Logic.addItem, pillId, type, display || defaultDisplay(type))
+    }
     function barRemoveItem(pillId, index) { return changeBar(Logic.removeItem, pillId, index) }
     function barMoveItem(pillId, index, delta) { return changeBar(Logic.moveItem, pillId, index, delta) }
     function barSetDisplay(pillId, index, display) { return changeBar(Logic.setItemDisplay, pillId, index, display) }
@@ -117,17 +123,28 @@ Singleton {
     // of widgets - and lives outside the modes like the notch: one dock in all
     // five, kept in a profile's state. Its options are settings (dock.*).
     readonly property var dockLayout: config.dock || Logic.defaultDock()
+    // False, with no undo step and no write, when the operation changed
+    // nothing: a pin refused (the limit, an id no entry can have), a drag
+    // dropped where it started. Every such call used to leave an empty step
+    // behind and rewrite layout.json.
     function changeDockLayout(operation) {
         if (readOnly) return false
         const args = Array.prototype.slice.call(arguments, 1)
+        const before = Logic.copyDock(dockLayout)
+        const after = Logic.copyDock(operation.apply(null, [Logic.copyDock(dockLayout)].concat(args)))
+        if (JSON.stringify(after) === JSON.stringify(before)) return false
         beginChange()
-        mutate((mode, next) => { next.dock = operation.apply(null, [next.dock || Logic.defaultDock()].concat(args)) })
+        mutate((mode, next) => { next.dock = after })
         save()
         return true
     }
     function dockPin(pin, index) { return changeDockLayout(Logic.dockPinAt, pin, index) }
     function dockUnpin(pin) { return changeDockLayout(Logic.dockUnpin, pin) }
     function dockPinned(pin) { return Logic.dockPinned(dockLayout, pin) }
+    // Whether the dock would take this id as a pin at all (LayoutLogic.
+    // dockPinName): a menu offers "Pin to dock" switched off for one it would
+    // refuse, rather than a row that does nothing.
+    function dockPinnable(pin) { return Logic.dockPinName(pin).length > 0 }
     readonly property bool dockHasStart: Logic.dockHasType(dockLayout, "start")
     readonly property int dockPinLimit: Logic.DOCK_PIN_LIMIT
     readonly property bool dockPinsFull: (dockLayout.pins || []).length >= Logic.DOCK_PIN_LIMIT
@@ -142,8 +159,23 @@ Singleton {
         if (target === "dock") return changeDockLayout((dock) => Logic.dockZoneOp(dock, operation, args))
         return changeBar.apply(null, [operation].concat(args))
     }
-    function pillAdd(target, zone, type, display) { return changeZones(target, Logic.addPill, zone, type, display || defaultDisplay(type)) }
-    function pillAddItem(target, pillId, type, display) { return changeZones(target, Logic.addItem, pillId, type, display || defaultDisplay(type)) }
+    function pillAdd(target, zone, type, display) {
+        if (!pillTypeAllowed(target, type)) return false
+        return changeZones(target, Logic.addPill, zone, type, display || defaultDisplay(type))
+    }
+    function pillAddItem(target, pillId, type, display) {
+        if (!pillTypeAllowed(target, type)) return false
+        return changeZones(target, Logic.addItem, pillId, type, display || defaultDisplay(type))
+    }
+    // Whether a widget of this type may go onto the bar or the dock. The
+    // dock's own pieces (WidgetRegistry `dockOnly`: its apps, the start
+    // button) need the dock around them, and the ones it holds once
+    // (`once`) are not added a second time - from the editor's picker, IPC
+    // or anywhere else.
+    function pillTypeAllowed(target, type) {
+        if (target !== "dock") return !WidgetRegistry.isDockOnly(type)
+        return !WidgetRegistry.isOnce(type) || !Logic.dockHasType(dockLayout, type)
+    }
     function pillRemoveItem(target, pillId, index) { return changeZones(target, Logic.removeItem, pillId, index) }
     function pillMoveItem(target, pillId, index, delta) { return changeZones(target, Logic.moveItem, pillId, index, delta) }
     function pillSetDisplay(target, pillId, index, display) { return changeZones(target, Logic.setItemDisplay, pillId, index, display) }
@@ -164,23 +196,35 @@ Singleton {
     }
 
     // ---- dock presets -----------------------------------------------------
-    // A whole dock at once: its layout, its pins and the options that shape
-    // it (DockLogic.PRESET_OPTIONS). Files in config/dock-presets/, in the
-    // picker's order: the taskbar first, then the dock as it was before
-    // there were presets. Applying one is a single undo step.
+    // A whole dock at once: its layout and the options that shape it
+    // (LayoutLogic.DOCK_PRESET_OPTIONS). The user's own pins stay; a preset's
+    // pins only replace the defaults (LayoutLogic.dockFromPreset). Files in
+    // config/dock-presets/, in the picker's order: the taskbar first, then
+    // the dock as it was before there were presets.
+    //
+    // Applying one is a single undo step, the layout and the settings
+    // together. The settings go into the step itself (beginChange's
+    // `settings`) rather than into undoKeys: every Ctrl+Z would otherwise
+    // take back the dock options set in Settings > Dock since. `enable`
+    // switches the dock on in the same step (Settings > Dock's cards: choosing
+    // a dock is asking for one), and dock.enabled is in the step either way,
+    // so undoing a preset that was switched on beside it switches it off.
     readonly property var builtinDockPresetNames: ["taskbar", "dock"]
     property var builtinDockPresets: []
     function dockPreset(id) {
         for (const preset of builtinDockPresets) if (preset.id === id) return preset
         return null
     }
-    function applyDockPreset(id) {
+    function applyDockPreset(id, enable) {
         const preset = dockPreset(id)
         if (!preset || readOnly) return false
-        beginChange()
-        mutate((mode, next) => { next.dock = Logic.copyDock(preset.layout) })
+        const before = { "dock.enabled": SettingsService.value("dock.enabled") }
+        for (const key of Logic.DOCK_PRESET_OPTIONS) before["dock." + key] = SettingsService.value("dock." + key)
+        beginChange(null, null, before)
+        mutate((mode, next) => { next.dock = Logic.dockFromPreset(next.dock, preset.layout) })
         const values = {}
         for (const key of Object.keys(preset.options)) values["dock." + key] = preset.options[key]
+        if (enable === true) values["dock.enabled"] = true
         if (Object.keys(values).length) SettingsService.setAll(values)
         save()
         return true
@@ -226,7 +270,10 @@ Singleton {
                                  "notch.expandedHeight": Math.round(height) })
         return true
     }
-    function notchAdd(type, zone) { return changeNotchLayout(Logic.addNotchItem, type, zone) }
+    function notchAdd(type, zone) {
+        if (WidgetRegistry.isDockOnly(type)) return false
+        return changeNotchLayout(Logic.addNotchItem, type, zone)
+    }
     function notchResetLayout() { return changeNotchLayout(() => Logic.defaultNotch()) }
 
     // ---- notch presets ----------------------------------------------------
@@ -326,7 +373,10 @@ Singleton {
     function quickMoveTo(tileId, index) { return changeQuick(Logic.moveQuickTileTo, tileId, index) }
     function quickSetSize(tileId, w, h) { return changeQuick(Logic.setQuickTileSize, tileId, w, h) }
     function quickRemove(tileId) { return changeQuick(Logic.removeQuickTile, tileId) }
-    function quickAdd(type) { return changeQuick(Logic.addQuickTile, type, isKnownType) }
+    function quickAdd(type) {
+        if (WidgetRegistry.isDockOnly(type)) return false
+        return changeQuick(Logic.addQuickTile, type, isKnownType)
+    }
     function quickReset() { return changeQuick(() => Logic.defaultQuick()) }
 
     // ---- the dashboard ------------------------------------------------------
@@ -349,7 +399,10 @@ Singleton {
     function dashboardMoveTo(cardId, index) { return changeDashboard(Logic.moveDashboardCardTo, cardId, index) }
     function dashboardSetSize(cardId, w, h) { return changeDashboard(Logic.setDashboardCardSize, cardId, w, h) }
     function dashboardRemove(cardId) { return changeDashboard(Logic.removeDashboardCard, cardId) }
-    function dashboardAdd(type) { return changeDashboard(Logic.addDashboardCard, type, isKnownType) }
+    function dashboardAdd(type) {
+        if (WidgetRegistry.isDockOnly(type)) return false
+        return changeDashboard(Logic.addDashboardCard, type, isKnownType)
+    }
     function dashboardReset() { return changeDashboard(() => Logic.defaultDashboard()) }
 
     // ---- the launcher -------------------------------------------------------
@@ -510,8 +563,11 @@ Singleton {
         return barItemRects[screenName + "/" + type] || null
     }
 
-    // The same for a widget on the dock - only the start button reports, so
-    // the start menu can come out of it when a key opens it.
+    // The same for a widget on the dock: every item on it reports
+    // (Pill.reportRects), so the start menu and a panel opened by a key can
+    // come out of the item a click would have used. A pill takes back only
+    // what it reported itself, so two items of one type no longer wipe each
+    // other's report; the last report wins.
     property var dockItemRects: ({})
     function reportDockItemRect(screenName, type, rect) {
         const key = screenName + "/" + type
@@ -572,7 +628,7 @@ Singleton {
     //
     // `own` is the surface's own entries, already filtered to what is not on
     // it; `taken` is every type it carries, so a widget already placed is not
-    // offered twice.
+    // offered twice. The dock's own pieces are not offered (availableTypes).
     function widgetChoices(taken) {
         return WidgetRegistry.availableTypes()
             .filter(widget => (taken || []).indexOf(widget.name) < 0)
@@ -903,7 +959,7 @@ Singleton {
                                       "notch.clickAction", "notch.middleAction", "notch.rightAction", "notch.swipe", "notch.panelOrigin", "notch.accentGlyphs", "notch.reserve",
                                       "notch.fullscreen", "notch.shape", "notch.collapsedWidth",
                                       "notch.expandedWidth", "notch.expandedHeight",
-                                      "notch.bodyHeight", "notch.bodyRadius", "notch.bodyPadding"]
+                                      "notch.bodyHeight", "notch.bodyRadius", "notch.bodyPadding", "notch.dockDuplicates"]
     // Every setting an undo step carries along. The notch's options are edited
     // in the layout editor and the control center's size on the panel itself;
     // both have an undo within reach and both have to reach these.
@@ -941,12 +997,15 @@ Singleton {
 
     // `modeSwitch` marks the step of a mode switch the user made, the only
     // step whose undo takes the mode back (LayoutLogic.modeAfterUndo).
-    function beginChange(states, modeSwitch) {
+    // `settings` are settings this step's change alone takes along, by path,
+    // as they were before it (applyDockPreset; LayoutLogic.undoSettings).
+    function beginChange(states, modeSwitch, settings) {
         if (readOnly) return
         const next = undoStack.slice()
         const step = { config: undoConfig(), notch: notchSnapshot() }
         if (states) step.states = states
         if (modeSwitch) step.modeSwitch = modeSwitch
+        if (settings && Object.keys(settings).length) step.settings = settings
         next.push(JSON.stringify(step))
         if (next.length > 30) next.shift()
         undoStack = next
@@ -987,13 +1046,19 @@ Singleton {
         // must not take it away again.
         config = Logic.addBuiltinProfiles(Logic.sanitize(step.config),
                                           builtinProfileNames.map(id => builtinProfiles[id]).filter(data => !!data)).config
+        // The widgets of every monitor the mode in use has now. The step is
+        // from before whatever was materialized since without a step of its
+        // own - a monitor plugged in, an automatic switch into a mode first
+        // used after the step (both kept: see modeAfterUndo) - and without
+        // this the desktop of that mode or monitor stayed empty until the
+        // next screen change. Returns at once when nothing is missing.
+        ensureScreens()
         // A switch undone is a switch back, with all that entering the mode
-        // does: its widgets on every monitor, its appearance (gaps, blur,
-        // animations) and, from its template, Do Not Disturb. Without it the
-        // settings stayed those of the mode undone, and the next mode-scoped
-        // edit was stored in the mode restored.
+        // does: its widgets on every monitor (above), its appearance (gaps,
+        // blur, animations) and, from its template, Do Not Disturb. Without
+        // it the settings stayed those of the mode undone, and the next
+        // mode-scoped edit was stored in the mode restored.
         if (activeMode !== modeBefore) {
-            ensureScreens()
             applyModeSettings(activeMode)
             // The mode undone turned Do Not Disturb on, from off.
             const switched = step.modeSwitch
@@ -1003,9 +1068,7 @@ Singleton {
                 if (dnd.length) NotificationService.setDnd(dnd)
             }
         }
-        const restored = {}
-        for (const key of undoKeys)
-            if (step.notch && step.notch[key] !== undefined) restored[key] = step.notch[key]
+        const restored = Logic.undoSettings(step, undoKeys)
         if (Object.keys(restored).length) SettingsService.setAll(restored)
         undoStack = next
         revision++
@@ -1697,7 +1760,9 @@ Singleton {
 
     function addWidget(screenName, type) {
         const entry = WidgetRegistry.type(type)
-        if (!entry || !entry.available) return ""
+        // Not the dock's own pieces: an Apps widget on the desktop is empty
+        // while the dock is off, and a start button there opens nothing.
+        if (!entry || !entry.available || entry.dockOnly === true) return ""
         let createdId = ""
         mutate(mode => {
             const taken = mode.widgets.map(w => w.id).concat(mode.groups.map(g => g.id))
@@ -1877,16 +1942,30 @@ Singleton {
         function onScreensChanged() { root.ensureScreens() }
     }
 
+    // layout.json is the user's alone (0600), as settings.json is (see
+    // SettingsService.keepPrivate): it names their apps, their profiles and
+    // what their desktops hold. Once at the first read and once after the
+    // first write of a start; the atomic write keeps the mode after that.
+    property bool privateRead: false
+    property bool privateWritten: false
+    function keepPrivate(written) {
+        if (written ? privateWritten : privateRead) return
+        if (written) privateWritten = true
+        else privateRead = true
+        Quickshell.execDetached(["chmod", "600", "--", layoutPath])
+    }
+
     FileView {
         id: layoutFile
         path: root.layoutPath
         atomicWrites: true
         watchChanges: true
         printErrors: false
-        onLoaded: { root.load(); root.adoptOnce() }
+        onLoaded: { root.load(); root.adoptOnce(); root.keepPrivate(false) }
         // Missing at startup means a fresh layout; later it is a replacement in progress.
         onLoadFailed: if (!root.loaded) root.load()
         onFileChanged: reload()
+        onSaved: root.keepPrivate(true)
     }
 
     // The version the backup below is of. 0 while nothing has been migrated,
@@ -1897,6 +1976,8 @@ Singleton {
         id: backupFile
         path: Paths.configDir + "/layout.v" + Math.max(1, root.backupVersion) + ".backup.json"
         printErrors: false
+        // As private as the file it is a copy of.
+        onSaved: Quickshell.execDetached(["chmod", "600", "--", path])
     }
 
     // The built-in notch presets, read like the mode templates.

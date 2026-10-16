@@ -14,6 +14,10 @@ Rectangle {
     id: root
     property string text: ""
     property string icon: ""
+    // A glyph after the words, for a link that goes somewhere ("All apps ›",
+    // Icons.forward): the leading slot put the chevron before them, which
+    // reads as going back (round 12, D13 a). Drawn like the leading one.
+    property string trailingIcon: ""
     property string variant: "surface"
     property int iconSize: Metrics.iconSm
     property bool compact: false
@@ -38,19 +42,29 @@ Rectangle {
 
     readonly property bool hovered: mouse.containsMouse
     readonly property bool down: mouse.pressed && mouse.containsMouse
+    // An accent button that cannot act drops the accent: faded, the accent
+    // disc read as the accentSoft tint a selected thing wears on a light card
+    // rather than as off (the media popup's Play with no player; round 12,
+    // D14). It takes the grey of a card inside a card and the muted ink, and
+    // fades like every other disabled button.
+    readonly property bool accentOff: shownVariant === "accent" && !enabledState
     // A danger button's label sits on its own red wash, so it takes the red
     // made for that wash (Colors.dangerOnSoft): the plain one was under 4:1.
-    readonly property color foreground: shownVariant === "accent" ? Colors.accentText
+    readonly property color foreground: accentOff ? Colors.mutedText
+        : shownVariant === "accent" ? Colors.accentText
         : shownVariant === "danger" ? Colors.dangerOnSoft : Colors.text
 
     activeFocusOnTab: focusOnTab && enabledState
     implicitHeight: compact ? Metrics.controlHeightSm : Metrics.controlHeight
-    implicitWidth: shownText.length
-        ? row.implicitWidth + (compact ? Metrics.controlPaddingSm : Metrics.controlPadding) * 2
-        : implicitHeight
+    // The air on each side of the words. A ghost button at the edge of a row
+    // of content takes it back with a negative margin of this size, so its
+    // words, not its invisible capsule, line up with the content's edge.
+    readonly property real sidePadding: compact ? Metrics.controlPaddingSm : Metrics.controlPadding
+    implicitWidth: shownText.length ? row.implicitWidth + sidePadding * 2 : implicitHeight
     radius: Metrics.pillRadius(height)
     opacity: enabledState ? 1 : Effects.disabledOpacity
-    color: shownVariant === "accent"
+    color: accentOff ? Colors.surface2
+        : shownVariant === "accent"
         ? (down ? Colors.accentPressed : hovered ? Colors.accentHover : Colors.accent)
         : shownVariant === "ghost"
             ? (down ? Colors.pressed : hovered ? Colors.hover : "transparent")
@@ -78,6 +92,12 @@ Rectangle {
             Layout.maximumWidth: Metrics.buttonTextMax
             text: root.shownText
             role: root.compact ? "small" : "body"
+            color: root.foreground
+        }
+        ShellIcon {
+            visible: root.trailingIcon.length > 0
+            glyph: root.trailingIcon
+            size: root.iconSize
             color: root.foreground
         }
     }

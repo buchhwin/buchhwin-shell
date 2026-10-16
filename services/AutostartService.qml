@@ -23,9 +23,14 @@ Singleton {
         return DesktopEntries.applications.values.find(app => app.id === id) || null
     }
 
+    // Stored comma-joined, so a comma is the one thing an id may not hold
+    // (nor a control character). Citrix names its subscribed apps with
+    // spaces and '$' ("Citrix_subscribed_XenApp 7.x.RDS-Name $S101-255"),
+    // which a tidy-name rule refused; the id only ever finds a desktop entry.
     function setApps(list) {
         const seen = {}
-        SettingsService.set("autostart.apps", list.filter(id => /^[A-Za-z0-9._-]+$/.test(id) && !seen[id] && (seen[id] = true)).join(","))
+        SettingsService.set("autostart.apps", list.filter(id => typeof id === "string" && /^[^,\u0000-\u001f\u007f]+$/.test(id)
+            && !seen[id] && (seen[id] = true)).join(","))
     }
     function add(id) { setApps(apps.concat([id])) }
     function remove(id) { setApps(apps.filter(item => item !== id)) }

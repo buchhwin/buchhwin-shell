@@ -1,4 +1,7 @@
 .pragma library
+.import "ShellShortcuts.js" as Shell
+.import "../launcher/LaunchLogic.js" as Launch
+.import "../hypr/HyprCommands.js" as Hypr
 
 // Settings > Shortcuts: readable rows from `hyprctl -j binds` and the user's
 // own shortcuts in ~/.config/buchhwin-shell/shortcuts.json. Legacy configs
@@ -34,6 +37,7 @@ var titleGroups = {
     "Terminal": "apps", "Web browser": "apps", "File manager": "apps",
     "Launcher": "panels", "Control center": "panels", "Settings": "panels", "Notification center": "panels",
     "Emoji picker": "panels", "Wallpaper picker": "panels", "Profiles and modes": "panels", "Dock": "panels",
+    "Start menu": "panels",
     "All keyboard shortcuts": "panels", "Pick a color off the screen": "panels",
     "Desktop mode: widgets, bar, notch": "workspaces", "Mode: minimal, work, gaming, laptop, docked": "workspaces",
     "Dashboard": "panels", "Session menu": "panels", "Overview": "panels", "Clipboard history": "panels",
@@ -53,7 +57,7 @@ var panelTitles = {
     launcher: "Launcher", controlCenter: "Control center", settings: "Settings", notifications: "Notification center",
     dashboard: "Dashboard", powerMenu: "Session menu", overview: "Overview", clipboard: "Clipboard history",
     editor: "Layout editor", emoji: "Emoji picker", wallpaperPicker: "Wallpaper picker",
-    profile: "Profiles and modes", shortcuts: "All keyboard shortcuts", dock: "Dock"
+    profile: "Profiles and modes", shortcuts: "All keyboard shortcuts", dock: "Dock", startMenu: "Start menu"
 }
 
 var keyLabels = {
@@ -243,7 +247,9 @@ function rows(binds, custom, labelFor) {
         return {
             modmask: mask, key: bind.key, keys: keys, combo: keys.join("+"),
             title: info.title, group: info.group, raw: info.raw === true,
-            command: bind.dispatcher === "exec" ? String(bind.arg || "") : entry ? commandFor(entry, {}) : ""
+            // What the search matches besides the title: a Lua bind cannot
+            // say what it runs, so a custom one offers its app id or command.
+            command: bind.dispatcher === "exec" ? String(bind.arg || "") : entry ? entryLabel(entry) : ""
         }
     })
 }
@@ -371,18 +377,39 @@ function commandError(command) {
     return ""
 }
 
+// A desktop id as a bind can carry it. The command line quotes it
+// (shellWord), so a space or a `$` is fine: the three Citrix entries here are
+// "Citrix_subscribed_XenApp 7.x.RDS-Buchhwin $S101-255" and the like, and
+// were refused (round 12). Not a control character or `;` (a bind line holds
+// neither), not a `/` (no desktop id has one) and no `-` first
+// (launch-app.sh would take the id for one of its options).
 function validAppId(id) {
-    return /^[A-Za-z0-9._-]+$/.test(String(id || ""))
+    return typeof id === "string" && /^[^\x00-\x1f\x7f;\/-][^\x00-\x1f\x7f;\/]{0,254}$/.test(id)
 }
 
+// { mods, key, app }, { mods, key, shell } (a shell action from
+// ShellShortcuts.BINDABLE: "startMenu toggle") or { mods, key, command }.
 function normalizeEntry(item) {
     if (!item || typeof item !== "object" || !Array.isArray(item.mods)) return null
     const mods = modifiers.map(mod => mod.name).filter(name => item.mods.map(mod => String(mod).toUpperCase()).indexOf(name) >= 0)
     if (item.mods.length !== mods.length || comboError(mods, item.key)) return null
     const key = String(item.key)
     if (typeof item.app === "string" && validAppId(item.app)) return { mods: mods, key: key, app: item.app }
+    if (typeof item.shell === "string" && Shell.bindable(item.shell)) return { mods: mods, key: key, shell: item.shell }
     if (typeof item.command === "string" && !commandError(item.command)) return { mods: mods, key: key, command: item.command.trim() }
     return null
+}
+
+// What a shell action is called on the sheet and in the list: the panel it
+// opens ("startMenu toggle" is "Start menu").
+function shellTitle(action) {
+    const target = String(action || "").trim().split(/\s+/)[0]
+    return Object.prototype.hasOwnProperty.call(panelTitles, target) ? panelTitles[target] : String(action || "")
+}
+
+// The shell actions Settings > Shortcuts offers, as { value, label }.
+function shellActions() {
+    return Shell.BINDABLE.map(action => ({ value: action, label: shellTitle(action) }))
 }
 
 function parseStore(text) {
@@ -414,20 +441,68 @@ function storeReadIsNews(loaded, text, written) {
 }
 
 function entryLabel(entry) {
-    return entry.app ? entry.app : entry.command
+    return entry.app ? entry.app : entry.shell ? shellTitle(entry.shell) : entry.command
 }
 
 function comboOf(entry) {
     return comboText(modmask(entry.mods), entry.key)
 }
 
-// Apps start through gtk-launch unless the launcher has a session script
-// (Kitty, Brave); `overrides` maps desktop ids to script paths.
-function commandFor(entry, overrides) {
+// One word of a bind's command line for sh: bare when it is plain, else in
+// single quotes. A `$` goes outside them as "$": the conf dialect writes
+// `$NAME` as `${NAME}` (HyprCommands.legacyExec), which sh reads the same only
+// outside single quotes - inside them the Citrix entry's "$S101-255" would
+// have arrived as "${S101-255}".
+function shellWord(word) {
+    const text = String(word)
+    if (/^[A-Za-z0-9_\/.,:=@%+-]+$/.test(text)) return text
+    return "'" + text.replace(/'/g, "'\\''").replace(/\$/g, "'\"$\"'") + "'"
+}
+
+// A launch context (LaunchLogic: { command, workingDirectory }) as the one
+// line a bind runs through `sh -c`.
+function commandLine(context) {
+    const line = context.command.map(shellWord).join(" ")
+    return context.workingDirectory ? "cd -- " + shellWord(context.workingDirectory) + " && " + line : line
+}
+
+// What a custom shortcut runs. An app starts the way the launcher starts it
+// (LaunchLogic.launchContext): a web app or a browser through its session
+// launcher (launch-brave.sh: the wallet and --password-store, testing.md
+// pitfalls 32 and 98), a Terminal=true entry in the session's terminal
+// (launch-terminal.sh - GLib knows no terminal installed here, so gtk-launch
+// started nothing), anything else in a unit of its own (launch-app.sh). It
+// was a bare `gtk-launch ID`, past all three. Only an id the desktop entries
+// do not know (yet) keeps gtk-launch, in launch-app.sh's unit.
+// `start`: { app (the DesktopEntry, or null), overrides (LauncherService.
+// appOverrides), script (name -> path in scripts/) }. A shell action runs no
+// command (globalBind); this names what its bind sends.
+function commandFor(entry, start) {
+    const how = start || {}
+    if (entry.shell) return "global " + Shell.shortcutName(entry.shell)
     if (!entry.app) return entry.command
-    const script = (overrides || {})[entry.app]
-    if (!script) return "gtk-launch " + entry.app
-    return /^[A-Za-z0-9_\/.+-]+$/.test(script) ? script : "'" + script.replace(/'/g, "'\\''") + "'"
+    const script = typeof how.script === "function" ? how.script : name => name
+    const context = how.app ? Launch.launchContext(how.app, how.overrides || {}, script) : null
+    return commandLine(context || { command: [script("launch-app.sh"), entry.app, "gtk-launch", entry.app] })
+}
+
+// A shell action's bind: the global shortcut itself, the way hypr/
+// hyprland.lua's `shell("…")` binds send theirs - pressed and released like
+// any key, so the shell acts on the press. Not `exec hyprctl dispatch
+// global`: a dispatch from outside sends only one of the two, and which one
+// is Hyprland's to say. { legacy, legacyEmpty, lua } for HyprCompat, checked
+// by HyprCommands' own rules.
+function globalBind(entry) {
+    const combo = Hypr.bindCombo(entry.mods, entry.key)
+    const name = Shell.shortcutName(entry.shell)
+    const label = descriptionFor(entry)
+    if (!Shell.bindable(entry.shell) || /[,;#$\x00-\x1f]/.test(label)) throw new Error("invalid shell shortcut")
+    return {
+        legacy: "keyword bindd " + combo.mods.join(" ") + "," + combo.key + "," + label + ",global," + name,
+        legacyEmpty: [],
+        lua: "hl.bind(" + Hypr.luaString(combo.mods.concat([combo.key]).join(" + ")) + ", hl.dsp.global(" + Hypr.luaString(name)
+            + "), { description = " + Hypr.luaString(label) + " })"
+    }
 }
 
 // Bind description; the prefix marks the shell's own binds. Hyprlang
@@ -451,14 +526,22 @@ function ownBind(bind) {
 // What to change so Hyprland matches the store: remove stale own binds (never
 // a combination that another bind also uses), add missing ones, and report
 // entries whose combination is taken by a bind from the config.
-function syncPlan(binds, custom) {
+// `upToDate(entry)`: whether the bind an entry has runs what the entry would
+// run now. A bind cannot say (a Lua bind reports `__lua`), so the service
+// remembers what it bound; one made by an older shell, or before the app's
+// desktop entry was read, is bound again. Without it a bind with the right
+// description counts as current.
+function syncPlan(binds, custom, upToDate) {
+    const fresh = typeof upToDate === "function" ? upToDate : () => true
     const active = (binds || []).filter(bind => !bind.submap)
-    const wanted = (custom || []).map(entry => ({ entry: entry, mask: modmask(entry.mods), description: descriptionFor(entry) }))
+    const wanted = (custom || []).map(entry => ({ entry: entry, mask: modmask(entry.mods), description: descriptionFor(entry),
+                                                  fresh: fresh(entry) }))
     const unbind = []
     const bind = []
     const conflicts = []
     for (const current of active.filter(ownBind)) {
-        const keep = wanted.some(item => sameCombo(current, item.mask, item.entry.key) && item.description === current.description)
+        const keep = wanted.some(item => sameCombo(current, item.mask, item.entry.key) && item.description === current.description
+                                         && item.fresh)
         const foreign = active.some(other => !ownBind(other) && sameCombo(other, current.modmask, current.key))
         if (!keep && !foreign && !unbind.some(item => sameCombo({ modmask: modmask(item.mods), key: item.key }, current.modmask, current.key)))
             unbind.push({ mods: modNames(current.modmask), key: current.key })
@@ -466,7 +549,7 @@ function syncPlan(binds, custom) {
     for (const item of wanted) {
         const same = active.filter(current => sameCombo(current, item.mask, item.entry.key))
         if (same.some(current => !ownBind(current))) conflicts.push(comboOf(item.entry))
-        else if (!same.some(current => current.description === item.description)) bind.push(item.entry)
+        else if (!item.fresh || !same.some(current => current.description === item.description)) bind.push(item.entry)
     }
     return { unbind: unbind, bind: bind, conflicts: conflicts }
 }

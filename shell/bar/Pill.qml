@@ -77,22 +77,44 @@ Rectangle {
             if (index < pill.items.length && surface === "bar")
                 LayoutService.reportBarItemRect(screenName, pill.items[index].type,
                     visible && segment && segment.visible ? screenRect(segment) : null)
-            // The start button the same way on the dock: the start menu
-            // opened by a key or IPC comes out of it too.
-            if (index < pill.items.length && surface === "dock" && pill.items[index].type === "start")
-                LayoutService.reportDockItemRect(screenName, "start",
-                    visible && segment && segment.visible ? screenRect(segment) : null)
+            // Every item on the dock the same way (the start menu opened by a
+            // key or IPC comes out of the start button, a panel opened by its
+            // hotkey can come out of its item) - by the pill's own condition,
+            // not `visible`: a hidden dock hides its content (pitfall 89), and
+            // the place where an item shows is what is asked for then.
+            if (index < pill.items.length && surface === "dock")
+                reportDockItem(pill.items[index].type, hasContent && segment && segment.showing ? screenRect(segment) : null)
         }
     }
+    // A type is reported under the screen and the type alone: a pill takes
+    // back only what it reported itself, and leaves a second item of the
+    // type (another pill's) where it is. Kept out of every binding.
+    property var dockReports: ({ types: {} })
+    function reportDockItem(type, rect) {
+        const mine = dockReports.types[type]
+        if (rect) {
+            dockReports.types[type] = JSON.stringify(rect)
+            LayoutService.reportDockItemRect(screenName, type, rect)
+        } else if (mine !== undefined) {
+            delete dockReports.types[type]
+            if (JSON.stringify(LayoutService.dockItemRect(screenName, type)) === mine)
+                LayoutService.reportDockItemRect(screenName, type, null)
+        }
+    }
+    function reportSoon() { reportTimer.restart() }
 
     // Where the bar's surface sits on the screen. Mapping to `null` maps to
     // the *window*, and the bar's window is only as thick as the bar and hangs
     // from its own edge - so on a bottom or a right bar every rectangle this
     // pill reports would be a screen's width out. See PillBar.reportOrigin.
     property var reportOrigin: ({ x: 0, y: 0 })
+    // What the places are measured in: the window (null), or on the dock its
+    // drawn content, which slides out over the edge as the dock hides - the
+    // place an item has while shown is the one that is wanted.
+    property Item reportFrame: null
 
     function screenRect(item) {
-        const topLeft = item.mapToItem(null, 0, 0)
+        const topLeft = item.mapToItem(reportFrame, 0, 0)
         return { x: topLeft.x + reportOrigin.x, y: topLeft.y + reportOrigin.y,
                  width: item.width, height: item.height }
     }
@@ -102,8 +124,8 @@ Rectangle {
         for (let index = 0; index < pill.items.length; ++index) {
             LayoutService.reportSurfaceRect(screenName, pill.id + "#" + index, null)
             if (surface === "bar") LayoutService.reportBarItemRect(screenName, pill.items[index].type, null)
-            if (surface === "dock" && pill.items[index].type === "start") LayoutService.reportDockItemRect(screenName, "start", null)
         }
+        for (const type of Object.keys(dockReports.types)) reportDockItem(type, null)
     }
 
     // Every way a pill can end up somewhere else. On a horizontal bar it moves
@@ -115,6 +137,10 @@ Rectangle {
     // The same shape as the notch's own report, which had triggers for
     // everything except the input that changes late.
     onEditingChanged: reportTimer.restart()
+    // The surface itself moved (a bar switched on beside the dock, a bar's
+    // size): every place the pill reported moved with it.
+    onReportOriginChanged: reportTimer.restart()
+    onHasContentChanged: reportTimer.restart()
     onXChanged: reportTimer.restart()
     onYChanged: reportTimer.restart()
     onWidthChanged: reportTimer.restart()
@@ -208,6 +234,23 @@ Rectangle {
     // put the Wi-Fi arc on its side and asked the reader to tilt their head.
     readonly property real thickness: Metrics.pillHeight * scaleFactor
     readonly property real contentLength: vertical ? content.implicitHeight : content.implicitWidth
+    // On the dock: whether the apps are among the items, and the pill's
+    // length without them - the room the apps are fitted into is measured
+    // from the rest (DockZone.lengthBesideApps), never from the apps.
+    readonly property bool holdsApps: pill.items.some(item => item.type === "apps")
+    readonly property real lengthBesideApps: {
+        if (!holdsApps) return 0
+        const unused = showingCount
+        let length = 0
+        let shown = 0
+        for (let index = 0; index < itemRepeater.count; ++index) {
+            const segment = itemRepeater.itemAt(index)
+            if (!segment || !segment.showing) continue
+            shown += 1
+            length += segment.lengthBesideApps
+        }
+        return length + Math.max(0, shown - 1) * content.columnSpacing + (flat ? 0 : leadPad + trailPad)
+    }
     readonly property real length: flat ? contentLength
         : Math.max(thickness, contentLength + leadPad + trailPad)
     implicitHeight: vertical ? length : thickness
@@ -304,6 +347,16 @@ Rectangle {
                 readonly property bool showing: loader.item !== null && loader.item.hasData !== false
                 readonly property bool clickable: entry !== null && entry.action.length > 0
                 readonly property bool hovered: segmentHover.hovered
+                // A widget can say its panel is open (the start button with
+                // its menu open out of it) and that the keys are on it (the
+                // dock's keyboard): the segment then keeps its backing, and
+                // the keys their ring.
+                readonly property bool held: loader.item !== null && loader.item.panelOpen === true
+                readonly property bool keyFocus: loader.item !== null && loader.item.keyFocus === true
+                // Its length without the apps widget in it, for the dock's
+                // room (Pill.lengthBesideApps): the apps' padding only.
+                readonly property real lengthBesideApps: modelData.type !== "apps" ? (root.vertical ? implicitHeight : implicitWidth)
+                    : root.flat ? pads.start + pads.end : 0
                 readonly property var pads: BarLogic.segmentPadding(coverAt(false), coverAt(true), modelData.display === "icon", {
                     cover: Metrics.pillCoverInset * root.scaleFactor, highlight: root.highlightInset,
                     icon: Metrics.spaceSm * root.scaleFactor, text: Metrics.barSegmentPadding * root.scaleFactor
@@ -347,8 +400,13 @@ Rectangle {
                                                      root.vertical ? width : height,
                                                      segment.coverAt(false) || segment.coverAt(true))
                     color: Colors.barItemHover
-                    opacity: segment.hovered ? 1 : 0
+                    opacity: segment.hovered || segment.held || segment.keyFocus ? 1 : 0
                     Behavior on opacity { NumberAnimation { duration: Animations.hover; easing.type: Animations.easing } }
+
+                    FocusRing {
+                        active: segment.keyFocus
+                        controlRadius: parent.radius
+                    }
                 }
 
                 // Below the widget so its own buttons (media controls, volume
@@ -363,7 +421,7 @@ Rectangle {
                 }
                 function open() {
                     const box = root.flat ? segment : root
-                    const mapped = box.mapToItem(null, 0, 0)
+                    const mapped = box.mapToItem(root.reportFrame, 0, 0)
                     // On the screen, not in the bar's own surface.
                     const topLeft = { x: mapped.x + root.reportOrigin.x,
                                       y: mapped.y + root.reportOrigin.y }
@@ -377,12 +435,14 @@ Rectangle {
                         : (root.flat ? BarLogic.anchorAlong(topLeft.x, segment.width)
                                      : root.mapToItem(null, root.width / 2, 0).x + root.reportOrigin.x)
                     // Out of the dock: above it at the bottom, beside it on a
-                    // side - and on the dock's own screen, which need not be
-                    // the focused one (the dock stays shown for a panel it
+                    // side, a gap off the dock's body rather than the item
+                    // inside it - and on the dock's own screen, which need not
+                    // be the focused one (the dock stays shown for a panel it
                     // opened only on its screen, Dock.qml `panelFromHere`).
                     const anchor = root.surface !== "dock" ? (root.vertical ? { anchorY: along } : { anchorX: along })
                         : Object.assign(DockLogic.panelAnchor(root.dockEdge, { x: topLeft.x, y: topLeft.y, width: box.width, height: box.height },
-                                                              Metrics.spaceSm), { onScreen: root.screenName })
+                                                              Metrics.dockPanelGap, DockService.placeOf(root.screenName)),
+                                        { onScreen: root.screenName })
                     PanelService.toggle(WidgetRegistry.actionOf(segment.modelData.type), Object.assign(anchor, {
                         originX: topLeft.x, originY: topLeft.y,
                         originWidth: box.width, originHeight: box.height

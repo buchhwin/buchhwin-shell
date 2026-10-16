@@ -159,11 +159,31 @@ ShellPanel {
             }
         }
 
+        // With the history off, "Nothing copied yet" promised that copying
+        // would fill it; the panel says what is the matter instead and leads
+        // to the switch (Settings > Desktop extras). Two states rather than
+        // one with a hidden button: a hidden action still takes its row.
+        readonly property bool historyOff: root.filtered.length === 0 && !ClipboardService.loading
+            && !search.text.length && !ClipboardService.enabled
         EmptyState {
             Layout.fillWidth: true
-            visible: root.filtered.length === 0
+            visible: root.filtered.length === 0 && !parent.historyOff
             icon: ClipboardService.loading ? Icons.busy : "󰦨"
             title: ClipboardService.loading ? "Loading …" : search.text.length ? "No results" : "Nothing copied yet"
+        }
+        EmptyState {
+            Layout.fillWidth: true
+            visible: parent.historyOff
+            icon: "󰦨"
+            title: "Clipboard history is off"
+            description: "Nothing you copy is kept while it is off"
+            ShellButton {
+                focusOnTab: true
+                icon: Icons.settings
+                text: "Clipboard settings"
+                compact: true
+                onClicked: PanelService.open("settings", { page: "desktop" })
+            }
         }
 
         ShellText {

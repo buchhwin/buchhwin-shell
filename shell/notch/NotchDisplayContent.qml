@@ -72,7 +72,7 @@ Item {
                     width: parent.width * Math.max(0, Math.min(1, display.content.level || 0))
                     height: parent.height
                     radius: parent.radius
-                    color: display.content.muted ? Colors.notchMutedText : Colors.accent
+                    color: display.content.muted ? Colors.notchMutedText : Colors.notchAccent
                 }
             }
 
@@ -89,7 +89,7 @@ Item {
                         height: parent.height
                         radius: height / 2
                         color: index < Math.round((display.content.level || 0) * display.content.segments)
-                            ? Colors.accent : Colors.notchTrack
+                            ? Colors.notchAccent : Colors.notchTrack
                     }
                 }
             }
@@ -145,7 +145,7 @@ Item {
             }
             ShapePath {
                 fillColor: "transparent"
-                strokeColor: display.content && display.content.muted ? Colors.notchMutedText : Colors.accent
+                strokeColor: display.content && display.content.muted ? Colors.notchMutedText : Colors.notchAccent
                 strokeWidth: Metrics.notchRingStroke
                 capStyle: ShapePath.RoundCap
                 PathAngleArc {

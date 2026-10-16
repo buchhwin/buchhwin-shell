@@ -101,4 +101,6 @@ Singleton {
     readonly property real dockLaunchShrink: 0.14
     readonly property real dockLaunchFade: 0.45
     readonly property real dockHoverOpacity: 0.8
+    // A pinned app pulled off the dock far enough to be unpinned on release.
+    readonly property real dockRemoveOpacity: 0.15
 }

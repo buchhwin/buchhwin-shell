@@ -6,11 +6,13 @@ import "appearance/AppThemeLogic.js" as Logic
 
 // Settings > Appearance "Apps follow theme" and "Use the shell accent in apps"
 // (both opt-in): KDE/Qt and GTK apps switch with the shell's effective theme
-// (selector, Dark Mode chip, Automatic at 07:00/19:00), KDE apps (Dolphin's
-// folder icons, selections) take the effective shell accent. Each change first
-// queries the current values (read-only, including a backup of the kdeglobals
-// colour entries), then runs only the commands that differ, one process at a
-// time. The Plasma values from before the first change are kept in
+// (selector, Dark Mode chip, Automatic at 07:00/19:00) - for GTK the GNOME
+// keys, the icon theme and ~/.config/gtk-{3,4}.0 (AppThemeLogic.gtkTargets) -
+// KDE apps (Dolphin's folder icons, selections) take the effective shell
+// accent. Each change first queries the current values (read-only, including
+// a backup of the kdeglobals colour entries and of the GTK files), then runs
+// only the commands that differ, one process at a time. The Plasma values
+// from before the first change are kept in
 // $XDG_STATE_HOME/buchhwin-shell/apptheme.json and restored when the options
 // are turned off, at logout (scripts/apptheme-restore.py from
 // session-action.sh) or, after a crash, at the next Plasma login (autostart
@@ -57,7 +59,8 @@ Singleton {
         : !realSession ? "Apps only switch in the buchhwin-shell session. This test session logs the commands instead."
         : lastError.length > 0 ? lastError
         : busy ? "Applying …"
-        : state.applied ? "Applied. Dolphin redraws folder icons after it is restarted."
+        // GTK apps read settings.ini and gtk.css when they start.
+        : state.applied ? "Applied. Dolphin's folder icons and open GTK apps change once they are restarted."
         : lastPlan.error.length > 0 ? lastPlan.error
         : "No changes were needed."
     readonly property bool statusIsError: realSession && (lastError.length > 0 || (!busy && !state.applied && lastPlan.error.length > 0))
@@ -173,7 +176,8 @@ Singleton {
         const command = queue[0]
         queue = queue.slice(1)
         console.info("buchhwin-shell: appTheme runs", JSON.stringify(command))
-        runner.command = command
+        // The GTK files are changed by the helper that also gives them back.
+        runner.command = command[0] === Logic.GTK_HELPER ? ["python3", Paths.script("apptheme-restore.py")].concat(command.slice(1)) : command
         runner.running = true
     }
 
@@ -216,7 +220,11 @@ Singleton {
             + "echo '[colorSchemeRange]'; gsettings range org.gnome.desktop.interface color-scheme 2>/dev/null\n"
             + "echo '[gtkTheme]'; gsettings get org.gnome.desktop.interface gtk-theme 2>/dev/null\n"
             + "echo '[themes]'; for d in \"${XDG_DATA_HOME:-$HOME/.local/share}/themes\" \"$HOME/.themes\" /usr/share/themes; do "
-            + "[ -d \"$d\" ] && find \"$d\" -mindepth 3 -maxdepth 3 -path '*/gtk-3.0/gtk.css'; done; true",
+            + "[ -d \"$d\" ] && find \"$d\" -mindepth 3 -maxdepth 3 -path '*/gtk-3.0/gtk.css'; done\n"
+            + "echo '[iconTheme]'; gsettings get org.gnome.desktop.interface icon-theme 2>/dev/null\n"
+            + "echo '[icons]'; for d in \"${XDG_DATA_HOME:-$HOME/.local/share}/icons\" \"$HOME/.icons\" /usr/share/icons; do "
+            + "[ -d \"$d\" ] && find \"$d\" -mindepth 2 -maxdepth 2 -name index.theme; done\n"
+            + "echo '[gtk]'; python3 \"$1\" --gtk-snapshot 2>/dev/null; true",
             "sh", Paths.script("apptheme-restore.py"), root.kdeConfigDirs]
         stdout: StdioCollector { onStreamFinished: root.queryFinished(text) }
     }

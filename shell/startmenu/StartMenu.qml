@@ -13,9 +13,11 @@ import "../../services/lock/LockLogic.js" as LockLogic
 // The start menu: what the dock's start button opens (shell/widgets/
 // StartWidget.qml), above the button on a taskbar, beside it on a side dock.
 //
-//   the fastfetch Saturn, user · host, the os, kernel and uptime
+//   the fastfetch logo (the user's, else the Saturn), user · host, the os,
+//     kernel and uptime - one line of it in All apps and the results
 //   a search - the launcher's own, prefixes and all
 //   Pinned: the launcher's pins          All apps ›  (A to Z)
+//     with nothing pinned: the default apps and Settings, suggested
 //   Frequent: the apps started most (the launcher's history)
 //   the places: Home and the user's folders
 //   the user, Settings, Lock, the power button
@@ -25,9 +27,10 @@ import "../../services/lock/LockLogic.js" as LockLogic
 // A right click or the menu key opens an app's menu inside the card.
 //
 // One size whatever it shows, so the surface never changes size while it is
-// open (testing.md pitfall 57). Everything below is built while it is shown
-// and gone when it closes: the panel itself is only there for a dock with a
-// start button (shell.qml).
+// open (testing.md pitfall 57). The face is built while it is shown and gone
+// when it closes; what does not change while the session runs (the logo,
+// the host, the kernel, the places) is read once, here. The panel itself is
+// built on its first open (shell.qml, PanelService.demanded).
 ShellPanel {
     id: root
     panelId: "startMenu"
@@ -60,13 +63,105 @@ ShellPanel {
         onExited: root.nameRead = true
     }
 
+    // ---- read once ------------------------------------------------------------
+    // The logo the user's fastfetch draws (StartMenuLogic.textLogo): written
+    // into its configuration, or a file - the configuration's, the user's
+    // Saturn, the shipped one, the first that holds one. Watched, so a logo
+    // picked in Settings > Terminal shows at the next open.
+    readonly property var emptyLogo: ({ rows: 0, columns: 0, runs: [] })
+    property var logoSpec: ({})
+    readonly property var inlineLogo: logoSpec.text !== undefined ? Logic.asciiRuns(logoSpec.text) : emptyLogo
+    readonly property var logoPaths: Logic.logoPaths(logoSpec, Paths.configDir + "/saturn.txt",
+                                                     Quickshell.shellPath("config/builtin-profiles/buchhwin/saturn.txt"))
+    property int logoTry: 0
+    onLogoPathsChanged: logoTry = 0
+    property var fileLogo: emptyLogo
+    readonly property var logo: inlineLogo.runs.length ? inlineLogo : fileLogo
+    // On to the next file when `path` held none - unless the list moved on
+    // meanwhile (the configuration read after the first try failed).
+    function skipLogo(path) {
+        if (logoPaths[logoTry] !== path) return
+        if (logoTry + 1 < logoPaths.length) logoTry += 1
+        else fileLogo = emptyLogo
+    }
+    function takeLogo(path, text) {
+        const parsed = Logic.asciiRuns(text)
+        if (!parsed.runs.length) { Qt.callLater(skipLogo, path); return }
+        fileLogo = parsed
+    }
+    // Not there when the panel was built (a first start, before the profile
+    // put the files in place): asked again at the next open, as is a logo
+    // that fell back to a later file.
+    property bool configRead: false
+    onShownChanged: if (shown) {
+        if (!configRead) configFile.reload()
+        if (logoTry > 0) logoTry = 0
+    }
+    FileView {
+        id: configFile
+        path: Paths.configDir + "/fastfetch.jsonc"
+        blockLoading: true
+        printErrors: false
+        watchChanges: true
+        onFileChanged: reload()
+        onLoaded: { root.configRead = true; root.logoSpec = Logic.textLogo(text(), Paths.home) }
+        onLoadFailed: { root.configRead = false; root.logoSpec = ({}) }
+    }
+    FileView {
+        path: root.inlineLogo.runs.length ? "" : root.logoPaths[root.logoTry] || ""
+        blockLoading: true
+        printErrors: false
+        watchChanges: true
+        onFileChanged: reload()
+        onLoaded: root.takeLogo(path, text())
+        // The next file becomes this FileView's path: not from inside its
+        // own handler.
+        onLoadFailed: Qt.callLater(root.skipLogo, path)
+    }
+
+    property string host: ""
+    property string kernel: ""
+    FileView {
+        path: "/proc/sys/kernel/hostname"
+        blockLoading: true
+        printErrors: false
+        onLoaded: root.host = text().trim()
+    }
+    FileView {
+        path: "/proc/sys/kernel/osrelease"
+        blockLoading: true
+        printErrors: false
+        onLoaded: root.kernel = text().trim()
+    }
+    // Read before the first frame, so Places are there as the card grows.
+    property var placeList: []
+    FileView {
+        path: (Quickshell.env("XDG_CONFIG_HOME") || Paths.home + "/.config") + "/user-dirs.dirs"
+        blockLoading: true
+        printErrors: false
+        watchChanges: true
+        onFileChanged: reload()
+        onLoaded: root.placeList = Logic.places(text(), Paths.home)
+        onLoadFailed: root.placeList = Logic.places("", Paths.home)
+    }
+    // The suggestions name the session's default apps (default-apps.py list):
+    // asked once, while nothing is pinned. Settings > Default apps keeps the
+    // list current after that.
+    property bool defaultsAsked: false
+    function wantDefaults() {
+        if (defaultsAsked || LauncherService.pinnedApps.length) return
+        defaultsAsked = true
+        if (!DefaultAppsService.categories.length && !DefaultAppsService.loading) DefaultAppsService.refresh()
+    }
+
     // For `startMenu get`: counts and flags, never a name.
     function describe() {
         const f = face
         return JSON.stringify({
             open: wanted, shown: shown, view: f ? f.shownView : "", pinned: f ? f.pinnedApps.length : 0,
+            suggested: f && f.tileZone === "suggested" ? f.tiles.length : 0,
             frequent: f ? f.frequentApps.length : 0, apps: f ? f.allApps.ids.length : 0,
-            results: f ? f.results.length : 0, places: f ? f.placeList.length : 0,
+            results: f ? f.results.length : 0, places: placeList.length, logo: logo.runs.length > 0,
             zone: f ? f.selection.zone : "", index: f ? f.selection.index : 0, menuOpen: f ? f.menu !== null : false
         })
     }
@@ -83,7 +178,7 @@ ShellPanel {
         sourceComponent: Component {
             Item {
                 id: face
-                Component.onCompleted: root.face = face
+                Component.onCompleted: { root.face = face; root.wantDefaults() }
                 Component.onDestruction: if (root.face === face) root.face = null
 
                 // ---- state ------------------------------------------------------
@@ -93,6 +188,7 @@ ShellPanel {
                 property string view: root.openArgs && root.openArgs.startView === "all" ? "all" : "home"
                 readonly property bool searching: query.length > 0
                 readonly property string shownView: searching ? "search" : view
+                readonly property bool atHome: shownView === "home"
                 property var selection: ({ zone: "", index: 0 })
                 // { kind: "app" | "power", entry, source, index, dock, at } or null
                 property var menu: null
@@ -101,9 +197,29 @@ ShellPanel {
 
                 // ---- what it shows ------------------------------------------------
                 readonly property var pinnedApps: LauncherService.pinnedApps
+                onPinnedAppsChanged: root.wantDefaults()
+                // The pins, or with none the suggestions: [{ kind: "app", entry }
+                // | { kind: "settings" }] (StartMenuLogic.suggested).
+                readonly property string tileZone: pinnedApps.length ? "pinned" : "suggested"
+                readonly property var tiles: pinnedApps.length ? pinnedApps.map(app => ({ kind: "app", entry: app }))
+                    : Logic.suggested(DefaultAppsService.categories, id => DesktopEntries.byId(id))
                 readonly property var frequentApps: Logic.frequent(Usage.top(LauncherService.usage, Date.now()),
                                                                    LauncherService.visibleApps(),
-                                                                   pinnedApps.map(app => app.id), Metrics.startMenuFrequent)
+                                                                   pinnedApps.map(app => app.id), frequentLimit)
+                // As many rows of them as there is room for, one at least: the
+                // card is one size, and with ten pins, four of them and six
+                // places the last row of places was cut off at the bottom
+                // (offscreen, 13 px), which reads as broken - the launcher
+                // shows whole rows for that reason (13.10.). The Flickable
+                // around home is for what does not fit even then (a large font).
+                readonly property int frequentLimit: {
+                    const room = homeView.height - pinnedSection.implicitHeight
+                        - (placesSection.visible ? placesSection.implicitHeight + Metrics.panelGap : 0)
+                        - Metrics.panelGap - frequentLabel.implicitHeight - Metrics.spaceXs + Metrics.spaceXxs
+                    const rows = Math.floor(room / (Metrics.rowHeight + Metrics.spaceXxs))
+                    return Math.max(Metrics.startMenuFrequentColumns,
+                                    Math.min(Metrics.startMenuFrequent, rows * Metrics.startMenuFrequentColumns))
+                }
                 readonly property var allApps: view === "all" ? Logic.alphabet(LauncherService.visibleApps())
                                                               : ({ rows: [], ids: [], letters: [] })
                 readonly property var allRowByKey: {
@@ -112,20 +228,17 @@ ShellPanel {
                     return table
                 }
                 readonly property var results: searching ? LauncherService.results(query, "All") : []
-                property var placeList: []
                 readonly property var footerKinds: ["settings", "lock", "power"]
-                property var logo: ({ rows: 0, columns: 0, runs: [] })
-                property string host: ""
-                property string kernel: ""
+                // The one thing in the header that changes while the session runs.
                 property int uptime: -1
-                readonly property var info: Logic.infoRows(DistroService.info.PRETTY_NAME || DistroService.name, kernel, uptime)
+                readonly property var info: Logic.infoRows(DistroService.info.PRETTY_NAME || DistroService.name, root.kernel, uptime)
 
                 readonly property var zones: shownView === "search" ? [{ id: "results", count: results.length, columns: 1 }]
                     : shownView === "all" ? [{ id: "all", count: allApps.ids.length, columns: 1 },
                                              { id: "footer", count: footerKinds.length, columns: footerKinds.length }]
-                    : [{ id: "pinned", count: pinnedApps.length, columns: Metrics.startMenuColumns },
+                    : [{ id: tileZone, count: tiles.length, columns: Metrics.startMenuColumns },
                        { id: "frequent", count: frequentApps.length, columns: Metrics.startMenuFrequentColumns },
-                       { id: "places", count: placeList.length, columns: Metrics.startMenuPlaceColumns },
+                       { id: "places", count: root.placeList.length, columns: Metrics.startMenuPlaceColumns },
                        { id: "footer", count: footerKinds.length, columns: footerKinds.length }]
 
                 function isSelected(zone, index) { return selection.zone === zone && selection.index === index }
@@ -143,30 +256,13 @@ ShellPanel {
                 }
                 onResultsChanged: if (searching && selection.zone === "results")
                     selection = { zone: "results", index: Math.min(selection.index, Math.max(0, results.length - 1)) }
+                // A selection the keys moved out of sight at home is brought back.
+                onSelectedItemChanged: if (atHome && selectedItem) homeView.reveal(selectedItem)
 
                 // The grids keep their columns however few they hold.
                 readonly property real tileWidth: (width - Metrics.spaceSm * (Metrics.startMenuColumns - 1)) / Metrics.startMenuColumns
                 readonly property real placeWidth: (width - Metrics.spaceSm * (Metrics.startMenuPlaceColumns - 1)) / Metrics.startMenuPlaceColumns
 
-                // ---- the files it reads -------------------------------------------
-                FileView {
-                    path: Quickshell.shellPath("config/builtin-profiles/buchhwin/saturn.txt")
-                    blockLoading: true
-                    printErrors: false
-                    onLoaded: face.logo = Logic.asciiRuns(text())
-                }
-                FileView {
-                    path: "/proc/sys/kernel/hostname"
-                    blockLoading: true
-                    printErrors: false
-                    onLoaded: face.host = text().trim()
-                }
-                FileView {
-                    path: "/proc/sys/kernel/osrelease"
-                    blockLoading: true
-                    printErrors: false
-                    onLoaded: face.kernel = text().trim()
-                }
                 FileView {
                     id: uptimeFile
                     path: "/proc/uptime"
@@ -175,16 +271,11 @@ ShellPanel {
                     onLoaded: face.uptime = Logic.uptimeSeconds(text())
                 }
                 Timer { interval: Animations.startMenuUptimeRefresh; running: true; repeat: true; onTriggered: uptimeFile.reload() }
-                FileView {
-                    path: (Quickshell.env("XDG_CONFIG_HOME") || Paths.home + "/.config") + "/user-dirs.dirs"
-                    printErrors: false
-                    onLoaded: face.placeList = Logic.places(text(), Paths.home)
-                    onLoadFailed: face.placeList = Logic.places("", Paths.home)
-                }
 
                 // ---- what the keys and clicks do ------------------------------------
                 function entryAt(zone, index) {
                     if (zone === "pinned") return pinnedApps[index] || null
+                    if (zone === "suggested") return tiles[index] && tiles[index].entry ? tiles[index].entry : null
                     if (zone === "frequent") return frequentApps[index] || null
                     if (zone === "all") return allApps.ids[index] ? DesktopEntries.byId(allApps.ids[index]) : null
                     if (zone === "results") {
@@ -212,6 +303,13 @@ ShellPanel {
                     else if (kind === "power") openPowerMenu(item)
                 }
 
+                // A tile: an app, or the shell's Settings among the suggestions.
+                function openTile(zone, index) {
+                    const tile = tiles[index]
+                    if (tile && tile.kind === "settings") footerAction("settings", null)
+                    else launch(entryAt(zone, index))
+                }
+
                 function activate(zone, index, alternate) {
                     if (zone === "results") {
                         const result = results[index]
@@ -220,9 +318,11 @@ ShellPanel {
                         if (alternate && result.alternate) result.alternate()
                         else result.run()
                     } else if (zone === "places") {
-                        openPlace(placeList[index])
+                        openPlace(root.placeList[index])
                     } else if (zone === "footer") {
                         footerAction(footerKinds[index], selectedItem)
+                    } else if (zone === "pinned" || zone === "suggested") {
+                        openTile(zone, index)
                     } else {
                         launch(entryAt(zone, index))
                     }
@@ -238,11 +338,21 @@ ShellPanel {
                     if (selection.zone === "") selectedItem = null
                 }
 
-                // Escape: the menu first, then All apps; a typed query has
-                // been cleared by the field before this is asked.
+                // Escape: the menu, then the query, then All apps, then the
+                // panel closes (StartMenuLogic.escapeStep). The field puts its
+                // text back first, which clears a query typed since the focus.
+                // A query it passes on is the one it would put back, so that
+                // goes too: the next Escape would bring the query back
+                // instead of going on to All apps.
                 function stepBack() {
-                    if (menu) { closeMenu(); return true }
-                    if (view === "all") { view = "home"; return true }
+                    switch (Logic.escapeStep(menu !== null, query, view)) {
+                    case "menu": closeMenu(); return true
+                    case "query":
+                        if (root.searchField) { root.searchField.savedText = ""; root.searchField.text = "" }
+                        else query = ""
+                        return true
+                    case "view": view = "home"; return true
+                    }
                     return false
                 }
 
@@ -262,7 +372,7 @@ ShellPanel {
                         source: source, pinned: pinned, pinnedFull: LauncherService.pinnedFull,
                         pinIndex: pinnedApps.findIndex(app => app.id === entry.id), pinCount: pinnedApps.length,
                         dockEnabled: SettingsService.value("dock.enabled") === true, inDock: dock.pinned,
-                        dockFull: LayoutService.dockPinsFull, actions: entry.actions
+                        dockFull: LayoutService.dockPinsFull || !LayoutService.dockPinnable(entry.id), actions: entry.actions
                     }).map(row => Object.assign(row, rowLook(row, entry)))
                     menu = { kind: "app", entry: entry, source: source, index: index, dock: dock, rows: rows, at: placeOf(item) }
                     contextMenu.forceActiveFocus()
@@ -274,9 +384,15 @@ ShellPanel {
                     contextMenu.forceActiveFocus()
                 }
 
+                // The keys back to the field. It takes what it holds now as
+                // the text Escape goes back to; nothing was typed into it
+                // since the menu opened, so that is the empty field again, or
+                // an Escape after a menu would leave the query standing.
                 function closeMenu() {
                     menu = null
-                    if (root.searchField) root.searchField.focusInput()
+                    if (!root.searchField) return
+                    root.searchField.focusInput()
+                    root.searchField.savedText = ""
                 }
 
                 function rowLook(row, entry) {
@@ -287,7 +403,8 @@ ShellPanel {
                     case "unpinStart": return { label: "Unpin from Start", icon: Icons.unpin }
                     case "moveLeft": return { label: "Move left", icon: Icons.back }
                     case "moveRight": return { label: "Move right", icon: Icons.forward }
-                    case "pinDock": return { label: "Pin to dock", icon: Icons.dock, hint: "At most " + LayoutService.dockPinLimit + " apps on the dock" }
+                    case "pinDock": return { label: "Pin to dock", icon: Icons.dock,
+                        hint: LayoutService.dockPinsFull ? "At most " + LayoutService.dockPinLimit + " apps on the dock" : "The dock cannot hold this app" }
                     case "unpinDock": return { label: "Unpin from dock", icon: Icons.unpin }
                     case "suspend": return { label: "Sleep", icon: Icons.suspend }
                     case "logout": return { label: "Log out …", icon: Icons.logout }
@@ -332,15 +449,19 @@ ShellPanel {
                     anchors.fill: parent
                     spacing: Metrics.panelGap
 
-                    // fastfetch, small: the logo, and beside it its title and rows.
+                    // fastfetch, small: the logo, and beside it its title and
+                    // rows. All apps and the results need the room: there it
+                    // is the title alone, one line.
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: Metrics.spaceLg
 
                         SaturnAscii {
                             Layout.alignment: Qt.AlignVCenter
-                            logo: face.logo
-                            visible: face.logo.runs.length > 0
+                            visible: face.atHome && root.logo.runs.length > 0
+                            logo: root.logo
+                            boxColumns: Logic.LOGO_BOX.columns
+                            boxRows: Logic.LOGO_BOX.rows
                         }
 
                         ColumnLayout {
@@ -361,18 +482,20 @@ ShellPanel {
                                     font.family: Typography.monoFamily
                                 }
                                 ShellText {
-                                    text: face.host
+                                    text: root.host
                                     color: Colors.saturnPlanet
                                     font.family: Typography.monoFamily
                                     font.weight: Typography.bold
                                 }
                             }
                             Row {
+                                visible: face.atHome
                                 ShellText { text: "──────── "; color: Colors.saturnRing; font.family: Typography.monoFamily; role: "small" }
                                 ShellText { text: "✦"; color: Colors.saturnPlanet; font.family: Typography.monoFamily; role: "small" }
                                 ShellText { text: " ────────"; color: Colors.saturnRing; font.family: Typography.monoFamily; role: "small" }
                             }
                             GridLayout {
+                                visible: face.atHome
                                 columns: 3
                                 columnSpacing: Metrics.spaceSm
                                 rowSpacing: 0
@@ -434,155 +557,223 @@ ShellPanel {
                     }
 
                     // ---- home ------------------------------------------------------------
-                    ColumnLayout {
-                        visible: face.shownView === "home"
+                    // In a Flickable for when it holds more than the card has
+                    // room for even with fewer frequent apps (a large font):
+                    // then it scrolls, and nothing below it is pushed out of
+                    // the card.
+                    Flickable {
+                        id: homeView
+                        visible: face.atHome
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        spacing: Metrics.panelGap
+                        contentWidth: width
+                        contentHeight: home.height
+                        interactive: contentHeight > height
+                        clip: interactive
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollFeel { view: homeView }
 
-                        // Each section's label sits close to what it names.
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: Metrics.spaceXs
-                            RowLayout {
-                                Layout.fillWidth: true
-                                SectionLabel { text: "Pinned"; Layout.fillWidth: true }
-                                ShellButton {
-                                    text: "All apps"
-                                    icon: Icons.forward
-                                    variant: "ghost"
-                                    compact: true
-                                    onClicked: face.view = "all"
-                                }
-                            }
-                            EmptyState {
-                                Layout.fillWidth: true
-                                visible: face.pinnedApps.length === 0
-                                row: true
-                                title: "Nothing pinned yet"
-                                description: "Right-click an app to pin it"
-                            }
-                            GridLayout {
-                                Layout.fillWidth: true
-                                visible: face.pinnedApps.length > 0
-                                columns: Metrics.startMenuColumns
-                                columnSpacing: Metrics.spaceSm
-                                rowSpacing: Metrics.spaceSm
-                                Repeater {
-                                    model: face.pinnedApps
-                                    ShellCard {
-                                        id: tile
-                                        required property var modelData
-                                        required property int index
-                                        readonly property bool chosen: face.isSelected("pinned", index)
-                                        onChosenChanged: if (chosen) face.selectedItem = tile
-                                        Layout.preferredWidth: face.tileWidth
-                                        Layout.preferredHeight: Metrics.startMenuTileHeight
-                                        level: 1
-                                        interactive: true
-                                        hovered: tileMouse.containsMouse
-                                        pressed: tileMouse.pressed && tileMouse.containsMouse
-                                        highlighted: chosen
-
-                                        ColumnLayout {
-                                            anchors.centerIn: parent
-                                            width: parent.width - Metrics.spaceSm * 2
-                                            spacing: Metrics.spaceXs
-                                            // A plain Image, the launcher's way: an app
-                                            // icon is already whatever shape it is.
-                                            Image {
-                                                Layout.alignment: Qt.AlignHCenter
-                                                Layout.preferredWidth: Metrics.iconXl
-                                                Layout.preferredHeight: Metrics.iconXl
-                                                source: LauncherService.iconSource(tile.modelData.icon)
-                                                sourceSize.width: Metrics.iconXl * 2
-                                                sourceSize.height: Metrics.iconXl * 2
-                                                fillMode: Image.PreserveAspectFit
-                                                asynchronous: true
-                                            }
-                                            ShellText {
-                                                Layout.fillWidth: true
-                                                horizontalAlignment: Text.AlignHCenter
-                                                text: tile.modelData.name || tile.modelData.id
-                                                role: "small"
-                                                elide: Text.ElideRight
-                                                maximumLineCount: 1
-                                            }
-                                        }
-                                        MouseArea {
-                                            id: tileMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: mouse => {
-                                                if (mouse.button === Qt.RightButton) face.openAppMenu(tile.modelData, "pinned", tile.index, tile)
-                                                else face.launch(tile.modelData)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        function reveal(item) {
+                            if (!interactive || !item) return
+                            const top = item.mapToItem(home, 0, 0).y
+                            if (top < contentY) contentY = Math.max(0, top - Metrics.spaceXs)
+                            else if (top + item.height > contentY + height)
+                                contentY = Math.min(contentHeight - height, top + item.height - height + Metrics.spaceXs)
                         }
 
                         ColumnLayout {
-                            Layout.fillWidth: true
-                            visible: face.frequentApps.length > 0
-                            spacing: Metrics.spaceXs
-                            SectionLabel { text: "Frequent" }
-                            GridLayout {
-                                Layout.fillWidth: true
-                                columns: Metrics.startMenuFrequentColumns
-                                columnSpacing: Metrics.spaceSm
-                                rowSpacing: Metrics.spaceXxs
-                                Repeater {
-                                    model: face.frequentApps
-                                    ListRow {
-                                        id: frequentRow
-                                        required property var modelData
-                                        required property int index
-                                        readonly property bool chosen: face.isSelected("frequent", index)
-                                        onChosenChanged: if (chosen) face.selectedItem = frequentRow
-                                        Layout.fillWidth: true
-                                        Layout.preferredWidth: 1
-                                        level: 1
-                                        selected: chosen
-                                        iconSource: LauncherService.iconSource(modelData.icon)
-                                        title: modelData.name || modelData.id
-                                        subtitle: modelData.genericName || ""
-                                        onClicked: face.launch(modelData)
-                                        onRightClicked: face.openAppMenu(modelData, "frequent", index, frequentRow)
-                                    }
-                                }
-                            }
-                        }
+                            id: home
+                            width: homeView.width
+                            // At least as tall as the view, so Places stay at the bottom.
+                            height: Math.max(homeView.height, implicitHeight)
+                            spacing: Metrics.panelGap
 
-                        Item { Layout.fillHeight: true }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            visible: face.placeList.length > 0
-                            spacing: Metrics.spaceXs
-                            SectionLabel { text: "Places" }
-                            GridLayout {
+                            // Each section's label sits close to what it names.
+                            ColumnLayout {
+                                id: pinnedSection
                                 Layout.fillWidth: true
-                                columns: Metrics.startMenuPlaceColumns
-                                columnSpacing: Metrics.spaceSm
-                                rowSpacing: Metrics.spaceSm
-                                Repeater {
-                                    model: face.placeList
-                                    ChipButton {
-                                        id: placeChip
-                                        required property var modelData
-                                        required property int index
-                                        readonly property bool chosen: face.isSelected("places", index)
-                                        onChosenChanged: if (chosen) face.selectedItem = placeChip
-                                        Layout.preferredWidth: face.placeWidth
+                                spacing: Metrics.spaceXs
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    SectionLabel { text: "Pinned"; Layout.fillWidth: true }
+                                    // A link forward, its chevron after the
+                                    // words; a ghost button's padding is
+                                    // invisible, so its words end where the
+                                    // content does.
+                                    ShellButton {
+                                        id: allAppsButton
+                                        Layout.rightMargin: -allAppsButton.sidePadding
+                                        text: "All apps"
+                                        trailingIcon: Icons.forward
+                                        variant: "ghost"
                                         compact: true
-                                        icon: modelData.glyph
-                                        title: modelData.label
-                                        onClicked: face.openPlace(modelData)
-                                        FocusRing { active: placeChip.chosen; controlRadius: placeChip.radius }
+                                        onClicked: face.view = "all"
+                                    }
+                                }
+                                EmptyState {
+                                    Layout.fillWidth: true
+                                    visible: face.tileZone === "suggested"
+                                    row: true
+                                    title: "Nothing pinned yet"
+                                    description: "Right-click an app in All apps to pin it"
+                                }
+                                SectionLabel {
+                                    Layout.topMargin: Metrics.spaceSm
+                                    visible: face.tileZone === "suggested"
+                                    text: "Suggested"
+                                }
+                                GridLayout {
+                                    Layout.fillWidth: true
+                                    visible: face.tiles.length > 0
+                                    columns: Metrics.startMenuColumns
+                                    columnSpacing: Metrics.spaceSm
+                                    rowSpacing: Metrics.spaceSm
+                                    Repeater {
+                                        model: face.tiles
+                                        ShellCard {
+                                            id: tile
+                                            required property var modelData
+                                            required property int index
+                                            readonly property bool isSettings: modelData.kind === "settings"
+                                            readonly property var entry: modelData.entry || null
+                                            readonly property bool chosen: face.isSelected(face.tileZone, index)
+                                            onChosenChanged: if (chosen) face.selectedItem = tile
+                                            Layout.preferredWidth: face.tileWidth
+                                            Layout.preferredHeight: Metrics.startMenuTileHeight
+                                            level: 1
+                                            interactive: true
+                                            hovered: tileMouse.containsMouse
+                                            pressed: tileMouse.pressed && tileMouse.containsMouse
+                                            highlighted: chosen
+
+                                            ColumnLayout {
+                                                anchors.centerIn: parent
+                                                width: parent.width - Metrics.spaceSm * 2
+                                                spacing: Metrics.spaceXs
+                                                // A plain Image, the launcher's way: an app
+                                                // icon is already whatever shape it is.
+                                                Image {
+                                                    visible: !tile.isSettings
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    Layout.preferredWidth: Metrics.iconXl
+                                                    Layout.preferredHeight: Metrics.iconXl
+                                                    source: tile.entry ? LauncherService.iconSource(tile.entry.icon) : ""
+                                                    sourceSize.width: Metrics.iconXl * 2
+                                                    sourceSize.height: Metrics.iconXl * 2
+                                                    fillMode: Image.PreserveAspectFit
+                                                    asynchronous: true
+                                                }
+                                                // The shell's own Settings: its glyph on an
+                                                // accent tile, as on the dock.
+                                                Rectangle {
+                                                    visible: tile.isSettings
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    Layout.preferredWidth: Metrics.iconXl
+                                                    Layout.preferredHeight: Metrics.iconXl
+                                                    radius: Metrics.radiusInner
+                                                    color: Colors.accentFill
+                                                    ShellIcon {
+                                                        anchors.centerIn: parent
+                                                        glyph: Icons.settingsApp
+                                                        size: parent.width * Metrics.dockGlyphFill
+                                                        color: Colors.accentText
+                                                    }
+                                                }
+                                                ShellText {
+                                                    Layout.fillWidth: true
+                                                    horizontalAlignment: Text.AlignHCenter
+                                                    text: tile.isSettings ? "Settings" : tile.entry ? tile.entry.name || tile.entry.id : ""
+                                                    role: "small"
+                                                    elide: Text.ElideRight
+                                                    maximumLineCount: 1
+                                                }
+                                            }
+                                            MouseArea {
+                                                id: tileMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: mouse => {
+                                                    if (mouse.button === Qt.RightButton) face.openAppMenu(tile.entry, face.tileZone, tile.index, tile)
+                                                    else face.openTile(face.tileZone, tile.index)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: Metrics.spaceXs
+                                SectionLabel { id: frequentLabel; text: "Frequent" }
+                                EmptyState {
+                                    Layout.fillWidth: true
+                                    visible: face.frequentApps.length === 0
+                                    row: true
+                                    title: "Nothing used often yet"
+                                    description: "Apps you open often show up here"
+                                }
+                                GridLayout {
+                                    Layout.fillWidth: true
+                                    visible: face.frequentApps.length > 0
+                                    columns: Metrics.startMenuFrequentColumns
+                                    columnSpacing: Metrics.spaceSm
+                                    rowSpacing: Metrics.spaceXxs
+                                    Repeater {
+                                        model: face.frequentApps
+                                        ListRow {
+                                            id: frequentRow
+                                            required property var modelData
+                                            required property int index
+                                            readonly property bool chosen: face.isSelected("frequent", index)
+                                            onChosenChanged: if (chosen) face.selectedItem = frequentRow
+                                            Layout.fillWidth: true
+                                            Layout.preferredWidth: 1
+                                            level: 1
+                                            selected: chosen
+                                            iconSource: LauncherService.iconSource(modelData.icon)
+                                            title: modelData.name || modelData.id
+                                            subtitle: modelData.genericName || ""
+                                            onClicked: face.launch(modelData)
+                                            onRightClicked: face.openAppMenu(modelData, "frequent", index, frequentRow)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // At the bottom, whatever is above: the room
+                            // left is taken inside the section, so it costs
+                            // no second gap when there is none.
+                            ColumnLayout {
+                                id: placesSection
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                visible: root.placeList.length > 0
+                                spacing: Metrics.spaceXs
+                                Item { Layout.fillHeight: true }
+                                SectionLabel { text: "Places" }
+                                GridLayout {
+                                    Layout.fillWidth: true
+                                    columns: Metrics.startMenuPlaceColumns
+                                    columnSpacing: Metrics.spaceSm
+                                    rowSpacing: Metrics.spaceSm
+                                    Repeater {
+                                        model: root.placeList
+                                        ChipButton {
+                                            id: placeChip
+                                            required property var modelData
+                                            required property int index
+                                            readonly property bool chosen: face.isSelected("places", index)
+                                            onChosenChanged: if (chosen) face.selectedItem = placeChip
+                                            Layout.preferredWidth: face.placeWidth
+                                            compact: true
+                                            icon: modelData.glyph
+                                            title: modelData.label
+                                            onClicked: face.openPlace(modelData)
+                                            FocusRing { active: placeChip.chosen; controlRadius: placeChip.radius }
+                                        }
                                     }
                                 }
                             }
@@ -598,7 +789,11 @@ ShellPanel {
 
                         RowLayout {
                             Layout.fillWidth: true
+                            // Its chevron on the content's edge, like the
+                            // forward link's words on the other side.
                             ShellButton {
+                                id: backButton
+                                Layout.leftMargin: -backButton.sidePadding
                                 text: "Back"
                                 icon: Icons.back
                                 variant: "ghost"

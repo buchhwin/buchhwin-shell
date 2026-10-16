@@ -60,7 +60,10 @@ Grid {
     readonly property string style: root.instance && root.instance.options && root.instance.options.style
         ? root.instance.options.style : SettingsService.value("workspaces.style")
     property bool vertical: false
-    columns: vertical ? 1 : 1000
+    // One row rather than a column count nothing reaches, which adds a
+    // gap to the width (PillBar's zones, round 12 D6).
+    rows: vertical ? -1 : 1
+    columns: vertical ? 1 : -1
     spacing: Metrics.spaceXs * scaleFactor
 
     property var lastList: ({ list: [] })

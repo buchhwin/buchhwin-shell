@@ -105,7 +105,10 @@ Rectangle {
                 readonly property real along: modelData === "left" ? start + inset
                     : modelData === "right" ? start + extent - size - inset
                     : (root.span - size) / 2
-                columns: root.vertical ? 1 : 1000
+                // One row rather than a column count nothing reaches, which
+                // adds a gap to the zone's width (the bar's zones, PillBar).
+                rows: root.vertical ? -1 : 1
+                columns: root.vertical ? 1 : -1
                 x: root.vertical ? content.x : along
                 y: root.vertical ? along : content.y
                 spacing: root.flat ? Metrics.spaceSm : Metrics.spaceXs

@@ -1,5 +1,6 @@
 import Quickshell
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Layouts
 import qs.theme
 import qs.services
@@ -72,8 +73,16 @@ ShellPanel {
             searchInput.text = ""
             selectTimer.stop()
         }
-        page = PanelService.args.page || page
+        openPage(PanelService.args.page)
         Qt.callLater(revealPage)
+    }
+    // A page asked for by name (`buchhwin settings open PAGE`, a link from
+    // another panel). Only a page Settings has: the name used to go straight
+    // into the page Loader's path, so `settings open foo` showed Appearance's
+    // title over an empty body, logged a load error, and the bad name stuck
+    // for every later open (round 12, security#6).
+    function openPage(asked) {
+        if (typeof asked === "string" && Nav.pageById(asked)) page = asked
     }
     onPageChanged: {
         contentFlick.contentY = 0
@@ -97,12 +106,19 @@ ShellPanel {
         // Before the panel is laid out the list has no height yet.
         if (!row || sidebarFlick.height <= 0) return
         const maxY = Math.max(0, sidebarFlick.contentHeight - sidebarFlick.height)
-        // The first page of a group brings its heading into view too.
-        const heading = index > 0 && rows[index - 1].kind === "heading" ? sidebarRepeater.itemAt(index - 1) : null
-        const top = heading ? heading.y : row.y
+        const bottom = row.y + row.height
+        // The page comes in with its group's heading above it whenever the
+        // two fit together: only the first page of a group used to bring its
+        // heading, and scrolled to the row alone, the group's card was cut
+        // square under the search field (round 12, D14). A group too long for
+        // that brings the row to the edge.
+        const headingAt = Nav.headingIndex(rows, page)
+        const heading = headingAt >= 0 ? sidebarRepeater.itemAt(headingAt) : null
+        const withHeading = heading !== null && bottom - heading.y <= sidebarFlick.height
+        const top = withHeading ? heading.y : row.y
         if (top < sidebarFlick.contentY) sidebarFlick.contentY = top
-        else if (row.y + row.height > sidebarFlick.contentY + sidebarFlick.height)
-            sidebarFlick.contentY = Math.min(maxY, row.y + row.height - sidebarFlick.height)
+        else if (bottom > sidebarFlick.contentY + sidebarFlick.height)
+            sidebarFlick.contentY = Math.min(maxY, withHeading ? top : bottom - sidebarFlick.height)
     }
     // The same for the page: Tab walked to a control below the fold and left
     // it there, focused and out of sight. Whatever takes the focus inside the
@@ -123,7 +139,7 @@ ShellPanel {
     onFocusedItemChanged: if (focusedItem) revealFocus(focusedItem)
     Connections {
         target: PanelService
-        function onArgsChanged() { if (root.wanted && PanelService.args.page) root.page = PanelService.args.page }
+        function onArgsChanged() { if (root.wanted) root.openPage(PanelService.args.page) }
     }
 
     RowLayout {
@@ -172,6 +188,12 @@ ShellPanel {
 
             // The page list scrolls when it is taller than the panel (small or
             // scaled screens); title and search stay in place.
+            //
+            // Its rows fade out at an edge the list goes on past, instead of
+            // ending in a straight cut: the groups' cards were cut square
+            // right under the search field (round 12, D14). Only while there
+            // is more to scroll to, so a list that fits draws as it always
+            // did, without a layer.
             Flickable {
                 id: sidebarFlick
                 Layout.fillWidth: true
@@ -181,6 +203,15 @@ ShellPanel {
                 boundsBehavior: Flickable.StopAtBounds
                 onHeightChanged: root.revealPage()
                 ScrollFeel { view: sidebarFlick }
+                readonly property bool moreAbove: contentY > 0
+                readonly property bool moreBelow: contentY + height < contentHeight - 1
+                layer.enabled: root.shown && height > 0 && (moreAbove || moreBelow)
+                layer.effect: MultiEffect {
+                    maskEnabled: true
+                    maskSource: sidebarFade
+                    maskThresholdMin: 0.5
+                    maskSpreadAtMin: 1.0
+                }
 
                 ColumnLayout {
                     id: sidebarColumn
@@ -245,6 +276,23 @@ ShellPanel {
                     }
                 }
             }
+
+            // The sidebar's mask: opaque, with a ramp to nothing along an edge
+            // that has more beyond it. Never drawn itself (and so not laid out).
+            Rectangle {
+                id: sidebarFade
+                visible: false
+                width: sidebarFlick.width
+                height: sidebarFlick.height
+                layer.enabled: sidebarFlick.layer.enabled
+                readonly property real ramp: height > 0 ? Math.min(0.5, Metrics.listEdgeFade / height) : 0
+                gradient: Gradient {
+                    GradientStop { position: 0; color: sidebarFlick.moreAbove ? "transparent" : Colors.maskShown }
+                    GradientStop { position: sidebarFade.ramp; color: Colors.maskShown }
+                    GradientStop { position: 1 - sidebarFade.ramp; color: Colors.maskShown }
+                    GradientStop { position: 1; color: sidebarFlick.moreBelow ? "transparent" : Colors.maskShown }
+                }
+            }
         }
 
         Rectangle { Layout.fillHeight: true; implicitWidth: Metrics.borderWidth; color: Colors.border }
@@ -288,7 +336,9 @@ ShellPanel {
                         id: pageLoader
                         Layout.fillWidth: true
                         active: root.pageKept
-                        source: "pages/" + root.page.charAt(0).toUpperCase() + root.page.slice(1) + "Page.qml"
+                        // The page that is shown, never a raw name: `current`
+                        // is always one of Nav.PAGES.
+                        source: "pages/" + root.current.id.charAt(0).toUpperCase() + root.current.id.slice(1) + "Page.qml"
                     }
                 }
             }
@@ -301,9 +351,15 @@ ShellPanel {
             //
             // It sits outside the Flickable, so it never covers the content;
             // the scroll area is simply shorter while a footer is there.
+            //
+            // Hidden while it holds nothing: a Loader keeps the height of the
+            // item it last held, so after Displays (the one page with a
+            // footer) every other page ended 64 px short of the panel, over an
+            // empty band (round 12, D3).
             Loader {
                 Layout.fillWidth: true
                 Layout.topMargin: sourceComponent ? Metrics.panelGap : 0
+                visible: item !== null
                 readonly property var page: pageLoader.item
                 sourceComponent: page && page.footer ? page.footer : null
             }

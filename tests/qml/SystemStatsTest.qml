@@ -8,11 +8,19 @@ ShellRoot {
     Component.onCompleted: {
         // CPU
         const first = S.cpuTimes("cpu  100 0 50 800 50 0 0 0 0 0\ncpu0 1 2 3 4")
-        T.eq(first, { idle: 850, total: 1000 }, "idle includes iowait")
+        T.eq(first, { idle: 850, total: 1000, cpus: 1 }, "idle includes iowait, one per-CPU line")
         const second = S.cpuTimes("cpu  200 0 100 900 50 0 0 0 0 0")
         T.near(S.cpuUsage(first, second), 0.6, "busy share between samples", 1e-9)
         T.eq([S.cpuUsage(null, second), S.cpuUsage(second, second)], [-1, -1], "no usable pair")
         T.eq([S.cpuTimes(""), S.cpuTimes("intr 1 2 3")], [null, null], "unexpected /proc/stat")
+        T.eq(second.cpus, 1, "no per-CPU lines: one CPU")
+        const twelve = ["cpu  200 0 100 900 50 0 0 0 0 0"].concat(Array.from({ length: 12 }, (unused, index) => "cpu" + index + " 1 2 3 4"))
+            .concat(["intr 1 2 3", "cpufreq 9"]).join("\n")
+        T.eq(S.cpuTimes(twelve).cpus, 12, "the per-CPU lines counted, nothing else that starts with cpu")
+        // The popup's process figures are the whole machine's, like its meter.
+        T.near(S.processShare(54.8, 12), 4.5667, "a process's top figure shared out over the CPUs", 1e-3)
+        T.eq([S.processShare(400, 4), S.processShare(12.5, 0), S.processShare("x", 4), S.processShare(-3, 2)], [100, 12.5, 0, 0],
+             "four busy cores of four are all of it; no count, a bad figure")
 
         // Memory and disk
         const mem = S.memory("MemTotal:       16000000 kB\nMemFree:  1000000 kB\nMemAvailable:    4000000 kB\n")

@@ -102,6 +102,19 @@ Singleton {
     readonly property string activeAddress: enabled && Hyprland.activeToplevel ? addressOf(Hyprland.activeToplevel) : ""
 
     // ---- apps -----------------------------------------------------------------------
+    // The desktop entries are read in the background after the start, and
+    // DesktopEntries.byId() and heuristicLookup() notify no binding of it: a
+    // pin resolved before the scan was done stayed missing until the layout
+    // changed. Every binding that resolves an entry reads this, which moves
+    // once per scan (coalesced: a scan is one step).
+    property int entriesRevision: 0
+    function entriesChanged() { entriesRevision += 1 }
+    Connections {
+        target: DesktopEntries.applications
+        enabled: root.enabled
+        function onValuesChanged() { Qt.callLater(root.entriesChanged) }
+    }
+
     function pinOf(entry) {
         return { id: entry.id, name: entry.name, icon: entry.icon, startupClass: entry.startupClass }
     }
@@ -112,17 +125,25 @@ Singleton {
     readonly property bool needsDefaults: enabled && (LayoutService.dockLayout.pins || []).some(pin => Logic.pinCategory(pin).length > 0)
     onNeedsDefaultsChanged: if (needsDefaults && !defaultCategories.length && !DefaultAppsService.loading) DefaultAppsService.refresh()
     // A stored pin as the entry it stands for now; null when it is not there
-    // (an app not installed, a default not read yet).
+    // (an app not installed). A default (@files …) that names nothing the
+    // dock can draw - not read yet, none set, a hidden helper - keeps its
+    // place with its category's glyph (DockLogic.defaultPlaceholder) rather
+    // than leaving the dock without a word.
+    readonly property var defaultGlyphs: ({ files: Icons.folder, terminal: "󰆍", browser: "󰖟" })
     function resolvePin(pin) {
         if (pin === "@settings")
-            return { id: "shell-settings", name: "Settings", icon: "", startupClass: "", pin: pin, special: "settings", glyph: Icons.settings }
-        const id = Logic.pinCategory(pin).length ? Logic.defaultFor(pin, defaultCategories) : pin
+            return { id: "shell-settings", name: "Settings", icon: "", startupClass: "", pin: pin, special: "settings", glyph: Icons.settingsApp }
+        const category = Logic.pinCategory(pin)
+        const id = category.length ? Logic.defaultFor(pin, defaultCategories) : pin
         const entry = id.length ? DesktopEntries.byId(id) : null
-        if (!entry || entry.noDisplay) return null
-        return Object.assign(pinOf(entry), { pin: pin })
+        if (entry && !entry.noDisplay) return Object.assign(pinOf(entry), { pin: pin })
+        return category.length ? Logic.defaultPlaceholder(pin, defaultCategories.length > 0, defaultGlyphs) : null
     }
-    readonly property var pins: enabled
+    readonly property var pins: enabled && entriesRevision >= 0
         ? (LayoutService.dockLayout.pins || []).map(pin => resolvePin(pin)).filter(Boolean) : []
+    // Whether an app could be pinned and still be drawn: a hidden entry
+    // (NoDisplay) would be stored and then never shown.
+    function pinnable(pin) { return String(pin || "").length > 0 && resolvePin(pin) !== null }
     function lookup(cls) {
         const entry = DesktopEntries.heuristicLookup(cls) || DesktopEntries.byId(cls)
             || DesktopEntries.byId(String(cls).toLowerCase())
@@ -139,7 +160,7 @@ Singleton {
         store.items = list
         return list
     }
-    readonly property var items: enabled
+    readonly property var items: enabled && entriesRevision >= 0
         // The fields added before the keeping, so a change of them makes a
         // new object and the delegate hears of it.
         ? kept(Logic.build(pins, windows, lookup, { showRunning: showRunning }).map(item => Object.assign(item, {
@@ -147,6 +168,7 @@ Singleton {
             // while its panel is open.
             running: item.special === "settings" ? PanelService.active === "settings" : item.running,
             active: item.special === "settings" ? PanelService.active === "settings" : item.active,
+            pinnable: item.pinned || pinnable(item.pin),
             launching: launching[item.key] !== undefined })))
         : []
     readonly property int pinnedCount: items.filter(item => item.pinned).length
@@ -258,6 +280,7 @@ Singleton {
     // The apps' places on each screen, for `dock rects` (tests aim with it).
     property var rectsOn: ({})
     function reportRects(name, list) {
+        if (JSON.stringify(rectsOn[name] || null) === JSON.stringify(list || null)) return
         const next = Object.assign({}, rectsOn)
         if (list) next[name] = list
         else delete next[name]
@@ -267,6 +290,8 @@ Singleton {
         reportBody(name, null)
         reportRects(name, null)
         reportShown(name, false)
+        reportPlace(name, null)
+        edgePointer(name, false)
     }
 
     // Where each dock's surface sits on its screen, for the apps' menu and the
@@ -279,18 +304,82 @@ Singleton {
         next[name] = { x: point.x, y: point.y }
         originOn = next
     }
+    // Each dock's body as drawn at rest, on its screen (screen-local): the
+    // panels out of the dock stand a gap off it (DockLogic.panelAnchor).
+    property var placeOn: ({})
+    function reportPlace(name, rect) {
+        if (JSON.stringify(placeOn[name] || null) === JSON.stringify(rect || null)) return
+        const next = Object.assign({}, placeOn)
+        if (rect) next[name] = rect
+        else delete next[name]
+        placeOn = next
+    }
+    function placeOf(name) { return placeOn[name] || null }
+    // The room each dock has for its apps along the body (DockLogic.appsRoom),
+    // -1 for none: the apps widget fits its icons into it.
+    property var appsRoomOn: ({})
+    function reportAppsRoom(name, room) {
+        if (appsRoomOn[name] === room) return
+        const next = Object.assign({}, appsRoomOn)
+        next[name] = room
+        appsRoomOn = next
+    }
+    // How long the apps are at rest, unmagnified: the dock reports its body
+    // at rest for intellihide and the panels, and only its input mask follows
+    // the magnified icons.
+    property var appsRestOn: ({})
+    function reportAppsRest(name, length) {
+        if (appsRestOn[name] === length) return
+        const next = Object.assign({}, appsRestOn)
+        next[name] = length
+        appsRestOn = next
+    }
+    // The pointer at the outer edge of a bar that shares the dock's edge: the
+    // dock stands beyond that bar, so its own strip is the bar's inner line,
+    // and a pointer pushed to the screen edge lands on the bar. The bar says
+    // so here (true while it rests there), and the hidden dock comes as from
+    // its own strip.
+    property string edgePointerScreen: ""
+    function edgePointer(name, on) {
+        if (on) edgePointerScreen = name
+        else if (edgePointerScreen === name) edgePointerScreen = ""
+    }
 
     // ---- the key and the keyboard ----------------------------------------------------
     // The screen the key showed the dock on, "" for none, and the screen whose
     // dock has the keyboard.
     property string hotkeyScreen: ""
     property string keyboardScreen: ""
-    // The app the keys are on (an index into `items`).
+    // Where the keys are: an index into `items`, or the start button before
+    // the apps (-1) or after them (items.length) - DockLogic.keyRange.
     property int keyIndex: 0
     // The menu key on the dock: the apps widget on that screen opens the menu
     // of the app the keys are on.
     signal menuWanted()
-    function moveKey(delta) { keyIndex = Math.max(0, Math.min(items.length - 1, keyIndex + delta)) }
+    // The start button of the dock with the keyboard, before or after its
+    // apps along the dock ("" for none), from where both reported they are.
+    function startSide(name) {
+        const start = LayoutService.dockItemRect(name, "start")
+        const apps = rectsOn[name] || []
+        if (!start) return ""
+        if (!apps.length) return "before"
+        const vertical = Logic.vertical(position)
+        return (vertical ? start.y : start.x) < (vertical ? apps[0].y : apps[0].x) ? "before" : "after"
+    }
+    readonly property string keyStart: keyboardScreen.length ? startSide(keyboardScreen) : ""
+    readonly property bool keyOnStart: keyboardScreen.length > 0 && Logic.keyOnStart(keyIndex, items.length, keyStart)
+    function moveKey(delta) {
+        const range = Logic.keyRange(items.length, keyStart)
+        keyIndex = Math.max(range.low, Math.min(range.high, keyIndex + delta))
+    }
+    function keyHome() { keyIndex = Logic.keyRange(items.length, keyStart).low }
+    function keyEnd() { keyIndex = Logic.keyRange(items.length, keyStart).high }
+    // An app that went (its last window closed) must not leave the keys
+    // nowhere.
+    onItemsChanged: if (keyboardScreen.length) {
+        const range = Logic.keyRange(items.length, keyStart)
+        if (keyIndex < range.low || keyIndex > range.high) keyIndex = Math.max(range.low, Math.min(range.high, keyIndex))
+    }
     onKeyboardScreenChanged: if (keyboardScreen.length) {
         const active = items.findIndex(item => item.active)
         keyIndex = Math.max(0, active)
@@ -298,29 +387,53 @@ Singleton {
     function focusedName() {
         return Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
     }
-    // Super+Shift+D: an off dock is switched on, a dock the key showed goes
-    // again, any other is shown and takes the keyboard. The key never turns
-    // the dock off; that is Settings > Dock. Says what it did.
+    // The start button's panel (the start menu, or the launcher), opened out
+    // of the button the way its click opens it.
+    function openStart(name) {
+        const rect = LayoutService.dockItemRect(name, "start")
+        if (!rect) return false
+        endKeyboard()
+        return PanelService.open(WidgetRegistry.actionOf("start"), Object.assign({ onScreen: name,
+            originX: rect.x, originY: rect.y, originWidth: rect.width, originHeight: rect.height },
+            Logic.panelAnchor(position, rect, Metrics.dockPanelGap, placeOf(name))))
+    }
+    // Super+Shift+D: an off dock is switched on and shown for a moment, a dock
+    // the key showed goes again, any other is shown and takes the keyboard -
+    // never under a fullscreen window, where it is not drawn (its keys would
+    // have waited for the fullscreen to end and then taken the keyboard). The
+    // key never turns the dock off; that is Settings > Dock. Says what it did.
     function toggleFromKey() {
-        if (PanelService.active.length) PanelService.close()
         const target = Logic.revealTarget(focusedName(), screenNames)
-        if (!enabled) {
+        const screen = screens.find(item => item.name === target) || null
+        const action = Logic.keyAction({ enabled: enabled, target: target, hotkey: hotkeyScreen, peeking: peekTimer.running,
+                                         fullscreen: screen !== null && HyprlandService.fullscreenOn(screen) })
+        if (action === "fullscreen" || action === "none") return action
+        if (PanelService.active.length) PanelService.close()
+        if (action === "on") {
             SettingsService.set("dock.enabled", true)
+            // Shown while the OSD says so; then it does what its setting says.
             hotkeyScreen = target
-            return "on"
-        }
-        if (hotkeyScreen.length && hotkeyScreen === target) {
+            peekTimer.restart()
+        } else if (action === "hidden") {
             conceal()
-            return "hidden"
+        } else {
+            peekTimer.stop()
+            hotkeyScreen = target
+            keyboardScreen = target
         }
-        hotkeyScreen = target
-        keyboardScreen = target
-        return "shown"
+        return action
+    }
+    Timer {
+        id: peekTimer
+        interval: Metrics.osdTimeout
+        onTriggered: if (!root.keyboardScreen.length) root.hotkeyScreen = ""
     }
     function reveal(name) {
+        peekTimer.stop()
         hotkeyScreen = name !== undefined ? name : Logic.revealTarget(focusedName(), screenNames)
     }
     function conceal() {
+        peekTimer.stop()
         hotkeyScreen = ""
         keyboardScreen = ""
     }
@@ -329,10 +442,23 @@ Singleton {
         if (name === undefined || hotkeyScreen === name) hotkeyScreen = ""
     }
     // Any panel but the dock's own menu takes the keyboard from the dock.
+    // The menu holds the keys for the dock while it is open (`keysWithMenu`:
+    // the dock's grab steps aside, Dock.qml), and an Escape in it gives them
+    // back (DockLogic.keysAfterPanel).
+    property bool keysWithMenu: false
+    property bool menuEscaped: false
+    function noteMenuEscape() { menuEscaped = true }
     Connections {
         target: PanelService
-        enabled: root.keyboardScreen.length > 0
-        function onActiveChanged() { if (PanelService.active.length && PanelService.active !== "dockMenu") root.endKeyboard() }
+        enabled: root.keyboardScreen.length > 0 || root.keysWithMenu
+        function onActiveChanged() {
+            const next = Logic.keysAfterPanel(PanelService.active, root.keysWithMenu, root.menuEscaped)
+            if (PanelService.active === "dockMenu") root.menuEscaped = false
+            // The keyboard first, then the menu's hold: the dock's grab must
+            // not come back for an instant on its way out.
+            if (!next.keep) root.endKeyboard()
+            root.keysWithMenu = next.withMenu
+        }
     }
 
     // ---- drag and menu --------------------------------------------------------------
@@ -387,6 +513,11 @@ Singleton {
             PanelService.open("settings")
             return true
         }
+        // A default that names no app: where one is chosen.
+        if (item.special === "choose") {
+            PanelService.open("settings", { page: "defaultApps" })
+            return true
+        }
         // A default goes the way its hotkey does (launch-default.sh: the
         // browser's wallet, the terminal's opacity), the rest as the
         // launcher starts them.
@@ -437,7 +568,7 @@ Singleton {
         const entry = entryOf(item)
         if (!entry) return false
         endKeyboard()
-        const id = Logic.newWindowAction(entry.actions)
+        const id = Logic.newWindowAction(entry.actions, entry.command)
         const action = id.length ? Array.prototype.slice.call(entry.actions).find(candidate => candidate.id === id) : null
         if (action) LauncherService.launchAction(entry, action)
         else LauncherService.launchApp(entry, true)
@@ -464,14 +595,25 @@ Singleton {
         const item = itemFor(key)
         if (!item || !item.pin) return false
         if (item.pinned) return LayoutService.dockUnpin(item.pin)
-        if (LayoutService.dockPinsFull) return false
+        if (LayoutService.dockPinsFull || !pinnable(item.pin)) return false
         return LayoutService.dockPin(item.pin)
     }
-    // A drop among the pins (DockLogic.dropPlan). "full" when they are.
-    function drop(key, index) {
-        const plan = Logic.dropPlan(itemFor(key), index, LayoutService.dockLayout.pins || [], LayoutService.dockPinLimit)
+    // A drop among the pins (DockLogic.dropPlan). "full" when they are. The
+    // slot is counted over the pins the dock shows; the stored list may also
+    // hold some it cannot draw (DockLogic.storedSlot).
+    function drop(key, slot) {
+        const item = itemFor(key)
+        if (!item || (!item.pinned && !pinnable(item.pin))) return "none"
+        const stored = LayoutService.dockLayout.pins || []
+        const index = Logic.storedSlot(slot, pins.map(pin => pin.pin), stored, item.pin)
+        const plan = Logic.dropPlan(item, index, stored, LayoutService.dockPinLimit)
         if (plan.action === "move" || plan.action === "pin") LayoutService.dockPin(plan.id, plan.index)
         return plan.action
+    }
+    // Pulled off the dock (DockLogic.dragOutcome): unpinned, one undo step.
+    function unpinByDrag(key) {
+        const item = itemFor(key)
+        return item && item.pinned ? LayoutService.dockUnpin(item.pin) : false
     }
 
     // An app's menu, a panel of its own (shell/dock/DockMenu.qml), placed
@@ -481,7 +623,7 @@ Singleton {
         if (!item || !rect) return false
         const args = Object.assign({ key: key, onScreen: name, originX: rect.x, originY: rect.y,
                                      originWidth: rect.width, originHeight: rect.height },
-                                   Logic.panelAnchor(position, rect, Metrics.spaceSm))
+                                   Logic.panelAnchor(position, rect, Metrics.dockPanelGap, placeOf(name)))
         PanelService.open("dockMenu", args)
         return true
     }

@@ -561,7 +561,7 @@
       "perMonitor": true
     },
     "wallpaper": {
-      "path": "~/Pictures/Desktop/wallpaper_hyprland.webp",
+      "path": "",
       "folder": "",
       "slideshow": false,
       "intervalMinutes": 15,

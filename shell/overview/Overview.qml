@@ -9,7 +9,6 @@ import qs.theme
 import qs.services
 import qs.shell.components
 import "../../services/overview/OverviewLogic.js" as Logic
-import "../../services/appearance/ContrastLogic.js" as Contrast
 import "../../services/model/KeyedLogic.js" as Keyed
 import "SelectionLogic.js" as Selection
 
@@ -46,13 +45,13 @@ ShellPanel {
     readonly property var selectedWindow: flat.length ? flat[Selection.clamp(selected, flat.length)] : null
     // The accent as text and outline on the scrim, which is dark in both
     // themes. accentForeground is made for cards: the light theme darkens it
-    // for light ones, and on the scrim it sank into the dark. Readable against
-    // the lock's base instead, which is as dark as the scrim reads; on dark
-    // panels it stays accentForeground, so nothing changes there. Asked of
-    // the panel side, not the theme: accentForeground follows the panel
-    // colour, and a light panel in the dark theme darkens it all the same.
-    readonly property color scrimAccent: Colors.surfaceDark ? Colors.accentForeground
-        : Contrast.readable(String(Colors.accent), String(Colors.lockBase))
+    // for light ones, and on the scrim it sank into the dark. It was then
+    // made readable against the lock's base, as dark as the scrim reads over
+    // a dark wallpaper - but the light theme's scrim is thinner, and over a
+    // bright wallpaper the labels came to 2.5-3.2:1 (round 12, D10). Measured
+    // on the scrim at its lightest now (Colors.overviewAccent), in both
+    // themes; the shipped teal on the dark scrim is 6.8:1 and stays.
+    readonly property color scrimAccent: Colors.overviewAccent
     // **One row per monitor.** A monitor's "New workspace" card belongs beside
     // its workspaces, not under them, so the widest row decides the column
     // count and every row lines up with it. The count used to be the *session's*

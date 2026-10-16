@@ -66,9 +66,13 @@ PopupPanel {
                     focusOnTab: true
                     level: 1
                     required property var modelData
+                    // The port as the title, the card under it
+                    // (AudioService.labelParts).
+                    readonly property var parts: AudioService.labelParts(modelData, AudioService.sinks)
                     width: parent.width
                     icon: AudioService.deviceIcon(modelData, false)
-                    title: AudioService.label(modelData)
+                    title: parts.title
+                    subtitle: parts.subtitle
                     selected: modelData === AudioService.sink
                     onClicked: AudioService.setDefaultSink(modelData)
                     ShellIcon { visible: modelData === AudioService.sink; glyph: Icons.check; size: Metrics.iconSm; color: Colors.accentForeground }
@@ -113,11 +117,16 @@ PopupPanel {
                 focusOnTab: true
                 Layout.fillWidth: true
                 level: 1
+                // The input's port ("Digital Microphone") where the card
+                // goes without saying, not the whole description: the
+                // card's name came first and the line ended "Ryzen HD Audio
+                // Controller Di…" (AudioService.shortLabel).
+                readonly property string device: AudioService.shortLabel(AudioService.source, AudioService.sources)
                 icon: AudioService.micMuted ? "󰍭" : "󰍬"
                 title: "Microphone"
                 subtitle: AudioService.source === null ? "No input device"
-                    : AudioService.micMuted ? "Muted" : AudioService.micInUse ? "In use · " + AudioService.label(AudioService.source)
-                    : AudioService.label(AudioService.source)
+                    : AudioService.micMuted ? "Muted" : AudioService.micInUse ? "In use · " + device
+                    : device
                 onClicked: AudioService.toggleMute(AudioService.source)
                 ShellToggle {
                     focusOnTab: true

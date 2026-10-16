@@ -5,6 +5,7 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../../services/system/SystemLogic.js" as SystemLogic
 
 ColumnLayout {
     id: root
@@ -23,7 +24,10 @@ ColumnLayout {
             "echo \"quickshell=$(quickshell --version 2>/dev/null | head -n1 | sed -E 's/^[Qq]uickshell //; s/ \\(.*//; s/,.*//')\"",
             "echo \"cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ //')\"",
             "echo \"gpu=$(lspci 2>/dev/null | grep -Ei 'vga|3d|display' | head -n1 | cut -d: -f3- | sed 's/^ //')\"",
-            "echo \"ram=$(awk '/MemTotal/ {printf \"%.1f GiB\", $2/1048576}' /proc/meminfo)\"",
+            // KiB, written out by SystemLogic.formatBytes below: in the
+            // decimal units the System popup uses, which said "14.3 GB"
+            // while this page said "13.3 GiB" for the same memory.
+            "echo \"ramKib=$(awk '/MemTotal/ {print $2}' /proc/meminfo)\"",
             "echo \"session=${XDG_SESSION_DESKTOP:-unknown}\""
         ].join("; ")]
         stdout: StdioCollector {
@@ -33,6 +37,7 @@ ColumnLayout {
                     const index = line.indexOf("=")
                     if (index > 0) result[line.slice(0, index)] = line.slice(index + 1)
                 }
+                if (Number(result.ramKib) > 0) result.ram = SystemLogic.formatBytes(Number(result.ramKib) * 1024)
                 root.info = result
             }
         }

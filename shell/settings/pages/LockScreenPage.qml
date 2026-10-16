@@ -166,7 +166,7 @@ ColumnLayout {
             }
             ShellText {
                 Layout.fillWidth: true
-                text: "Automatic turns it off while the lid is closed, for example on a dock. This is the lock screen's setting."
+                text: "Automatic turns it off while the lid is closed, for example on a docking station. This is the lock screen's setting."
                 role: "caption"
                 wrapMode: Text.Wrap
             }
@@ -394,7 +394,7 @@ ColumnLayout {
                         anchors.bottom: parent.bottom
                         radius: height / 2
                         width: parent.width * (root.enrollment ? FingerprintService.progress() : 0)
-                        color: root.enrollment && root.enrollment.success ? Colors.positive : Colors.accent
+                        color: root.enrollment && root.enrollment.success ? Colors.positiveFill : Colors.accentFill
                         Behavior on width { NumberAnimation { duration: Animations.move(Animations.fingerprintFill); easing.type: Animations.easing } }
                     }
                 }

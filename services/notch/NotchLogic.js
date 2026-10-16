@@ -165,6 +165,41 @@ function stripItems(items, recording, timer) {
     return list
 }
 
+// ---- beside a taskbar ----------------------------------------------------------
+// notch.dockDuplicates: "keep" (the default) or "hide". A dock along a whole
+// edge and always there - the Taskbar preset - with the status glyphs or the
+// clock on it shows them a second time on the screen the strip is on (Island's
+// strip: the time, Wi-Fi and the battery). With "hide" the strip on such a
+// screen leaves out the readouts the dock holds too; a dock that hides, fits
+// its apps, is off or is on another screen leaves the strip as it is, and so
+// does the layout editor, which arranges every item there is.
+var DOCK_DUPLICATES = ["keep", "hide"]
+// What counts as a readout the two would show twice. The workspaces, the
+// recording and anything else stay on the strip.
+var DOCK_READOUTS = ["clock", "date", "network", "bluetooth", "volume", "battery", "notificationIndicator"]
+
+function dockDuplicates(value) {
+    return DOCK_DUPLICATES.indexOf(value) >= 0 ? value : "keep"
+}
+
+// The types the strip on `screenName` leaves out. `dock`: { enabled, span,
+// visibility, screens: [names it is on] }; `held`: the types its layout
+// holds. [] unless the setting is "hide" and the dock is a full, always
+// shown one on that screen.
+function dockDuplicateTypes(setting, dock, held, screenName, arranging) {
+    if (dockDuplicates(setting) !== "hide" || arranging === true || !dock || dock.enabled !== true) return []
+    if (dock.span !== "full" || dock.visibility !== "always") return []
+    if (!screenName || !Array.isArray(dock.screens) || dock.screens.indexOf(screenName) < 0) return []
+    return (Array.isArray(held) ? held : []).filter(type => DOCK_READOUTS.indexOf(type) >= 0)
+}
+
+// The strip's items without those types; the very list when nothing goes.
+function withoutTypes(items, types) {
+    const list = Array.isArray(items) ? items : []
+    if (!Array.isArray(types) || !types.length) return list
+    return list.filter(item => !(item && types.indexOf(item.type) >= 0))
+}
+
 // The strip around its clock. The notch's shape is centred on the screen, so
 // the clock sits in the middle of the screen only if the strip is as wide on
 // its lighter side as on its heavier one: five workspace dots on the left and

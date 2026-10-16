@@ -222,16 +222,12 @@ Singleton {
     }
 
     function applySavedIfNeeded() {
-        if (lockProcess || !savedLoaded || !monitors.length || (!saved && !lidClosed)) return
-        const base = saved ? Logic.applySaved(monitors, saved, internalName) : monitors
-        let target = Logic.lidAdjusted(base, internalName, lidClosed)
-        if (!lidKnown && !lidClosed) {
-            const held = Logic.lidPending(target, monitors, internalName)
-            if (held !== target) {
-                lidHeld = true
-                target = held
-            }
-        }
+        if (lockProcess || !savedLoaded) return
+        const plan = Logic.savedTarget(monitors, saved, internalName, lidClosed, lidKnown)
+        if (!plan) return
+        const base = plan.base
+        const target = plan.target
+        if (plan.held) lidHeld = true
         if (lidClosed && internalName.length) {
             const panel = target.find(item => item.name === internalName)
             const live = monitors.find(item => item.name === internalName)
@@ -331,9 +327,13 @@ Singleton {
             root.savedLoaded = true
             root.refresh()
         }
+        // No file is a file read: the startup apply still runs on the first
+        // monitors, because a lid shut at login needs it even without one
+        // (Logic.savedTarget). It was marked done here, and when the lid's
+        // answer came before the first monitors - it usually does - the
+        // panel stayed on behind the shut lid with a workspace on it.
         onLoadFailed: {
             root.savedLoaded = true
-            root.startupApplied = true
             root.refresh()
         }
     }

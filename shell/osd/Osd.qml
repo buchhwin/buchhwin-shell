@@ -6,6 +6,7 @@ import qs.theme
 import qs.services
 import qs.shell.components
 import "../../services/origin/OriginLogic.js" as Origin
+import "../components/PanelPlaceLogic.js" as Place
 
 // On-screen display for volume, microphone mute, screen brightness and the
 // keyboard backlight, and for a short message such as the new desktop mode. It
@@ -128,8 +129,19 @@ PanelWindow {
                           targetScreen ? targetScreen.width : 0,
                           targetScreen ? targetScreen.height : 0,
                           Math.max(Metrics.osdBottomMargin, dockLift + Metrics.spaceMd), Metrics.screenMargin)
+    // And beside a side bar, clear of a dock beyond it (the bottom has its
+    // lift above): the box came out over the dock (round 12, ui-rest#4).
+    readonly property var sideDock: SettingsService.value("dock.enabled") === true && DockService.position !== "bottom"
+        ? Object.assign({ position: DockService.position, shown: DockService.shownOn[screenName] === true,
+             reach: DockService.reachOn[screenName] || 0 },
+           Place.dockSpan(DockService.bodies[screenName], DockService.position,
+                          targetScreen ? targetScreen.x : 0, targetScreen ? targetScreen.y : 0))
+        : null
     readonly property var place: fromNotch !== null
-        ? (barAtBottom && dockLift > 0 ? { x: fromNotch.x, y: Math.max(0, fromNotch.y - dockLift) } : fromNotch)
+        ? (barAtBottom && dockLift > 0 ? { x: fromNotch.x, y: Math.max(0, fromNotch.y - dockLift) }
+            : Place.clearOfDock(fromNotch, boxWidth, boxHeight, targetScreen ? targetScreen.width : 0,
+                                targetScreen ? targetScreen.height : 0, sideDock, barEdge,
+                                LayoutService.barBottom(screenName), Metrics.spaceSm))
         : bottomPlace
 
     screen: targetScreen

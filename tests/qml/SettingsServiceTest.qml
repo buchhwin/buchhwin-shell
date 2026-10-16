@@ -10,6 +10,7 @@ import "Harness.js" as T
 // refuses, that two sets in one turn of the event loop are one pending text
 // and one write, that the write lands in settings.json, and that reading our
 // own write back leaves `data` alone while a change from outside still lands.
+// Last, that the file is the user's alone (0600) after the service's writes.
 ShellRoot {
     id: root
     property int tries: 0
@@ -63,6 +64,9 @@ ShellRoot {
         T.eq(SettingsService.value("appearance.theme"), "dark", "and the setting still keeps its default")
         T.eq(SettingsService.value("dock.startOpens"), "startMenu", "the start button opens the start menu")
         T.eq(SettingsService.set("dock.startOpens", "dashboard"), false, "and nothing but it or the launcher")
+        T.eq(SettingsService.value("terminal.alacrittyDaemon"), true, "new Alacritty windows come from one Alacritty")
+        T.eq(SettingsService.value("notch.dockDuplicates"), "keep", "the notch keeps its clock beside a taskbar")
+        T.eq(SettingsService.set("notch.dockDuplicates", "sometimes"), false, "and knows keep and hide only")
         const before = SettingsService.pendingText
         T.eq(SettingsService.set("nothing.here", 1), false, "an unknown key is refused")
         T.eq(SettingsService.pendingText, before, "nothing refused is written")
@@ -150,6 +154,18 @@ ShellRoot {
         T.eq(SettingsService.value("workspaces.count"), 3, "a change from outside is read")
         T.ok(root.dataChanges > root.changesBefore, "and hands out a new data")
         T.eq(SettingsService.value("appearance.theme"), "light", "with the rest of the file")
-        T.finish("SettingsService")
+        fileMode.running = true
+    }
+
+    // The seed was written 0644 like any new file; the service made it
+    // private, and its own atomic writes since kept that.
+    Process {
+        id: fileMode
+        command: ["stat", "-c", "%a", "--", Paths.configDir + "/settings.json"]
+        stdout: StdioCollector { id: modeText }
+        onExited: {
+            T.eq(modeText.text.trim(), "600", "settings.json is the user's alone")
+            T.finish("SettingsService")
+        }
     }
 }

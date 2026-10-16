@@ -67,7 +67,11 @@ ColumnLayout {
         ListRow {
             interactive: false
             Layout.fillWidth: true
-            icon: UpdatesService.checking ? Icons.refresh : UpdatesService.total > 0 ? "󰚰" : Icons.check
+            // The check mark only for a check that found nothing: "Not
+            // checked yet" beside it read as "up to date". Before any
+            // answer the glyph is the one of the button beside it.
+            icon: UpdatesService.checking ? Icons.refresh : UpdatesService.total > 0 ? "󰚰"
+                : UpdatesService.result.packagesKnown || UpdatesService.result.flatpaksKnown ? Icons.check : Icons.refresh
             active: UpdatesService.total > 0
             title: UpdatesService.summary
             subtitle: UpdatesService.checking ? "Checking …" : "Last checked: " + UpdatesService.checkedText

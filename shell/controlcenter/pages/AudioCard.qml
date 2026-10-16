@@ -52,8 +52,10 @@ ShellCard {
             ListRow {
                 Layout.fillWidth: true
                 visible: !root.tight
+                readonly property var parts: AudioService.labelParts(AudioService.sink, AudioService.sinks)
                 icon: AudioService.deviceIcon(AudioService.sink, false)
-                title: AudioService.label(AudioService.sink)
+                title: parts.title
+                subtitle: parts.subtitle
                 chevron: true
                 onClicked: root.openDetails()
             }

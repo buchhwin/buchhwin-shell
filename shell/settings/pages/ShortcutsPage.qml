@@ -16,6 +16,9 @@ ColumnLayout {
     property var captured: null          // { mods, key }
     property string kind: "app"
     property string appId: ""
+    // A shell action (ShortcutService.shellActions: the start menu), for
+    // the third kind: the same IPC call a built-in shell bind makes.
+    property string shellAction: ""
     property string error: ""
     property string query: ""
     // Which built-in shortcut is being moved, by the combination it sits on by
@@ -30,7 +33,8 @@ ColumnLayout {
         .filter(app => app && !app.noDisplay)
         .map(app => ({ value: app.id, label: app.name || app.id }))
         .sort((a, b) => a.label.localeCompare(b.label))
-    readonly property bool ready: captured !== null && (kind === "app" ? appId.length > 0 : commandField.text.trim().length > 0)
+    readonly property bool ready: captured !== null && (kind === "app" ? appId.length > 0
+        : kind === "shell" ? shellAction.length > 0 : commandField.text.trim().length > 0)
 
     PageActivity { onOpened: ShortcutService.refresh() }
 
@@ -74,18 +78,20 @@ ColumnLayout {
     function add() {
         if (!ready) return
         const entry = kind === "app" ? { mods: captured.mods, key: captured.key, app: appId }
-                                     : { mods: captured.mods, key: captured.key, command: commandField.text.trim() }
+            : kind === "shell" ? { mods: captured.mods, key: captured.key, shell: shellAction }
+            : { mods: captured.mods, key: captured.key, command: commandField.text.trim() }
         error = ShortcutService.add(entry)
         if (error.length) return
         captured = null
         appId = ""
+        shellAction = ""
         commandField.text = ""
     }
 
     SettingsSection {
         Layout.fillWidth: true
         title: "Custom shortcuts"
-        description: "Start an app or run a command with your own key combination. They are saved in shortcuts.json and applied whenever the shell starts; the Hyprland config files stay unchanged."
+        description: "Start an app, run a command or open a part of the shell with your own key combination. They are saved in shortcuts.json and applied whenever the shell starts; the Hyprland config files stay unchanged."
 
         Repeater {
             model: ShortcutService.custom
@@ -97,10 +103,10 @@ ColumnLayout {
                 readonly property bool conflict: ShortcutService.conflicts.indexOf(combo) >= 0
                 Layout.fillWidth: true
                 iconSource: ShortcutService.iconFor(modelData)
-                icon: modelData.app ? Icons.apps : "󰆍"
+                icon: modelData.app ? Icons.apps : modelData.shell ? Icons.window : "󰆍"
                 title: ShortcutService.labelFor(modelData)
                 subtitle: conflict ? "Not active: the Hyprland config uses this combination too"
-                    : modelData.app ? "App" : "Command"
+                    : modelData.app ? "App" : modelData.shell ? "Shell action" : "Command"
                 RowLayout {
                     spacing: Metrics.spaceSm
                     KeyChips { keys: ShortcutService.keyParts(customRow.modelData) }
@@ -195,7 +201,8 @@ ColumnLayout {
                 focusOnTab: true
                 Layout.fillWidth: true
                 current: root.kind
-                options: [{ value: "app", label: "Open an app", icon: Icons.apps }, { value: "command", label: "Run a command", icon: "󰆍" }]
+                options: [{ value: "app", label: "Open an app", icon: Icons.apps }, { value: "command", label: "Run a command", icon: "󰆍" },
+                          { value: "shell", label: "Shell action", icon: Icons.window }]
                 onSelected: value => { root.kind = value; root.error = "" }
             }
         }
@@ -211,6 +218,19 @@ ColumnLayout {
                 placeholder: "Choose an app …"
                 filterable: true
                 onSelected: value => root.appId = value
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            visible: root.kind === "shell"
+            label: "Opens"
+            ShellSelect {
+                focusOnTab: true
+                Layout.fillWidth: true
+                options: ShortcutService.shellActions
+                current: root.shellAction
+                placeholder: "Choose …"
+                onSelected: value => { root.shellAction = value; if (!root.error.startsWith("Already")) root.error = "" }
             }
         }
         SettingRow {

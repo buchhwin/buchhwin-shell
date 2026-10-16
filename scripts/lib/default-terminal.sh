@@ -2,7 +2,8 @@
 # The session's terminal without starting Python: `default-apps.py get
 # terminal` answers the same question in about 85 ms, on the path of every
 # Super+Enter (16.10.: 340 ms from the key to the window, 88 of them that
-# answer). Source this file; scripts/launch-default.sh does.
+# answer). Source this file; scripts/launch-default.sh and
+# scripts/launch-terminal.sh do.
 #
 # The rule is default-apps.py's (terminal_default, InstalledApps):
 #   - the first line of $XDG_CONFIG_HOME/buchhwin-shell-xdg-terminals.list
@@ -77,4 +78,52 @@ default_terminal() {
     1) printf '\n' ;;
     *) return 2 ;;
   esac
+}
+
+# The session's own browser or file manager the same way (Super+B, Super+E,
+# the launcher's web search): `default-apps.py get browser|files` asks
+# mimeapps.list files in order, and in this session the first of them is
+# $XDG_CONFIG_HOME/buchhwin-shell-mimeapps.list, where Settings > Default apps
+# and the bootstrap write. Its [Default Applications] entry for the MIME type
+# - the last one, as Python reads it, and its first installed id - is the
+# answer. Everything else is default-apps.py's (status 2): another desktop
+# first in XDG_CURRENT_DESKTOP, no entry or no installed id in this file (the
+# lists after it, the system's cache), an id bash cannot be sure of, and a
+# line with anything but printable ASCII, which Python may read otherwise.
+default_session_app() {
+  local mime=$1 list="${XDG_CONFIG_HOME:-$HOME/.config}/buchhwin-shell-mimeapps.list"
+  local LC_ALL=C desktop="" part line key value ids="" in_group=false found=false id state
+  local -a parts items
+  IFS=: read -r -a parts <<<"${XDG_CURRENT_DESKTOP:-}"
+  for part in "${parts[@]}"; do
+    if [[ -n $part ]]; then desktop=${part,,}; break; fi
+  done
+  [[ -z $desktop || $desktop == buchhwin-shell ]] || return 2
+  [[ -f $list && -r $list ]] || return 2
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ $line != *[![:print:]$'\t']* ]] || return 2
+    line=${line#"${line%%[![:space:]]*}"}
+    line=${line%"${line##*[![:space:]]}"}
+    if [[ $line == '['*']' ]]; then
+      if [[ $line == '[Default Applications]' ]]; then in_group=true; else in_group=false; fi
+    elif $in_group && [[ $line == *=* && $line != '#'* ]]; then
+      key=${line%%=*}
+      key=${key%"${key##*[![:space:]]}"}
+      [[ $key == "$mime" ]] || continue
+      value=${line#*=}
+      ids=${value#"${value%%[![:space:]]*}"}
+      found=true
+    fi
+  done <"$list"
+  $found || return 2
+  IFS=';' read -r -a items <<<"$ids"
+  for id in "${items[@]}"; do
+    [[ -n $id ]] || continue
+    state=0; default_terminal_entry "$id" || state=$?
+    case $state in
+      0) printf '%s\n' "$id"; return 0 ;;
+      2) return 2 ;;
+    esac
+  done
+  return 2
 }

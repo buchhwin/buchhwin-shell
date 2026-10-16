@@ -17,13 +17,19 @@ expected_targets=(desktop editor welcome emoji launcher controlCenter notificati
 # Warnings from the environment or Quickshell itself rather than from this shell:
 # malformed desktop entries (swappy's Exec line), Plasma owning the notification
 # name in nested tests, PipeWire nodes without a channel map, the KDE calendar
-# plugin reading an empty settings key, a running playerctld without players
+# plugin reading an empty settings key ("QSettings::value: Empty key passed":
+# KF6XmlGui's language override, KDEPrivate::initializeLanguages, which runs
+# once org.kde.akonadi is imported - CalendarService.qml - and loads
+# libKPim6AkonadiWidgets, which loads libKF6XmlGui), a running playerctld without players
 # (its MPRIS proxy answers with errors), Quickshell's own Wrapper* types
 # overriding implicitWidth (qt.qml.propertyCache.append), installed icons
 # Qt's SVG reader cannot parse (qt.svg; btop's, once the launcher opens), and
 # Qt 6.12's text-input plugin (Arch) noting that a field gave up a focus no
-# surface had any more - only that exact message, not the category.
-known_warnings='quickshell\.desktopentry|Could not register notification server|Registration will be attempted again|channelVolumes and channelMap are not the same size|QSettings::value: Empty key passed|playerctld|qt\.qml\.propertyCache\.append|qt\.svg: |QWaylandTextInputv3::disableSurface.*but 0x0 is focused'
+# surface had any more, or that one surface's field asked for the text input
+# while another surface still held it - the start menu's search field handing
+# over to the dock's menu and the welcome tour does that (round 12). Only
+# those two messages, not the category.
+known_warnings='quickshell\.desktopentry|Could not register notification server|Registration will be attempted again|channelVolumes and channelMap are not the same size|QSettings::value: Empty key passed|playerctld|qt\.qml\.propertyCache\.append|qt\.svg: |QWaylandTextInputv3::disableSurface.*but 0x0 is focused|QWaylandTextInputv3::(enable|disable)Surface.*Trying to (enable|disable) 0x[0-9a-f]+ but 0x[0-9a-f]+ (has focus|is focused)'
 
 if [[ ${1:-} == --nested ]]; then
   # The trap comes first: a start that fails half-way (set -e ends this script
@@ -99,21 +105,107 @@ if [[ ${1:-} == --nested && ${BUCHHWIN_SMOKE_POINTER:-1} == 1 ]]; then
   else
     export BUCHHWIN_NESTED_DIR=$base
     monitor=$(hyprctl -j monitors | jq -c '.[] | select(.name == "BUCHTEST")')
-    expected="$(( $(jq '.x' <<<"$monitor") + 200 )),$(( $(jq '.y' <<<"$monitor") + 150 ))"
+    monitor_x=$(jq '.x' <<<"$monitor") monitor_y=$(jq '.y' <<<"$monitor")
+    expected="$(( monitor_x + 200 )),$(( monitor_y + 150 ))"
     bottom=$(jq '.height / .scale | floor - 20' <<<"$monitor")
-    actual=""
-    if "$project_dir/scripts/nested-pointer" move 200 150; then
-      actual=$(hyprctl -j cursorpos | jq -r '"\(.x | floor),\(.y | floor)"')
-    fi
-    if [[ $actual == "$expected" ]]; then
-      printf 'ok       pointer moves to output coordinates\n'
-    else
-      printf 'failed   pointer move: cursor at %s, expected %s\n' "${actual:-?}" "$expected"
-      status=1
-    fi
     # Poll instead of fixed sleeps: under load (parallel nested sessions) the
     # open and close transitions can take longer than a few hundred ms.
     popup_state() { quickshell ipc --path "$config_path" call popup get; }
+    popup_closed() {
+      local state
+      state=$(popup_state)
+      for _ in {1..20}; do
+        [[ -z $state ]] && break
+        sleep 0.1
+        state=$(popup_state)
+      done
+      printf '%s' "$state"
+    }
+    cursor_now() { hyprctl -j cursorpos 2>/dev/null | jq -r '"\(.x | floor),\(.y | floor)"' 2>/dev/null || true; }
+
+    # The pointer steps failed two deploys of round 12 with the cursor at
+    # 960,600 - the exact centre of the nested window's output, as in both
+    # failures of pitfall 41: something warped it there, a hand would have
+    # left it anywhere. Two things do that. The nested shell moves the
+    # misplaced workspaces of its fresh two-output session right after its
+    # start (HyprlandService.applyWorkspaceRules, rounds 400 ms apart), and
+    # each focusmonitor of those warps the cursor to that monitor's centre;
+    # and the host can warp its own pointer into the middle of the nested
+    # window when that window gets the focus. So the pointer steps wait for
+    # the workspaces and monitors to stay the same for a second first, every
+    # move is read back and tried again (up to three times, each reading
+    # kept for the output), and a click is pressed only on a cursor that was
+    # read where it was sent.
+    compositor_settled() {
+      local last="" now same=0
+      for _ in {1..50}; do
+        now=$( { hyprctl -j workspaces | jq -c '[.[] | {id, monitor}] | sort_by(.id)'
+                 hyprctl -j monitors | jq -c '[.[] | {name, focused, workspace: .activeWorkspace.id}]'; } 2>/dev/null ) || now=""
+        if [[ -n $now && $now == "$last" ]]; then
+          same=$(( same + 1 ))
+          (( same >= 5 )) && return 0
+        else
+          same=0 last=$now
+        fi
+        sleep 0.2
+      done
+      return 1
+    }
+    # pointer_at X Y: there on BUCHTEST, moved twice a few pixels apart (a
+    # surface under a still pointer gets no enter, pitfall 56) and read back.
+    # The readings go to $pointer_readings.
+    pointer_at() {
+      local want="$(( monitor_x + $1 )),$(( monitor_y + $2 ))" got
+      pointer_readings=""
+      for _ in 1 2 3; do
+        "$project_dir/scripts/nested-pointer" move "$(( $1 + 4 ))" "$(( $2 + 4 ))" sleep 40 move "$1" "$2" >/dev/null 2>&1 || true
+        sleep 0.05
+        got=$(cursor_now)
+        pointer_readings+="${pointer_readings:+ }${got:-?}"
+        [[ $got == "$want" ]] && return 0
+        sleep 0.3
+      done
+      return 1
+    }
+    # click_away X Y: a click at X Y on BUCHTEST that should close the open
+    # panel. Pressed only once the cursor was read there; tried a second time
+    # only when the cursor was not where it was pressed afterwards either (a
+    # warp, not the panel's answer) or never got there. The panel's state just
+    # before the first press is $before_press, the one after the last try
+    # $closed, and what the cursor did is $click_readings.
+    click_away() {
+      local want="$(( monitor_x + $1 )),$(( monitor_y + $2 ))" after try pressed=0
+      click_readings="" before_press="" closed=""
+      for try in 1 2; do
+        if ! pointer_at "$1" "$2"; then
+          click_readings+="${click_readings:+; }try $try: cursor at $pointer_readings, not pressed"
+          closed=$(popup_state)
+          continue
+        fi
+        if (( ! pressed )); then before_press=$(popup_state); pressed=1; fi
+        "$project_dir/scripts/nested-pointer" click "$1" "$2" >/dev/null 2>&1 || true
+        closed=$(popup_closed)
+        after=$(cursor_now)
+        click_readings+="${click_readings:+; }try $try: cursor at $pointer_readings, after the click ${after:-?}"
+        [[ -z $closed ]] && return 0
+        [[ $after == "$want" ]] && return 1
+      done
+      [[ -z $closed ]]
+    }
+
+    if ! compositor_settled; then
+      printf 'note     the workspaces and monitors were still changing after 10 s; going on\n'
+    fi
+    if pointer_at 200 150; then
+      if [[ $pointer_readings == *' '* ]]; then
+        printf 'ok       pointer moves to output coordinates (readings: %s)\n' "$pointer_readings"
+      else
+        printf 'ok       pointer moves to output coordinates\n'
+      fi
+    else
+      printf 'failed   pointer move: cursor at %s (one reading per try), expected %s\n' "$pointer_readings" "$expected"
+      status=1
+    fi
     quickshell ipc --path "$config_path" call dashboard open >/dev/null
     active=""
     for _ in {1..20}; do
@@ -122,18 +214,14 @@ if [[ ${1:-} == --nested && ${BUCHHWIN_SMOKE_POINTER:-1} == 1 ]]; then
       sleep 0.1
     done
     sleep 0.3
-    "$project_dir/scripts/nested-pointer" click 20 "$bottom" || true
-    closed=$(popup_state)
-    for _ in {1..20}; do
-      [[ -z $closed ]] && break
-      sleep 0.1
-      closed=$(popup_state)
-    done
+    click_away 20 "$bottom" || true
     if [[ $active == dashboard && -z $closed ]]; then
       printf 'ok       pointer click outside closes the dashboard\n'
     else
-      printf 'failed   pointer click outside the dashboard (open: %s)\n' "$active"
+      printf 'failed   pointer click outside the dashboard (open: %s, after: %s; %s)\n' \
+        "${active:-none}" "${closed:-none}" "$click_readings"
       status=1
+      [[ -n $closed ]] && quickshell ipc --path "$config_path" call popup close >/dev/null 2>&1 || true
     fi
     # A click on another monitor closes it too (cd1e136). The scrim covers
     # only the panel's own screen, so that is HyprlandFocusGrab's doing, and
@@ -165,23 +253,14 @@ if [[ ${1:-} == --nested && ${BUCHHWIN_SMOKE_POINTER:-1} == 1 ]]; then
       # click below would land on its own scrim and prove nothing.
       panel_output=$(hyprctl -j layers | jq -r '[to_entries[] | select([.value.levels[][]?.namespace] | index("buchhwin-dashboard")) | .key][0] // empty')
       sleep 0.3
-      # Moved twice before the click (pitfall 56): a surface under a still
-      # pointer gets no enter, and the button would go nowhere.
-      "$project_dir/scripts/nested-pointer" move 200 150 sleep 40 move 204 154 || true
-      sleep 0.2
-      before_click=$(popup_state)
-      "$project_dir/scripts/nested-pointer" click 200 150 || true
-      closed=$(popup_state)
-      for _ in {1..20}; do
-        [[ -z $closed ]] && break
-        sleep 0.1
-        closed=$(popup_state)
-      done
-      if [[ $active == dashboard && $panel_output == "$other" && $before_click == dashboard && -z $closed ]]; then
+      # The focusmonitor above warped the cursor to the centre of $other;
+      # click_away moves it onto BUCHTEST and reads it back before it presses.
+      click_away 200 150 || true
+      if [[ $active == dashboard && $panel_output == "$other" && $before_press == dashboard && -z $closed ]]; then
         printf 'ok       a click on another monitor closes the dashboard\n'
       else
-        printf 'failed   click on another monitor (open: %s on %s, before the click: %s, after: %s)\n' \
-          "${active:-none}" "${panel_output:-?}" "${before_click:-none}" "${closed:-none}"
+        printf 'failed   click on another monitor (open: %s on %s, before the click: %s, after: %s; %s)\n' \
+          "${active:-none}" "${panel_output:-?}" "${before_press:-none}" "${closed:-none}" "$click_readings"
         status=1
         [[ -n $closed ]] && quickshell ipc --path "$config_path" call dashboard close >/dev/null 2>&1 || true
       fi
@@ -233,7 +312,8 @@ if [[ ${1:-} == --nested && ${BUCHHWIN_SMOKE_POINTER:-1} == 1 ]]; then
     # overview away and left a black box; every step here was green, because
     # nothing looked at the contents.
     notch_rows() { quickshell ipc --path "$config_path" call notch get | jq -r '.screens.BUCHTEST.rows | length'; }
-    "$project_dir/scripts/nested-pointer" move "$centre" 12 || true
+    pointer_at "$centre" 12 || true
+    hover_readings=$pointer_readings
     hovered=""
     for _ in {1..30}; do
       sleep 0.1
@@ -247,7 +327,8 @@ if [[ ${1:-} == --nested && ${BUCHHWIN_SMOKE_POINTER:-1} == 1 ]]; then
       printf 'failed   the expanded notch is empty (rows: %s)\n' "$rows"
       status=1
     fi
-    "$project_dir/scripts/nested-pointer" move "$centre" "$bottom" || true
+    pointer_at "$centre" "$bottom" || true
+    leave_readings=$pointer_readings
     left=""
     for _ in {1..30}; do
       sleep 0.1
@@ -258,9 +339,110 @@ if [[ ${1:-} == --nested && ${BUCHHWIN_SMOKE_POINTER:-1} == 1 ]]; then
     if [[ $hovered == true && $left == false ]]; then
       printf 'ok       notch expands on hover and collapses after leaving\n'
     else
-      printf 'failed   notch hover (hovered: %s, after leaving: %s)\n' "$hovered" "$left"
+      printf 'failed   notch hover (hovered: %s, after leaving: %s; cursor at %s, then %s)\n' \
+        "$hovered" "$left" "$hover_readings" "$leave_readings"
       status=1
     fi
+  fi
+fi
+
+# The dock and the start menu (nested only, IPC only). Neither is built while
+# the dock is off - its Variants model is empty, the start menu's LazyLoader
+# inactive - and the sandbox has it off, so a TypeError, a binding loop or an
+# "Unable to assign" in Dock, DockZone, a dock Pill, the Saturn button, the
+# apps, the start menu or the dock's menu never reached the log read below,
+# while the user runs the dock (round 12, tests-docs#1). After the pointer
+# steps: a taskbar along the whole bottom edge would sit under their click
+# outside. Nothing in either is clicked, and the dock is off again at the end
+# (a kept sandbox keeps the Taskbar's layout; the deploy's starts fresh).
+if [[ ${1:-} == --nested ]]; then
+  ipc_call() { quickshell ipc --path "$config_path" call "$@" 2>/dev/null || true; }
+  popup_is() {
+    local want=$1 state=""
+    for _ in {1..30}; do
+      state=$(ipc_call popup get)
+      [[ $state == "$want" ]] && break
+      sleep 0.1
+    done
+    printf '%s' "$state"
+  }
+  dock_ready='.enabled == true and .screens > 0 and .items > 0'
+  preset=$(ipc_call dock preset taskbar)
+  ipc_call dock setEnabled true >/dev/null
+  dock_state=""
+  for _ in {1..30}; do
+    dock_state=$(ipc_call dock get)
+    [[ $(jq -r "$dock_ready" <<<"$dock_state" 2>/dev/null) == true ]] && break
+    sleep 0.1
+  done
+  if [[ $preset == true && $(jq -r "$dock_ready" <<<"$dock_state" 2>/dev/null) == true ]]; then
+    printf 'ok       the dock is on with the Taskbar preset (%s)\n' \
+      "$(jq -r '"\(.items) items, \(.screens) screens, shown on \(.shown)"' <<<"$dock_state")"
+  else
+    printf 'failed   the dock with the Taskbar preset (preset: %s, get: %s)\n' "${preset:-none}" "${dock_state:-none}"
+    status=1
+  fi
+  # The start menu: open (out of the Saturn button on the focused screen),
+  # All apps, closed again.
+  ipc_call startMenu open >/dev/null
+  opened=$(popup_is startMenu)
+  menu_state=""
+  for _ in {1..20}; do
+    menu_state=$(ipc_call startMenu get)
+    [[ $(jq -r '.loaded == true and .shown == true' <<<"$menu_state" 2>/dev/null) == true ]] && break
+    sleep 0.1
+  done
+  ipc_call startMenu openView all >/dev/null
+  view=""
+  for _ in {1..20}; do
+    view=$(ipc_call startMenu get | jq -r '.view // empty' 2>/dev/null || true)
+    [[ $view == all ]] && break
+    sleep 0.1
+  done
+  ipc_call startMenu close >/dev/null
+  shut=$(popup_is "")
+  if [[ $opened == startMenu && $view == all && -z $shut ]]; then
+    printf 'ok       the start menu opens, shows All apps and closes\n'
+  else
+    printf 'failed   the start menu (open: %s, view: %s, after close: %s, get: %s)\n' \
+      "${opened:-none}" "${view:-none}" "${shut:-none}" "${menu_state:-none}"
+    status=1
+    [[ -n $shut ]] && ipc_call popup close >/dev/null || true
+  fi
+  # The dock's menu for its first app, and closed again.
+  menu_opened=false
+  for _ in {1..30}; do
+    [[ $(ipc_call dock menu 0) == true ]] && { menu_opened=true; break; }
+    sleep 0.1
+  done
+  shown_menu=$(popup_is dockMenu)
+  ipc_call popup close >/dev/null
+  shut=$(popup_is "")
+  if [[ $menu_opened == true && $shown_menu == dockMenu && -z $shut ]]; then
+    printf 'ok       the dock menu opens and closes\n'
+  else
+    printf 'failed   the dock menu (menu 0: %s, popup: %s, after close: %s)\n' "$menu_opened" "${shown_menu:-none}" "${shut:-none}"
+    status=1
+  fi
+  ipc_call dock setEnabled false >/dev/null
+  for _ in {1..30}; do
+    [[ $(ipc_call dock get | jq -r '.enabled' 2>/dev/null) == false ]] && break
+    sleep 0.1
+  done
+  # The tour. A kept sandbox had never closed it, so its loader built it at
+  # every start and the log read below covered it; the deploy's fresh sandbox
+  # is seeded with it done (scripts/nested-session.sh, BUCHHWIN_NESTED_FRESH),
+  # and then it is built only when it is opened. So it is opened, and closed.
+  ipc_call welcome open >/dev/null
+  welcomed=$(popup_is welcome)
+  ipc_call welcome close >/dev/null
+  shut=$(popup_is "")
+  if [[ $welcomed == welcome && -z $shut ]]; then
+    printf 'ok       the welcome tour opens and closes\n'
+  else
+    printf 'failed   the welcome tour (popup: %s, after close: %s)\n' "${welcomed:-none}" "${shut:-none}"
+    status=1
+    [[ -n $shut ]] && ipc_call popup close >/dev/null || true
   fi
 fi
 

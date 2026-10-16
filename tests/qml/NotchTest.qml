@@ -11,6 +11,7 @@ ShellRoot {
     // The real built-in preset, so a broken file fails here and not on a desktop.
     FileView { id: islandFile; path: Qt.resolvedUrl("../../config/notch-presets/island.json").toString().replace("file://", ""); blockLoading: true }
     FileView { id: classicFile; path: Qt.resolvedUrl("../../config/notch-presets/classic.json").toString().replace("file://", ""); blockLoading: true }
+    FileView { id: taskbarFile; path: Qt.resolvedUrl("../../config/dock-presets/taskbar.json").toString().replace("file://", ""); blockLoading: true }
 
     Component.onCompleted: {
         const at = (h, m) => new Date(2026, 8, 17, h, m || 0)
@@ -462,6 +463,36 @@ ShellRoot {
         T.eq(N.emptyText("activeWindow", { workspaceEmpty: false }, "Active window"), "No window", "windows, none focused")
         T.eq(N.emptyText("privacy", {}, "Privacy"), "Privacy", "anything else keeps its name")
         T.eq(N.emptyText("cpu", null, ""), "cpu", "and without one, its type")
+
+        // ---- beside a taskbar (notch.dockDuplicates, D13 f) ------------------
+        T.eq([N.dockDuplicates("hide"), N.dockDuplicates("keep"), N.dockDuplicates(undefined), N.dockDuplicates("x")],
+             ["hide", "keep", "keep", "keep"], "keep unless told to hide")
+        // The real Taskbar preset's layout and Island's strip.
+        const taskbar = JSON.parse(taskbarFile.text())
+        const held = N.DOCK_READOUTS.filter(type => L.dockHasType(taskbar.layout, type))
+        T.eq(held, ["clock", "date", "network", "volume", "battery", "notificationIndicator"],
+             "the Taskbar holds the clock, the date, the status glyphs and the bell")
+        const bar = { enabled: true, span: taskbar.options.span, visibility: taskbar.options.visibility, screens: ["eDP-1"] }
+        const islandStrip = L.notchItems(L.sanitizeNotchPreset(JSON.parse(islandFile.text()), true).layout, "collapsed")
+        const stripLeft = types => N.withoutTypes(islandStrip, types).map(item => item.type)
+        T.eq(stripLeft(N.dockDuplicateTypes("hide", bar, held, "eDP-1", false)), ["workspace"],
+             "hidden: Island's strip keeps its workspaces, the time, Wi-Fi and the battery go")
+        T.eq(stripLeft(N.dockDuplicateTypes("keep", bar, held, "eDP-1", false)), ["workspace", "clock", "network", "battery"],
+             "kept by default")
+        T.eq(N.dockDuplicateTypes("hide", bar, held, "DP-8", false), [], "a screen without the taskbar keeps its strip")
+        T.eq(N.dockDuplicateTypes("hide", bar, held, "", false), [], "a strip that names no screen keeps everything")
+        T.eq(N.dockDuplicateTypes("hide", bar, held, "eDP-1", true), [], "the layout editor arranges every item")
+        T.eq(N.dockDuplicateTypes("hide", Object.assign({}, bar, { enabled: false }), held, "eDP-1", false), [],
+             "a dock that is off shows nothing twice")
+        T.eq(N.dockDuplicateTypes("hide", Object.assign({}, bar, { span: "fit" }), held, "eDP-1", false), [],
+             "nor does a dock that only fits its apps")
+        T.eq(N.dockDuplicateTypes("hide", Object.assign({}, bar, { visibility: "intellihide" }), held, "eDP-1", false), [],
+             "nor one that hides: the strip would be the only readout most of the time")
+        T.eq(N.dockDuplicateTypes("hide", bar, ["apps", "start", "clock"], "eDP-1", false), ["clock"],
+             "only readouts count")
+        T.eq(N.dockDuplicateTypes("hide", null, held, "eDP-1", false), [], "no dock at all")
+        T.ok(N.withoutTypes(islandStrip, []) === islandStrip, "nothing to leave out: the very list")
+        T.eq(N.withoutTypes(null, ["clock"]), [], "no list")
 
         T.finish("NotchTest")
     }

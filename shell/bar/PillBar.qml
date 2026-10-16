@@ -190,6 +190,7 @@ Variants {
             Region { item: window.active && !window.flat ? leftZone : null }
             Region { item: window.active && !window.flat ? centerZone : null }
             Region { item: window.active && !window.flat ? rightZone : null }
+            Region { item: window.active && window.dockBeyond ? dockEdge : null }
         }
 
         // How far into the screen the bar reaches, and from which edge. The
@@ -202,7 +203,11 @@ Variants {
         onActiveChanged: reportInset()
         onGeometryChanged: reportInset()
         Component.onCompleted: reportInset()
-        Component.onDestruction: LayoutService.reportBarInset(modelData.name, -1, edge)
+        Component.onDestruction: {
+            LayoutService.reportBarInset(modelData.name, -1, edge)
+            // A bar that goes with the pointer on its dock strip lets go of it.
+            if (dockEdgeHover.hovered) DockService.edgePointer(modelData.name, false)
+        }
 
         // Everything this bar reports is mapped to its own window, and the
         // window is only as thick as the bar - so on a bottom or a right bar
@@ -394,10 +399,16 @@ Variants {
         }
 
         // The three zones are `Grid`s rather than `Row`s so one element can be
-        // either: `columns: 1` stacks them, a column count nothing will reach
-        // lays them in a line. A Row and a Column side by side would mean two
-        // of everything below, including the separator flags and the wiggle
-        // indices.
+        // either: `columns: 1` stacks them, `rows: 1` lays them in a line. A
+        // Row and a Column side by side would mean two of everything below,
+        // including the separator flags and the wiggle indices.
+        //
+        // One row, not a column count nothing will reach: a Grid with more
+        // columns than items counts one gap too many into its width, so every
+        // zone was a group gap wider than its pills - the end zone stood one
+        // gap further from the edge than the start zone and the centre half a
+        // gap off (round 12, D6; probed: 2 items of 30 and 40 with a gap of 4
+        // are 78 wide at `columns: 1000`, 74 at `rows: 1`).
         //
         // `start`, `centre` and `end` is what they mean; the ids and the
         // stored keys stay left/center/right because a layout.json written
@@ -411,7 +422,8 @@ Variants {
             onWidthChanged: Qt.callLater(window.reportZones)
             onHeightChanged: Qt.callLater(window.reportZones)
             readonly property var flags: window.separatorsFor(Array.from({ length: leftRepeater.count }, (_, i) => leftRepeater.itemAt(i)))
-            columns: window.vertical ? 1 : 1000
+            rows: window.vertical ? -1 : 1
+            columns: window.vertical ? 1 : -1
             x: window.vertical ? window.zoneAcross(width)
                 : window.geometry.content.x + window.zoneInset
             y: window.vertical ? window.geometry.content.y + window.zoneInset
@@ -440,7 +452,8 @@ Variants {
             onWidthChanged: Qt.callLater(window.reportZones)
             onHeightChanged: Qt.callLater(window.reportZones)
             readonly property var flags: window.separatorsFor(Array.from({ length: centerRepeater.count }, (_, i) => centerRepeater.itemAt(i)))
-            columns: window.vertical ? 1 : 1000
+            rows: window.vertical ? -1 : 1
+            columns: window.vertical ? 1 : -1
             // Centred, but never under a neighbour: a wide centre pill (an
             // expanded player, a long window title) used to be clamped against
             // the start zone only and then slid under the end one, and the
@@ -482,7 +495,8 @@ Variants {
             onHeightChanged: Qt.callLater(window.reportZones)
             // The automatic recording pill leads the end zone.
             readonly property var flags: window.separatorsFor([recordingAuto].concat(Array.from({ length: rightRepeater.count }, (_, i) => rightRepeater.itemAt(i))))
-            columns: window.vertical ? 1 : 1000
+            rows: window.vertical ? -1 : 1
+            columns: window.vertical ? 1 : -1
             x: window.vertical ? window.zoneAcross(width)
                 : window.geometry.content.x + window.geometry.content.width - width - window.zoneInset
             y: window.vertical ? window.geometry.content.y + window.geometry.content.height - height - window.zoneInset
@@ -509,6 +523,30 @@ Variants {
                     separator: rightZone.flags[index + 1] === true
                     wiggleIndex: index + 4
                 }
+            }
+        }
+
+        // A dock on this bar's edge stands beyond the bar (Dock.qml), so a
+        // hidden dock's own strip is the bar's inner line, and a pointer
+        // pushed against the screen edge lands here instead. This strip along
+        // the bar's outer edge tells DockService so (edgePointer), and the
+        // dock comes as from its own strip. Read from the setting, not from
+        // DockService, and only while the dock is on (testing.md pitfall
+        // 101). Declared last so it lies above the pills: a pill's
+        // hover-enabled MouseArea would take the hover from a handler beside
+        // it (pitfall 100); a plain Item takes no presses.
+        readonly property bool dockBeyond: SettingsService.value("dock.enabled") === true
+            && SettingsService.value("dock.position") === edge
+        Item {
+            id: dockEdge
+            x: window.vertical && window.atFar ? window.width - Metrics.dockEdgeStrip : 0
+            y: !window.vertical && window.atFar ? window.height - Metrics.dockEdgeStrip : 0
+            width: window.vertical ? Metrics.dockEdgeStrip : window.width
+            height: window.vertical ? window.height : Metrics.dockEdgeStrip
+            HoverHandler {
+                id: dockEdgeHover
+                enabled: window.active && window.dockBeyond
+                onHoveredChanged: DockService.edgePointer(window.modelData.name, hovered)
             }
         }
     }

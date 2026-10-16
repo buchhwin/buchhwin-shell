@@ -37,6 +37,26 @@ ShellPanel {
         search.text = ""
     }
 
+    // The group tabs: every group, Recent once something was picked.
+    readonly property var groupTabs: EmojiService.groups
+        .filter(entry => entry.key !== "recent" || EmojiService.recent.length > 0)
+        .map(entry => ({ key: entry.key, label: entry.label, glyph: tabGlyph(entry) }))
+    // The white flag (U+1F3F3) is white on the light trough and all but
+    // disappeared there; the chequered one reads in both themes.
+    function tabGlyph(entry) { return entry.key === "flags" ? "\u{1F3C1}" : entry.icon }
+    function chooseGroup(key) {
+        if (key === group) return
+        group = key
+        selected = 0
+        grid.positionViewAtBeginning()
+    }
+    function stepGroup(delta) {
+        const keys = groupTabs.map(tab => tab.key)
+        if (!keys.length) return
+        const at = keys.indexOf(group)
+        chooseGroup(keys[Math.max(0, Math.min(keys.length - 1, (at < 0 ? 0 : at) + delta))])
+    }
+
     function move(step) {
         if (!results.length) return
         selected = Math.max(0, Math.min(results.length - 1, selected + step))
@@ -71,23 +91,86 @@ ShellPanel {
             onTextChanged: { root.query = text; root.selected = 0 }
             onAccepted: root.pick(root.selected)
             onEscapePressed: root.requestClose()
+            // The arrows walk the grid; Ctrl with Left or Right the groups,
+            // while no search hides them.
             onKeyPressed: event => {
+                const groups = (event.modifiers & Qt.ControlModifier) && root.query.length === 0
                 if (event.key === Qt.Key_Down) { root.move(root.columns); event.accepted = true }
                 else if (event.key === Qt.Key_Up) { root.move(-root.columns); event.accepted = true }
-                else if (event.key === Qt.Key_Right) { root.move(1); event.accepted = true }
-                else if (event.key === Qt.Key_Left) { root.move(-1); event.accepted = true }
+                else if (event.key === Qt.Key_Right) { groups ? root.stepGroup(1) : root.move(1); event.accepted = true }
+                else if (event.key === Qt.Key_Left) { groups ? root.stepGroup(-1) : root.move(-1); event.accepted = true }
             }
         }
 
-        SegmentedControl {
+        // The group tabs: the shell's segmented trough, each group's emoji
+        // at an icon's size in a slot of its own, and its name as the
+        // tooltip and the accessible name. A SegmentedControl drew the emoji
+        // as 13 px labels, beside 28 px ones in the grid. One tab stop
+        // (Tab from the search field), Left and Right walk the groups.
+        Rectangle {
+            id: groupBar
             Layout.fillWidth: true
             visible: root.query.length === 0
-            compact: true
-            options: EmojiService.groups
-                .filter(entry => entry.key !== "recent" || EmojiService.recent.length > 0)
-                .map(entry => ({ value: entry.key, label: entry.icon }))
-            current: root.group
-            onSelected: value => { root.group = value; root.selected = 0; grid.positionViewAtBeginning() }
+            implicitHeight: Metrics.controlHeightLg
+            radius: Metrics.pillRadius(height)
+            color: Colors.sunken
+            border.width: Metrics.borderWidth
+            border.color: Colors.border
+            activeFocusOnTab: visible
+            Keys.onLeftPressed: root.stepGroup(-1)
+            Keys.onRightPressed: root.stepGroup(1)
+            Accessible.role: Accessible.PageTabList
+            Accessible.name: "Emoji groups"
+            FocusRing { active: groupBar.activeFocus; controlRadius: groupBar.radius }
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: Metrics.spaceXs
+                spacing: Metrics.spaceXs
+                Repeater {
+                    model: root.groupTabs
+                    Rectangle {
+                        id: tab
+                        required property var modelData
+                        readonly property bool active: modelData.key === root.group
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        radius: Metrics.pillRadius(height)
+                        color: active ? Colors.segmentSelected : tabMouse.containsMouse ? Colors.hover : "transparent"
+                        border.width: active ? Metrics.borderWidth : 0
+                        border.color: Colors.segmentBorder
+                        Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
+                        Accessible.role: Accessible.PageTab
+                        Accessible.name: modelData.label
+                        Accessible.checkable: true
+                        Accessible.checked: active
+                        Accessible.onPressAction: root.chooseGroup(modelData.key)
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: tab.modelData.glyph
+                            color: Colors.text
+                            textFormat: Text.PlainText
+                            font.family: Typography.family
+                            font.pixelSize: Typography.emojiTabSize
+                            renderType: Typography.renderType
+                        }
+                        MouseArea {
+                            id: tabMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onEntered: tabTip.arm()
+                            onExited: tabTip.release()
+                            onClicked: {
+                                tabTip.release()
+                                root.chooseGroup(tab.modelData.key)
+                            }
+                        }
+                        ToolTipHost { id: tabTip; anchorItem: tab; text: tab.modelData.label }
+                    }
+                }
+            }
         }
 
         // A ShellCard rather than a CardSection: the card's column is anchored
@@ -170,6 +253,8 @@ ShellPanel {
 
             // The skin tone the picker applies wherever Unicode allows one.
             ShellSelect {
+                focusOnTab: true
+                accessibleName: "Skin tone"
                 Layout.preferredWidth: Metrics.toneSelectWidth
                 Layout.maximumWidth: Metrics.toneSelectWidth
                 options: EmojiService.toneLabels.map((label, index) => ({ value: String(index), label: label }))

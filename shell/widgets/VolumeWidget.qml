@@ -10,7 +10,9 @@ WidgetBase {
     meter: AudioService.volume
     // Muted in the surface's muted ink, not the theme's: on the notch that
     // one is a grey made for a panel.
-    meterColor: AudioService.muted ? root.mutedTextColor : Colors.accent
+    // The level in the accent made for a fill (WidgetBase.levelFill): the
+    // raw teal was 1.08:1 on a light track.
+    meterColor: AudioService.muted ? root.mutedTextColor : root.levelFill
     // Which device it is going to, which is the question a percentage raises.
     detail: AudioService.sink ? AudioService.label(AudioService.sink) : ""
 

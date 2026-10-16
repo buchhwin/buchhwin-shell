@@ -16,6 +16,12 @@ ColumnLayout {
     readonly property var modeIds: LauncherService.allModes.map(mode => mode.id)
     readonly property string template: SettingsService.value("launcher.searchUrl")
 
+    // Whether the file index holds anything from home is asked each time the
+    // page shows (a few ms), so the hint under Files goes once it is fixed.
+    PageActivity {
+        onOpened: if (SettingsService.value("launcher.fileSearch")) LauncherService.checkFileIndex()
+    }
+
     SettingsSection {
         Layout.fillWidth: true
         title: "Modes"
@@ -91,13 +97,16 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Pinned apps"
-        description: "Shown in front of the search field while nothing is typed - the one thing on a search surface that does not compete with the results, because it answers the question you have not asked yet."
+        // The start menu's "Pinned" grid is this list too (LauncherService
+        // .pinnedApps): "Pin to Start" there adds here, and an unpin here
+        // takes the app off Start as well, so the page says so.
+        description: "Shown in front of the search field while nothing is typed - the one thing on a search surface that does not compete with the results, because it answers the question you have not asked yet. The start menu's Pinned grid shows the same apps. The dock keeps pins of its own (Settings > Dock)."
 
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
             label: "Show pinned apps"
-            hint: "Right-click an app in the launcher to pin it, or Ctrl+P on the selected one. At most " + Pinned.LIMIT + "."
+            hint: "Right-click an app in the launcher to pin it, or Ctrl+P on the selected one; in the start menu, Pin to Start. At most " + Pinned.LIMIT + "."
             ShellToggle {
                 focusOnTab: true
                 checked: SettingsService.value("launcher.showPinned")
@@ -143,7 +152,7 @@ ColumnLayout {
                         icon: Icons.remove
                         variant: "ghost"
                         compact: true
-                        toolTip: "Unpin"
+                        toolTip: "Unpin from the launcher and the start menu"
                         confirm: true
                         confirmText: "Unpin?"
                         onClicked: LauncherService.togglePin(id)
@@ -227,8 +236,21 @@ ColumnLayout {
             ShellToggle {
                 focusOnTab: true
                 checked: SettingsService.value("launcher.fileSearch")
-                onToggled: value => SettingsService.set("launcher.fileSearch", value)
+                onToggled: value => {
+                    SettingsService.set("launcher.fileSearch", value)
+                    if (value) LauncherService.checkFileIndex()
+                }
             }
+        }
+
+        // Fixing the index needs root, so the page only says what to run.
+        ShellText {
+            Layout.fillWidth: true
+            visible: SettingsService.value("launcher.fileSearch") === true && LauncherService.fileIndexHint.length > 0
+            text: LauncherService.fileIndexHint
+            role: "small"
+            color: Colors.warning
+            wrapMode: Text.Wrap
         }
     }
 }

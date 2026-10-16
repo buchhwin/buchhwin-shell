@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # scripts/launch-default.sh and scripts/lib/default-terminal.sh: Super+Enter
-# finds the session's terminal in bash, with default-apps.py's answer in every
-# case, and only asks Python for what bash cannot answer for certain and for
-# the browser and the file manager.
+# finds the session's terminal in bash, and Super+B and Super+E the browser and
+# the file manager this session's own list names, with default-apps.py's
+# answer in every case; only what bash cannot answer for certain asks Python.
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
 sandbox=$(mktemp -d "${TMPDIR:-/tmp}/buchhwin-defaulttest.XXXXXX")
 trap 'rm -rf -- "$sandbox"' EXIT
@@ -30,7 +30,8 @@ export PATH="$bin:$PATH"
 
 # The XDG tree both read; nothing of this machine's.
 data="$sandbox/data"; sysdata="$sandbox/sysdata"; config="$sandbox/config"
-export XDG_CONFIG_HOME="$config" XDG_DATA_HOME="$data" XDG_DATA_DIRS="$sysdata" HOME="$sandbox/home"
+export XDG_CONFIG_HOME="$config" XDG_DATA_HOME="$data" XDG_DATA_DIRS="$sysdata" HOME="$sandbox/home" \
+  XDG_CONFIG_DIRS="$sandbox/etc-xdg" XDG_CURRENT_DESKTOP=buchhwin-shell:Hyprland
 reset_tree() { rm -rf "$data" "$sysdata" "$config"; mkdir -p "$data/applications" "$sysdata/applications" "$config"; }
 entry() {  # entry DIR ID [extra lines]
   local dir=$1 id=$2; shift 2
@@ -77,6 +78,54 @@ reset_tree; mkdir -p "$data/applications/org/kde"; entry "$data" org/kde/konsole
 status=0; bash_answer >/dev/null || status=$?
 check '[[ $status -eq 2 ]]' "a dashed id without a file of its own goes to default-apps.py (status $status)"
 
+# The browser and the file manager this session's own list names, in bash
+# too: what it answers is what default-apps.py answers, and what it cannot be
+# sure of it leaves to Python (status 2).
+session_list() { printf '%s\n' "$@" > "$config/buchhwin-shell-mimeapps.list"; }
+session_answer() { (source "$project_dir/scripts/lib/default-terminal.sh"; default_session_app "$1") 2>/dev/null; }
+# same_app CATEGORY MIME NAME
+same_app() {
+  local mine theirs status=0
+  mine=$(session_answer "$2") || status=$?
+  theirs=$("$real_python" "$project_dir/scripts/default-apps.py" get "$1" 2>/dev/null)
+  check '[[ $status -eq 0 && -n $mine && $mine == "$theirs" ]]' "$3: bash says '$mine' (status $status), default-apps.py '$theirs'"
+}
+# defers MIME NAME
+defers() {
+  local status=0
+  session_answer "$1" >/dev/null || status=$?
+  check '[[ $status -eq 2 ]]' "$2: left to default-apps.py (status $status)"
+}
+reset_tree; entry "$sysdata" org.kde.dolphin.desktop; entry "$sysdata" brave-browser.desktop
+session_list '[Default Applications]' 'inode/directory=org.kde.dolphin.desktop;' 'x-scheme-handler/http=brave-browser.desktop;'
+same_app files inode/directory "the session's file manager"
+same_app browser x-scheme-handler/http "the session's browser"
+reset_tree; entry "$sysdata" org.kde.dolphin.desktop; entry "$data" foot.desktop
+session_list '[Default Applications]' 'inode/directory=missing.desktop;org.kde.dolphin.desktop;'
+same_app files inode/directory "a missing id is passed over"
+session_list '[Default Applications]' 'inode/directory=foot.desktop;' '[Added Associations]' 'inode/directory=x.desktop;' \
+  '[Default Applications]' ' inode/directory =  org.kde.dolphin.desktop;  '
+same_app files inode/directory "the last entry counts, over two groups, trimmed"
+reset_tree; entry "$sysdata" org.kde.dolphin.desktop; entry "$data" foot.desktop 'Hidden=true'; entry "$sysdata" foot.desktop
+session_list '[Default Applications]' 'inode/directory=foot.desktop;org.kde.dolphin.desktop;'
+same_app files inode/directory "a hidden entry hides a good copy further down"
+reset_tree; entry "$sysdata" org.kde.dolphin.desktop
+session_list '[Default Applications]' 'inode/directory=missing.desktop; org.kde.dolphin.desktop;'
+defers inode/directory "an id with a space before it is no id Python finds either"
+session_list '[Added Associations]' 'inode/directory=org.kde.dolphin.desktop;'
+defers inode/directory "no default in the session's list"
+session_list '[Default Applications]' '# inode/directory=org.kde.dolphin.desktop;'
+defers inode/directory "a comment is no default"
+session_list '[Default Applications]' 'inode/directory=org.kde.dolphin.desktop;' 'text/plain=caf'$'\xc3\xa9''.desktop;'
+defers inode/directory "a file that is not plain ASCII"
+mkdir -p "$data/applications/org/kde"; entry "$data" org/kde/thing.desktop
+session_list '[Default Applications]' 'inode/directory=org-kde-thing.desktop;'
+defers inode/directory "a dashed id without a file of its own"
+reset_tree; entry "$sysdata" org.kde.dolphin.desktop
+session_list '[Default Applications]' 'inode/directory=org.kde.dolphin.desktop;'
+status=0; (export XDG_CURRENT_DESKTOP=KDE; session_answer inode/directory >/dev/null) || status=$?
+check '[[ $status -eq 2 ]]' "another desktop first: its own lists come first, left to default-apps.py (status $status)"
+
 # launch-default.sh: the terminal without Python, the rest as before.
 reset_tree; entry "$data" Alacritty.desktop; use Alacritty.desktop
 : > "$calls"; bash "$tree/scripts/launch-default.sh" terminal -e htop
@@ -95,7 +144,15 @@ check 'grep -q "^python3 .*default-apps.py get terminal" "$calls" && grep -q "^l
 reset_tree
 : > "$calls"; bash "$tree/scripts/launch-default.sh" browser
 check 'grep -q "^python3 .*default-apps.py get browser" "$calls" && grep -q "^launch-brave.sh" "$calls"' \
-  "the browser still asks default-apps.py ($(tr '\n' ' ' < "$calls"))"
+  "a browser the session's list does not name is asked of default-apps.py ($(tr '\n' ' ' < "$calls"))"
+reset_tree; entry "$sysdata" org.kde.dolphin.desktop; entry "$sysdata" brave-browser.desktop
+session_list '[Default Applications]' 'inode/directory=org.kde.dolphin.desktop;' 'x-scheme-handler/http=brave-browser.desktop;'
+: > "$calls"; bash "$tree/scripts/launch-default.sh" files
+check 'grep -qx "launch-app.sh org.kde.dolphin dolphin" "$calls" && ! grep -qE "^python3|gtk-launch" "$calls"' \
+  "Super+E: Dolphin by its program, without Python or gtk-launch ($(tr '\n' ' ' < "$calls"))"
+: > "$calls"; bash "$tree/scripts/launch-default.sh" browser https://example.org/
+check 'grep -qx "launch-brave.sh https://example.org/" "$calls" && ! grep -q "^python3" "$calls"' \
+  "Super+B and a web search: the session's browser without Python ($(tr '\n' ' ' < "$calls"))"
 # Without the library (an older tree) Python answers, as before.
 rm "$tree/scripts/lib/default-terminal.sh"
 reset_tree; entry "$data" Alacritty.desktop; use Alacritty.desktop

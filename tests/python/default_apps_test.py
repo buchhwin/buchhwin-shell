@@ -50,8 +50,12 @@ with tempfile.TemporaryDirectory() as temp:
     listing = {item["id"]: item for item in module.list_all()["categories"]}
     check(listing["browser"]["current"] == "brave-browser.desktop" and listing["browser"]["source"] == "plasma", "Plasma default read from mimeapps.list")
     check([c["name"] for c in listing["browser"]["candidates"]] == ["Brave", "Firefox (local)"], "browsers listed, local desktop file wins")
-    check(listing["files"]["current"] == "kitty-open.desktop" and listing["files"]["source"] == "system", "mimeinfo.cache fallback like xdg-mime")
-    check([c["id"] for c in listing["files"]["candidates"]] == ["org.kde.dolphin.desktop", "kitty-open.desktop"], "file managers plus the hidden current default")
+    # kitty-open.desktop comes first in the cache, but it is a hidden helper,
+    # not a file manager: the dock's Files pin and Super+E want Dolphin.
+    check(listing["files"]["current"] == "org.kde.dolphin.desktop" and listing["files"]["source"] == "system",
+          "mimeinfo.cache fallback, past the hidden kitty-open helper: " + listing["files"]["current"])
+    check([c["id"] for c in listing["files"]["candidates"]] == ["org.kde.dolphin.desktop"], "file managers only")
+    check(module.get_default("files") == "org.kde.dolphin.desktop", "get (InstalledApps) answers the same")
     check([c["id"] for c in listing["images"]["candidates"]] == ["org.kde.gwenview.desktop"], "browsers are not offered as image viewers")
     check(sorted(c["id"] for c in listing["terminal"]["candidates"]) == ["broken.desktop", "kde4-konsole.desktop", "kitty.desktop"], "terminals incl. subdirectory ids, hidden excluded")
     check(listing["terminal"]["current"] == "kitty.desktop", "kitty is the terminal fallback")
@@ -83,6 +87,35 @@ with tempfile.TemporaryDirectory() as temp:
         check(False, "unknown categories rejected")
     except ValueError:
         pass
+
+# The system's cache, in an order nobody chose: hidden helpers are passed
+# over, a file manager comes first for a directory, and someone's choice in a
+# mimeapps.list counts as it is.
+with tempfile.TemporaryDirectory() as temp:
+    base = pathlib.Path(temp)
+    config, data, system = base / "config", base / "data", base / "system"
+    os.environ.update({"XDG_CONFIG_HOME": str(config), "XDG_CONFIG_DIRS": str(base / "etc"),
+                       "XDG_DATA_HOME": str(data), "XDG_DATA_DIRS": str(system),
+                       "XDG_CURRENT_DESKTOP": "buchhwin-shell:Hyprland"})
+    apps = system / "applications"
+    desktop(apps, "kitty-open.desktop", "Name=kitty URL Launcher\nNoDisplay=true\nMimeType=inode/directory;application/pdf;\n")
+    desktop(apps, "org.kde.gwenview.desktop", "Name=Gwenview\nCategories=Graphics;\nMimeType=inode/directory;\n")
+    desktop(apps, "org.kde.dolphin.desktop", "Name=Dolphin\nCategories=System;FileManager;\nMimeType=inode/directory;\n")
+    desktop(apps, "org.kde.okular.desktop", "Name=Okular\nMimeType=application/pdf;\n")
+    cache = apps / "mimeinfo.cache"
+    cache.write_text("[MIME Cache]\ninode/directory=kitty-open.desktop;org.kde.gwenview.desktop;org.kde.dolphin.desktop;\n"
+                     "application/pdf=kitty-open.desktop;org.kde.okular.desktop;\n", encoding="utf-8")
+    both = lambda category: (module.get_default(category),
+                             {item["id"]: item for item in module.list_all()["categories"]}[category]["current"])
+    check(both("files") == ("org.kde.dolphin.desktop",) * 2, "a file manager before an image viewer that opens folders: " + str(both("files")))
+    check(both("pdf") == ("org.kde.okular.desktop",) * 2, "a hidden helper is no one's default, for any type: " + str(both("pdf")))
+    (apps / "org.kde.dolphin.desktop").unlink()
+    check(both("files") == ("org.kde.gwenview.desktop",) * 2, "no file manager: the first visible entry: " + str(both("files")))
+    (apps / "org.kde.gwenview.desktop").unlink()
+    check(both("files") == ("", ""), "only the hidden helper: no default: " + str(both("files")))
+    config.mkdir(parents=True)
+    (config / "mimeapps.list").write_text("[Default Applications]\ninode/directory=kitty-open.desktop;\n", encoding="utf-8")
+    check(both("files") == ("kitty-open.desktop",) * 2, "someone's choice in a mimeapps.list counts as it is: " + str(both("files")))
 
 if failures:
     for failure in failures:

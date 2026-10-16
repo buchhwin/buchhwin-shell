@@ -26,15 +26,28 @@ PopupPanel {
             Layout.fillWidth: true
             title: "Screen"
             padding: Metrics.spaceSm
-            // States, not buttons: nothing happens on a click.
+            // Nothing happening is an empty state, the row kind that sits in
+            // a card, as on the Microphone card below: the two cards said
+            // "nothing" in two ways (a left-aligned row here, a large centred
+            // crossed microphone there). Inset like a row's icon.
+            EmptyState {
+                Layout.fillWidth: true
+                Layout.leftMargin: Metrics.spaceLg
+                visible: !HyprlandService.screencastActive
+                row: true
+                icon: "󰹑"
+                title: "No app is sharing the screen"
+            }
+            // A state, not a button: nothing happens on a click.
             ListRow {
                 Layout.fillWidth: true
+                visible: HyprlandService.screencastActive
                 interactive: false
                 level: 1
                 icon: "󰹑"
-                title: HyprlandService.screencastActive ? "Screen is being shared" : "Not shared"
-                subtitle: HyprlandService.screencastActive ? "An app records or shares a screen or window" : ""
-                active: HyprlandService.screencastActive
+                title: "Screen is being shared"
+                subtitle: "An app records or shares a screen or window"
+                active: true
             }
         }
 
@@ -46,7 +59,9 @@ PopupPanel {
 
             EmptyState {
                 Layout.fillWidth: true
+                Layout.leftMargin: Metrics.spaceLg
                 visible: AudioService.captureStreams.length === 0
+                row: true
                 icon: "󰍭"
                 title: "No app is using the microphone"
             }

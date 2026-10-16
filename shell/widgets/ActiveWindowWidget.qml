@@ -10,7 +10,13 @@ WidgetBase {
     // widget is for.
     readonly property bool appOnly: instance !== null && instance.options !== undefined
         && instance.options !== null && instance.options.show === "app"
+    // Looked up by id, which no binding follows: DesktopEntries scans after
+    // the shell is up, so a binding that ran first kept "no entry" (the raw
+    // id's last part) until the window changed (round 12, perf#3). Reading
+    // the launcher's revision, counted once per settled scan, runs it again
+    // when the entries are there.
     readonly property string appName: {
+        LauncherService.entriesRevision
         const id = HyprlandService.activeAppId
         if (!id.length) return ""
         const entry = (typeof DesktopEntries.heuristicLookup === "function" ? DesktopEntries.heuristicLookup(id) : null)

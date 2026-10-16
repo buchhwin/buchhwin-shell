@@ -211,7 +211,7 @@ ColumnLayout {
         SettingRow {
             label: "When the lid closes"
             hint: page.sourceValue("lidAction") === "screenOff"
-                ? "Everything keeps running and only the laptop screen turns off; with a dock the windows move to the external display"
+                ? "Everything keeps running and only the laptop screen turns off; on a docking station the windows move to the external display"
                 : "With an external display connected the laptop stays awake"
             SegmentedControl {
                 focusOnTab: true

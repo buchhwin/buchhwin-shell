@@ -49,6 +49,8 @@ var BASE = [
     { leaf: "windowsOut", speed: 1.7, spring: "buchhwinSpatialFast", bezier: "buchhwinFast", style: "popin 87%" },
     { leaf: "windowsMove", speed: 2.0, spring: "buchhwinSpatial", bezier: "buchhwinFast", style: "" },
     { leaf: "fade", speed: 1.7, spring: "buchhwinEffects", bezier: "buchhwinFast", style: "" },
+    // A new window's fade-in only, sooner than the other fades (hyprland.lua).
+    { leaf: "fadeIn", speed: 1.2, spring: "buchhwinEffectsFast", bezier: "buchhwinFast", style: "" },
     { leaf: "layers", speed: 1.7, spring: "", bezier: "buchhwinStandard", style: "fade" },
     { leaf: "layersOut", speed: 1.5, spring: "", bezier: "buchhwinAccel", style: "fade" },
     // A plain slide: `slidefade` blends every window of both workspaces for

@@ -18,7 +18,9 @@ set -euo pipefail
 # Terminal without --wait and WezTerm without --always-new-process hand the
 # window to a process that is already running and return at once; the unit
 # Settings > Updates watches (--unit) would then end with pacman still on
-# screen. Everything starts through scripts/launch-app.sh - kitty and
+# screen. Alacritty does that too, on purpose, for everything but --unit
+# (its daemon, scripts/launch-alacritty.sh): nothing else here waits for the
+# window. Everything starts through scripts/launch-app.sh - kitty and
 # Alacritty through their own launchers, which end there - so the terminal
 # gets the session's environment rather than the shell's own settings
 # (scripts/lib/app-env.sh), and a scope named after its entry or, with
@@ -110,7 +112,20 @@ command_script() {
   printf '%s\n' "$file"
 }
 
-desktop_id=$(python3 "$project_dir/scripts/default-apps.py" get terminal 2>/dev/null) || desktop_id=""
+# The terminal is looked up in bash (scripts/lib/default-terminal.sh, the
+# rule of default-apps.py, which takes 20-85 ms to start for the same answer);
+# Python only for what bash cannot answer for certain (status 2), or without
+# the library.
+desktop_id=""
+asked=false
+if [[ -r $project_dir/scripts/lib/default-terminal.sh ]]; then
+  # shellcheck source=lib/default-terminal.sh
+  source "$project_dir/scripts/lib/default-terminal.sh"
+  if declare -F default_terminal >/dev/null && desktop_id=$(default_terminal); then asked=true; fi
+fi
+if ! $asked; then
+  desktop_id=$(python3 "$project_dir/scripts/default-apps.py" get terminal 2>/dev/null) || desktop_id=""
+fi
 case $desktop_id in
   "") program="" ;;
   Alacritty.desktop) program=alacritty ;;

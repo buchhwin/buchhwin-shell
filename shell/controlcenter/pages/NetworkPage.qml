@@ -28,7 +28,11 @@ ColumnLayout {
             spacing: Metrics.spaceMd
             // The Wi-Fi card's glyph is Wi-Fi's, as on the control center's
             // tile: the wire is named in the line below, not drawn here.
+            // In a box of one width on the Wi-Fi, Bluetooth and Power pages:
+            // sized by each glyph, the title beside it started at another x
+            // on each page and jumped sideways on every switch.
             ShellIcon {
+                Layout.preferredWidth: Metrics.iconXl
                 glyph: !root.wifiUsable ? "󰤮" : NetworkService.current
                     ? NetworkService.signalIcon(NetworkService.current.signalStrength) : "󰤯"
                 size: Metrics.iconLg

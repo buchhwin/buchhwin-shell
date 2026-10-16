@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../services/system/SystemLogic.js" as Logic
 
 // CPU, RAM and disk pills/widgets: usage bars, load average, the busiest
 // processes and a button for the system monitor app.
@@ -17,7 +18,11 @@ PopupPanel {
     onFooterClicked: SystemStatsService.openMonitor()
 
     body: ColumnLayout {
+        id: stats
         spacing: Metrics.pageGap
+        // How many CPUs top's per-process figures are shares of, from the
+        // CPU meter's own read of /proc/stat (SystemLogic.cpuTimes).
+        readonly property int cpus: SystemStatsService.lastCpu ? SystemStatsService.lastCpu.cpus || 1 : 1
         Component.onCompleted: { SystemStatsService.track(); SystemStatsService.trackProcesses() }
         Component.onDestruction: { SystemStatsService.untrack(); SystemStatsService.untrackProcesses() }
 
@@ -58,7 +63,10 @@ PopupPanel {
                     ShellText {
                         Layout.minimumWidth: Metrics.statColumnWidth
                         horizontalAlignment: Text.AlignRight
-                        text: modelData.cpu.toFixed(1) + "%"
+                        // The whole machine's share, as the CPU meter above
+                        // gives it: top's own figure is per CPU, so one busy
+                        // process read 54.8 % beside "CPU 5 %".
+                        text: Logic.processShare(modelData.cpu, stats.cpus).toFixed(1) + "%"
                         role: "small"; muted: true
                         font.features: { "tnum": 1 }
                     }

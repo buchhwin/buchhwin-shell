@@ -48,6 +48,17 @@ def js_list(name):
     return re.findall(r'"([^"]+)"', match.group(1)) if match else []
 
 
+# ---- the shipped profiles carry no picture by file name -------------------------
+# Both shipped ~/Pictures/Desktop/wallpaper_hyprland.webp, a file of the
+# owner's old machine: every machine entering them got a dangling path.
+for name in ("default", "buchhwin"):
+    shipped = json.loads((ROOT / "config" / "builtin-profiles" / name / "profile.json").read_text(encoding="utf-8"))
+    shipped_settings = shipped.get("settings") or {}
+    check((shipped_settings.get("wallpaper") or {}).get("path", "") == "",
+          "the shipped %s profile names no wallpaper file" % name)
+    check((shipped_settings.get("login") or {}).get("wallpaper", "") == "",
+          "the shipped %s profile names no login picture" % name)
+
 # ---- the export leaves out at least what a profile never keeps -----------------
 # ProfileLogic.GLOBAL_SETTINGS is the shell's list of settings that belong to
 # the machine or the person; a shipped profile carrying one would set it on
@@ -84,7 +95,9 @@ with tempfile.TemporaryDirectory() as temp:
         "configVersion": 1,
         "appearance": {"accent": "#50e2cb", "blurStrength": 0.9, "gapsIn": 3, "theme": "dark"},
         "weather": {"enabled": True, "locationName": "Exampletown", "lat": 12.34, "lon": 56.78, "unit": "celsius"},
-        "wallpaper": {"path": str(home / "Pictures" / "w.webp"), "folder": "", "recentFolders": str(home / "Pictures")},
+        "wallpaper": {"path": str(home / "Pictures" / "w.webp"), "folder": str(home / "Pictures" / "Walls"),
+                      "recentFolders": str(home / "Pictures")},
+        "login": {"wallpaper": str(home / "Pictures" / "login.png"), "blur": True},
         "onboarding": {"completed": True},
         "colorPicker": {"history": "#112233,#445566"},
         "recording": {"folder": "~/Videos/Recordings"},
@@ -122,7 +135,10 @@ with tempfile.TemporaryDirectory() as temp:
     check("lat" not in weather and "lon" not in weather and "locationName" not in weather,
           "the place and its coordinates are dropped")
     check(weather.get("unit") == "celsius", "the rest of the weather group stays")
-    check(profile["settings"]["wallpaper"]["path"] == "~/Pictures/w.webp", "a path under the home directory is contracted to ~")
+    check(profile["settings"]["wallpaper"]["folder"] == "~/Pictures/Walls", "a folder under the home directory is contracted to ~")
+    check(profile["settings"]["wallpaper"]["path"] == "" and profile["settings"]["login"]["wallpaper"] == "",
+          "a picture chosen by name is this machine's file and ships empty")
+    check(profile["settings"]["login"]["blur"] is True, "the rest of the login group stays")
     check("recentFolders" not in profile["settings"]["wallpaper"], "recent folders are this machine's")
     check("onboarding" not in profile["settings"] and "colorPicker" not in profile["settings"],
           "onboarding and the colour history are dropped")
@@ -191,7 +207,7 @@ with tempfile.TemporaryDirectory() as temp:
     exported = json.loads((base / "studio" / "profile.json").read_text(encoding="utf-8"))
     check(exported["settings"]["appearance"] == {"accent": "#0a0b0c", "panelColor": "#202020"},
           "with the settings it keeps, not the ones in use")
-    check(exported["settings"]["wallpaper"]["path"] == "~/Pictures/other.webp", "home paths contracted there too")
+    check(exported["settings"]["wallpaper"]["path"] == "", "its wallpaper's file name is left out there too")
     check(exported["notch"] == stored["notch"] and exported["lock"] == stored["lock"], "its notch and lock screen")
     check(exported["label"] == "Studio", "under its label")
     status, answer = run("--profile", "bare", "--out", str(base / "bare"))

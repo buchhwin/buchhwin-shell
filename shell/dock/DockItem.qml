@@ -2,11 +2,13 @@ import QtQuick
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../services/dock/DockLogic.js" as Logic
 
 // One app on the dock: its icon, the dots for its windows, and the pointer.
 // The apps widget places it and sizes its slot; this draws it and says what
 // the pointer did. Left click starts or raises it, the middle one opens a new
-// window, the right one the menu, and a drag moves it among the pins.
+// window, the right one the menu, and a drag moves it among the pins - or,
+// pulled off the dock, unpins it (AppsWidget).
 //
 // The icon fills Metrics.dockIconFill of its slot: an app icon drawn edge to
 // edge (Alacritty's is a full square) stood on the dock's rounded border.
@@ -20,6 +22,8 @@ Item {
     readonly property bool vertical: edge === "left" || edge === "right"
     property bool keyFocus: false
     property bool dragging: false
+    // Pulled far enough off the dock that letting go unpins it.
+    property bool removing: false
     // Along-axis offset while dragged, from where the drag began.
     property real dragOffset: 0
 
@@ -27,7 +31,9 @@ Item {
     signal newWindow()
     signal menuWanted()
     signal dragStarted()
-    signal dragMoved(real along)
+    // `acrossOut`: how far the pointer is off the dock, away from the edge;
+    // Infinity for a drag the system took away (nothing is dropped then).
+    signal dragMoved(real along, real acrossOut)
     signal dragEnded(real along, real acrossOut)
 
     readonly property bool hovered: mouse.containsMouse
@@ -58,7 +64,7 @@ Item {
         x: root.vertical ? (root.edge === "left" ? (root.iconSize - width) / 2 : root.width - root.iconSize + (root.iconSize - width) / 2)
                          : (root.width - width) / 2
         y: root.vertical ? (root.height - height) / 2 : root.height - root.iconSize + (root.iconSize - height) / 2
-        opacity: (root.dragging ? Effects.disabledOpacity : 1) * root.launchOpacity
+        opacity: (root.removing ? Effects.dockRemoveOpacity : root.dragging ? Effects.disabledOpacity : 1) * root.launchOpacity
         scale: root.launchScale
         transform: Translate {
             x: root.vertical ? 0 : root.dragOffset
@@ -75,17 +81,20 @@ Item {
             asynchronous: true
             smooth: true
         }
-        // The shell's own Settings: its glyph on an accent tile.
+        // The shell's own Settings: its glyph on an accent tile. A default
+        // that names no app yet (DockLogic.defaultPlaceholder): its
+        // category's glyph on a quiet tile.
         Rectangle {
             anchors.fill: parent
             visible: root.app.glyph.length > 0
+            readonly property bool settings: root.app.special === "settings"
             radius: Metrics.radiusInner
-            color: Colors.accentFill
+            color: settings ? Colors.accentFill : Colors.surface2
             ShellIcon {
                 anchors.centerIn: parent
                 glyph: root.app.glyph
                 size: parent.width * Metrics.dockGlyphFill
-                color: Colors.accentText
+                color: parent.settings ? Colors.accentText : Colors.mutedText
             }
         }
     }
@@ -137,8 +146,16 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
         cursorShape: root.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
         property real startAlong: 0
+        property real startAway: 0
         property bool moved: false
         function along(event) { return root.vertical ? event.y : event.x }
+        // How far the pointer is from the dock's edge, across it: what a
+        // pull off the dock grows.
+        function away(event) {
+            if (root.edge === "bottom") return -event.y
+            if (root.edge === "left") return event.x
+            return -event.x
+        }
         function acrossOut(event) {
             // How far the pointer left the dock across it, away from the edge.
             if (root.edge === "bottom") return Math.max(0, -event.y)
@@ -147,19 +164,24 @@ Item {
         }
         onPressed: event => {
             startAlong = along(event)
+            startAway = away(event)
             moved = false
             if (event.button === Qt.RightButton) root.menuWanted()
         }
         onPositionChanged: event => {
             if (!pressed || !(pressedButtons & Qt.LeftButton) || !root.app.pin) return
             const delta = along(event) - startAlong
-            if (!moved && Math.abs(delta) < Metrics.dragThreshold) return
+            // A pull away from the edge starts a drag from where it was
+            // pressed, inside the icon: counted from the icon's own edge,
+            // a straight pull off a taskbar left the body (a leave, and Qt
+            // cancels) before it ever started.
+            if (!moved && !Logic.dragStarts(delta, Math.max(0, away(event) - startAway), Metrics.dragThreshold)) return
             if (!moved) {
                 moved = true
                 root.dragStarted()
             }
             root.dragOffset = delta
-            root.dragMoved(along(event))
+            root.dragMoved(along(event), acrossOut(event))
         }
         onReleased: event => {
             if (moved) {
@@ -173,7 +195,7 @@ Item {
             else if (event.button === Qt.MiddleButton) root.newWindow()
         }
         onCanceled: {
-            if (moved) root.dragEnded(startAlong, Number.MAX_VALUE)
+            if (moved) root.dragEnded(startAlong, Infinity)
             moved = false
             root.dragOffset = 0
         }

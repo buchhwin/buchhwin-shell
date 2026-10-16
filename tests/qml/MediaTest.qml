@@ -48,6 +48,23 @@ ShellRoot {
         T.eq(M.nextHiddenIndex(4, 2, 3), 2, "and round again")
         T.eq(M.nextHiddenIndex(3, 0, -1), 0, "no active player: the first")
 
+        // ---- cover art: what MprisService does with a url -----------------
+        // Schemes in any case (security#2: "HTTPS://" went past curl to Qt's
+        // own network stack); any other scheme is no cover at all.
+        T.eq(["https://cdn.example/a.jpg", "HTTPS://cdn.example/a.jpg", "Http://cdn.example/a.jpg"].map(M.artKind),
+             ["remote", "remote", "remote"], "http(s) in any case is fetched by curl")
+        T.eq(["file:///tmp/a.png", "FILE:///tmp/a.png"].map(M.artKind), ["file", "file"], "a path in any case is checked")
+        T.eq(["data:image/png;base64,AAAA", "DATA:image/png;base64,AAAA"].map(M.artKind), ["data", "data"],
+             "an inline picture is handed on")
+        T.eq(["ftp://cdn.example/a.jpg", "gopher://x/a", "qrc:/a.png", "/tmp/a.png", "", null, undefined].map(M.artKind),
+             ["none", "none", "none", "none", "none", "none", "none"], "every other scheme, a bare path or nothing is no cover")
+        T.eq(M.artPath("file:///tmp/My%20Cover.png"), "/tmp/My Cover.png", "a path is decoded")
+        T.eq(M.artPath("FILE:///tmp/a.png"), "/tmp/a.png", "in any case")
+        T.eq(M.artPath("file:///tmp/100%.png"), "/tmp/100%.png", "a bare % stays as it is")
+        T.eq([M.artPath("https://x/a.png"), M.artPath("")], ["", ""], "only a file url has a path")
+        T.eq(M.artFileUrl("FILE:///tmp/a%20b.png"), "file:///tmp/a%20b.png", "a checked file is handed out in lower case, still encoded")
+        T.eq(M.artFileUrl("https://x/a.png"), "", "and nothing else is")
+
         T.finish("MediaTest")
     }
 }

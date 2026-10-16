@@ -540,6 +540,14 @@ Singleton {
     // The app menu.
     readonly property int dockMenuWidth: 300
     readonly property int dockMenuWindows: 6
+    // A panel out of the dock (an app's menu, a pill's popup, the start
+    // menu) stands this far off the dock's body: as far as a panel keeps
+    // from the screen's side, so a menu out of a taskbar's first button has
+    // the same gap below it as beside it (DockLogic.panelAnchor).
+    readonly property int dockPanelGap: screenMargin
+    // A pinned app pulled this many icon sizes off the dock is unpinned when
+    // it is let go.
+    readonly property real dockUnpinReach: 1.5
 
     // The start button's Saturn (shell/components/SaturnGlyph.qml): about as
     // tall as a glyph beside it, and as wide as the logo's proportions say
@@ -567,4 +575,9 @@ Singleton {
     // shown, the star, the slideshow tick - in Settings > Wallpaper and in the
     // picker alike. Written as `iconMd + spaceXs` five times over two files.
     readonly property int thumbBadge: iconMd + spaceXs
+
+    // How far a scrolling list fades out at an edge it continues past (the
+    // Settings sidebar): its rows dissolve rather than end in a straight
+    // cut under the search field.
+    readonly property int listEdgeFade: spaceLg
 }

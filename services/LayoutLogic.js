@@ -288,6 +288,22 @@ function modeAfterUndo(step, current) {
     return typeof to === "string" && to.length && to !== current ? current : step.config.activeMode
 }
 
+// The settings an undo step puts back: the ones every step carries (`keys`,
+// LayoutService.undoKeys, kept in `step.notch`) and the ones the step's own
+// change took along (`step.settings`) - a dock preset's dock.* options and
+// whether the dock was on. Those are not every step's: a Ctrl+Z after an
+// unrelated edit must not take back what was set in Settings > Dock since.
+function undoSettings(step, keys) {
+    const restored = {}
+    const carried = step && step.notch && typeof step.notch === "object" ? step.notch : {}
+    for (const key of Array.isArray(keys) ? keys : [])
+        if (carried[key] !== undefined) restored[key] = carried[key]
+    const own = step && step.settings && typeof step.settings === "object" ? step.settings : {}
+    for (const key of Object.keys(own))
+        if (own[key] !== undefined && own[key] !== null) restored[key] = own[key]
+    return restored
+}
+
 // Do Not Disturb after a mode switch is undone. A mode whose template turns
 // it on (gaming's `effects.dnd`) and found it off says so in its step
 // (`modeSwitch.dnd`, the value it set). Undone, it goes off again - unless it
@@ -1320,27 +1336,57 @@ function defaultDock() {
     return sanitizeDock({ left: [], center: [dockPill("dock-apps", "apps")], right: [], pins: DOCK_DEFAULT_PINS })
 }
 
+// A pin as stored, or "" for none. An id is whatever the entry's file is
+// called, and that is not always a tidy name: Citrix calls its subscribed
+// apps "Citrix_subscribed_XenApp 7.x.RDS-Name $S101-255", spaces and '$'
+// included (launch-app.sh escapes a unit name itself). So only what no
+// desktop id holds is refused: nothing, a control character, a slash, an @
+// name that is not one of the tokens - and a leading dash, which a command
+// line would read as an option.
+const DOCK_PIN_MAX_LENGTH = 255
+function dockPinName(entry) {
+    const pin = typeof entry === "string" ? entry.trim().replace(/\.desktop$/, "") : ""
+    if (DOCK_TOKENS.indexOf(pin) >= 0) return pin
+    if (!pin.length || pin.length > DOCK_PIN_MAX_LENGTH || /^[@-]/.test(pin) || /[\u0000-\u001f\u007f/]/.test(pin)) return ""
+    return pin
+}
+
 function sanitizeDockPins(list) {
     const result = []
     for (const entry of Array.isArray(list) ? list : []) {
-        const pin = typeof entry === "string" ? entry.trim().replace(/\.desktop$/, "") : ""
-        const valid = DOCK_TOKENS.indexOf(pin) >= 0 || /^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(pin)
-        if (valid && result.indexOf(pin) < 0) result.push(pin)
+        const pin = dockPinName(entry)
+        if (pin.length && result.indexOf(pin) < 0) result.push(pin)
         if (result.length >= DOCK_PIN_LIMIT) break
     }
     return result
 }
 
+// In two passes: every pill whose id starts with "dock-" keeps it, and only
+// the rest - a pill one of the bar's operations has just made, named in the
+// bar's own way ("pill-3", see dockZoneOp) - is named around them. In one
+// pass, in zone order, a new pill in an earlier zone could take the id of an
+// untouched one further on, which was renamed instead: the editor then
+// selected the wrong pill, and its Remove acted on that one.
 function sanitizeDock(dock) {
     if (!dock || typeof dock !== "object" || Array.isArray(dock)) return defaultDock()
     const zones = sanitizeZones(dock, ZONES)
     const taken = []
+    const kept = {}
+    for (const zone of ZONES)
+        zones[zone].forEach((pill, index) => {
+            if (pill.id.indexOf("dock-") !== 0 || taken.indexOf(pill.id) >= 0) return
+            taken.push(pill.id)
+            kept[zone + "/" + index] = pill.id
+        })
     const result = { pins: Array.isArray(dock.pins) ? sanitizeDockPins(dock.pins) : DOCK_DEFAULT_PINS.slice() }
     for (const zone of ZONES) {
-        result[zone] = zones[zone].map(pill => {
-            let id = pill.id.indexOf("dock-") === 0 ? pill.id : "dock-" + pill.id
-            if (taken.indexOf(id) >= 0) id = uniqueId("dock-pill", taken)
-            taken.push(id)
+        result[zone] = zones[zone].map((pill, index) => {
+            let id = kept[zone + "/" + index]
+            if (!id) {
+                const wanted = pill.id.indexOf("dock-") === 0 ? "dock-pill" : "dock-" + pill.id
+                id = taken.indexOf(wanted) < 0 ? wanted : uniqueId("dock-pill", taken)
+                taken.push(id)
+            }
             return { id: id, items: pill.items }
         })
     }
@@ -1364,7 +1410,7 @@ function dockZoneOp(dock, operation, args) {
 // DOCK_PIN_LIMIT; a pin that is there already is moved rather than doubled.
 function dockPinAt(dock, pin, index) {
     const next = copyDock(dock)
-    const name = sanitizeDockPins([pin])[0]
+    const name = dockPinName(pin)
     if (!name) return next
     const list = next.pins.filter(item => item !== name)
     if (list.length >= DOCK_PIN_LIMIT) return next
@@ -1394,6 +1440,18 @@ function dockPinned(dock, pin) {
 // Dock presets (config/dock-presets/*.json): its options in settings.json
 // (dock.*) and its layout here, applied together as one step.
 const DOCK_PRESET_OPTIONS = ["visibility", "position", "span", "iconSize", "margin", "showRunning", "magnification"]
+
+// The dock a preset makes of the one there is: the preset's zones, and its
+// pins only where the pins are still the defaults or none at all. Apps the
+// user pinned (or put in an order of their own) are theirs; a preset is how
+// the dock looks, and both shipped ones say "your apps".
+function dockFromPreset(current, layout) {
+    const next = copyDock(layout)
+    const pins = copyDock(current).pins
+    const own = pins.length > 0 && JSON.stringify(pins) !== JSON.stringify(DOCK_DEFAULT_PINS)
+    if (own) next.pins = pins
+    return next
+}
 function sanitizeDockPreset(preset) {
     if (!preset || typeof preset !== "object") return null
     const label = typeof preset.label === "string" ? preset.label.trim().slice(0, 40) : ""

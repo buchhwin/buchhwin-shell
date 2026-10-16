@@ -17,8 +17,12 @@ hidden calendars, histories, onboarding, the screens and the keyboard layout,
 power and the fingerprint reader).
 The profile in use is exported as it is set now; another one with the state it
 keeps in layout.json (LayoutService, `state`), and one that has none yet is
-refused rather than exported with the settings of the profile in use. Paths
-under the home directory are written as "~/...", which SettingsService expands.
+refused rather than exported with the settings of the profile in use. Folder
+paths under the home directory are written as "~/...", which SettingsService
+expands. A picture chosen by name (the wallpaper, the login screen's) is
+written empty: its file name is this machine's - the shipped profiles carried
+~/Pictures/Desktop/wallpaper_hyprland.webp, a file no other machine has (nor,
+by then, this one) - and an empty one gives way to the folder's first image.
 
 The result is checked before it is written: a value that looks like a
 coordinate, an e-mail address or a path under /home stops the export, so the
@@ -49,8 +53,10 @@ DROP = {
     "desktop.settingsMoveX", "desktop.settingsMoveY",
     "power", "lock.fingerprint", "dock.screens",
 }
-# Paths that are kept, home-relative.
-PATHS = {"wallpaper.path", "wallpaper.folder", "wallpaper.slideshowFolder", "login.wallpaper", "recording.folder"}
+# Folders that are kept, home-relative.
+PATHS = {"wallpaper.folder", "wallpaper.slideshowFolder", "recording.folder"}
+# Pictures chosen by name: shipped empty (see above), wherever they are.
+FILES = {"wallpaper.path", "login.wallpaper"}
 # The appearance a mode owns travels with the modes (ProfileLogic.MODE_SCOPED).
 MODE_SCOPED = {"blurStrength", "panelOpacity", "animationMode", "animationSpeed", "windowRadius",
                "shellRadius", "borderEnabled", "borderSize", "gapsIn", "gapsOut"}
@@ -110,7 +116,9 @@ def settings_of(raw, home):
         group, _, leaf = path.partition(".")
         if group == "appearance" and leaf in MODE_SCOPED:
             continue
-        if path in PATHS:
+        if path in FILES:
+            value = ""
+        elif path in PATHS:
             value = contract_home(value, home)
         kept[path] = value
     return unflatten(kept)

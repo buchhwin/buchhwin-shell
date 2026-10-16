@@ -23,9 +23,14 @@ GridLayout {
             ListRow {
                 level: 1
                 required property var modelData
+                // The port as the title, the card under it: the whole
+                // description elided at the right hid what tells two
+                // devices apart (AudioService.labelParts).
+                readonly property var parts: AudioService.labelParts(modelData, AudioService.sinks)
                 Layout.fillWidth: true
                 icon: AudioService.deviceIcon(modelData, false)
-                title: AudioService.label(modelData)
+                title: parts.title
+                subtitle: parts.subtitle
                 selected: modelData === AudioService.sink
                 onClicked: AudioService.setDefaultSink(modelData)
             }
@@ -67,9 +72,11 @@ GridLayout {
             ListRow {
                 level: 1
                 required property var modelData
+                readonly property var parts: AudioService.labelParts(modelData, AudioService.sources)
                 Layout.fillWidth: true
                 icon: AudioService.deviceIcon(modelData, true)
-                title: AudioService.label(modelData)
+                title: parts.title
+                subtitle: parts.subtitle
                 selected: modelData === AudioService.source
                 onClicked: AudioService.setDefaultSource(modelData)
             }

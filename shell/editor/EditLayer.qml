@@ -89,9 +89,14 @@ Variants {
             // were the only two edges there were: a bar on a *side* covers
             // nothing along the top and was pushing the panels down anyway.
             readonly property string barSide: barMode ? LayoutService.barEdge(screenName) : dockMode ? DockService.position : ""
+            // The dock stands beyond a bar on its own edge (Dock.qml
+            // `barInset`), so its body begins that much further in.
+            readonly property real dockBeyond: dockMode && LayoutService.barShown
+                && LayoutService.barEdge(screenName) === DockService.position
+                ? Math.max(0, LayoutService.barBottom(screenName)) : 0
             function clearOf(side) {
                 if (editorRoot.barSide !== side) return Metrics.spaceXl
-                const reach = dockMode ? DockService.margin + DockService.iconSize + Metrics.dockPadding * 2
+                const reach = dockMode ? dockBeyond + DockService.margin + DockService.iconSize + Metrics.dockPadding * 2
                     : LayoutService.barBottom(screenName)
                 return Math.max(Metrics.spaceXl, reach + Metrics.spaceLg)
             }
@@ -431,8 +436,10 @@ Variants {
                 id: toolbar
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
-                // Above a dock at the bottom while the dock is edited.
-                anchors.bottomMargin: editorRoot.dockMode ? editorRoot.contentBottom : Metrics.spaceXl
+                // Above a bar at the bottom while the bar is edited, and above
+                // a dock at the bottom (and a bar under it) while the dock is:
+                // its own MouseArea took the clicks of the frames under it.
+                anchors.bottomMargin: editorRoot.contentBottom
                 width: toolbarRow.implicitWidth + Metrics.spaceMd * 2
                 height: toolbarRow.implicitHeight + Metrics.spaceMd * 2
                 radius: Metrics.radiusPanel
@@ -467,12 +474,15 @@ Variants {
                         }))
                         onSelected: value => LayoutService.setActiveMode(value)
                     }
-                    // The desktop mode decides what this editor edits.
+                    // The desktop mode decides what this editor edits. None
+                    // of the three is marked while the dock is edited: one
+                    // target at a time. A click on the mode in use (from the
+                    // dock, back to it) switches nothing, and takes no step.
                     SegmentedControl {
                         focusOnTab: true
                         accessibleName: "Desktop mode"
                         style: "pill"
-                        current: LayoutService.desktopMode
+                        current: editorRoot.dockMode ? "" : LayoutService.desktopMode
                         options: [{ value: "widgets", label: "Widgets", icon: Icons.arrange },
                                   { value: "pills", label: "Bar", icon: "󰘔" },
                                   { value: "notch", label: "Notch", icon: "󱂩" }]
@@ -480,16 +490,22 @@ Variants {
                             editorRoot.selection = []
                             editorRoot.selectBar("", -1)
                             LayoutService.editTarget = "bar"
-                            LayoutService.setDesktopMode(value)
+                            if (value !== LayoutService.desktopMode) LayoutService.setDesktopMode(value)
                         }
                     }
                     // The dock beside whichever of them is in use: its zones
                     // are edited like the bar's. An off dock is switched on to
                     // be edited - asking to edit it is asking to see it.
+                    // Toggled on, it is a selected chip (the accent's tint and
+                    // line), not a filled accent: Done stays the one primary
+                    // button, and the toolbar shows one thing being edited.
                     ShellButton {
                         focusOnTab: true
                         icon: Icons.dock; text: "Dock"
-                        variant: editorRoot.dockMode ? "accent" : "surface"
+                        variant: "surface"
+                        border.width: editorRoot.dockMode ? Metrics.borderWidth : 0
+                        border.color: Colors.accentBorder
+                        Binding on color { when: editorRoot.dockMode; value: Colors.accentSoft }
                         toolTip: editorRoot.dockMode ? "Back to the desktop mode" : "Edit the dock"
                         onClicked: {
                             editorRoot.selection = []
@@ -596,12 +612,19 @@ Variants {
                               WidgetRegistry.categories.filter(category => !category.dockOnly))
                         : WidgetRegistry.categories.filter(category => !category.dockOnly)
                     ColumnLayout {
+                        id: pickerCategory
                         required property var modelData
+                        // A piece the dock holds once (WidgetRegistry `once`)
+                        // is not offered again while it is there; a category
+                        // left with nothing goes too.
+                        readonly property var entries: WidgetRegistry.typesIn(modelData.id).filter(entry =>
+                            !(editorRoot.dockMode && entry.once === true && Logic.dockHasType(LayoutService.dockLayout, entry.name)))
+                        visible: entries.length > 0
                         Layout.fillWidth: true
                         spacing: Metrics.spaceXxs
                         SectionLabel { text: modelData.label; Layout.topMargin: Metrics.spaceSm; Layout.leftMargin: Metrics.spaceSm }
                         Repeater {
-                            model: WidgetRegistry.typesIn(modelData.id)
+                            model: pickerCategory.entries
                             ListRow {
                                 required property var modelData
                                 Layout.fillWidth: true

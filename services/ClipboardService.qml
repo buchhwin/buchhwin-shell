@@ -8,7 +8,8 @@ import "clipboard/ClipboardLogic.js" as Logic
 // cache directory. Text and images are recorded while the setting is on;
 // entries marked sensitive by password managers are skipped by cliphist. The
 // database and the previews are the user's alone (0600/0700, see
-// clipboard/ClipboardLogic.js).
+// clipboard/ClipboardLogic.js), previews from before included: the recorders
+// take both as they start.
 Singleton {
     id: root
 
@@ -172,12 +173,12 @@ Singleton {
     Process {
         stderr: ErrorLog { label: "ClipboardService.process" }
         running: root.enabled && !root.recordersRestarting
-        command: Paths.bound(Logic.privately(root.dbPath, ["wl-paste", "--type", "text", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"]))
+        command: Paths.bound(Logic.privately(root.dbPath, ["wl-paste", "--type", "text", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"], root.thumbDir))
     }
     Process {
         stderr: ErrorLog { label: "ClipboardService.process" }
         running: root.enabled && !root.recordersRestarting
-        command: Paths.bound(Logic.privately(root.dbPath, ["wl-paste", "--type", "image", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"]))
+        command: Paths.bound(Logic.privately(root.dbPath, ["wl-paste", "--type", "image", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"], root.thumbDir))
     }
 
     // Text and pictures an X11 program copies - not what a password manager

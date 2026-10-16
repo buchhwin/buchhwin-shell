@@ -168,6 +168,21 @@ ColumnLayout {
             onSelected: value => root.set("accentGlyphs", value)
         }
     }
+    // A taskbar along the whole edge of a screen, always shown, already
+    // holds the clock and the status glyphs; "Hide" leaves them out of that
+    // screen's strip (notch.dockDuplicates, NotchLogic.dockDuplicates).
+    SettingRow {
+        Layout.fillWidth: true
+        label: "Beside a taskbar"
+        hint: "Leave out the clock and status icons a full taskbar on the same screen shows"
+        SegmentedControl {
+            focusOnTab: true
+            Layout.fillWidth: true
+            current: NotchService.dockDuplicates
+            options: [{ value: "keep", label: "Keep" }, { value: "hide", label: "Hide" }]
+            onSelected: value => root.set("dockDuplicates", value)
+        }
+    }
     // The collapsed body's height (notch.bodyHeight), the one size of the
     // notch a drag does not set: the editor drags the strip sideways only.
     // Like the delays it is stored once, on release - one undo step, and one

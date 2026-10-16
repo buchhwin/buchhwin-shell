@@ -39,7 +39,7 @@ WidgetBase {
     // actually is.
     name: metric === "ram" ? "RAM" : metric === "disk" ? "Disk" : "CPU"
     meter: usage
-    meterColor: usage > 0.9 ? root.dangerInk : usage > 0.75 ? root.warningInk : Colors.accent
+    meterColor: usage > 0.9 ? root.dangerInk : usage > 0.75 ? root.warningInk : root.levelFill
     detail: metric === "ram" && SystemStatsService.memory
             ? SystemStatsService.formatBytes(SystemStatsService.memory.used * 1024) + " of "
               + SystemStatsService.formatBytes(SystemStatsService.memory.total * 1024)

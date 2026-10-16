@@ -5,7 +5,9 @@ import QtQuick
 
 // Settings > Default Apps: session defaults for links, files and the app
 // hotkeys through scripts/default-apps.py (buchhwin-shell-mimeapps.list, so
-// Plasma keeps its own defaults). Loaded only while the page is open.
+// Plasma keeps its own defaults). Read when something asks (refresh()): the
+// page when it opens, and the dock's @files/@terminal/@browser pins and the
+// start menu's suggestions, which show the default app they stand for.
 Singleton {
     id: root
 

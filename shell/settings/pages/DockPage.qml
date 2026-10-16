@@ -5,6 +5,7 @@ import qs.theme
 import qs.services
 import qs.shell.components
 import "../../../services/dock/DockLogic.js" as Logic
+import "../../../services/settings/DockPageLogic.js" as PageLogic
 
 // Settings > Dock (shell/dock/Dock.qml). Everything here is a setting or the
 // dock's layout; the page never asks DockService anything, so an open page
@@ -21,32 +22,98 @@ ColumnLayout {
     readonly property var shownOn: Logic.screensFor(screensStored, screenNames)
     readonly property bool barHere: LayoutService.barShown && LayoutService.barEdge(PanelService.screen ? PanelService.screen.name : "") === position
 
+    // The preset the dock is built from (its widgets; the pins and the
+    // options tuned since are the user's, DockPageLogic): its card says "In
+    // use". The two cards looked the same whichever one was applied.
+    readonly property string presetInUse: PageLogic.presetInUse(LayoutService.builtinDockPresets, LayoutService.dockLayout,
+                                                                key => SettingsService.value("dock." + key))
+    // A preset is one click, and it replaces the dock's layout and options:
+    // the step it took is kept here, and "Undo" stays offered while that
+    // step is still the last one (LayoutService.undo takes it back, the
+    // dock switched on with it included).
+    property var appliedStep: null
+    property string appliedLabel: ""
+    readonly property bool presetUndoable: appliedStep !== null && LayoutService.undoStack.length > 0
+        && LayoutService.undoStack[LayoutService.undoStack.length - 1] === appliedStep
+    function applyPreset(preset) {
+        if (LayoutService.readOnly || !preset) return
+        // Switched on with it: choosing a dock is asking for one.
+        if (!LayoutService.applyDockPreset(preset.id, true)) return
+        if (!page.enabled) SettingsService.set("dock.enabled", true)
+        page.appliedStep = LayoutService.undoStack.length ? LayoutService.undoStack[LayoutService.undoStack.length - 1] : null
+        page.appliedLabel = preset.label
+    }
+    function undoPreset() {
+        if (!page.presetUndoable) return
+        page.appliedStep = null
+        LayoutService.undo()
+    }
+
+    // The dock's pins as they are stored, each with the entry it stands for
+    // now. Read here rather than from DockService, which this page never
+    // starts (see above): the same resolution, desktop ids and the defaults
+    // of Settings > Default apps.
+    readonly property var pins: LayoutService.dockLayout.pins || []
+    readonly property bool pinsNeedDefaults: pins.some(pin => Logic.pinCategory(pin).length > 0)
+    function entryFor(pin) {
+        if (pin === "@settings") return null
+        const id = Logic.pinCategory(pin).length ? Logic.defaultFor(pin, DefaultAppsService.categories) : pin
+        const entry = id.length ? DesktopEntries.byId(id) : null
+        return entry && !entry.noDisplay ? { name: entry.name, icon: entry.icon } : null
+    }
+    // DesktopEntries.byId() notifies no binding when the entries are read
+    // (the scan after the start, an app installed or removed): the
+    // launcher's count of settled scans runs the rows again, or a pin read
+    // before the scan said "Not installed" until the layout changed.
+    readonly property var pinRows: {
+        LauncherService.entriesRevision
+        return pins.map(pin => PageLogic.pinRow(pin, page.entryFor(pin), DefaultAppsService.categories.length > 0))
+    }
+    // A step builds the rows anew (a new array: every row is made again) and
+    // the button pressed goes with its row, so a keyboard lost its place
+    // after every step. The focus comes back to the same button on the pin's
+    // new row, and Space walks the pin on.
+    function stepPin(pin, index, delta, keepFocus) {
+        const target = PageLogic.stepTarget(index, delta, page.pins.length)
+        if (target < 0 || !LayoutService.dockPin(pin, target)) return
+        if (keepFocus) Qt.callLater(() => {
+            const row = pinRepeater.itemAt(target)
+            if (row) row.focusStep(delta)
+        })
+    }
+    PageActivity {
+        onOpened: if (page.pinsNeedDefaults && !DefaultAppsService.categories.length && !DefaultAppsService.loading)
+            DefaultAppsService.refresh()
+    }
+
     // A whole dock at once (config/dock-presets/): the taskbar first.
     SettingsSection {
         Layout.fillWidth: true
         title: "Presets"
-        description: "A whole dock at once: its layout, its pinned apps and how it shows. Change anything afterwards here or in the layout editor."
+        description: "A whole dock at once: its layout and how it shows; your pinned apps stay. Change anything afterwards here or in the layout editor."
 
         Repeater {
             model: LayoutService.builtinDockPresets
             ShellCard {
                 id: card
                 required property var modelData
+                readonly property bool inUse: page.presetInUse === modelData.id
+                // A start button on it: the taskbar, whose mark is the Saturn
+                // the button wears, not the apps grid "Edit in the editor"
+                // and the Default apps page have too.
+                readonly property bool withStart: PageLogic.holds(modelData.layout, "start")
                 Layout.fillWidth: true
                 interactive: !LayoutService.readOnly
                 hovered: cardMouse.containsMouse
                 pressed: cardMouse.pressed && cardMouse.containsMouse
                 implicitHeight: cardBody.implicitHeight + Metrics.spaceSm * 2
+                // The one in use is framed in the accent, beside its chip.
+                border.color: inUse ? Colors.accentBorder : Colors.border
                 activeFocusOnTab: !LayoutService.readOnly
                 Keys.onReturnPressed: apply()
                 Keys.onSpacePressed: apply()
-                Accessible.name: modelData.label
-                // Switched on with it: choosing a dock is asking for one.
-                function apply() {
-                    if (LayoutService.readOnly) return
-                    LayoutService.applyDockPreset(card.modelData.id)
-                    if (!page.enabled) SettingsService.set("dock.enabled", true)
-                }
+                Accessible.name: modelData.label + (inUse ? ", in use" : "")
+                function apply() { page.applyPreset(card.modelData) }
                 FocusRing { active: card.activeFocus; controlRadius: card.radius }
                 MouseArea {
                     id: cardMouse
@@ -61,15 +128,48 @@ ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: Metrics.spaceSm
                     spacing: Metrics.spaceSm
-                    ShellIcon {
-                        glyph: card.modelData.id === "taskbar" ? Icons.apps : Icons.dock
-                        size: Metrics.iconLg
-                        color: Colors.accentForeground
+                    // One box for both marks, so the two titles start at the
+                    // same x: the glyphs differ in width.
+                    Item {
+                        Layout.preferredWidth: Metrics.iconXl
+                        Layout.preferredHeight: Metrics.iconLg
+                        SaturnGlyph {
+                            visible: card.withStart
+                            anchors.centerIn: parent
+                            width: Metrics.startGlyphWidth
+                            height: Metrics.startGlyphHeight
+                        }
+                        ShellIcon {
+                            visible: !card.withStart
+                            anchors.centerIn: parent
+                            glyph: Icons.dock
+                            size: Metrics.iconLg
+                            color: Colors.accentForeground
+                        }
                     }
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 0
-                        ShellText { text: card.modelData.label; role: "title" }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Metrics.spaceSm
+                            ShellText { text: card.modelData.label; role: "title" }
+                            Rectangle {
+                                visible: card.inUse
+                                implicitWidth: inUseText.implicitWidth + Metrics.spaceSm * 2
+                                implicitHeight: inUseText.implicitHeight + Metrics.spaceXxs * 2
+                                radius: Metrics.pillRadius(height)
+                                color: Colors.accentSoft
+                                ShellText {
+                                    id: inUseText
+                                    anchors.centerIn: parent
+                                    text: "In use"
+                                    role: "caption"
+                                    color: Colors.accentOnSoft
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                        }
                         ShellText {
                             Layout.fillWidth: true
                             text: card.modelData.description
@@ -79,6 +179,23 @@ ColumnLayout {
                         }
                     }
                 }
+            }
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            visible: page.presetUndoable
+            spacing: Metrics.spaceSm
+            ShellText {
+                Layout.fillWidth: true
+                text: page.appliedLabel + " applied. Undo puts the dock back as it was."
+                role: "small"
+                muted: true
+                wrapMode: Text.Wrap
+            }
+            ShellButton {
+                focusOnTab: true
+                icon: Icons.undo; text: "Undo"; compact: true
+                onClicked: page.undoPreset()
             }
         }
         SettingRow {
@@ -100,7 +217,8 @@ ColumnLayout {
 
     SettingsSection {
         Layout.fillWidth: true
-        title: "Dock"
+        // Not "Dock" a third time: the page and a preset are called that.
+        title: "Behavior"
         description: "Your pinned apps and the apps that have windows, at the edge of the screen - a dock in the middle or a taskbar along the whole edge. It works next to the notch, the bar or the widgets."
 
         SettingRow {
@@ -216,7 +334,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Apps"
-        description: "The dock keeps its own pinned apps: pin and unpin them on the dock (right click). Drag a pinned app along the dock to move it, or a running one among the pins to pin it. Files, terminal and browser follow Settings > Default apps."
+        description: "The dock keeps its own pinned apps: pin and unpin them on the dock (right click) or in the list below. Drag a pinned app along the dock to move it, or a running one among the pins to pin it. Files, terminal and browser follow Settings > Default apps. The start menu's pinned apps are its own, under Settings > Launcher."
 
         SettingRow {
             labelFills: true
@@ -241,7 +359,10 @@ ColumnLayout {
                 onToggled: value => SettingsService.set("dock.magnification", value)
             }
         }
+        // Only for a dock that has the button; on one without it the choice
+        // did nothing, and nothing said so.
         SettingRow {
+            visible: LayoutService.dockHasStart
             label: "Start button"
             hint: "What the Saturn on the dock opens: the start menu (pinned and frequent apps, all apps, your folders, lock and power) or the launcher."
             SegmentedControl {
@@ -254,27 +375,111 @@ ColumnLayout {
                 onSelected: value => SettingsService.set("dock.startOpens", value)
             }
         }
+        ShellText {
+            Layout.fillWidth: true
+            visible: !LayoutService.dockHasStart
+            text: "There is no start button on the dock. Add one in the layout editor (Layout, above), or apply the Taskbar preset."
+            role: "small"
+            muted: true
+            wrapMode: Text.Wrap
+        }
         SettingRow {
             label: "Pinned apps"
-            hint: "At most " + LayoutService.dockPinLimit + "."
+            hint: "At most " + LayoutService.dockPinLimit + ". An app that is no longer installed still takes a place until it is unpinned here."
             ShellText {
                 Layout.fillWidth: true
-                text: (LayoutService.dockLayout.pins || []).length + " of " + LayoutService.dockPinLimit + " pinned"
+                text: page.pins.length + " of " + LayoutService.dockPinLimit + " pinned"
                 role: "small"
                 muted: true
             }
+            // A page of this panel, so the forward glyph, as for the other
+            // jumps inside Settings; leavesPanel is for what opens Settings
+            // from somewhere else.
             ShellButton {
                 focusOnTab: true
-                icon: Icons.leavesPanel; text: "Default apps"; variant: "ghost"; compact: true
+                icon: Icons.forward; text: "Default apps"; variant: "ghost"; compact: true
                 onClicked: PanelService.open("settings", { page: "defaultApps" })
             }
+        }
+
+        // The pins in their order on the dock, as the launcher's are listed
+        // on its page: moved by keyboard, and taken off - a pin whose app
+        // was uninstalled draws nothing on the dock, so this is the only
+        // place it can be seen and removed.
+        Repeater {
+            id: pinRepeater
+            model: page.pinRows
+            ListRow {
+                id: pinRow
+                required property var modelData
+                required property int index
+                // At an end now, the button that still moves it.
+                function focusStep(delta) {
+                    const wanted = delta < 0 ? earlierButton : laterButton
+                    const other = delta < 0 ? laterButton : earlierButton
+                    const button = wanted.enabledState ? wanted : other
+                    button.forceActiveFocus()
+                }
+                interactive: false
+                Layout.fillWidth: true
+                compact: true
+                level: 1
+                iconSource: modelData.icon.length ? LauncherService.iconSource(modelData.icon) : ""
+                icon: modelData.settings ? Icons.settingsApp : modelData.missing ? Icons.warning : Icons.apps
+                title: modelData.name
+                subtitle: modelData.subtitle
+                RowLayout {
+                    spacing: Metrics.spaceXxs
+                    ShellButton {
+                        id: earlierButton
+                        focusOnTab: true
+                        icon: Icons.raise
+                        variant: "ghost"
+                        compact: true
+                        toolTip: "Earlier on the dock"
+                        enabledState: !LayoutService.readOnly && PageLogic.stepTarget(pinRow.index, -1, page.pins.length) >= 0
+                        // A click takes no focus, so the focus says the keyboard pressed it.
+                        onClicked: page.stepPin(pinRow.modelData.pin, pinRow.index, -1, activeFocus)
+                    }
+                    ShellButton {
+                        id: laterButton
+                        focusOnTab: true
+                        icon: Icons.collapse
+                        variant: "ghost"
+                        compact: true
+                        toolTip: "Later on the dock"
+                        enabledState: !LayoutService.readOnly && PageLogic.stepTarget(pinRow.index, 1, page.pins.length) >= 0
+                        onClicked: page.stepPin(pinRow.modelData.pin, pinRow.index, 1, activeFocus)
+                    }
+                    // Asks first, like the launcher's pins on its page.
+                    ShellButton {
+                        focusOnTab: true
+                        icon: Icons.remove
+                        variant: "ghost"
+                        compact: true
+                        toolTip: "Unpin from the dock"
+                        enabledState: !LayoutService.readOnly
+                        confirm: true
+                        confirmText: "Unpin?"
+                        onClicked: LayoutService.dockUnpin(pinRow.modelData.pin)
+                    }
+                }
+            }
+        }
+
+        EmptyState {
+            Layout.fillWidth: true
+            visible: page.pins.length === 0
+            row: true
+            icon: Icons.pin
+            title: "Nothing pinned to the dock"
         }
     }
 
     SettingsSection {
         Layout.fillWidth: true
         title: "Look"
-        description: "The dock wears the panels' colour (Settings > Appearance > Panels) at a transparency of its own."
+        description: "The dock wears the panels' color (Settings > Appearance > Panels) at a transparency of its own."
 
         SettingRow {
             id: transparencyRow

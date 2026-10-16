@@ -151,6 +151,23 @@ class InstalledApps:
             self._catalogue = applications()
         return desktop_id in self._catalogue
 
+    def entry(self, desktop_id):
+        """The entry behind an installed id (read_entry's dict), or None."""
+        if desktop_id not in self:
+            return None
+        for base in data_dirs():
+            path = base / "applications" / desktop_id
+            if path.is_file():
+                return read_entry(path)
+        return (self._catalogue or {}).get(desktop_id)
+
+
+def entry_of(apps, desktop_id):
+    """The entry of an installed id, from the catalogue or InstalledApps."""
+    if isinstance(apps, InstalledApps):
+        return apps.entry(desktop_id)
+    return apps.get(desktop_id)
+
 
 def mime_lists():
     """mimeapps.list files in lookup order (desktop-specific first per dir)."""
@@ -179,17 +196,35 @@ def read_groups(path):
 
 
 def default_for(mime, apps):
-    """(desktop id, source): source is session, plasma (another mimeapps.list) or system."""
+    """(desktop id, source): source is session, plasma (another mimeapps.list) or system.
+
+    A choice in a mimeapps.list is someone's and counts as it is. The system's
+    mimeinfo.cache lists whatever registers the type, in an order nobody chose:
+    an entry hidden from menus (NoDisplay) is a helper, not anyone's default -
+    kitty-open.desktop registers inode/directory and came first on Leap and on
+    Arch, so Super+E, the dock's Files pin and Settings > Default apps all had
+    a terminal for the file manager - and for a directory, an application
+    that says it is a file manager comes before one that only opens folders
+    (an image viewer, an editor)."""
     for path in mime_lists():
         for desktop_id in read_groups(path).get("Default Applications", {}).get(mime, []):
             if desktop_id in apps:
                 return desktop_id, "session" if path == session_list() else "plasma"
+    first = ""
+    seen = set()
     for base in data_dirs():
         cache = read_groups(base / "applications" / "mimeinfo.cache").get("MIME Cache", {})
         for desktop_id in cache.get(mime, []):
-            if desktop_id in apps:
+            if desktop_id in seen or desktop_id not in apps:
+                continue
+            seen.add(desktop_id)
+            entry = entry_of(apps, desktop_id)
+            if not entry or entry["noDisplay"]:
+                continue
+            if mime != "inode/directory" or "FileManager" in entry["categories"]:
                 return desktop_id, "system"
-    return "", "system"
+            first = first or desktop_id
+    return first, "system"
 
 
 def terminal_default(apps):

@@ -5,6 +5,15 @@ import QtQuick
 import org.kde.plasma.workspace.calendar as PlasmaCalendar
 import org.kde.plasma.PimCalendars
 import org.kde.kitemmodels
+// This import is where every shell log's "QSettings::value: Empty key passed"
+// comes from (the line before "Configuration Loaded", and in each QML test
+// that imports qs.services): akonadi_quick_plugin links KPim6AkonadiWidgets,
+// which links KF6XmlGui, and XmlGui's language-override routine
+// (KDEPrivate::initializeLanguages, klanguageoverridesrc) runs as the library
+// is loaded and asks QSettings for an empty key. A bare ShellRoot with only
+// this import prints it (probed 16./17.10., kxmlgui 6.31); nothing of ours
+// uses QSettings. Harmless, and not ours to silence: the import costs about
+// 0.4 MB and 5-10 ms, too little for a lazy split.
 import org.kde.akonadi as Akonadi
 import qs.theme
 import "calendar/CalendarLogic.js" as Logic

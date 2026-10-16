@@ -278,7 +278,7 @@
                 "display": "full",
                 "size": "small",
                 "w": 1,
-                "h": 5,
+                "h": 4,
                 "options": {}
               }
             ]
@@ -2103,7 +2103,7 @@
       "perMonitor": true
     },
     "wallpaper": {
-      "path": "~/Pictures/Desktop/wallpaper_hyprland.webp",
+      "path": "",
       "folder": "",
       "slideshow": false,
       "intervalMinutes": 15,

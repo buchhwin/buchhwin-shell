@@ -105,3 +105,36 @@ function nextHiddenIndex(count, shown, active) {
     if (active >= shown && active < count - 1) return active + 1
     return shown
 }
+
+// ---- cover art ---------------------------------------------------------------
+// What MprisService does with a player's art url, by its scheme - in any case,
+// as URL schemes are (RFC 3986): "remote" for http(s), which curl fetches
+// into the cache; "file" for a path, checked once before it is handed out;
+// "data" for a picture inline in the url, handed straight on; "none" for
+// nothing and for every other scheme. "none" hands out no art at all: a url
+// handed on unchecked is fetched by Qt's own network stack in each of the
+// seven Images that show it - the lock screen's among them - which is the
+// path the curl fetch exists to keep the shell out of (pitfall 28). A player
+// that said "HTTPS://" went that way while the check read only lower case.
+function artKind(url) {
+    const text = String(url || "")
+    if (/^https?:\/\//i.test(text)) return "remote"
+    if (/^file:\/\//i.test(text)) return "file"
+    if (/^data:/i.test(text)) return "data"
+    return "none"
+}
+
+// The path of a file:// url, decoded; "" for anything else. A bare "%" in a
+// file name is a malformed escape and throws; the undecoded path is the
+// better guess then.
+function artPath(url) {
+    if (artKind(url) !== "file") return ""
+    const rest = String(url).slice("file://".length)
+    try { return decodeURIComponent(rest) } catch (error) { return rest }
+}
+
+// The url an art file is handed out as once checked: the player's own, with
+// the scheme in the lower case every consumer expects.
+function artFileUrl(url) {
+    return artKind(url) === "file" ? "file://" + String(url).slice("file://".length) : ""
+}

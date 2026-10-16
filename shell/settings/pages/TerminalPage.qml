@@ -311,6 +311,27 @@ ColumnLayout {
         }
     }
 
+    // scripts/launch-alacritty.sh reads terminal.alacrittyDaemon itself
+    // (settings.json, true when it is not there): a window from the running
+    // `alacritty --daemon` instead of a new process each time, a plain
+    // Alacritty when that fails.
+    SettingsSection {
+        Layout.fillWidth: true
+        title: "Alacritty"
+        description: "Alacritty keeps its own configuration and takes the opacity above."
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Fast new Alacritty windows (one Alacritty process)"
+            hint: "New windows open from one Alacritty that keeps running after the first, in about half the time. They share that process: if it crashes, all its windows close. Off: every window is an Alacritty of its own."
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("terminal.alacrittyDaemon") !== false
+                onToggled: value => SettingsService.set("terminal.alacrittyDaemon", value)
+            }
+        }
+    }
+
     SettingsSection {
         Layout.fillWidth: true
         visible: !root.options.personalShell

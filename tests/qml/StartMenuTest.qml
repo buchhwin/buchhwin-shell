@@ -6,10 +6,14 @@ import "../../services/startmenu/StartMenuLogic.js" as S
 import "../../services/system/UserDirsLogic.js" as U
 
 // The start menu's arithmetic (services/startmenu/StartMenuLogic.js): the
-// fastfetch logo cut into runs, the Saturn on the button, the A-Z list, the
-// keys, the frequent apps, the places, the header's second line and the
-// menus.
+// fastfetch logo cut into runs and which logo it is, the Saturn on the
+// button, the A-Z list, the keys and Escape, the frequent and the suggested
+// apps, the places, the header's second line and the menus.
 ShellRoot {
+    FileView {
+        id: configFile
+        blockLoading: true
+    }
     FileView {
         id: saturnFile
         path: Qt.resolvedUrl("../../config/builtin-profiles/buchhwin/saturn.txt").toString().replace("file://", "")
@@ -37,6 +41,35 @@ ShellRoot {
         T.ok(saturn.runs.some(run => run.row === 7 && run.col === 35 && run.text === "-.." && run.tone === 1),
              "the planet goes on behind the ring")
         T.ok(saturn.runs.every(run => run.tone === 1 || run.tone === 2), "two colours, planet and ring")
+        T.ok(saturn.rows <= S.LOGO_BOX.rows && saturn.columns <= S.LOGO_BOX.columns, "the Saturn fits the header's room as it is")
+        // A logo of the user's own (ui-dock#10): kept to its limit, colour
+        // codes dropped, an image read as text is no logo.
+        const tall = Array(100).fill("x".repeat(200)).join("\n")
+        const capped = S.asciiRuns(tall)
+        T.eq([capped.rows, capped.columns], [S.LOGO_LIMIT.rows, S.LOGO_LIMIT.columns], "a large logo is cut to the limit")
+        T.eq(S.asciiRuns("\u001b[1;34mab\u001b[0m cd").runs.map(run => run.col + run.text), ["0ab", "3cd"], "terminal colour codes take no column")
+        T.eq(S.asciiRuns("\u0089PNG\r\n\u001a\n\u0000\u0000\u0000\rIHDR").runs, [], "a picture is no logo")
+        T.eq(S.asciiRuns("\u0001\u0002\u0003\u0004ab").runs, [], "nor mostly control characters")
+
+        // ---- which logo ------------------------------------------------------------
+        const shippedConfig = Qt.resolvedUrl("../../config/builtin-profiles/buchhwin/fastfetch.jsonc").toString().replace("file://", "")
+        configFile.path = shippedConfig
+        T.eq(S.textLogo(configFile.text(), "/home/u"), { path: "/home/u/.config/buchhwin-shell/saturn.txt" },
+             "the shipped configuration: the user's copy of the Saturn")
+        T.eq(S.textLogo('{ "logo": { "type": "data", "source": "$1ab" } }', "/h"), { text: "$1ab" }, "a logo written into it")
+        T.eq(S.textLogo('{ "logo": { "type": "file-raw", "source": "/etc/logo.txt" } }', "/h"), { path: "/etc/logo.txt" }, "a raw file")
+        T.eq(S.textLogo('{ "logo": { "type": "kitty-direct", "source": "~/p.png" } }', "/h"), {}, "an image is no text logo")
+        T.eq(S.textLogo('{ "logo": { "source": "~/Pictures/me.JPG" } }', "/h"), {}, "nor an image's name with no type")
+        T.eq(S.textLogo('{ "logo": { "source": "~/logo.txt" } }', "/h"), { path: "/h/logo.txt" }, "a path with no type is a file")
+        T.eq(S.textLogo('{ "logo": { "source": "arch" } }', "/h"), {}, "a bare word names one of fastfetch's logos")
+        T.eq(S.textLogo('{ "logo": { "type": "builtin", "source": "~/x.txt" } }', "/h"), {}, "builtin")
+        T.eq(S.textLogo('// a comment, "logo": 1\n{ /* and another */ "logo": { "type": "file", "source": "~/a // b.txt", }, }', "/h"),
+             { path: "/h/a // b.txt" }, "comments and trailing commas, not inside strings")
+        T.eq([S.textLogo("", "/h"), S.textLogo("{ broken", "/h"), S.textLogo('{ "logo": {} }', "/h")], [{}, {}, {}], "nothing to go on")
+        T.eq(S.logoPaths({ path: "/h/a.txt" }, "/c/saturn.txt", "/s/saturn.txt"), ["/h/a.txt", "/c/saturn.txt", "/s/saturn.txt"],
+             "the configuration's file, the user's Saturn, the shipped one")
+        T.eq(S.logoPaths({ path: "/c/saturn.txt" }, "/c/saturn.txt", "/s/saturn.txt"), ["/c/saturn.txt", "/s/saturn.txt"], "each once")
+        T.eq(S.logoPaths({}, "", "/s/saturn.txt"), ["/s/saturn.txt"], "the shipped one at least")
 
         // ---- the Saturn on the button ------------------------------------------------
         const g = S.saturnGeometry(177, 100)
@@ -85,6 +118,14 @@ ShellRoot {
         T.eq(S.move({ zone: "gone", index: 3 }, "left", zones), field, "a zone that went: the field")
         T.eq(S.move({ zone: "pinned", index: 3 }, "down", []), field, "no zones: the field")
         T.eq(S.move({ zone: "pinned", index: 30 }, "left", zones), { zone: "pinned", index: 8 }, "an index past the end is clamped first")
+        T.eq(S.move(field, "down", [{ id: "pinned", count: 0, columns: 5 }, { id: "suggested", count: 4, columns: 5 }]),
+             { zone: "suggested", index: 0 }, "nothing pinned: down reaches the suggestions")
+
+        // ---- Escape (ui-dock#4) ------------------------------------------------------------
+        T.eq(S.escapeStep(true, "fire", "all"), "menu", "the menu first")
+        T.eq(S.escapeStep(false, "fire", "all"), "query", "then the query, one the field passed on")
+        T.eq(S.escapeStep(false, "", "all"), "view", "then All apps")
+        T.eq(S.escapeStep(false, "", "home"), "close", "then the menu closes")
 
         // ---- frequent ------------------------------------------------------------------
         const installed = [app("code"), app("kitty"), app("hidden", "hidden", { noDisplay: true }), app("dolphin")]
@@ -92,6 +133,19 @@ ShellRoot {
              ["code", "dolphin"], "installed, shown, not pinned")
         T.eq(S.frequent(["code", "kitty", "dolphin"], installed, [], 2).length, 2, "a limit")
         T.eq(S.frequent(["code"], null, null), [], "no entries")
+
+        // ---- suggested (D5) ----------------------------------------------------------------
+        const entries = { "org.kde.dolphin": app("org.kde.dolphin", "Dolphin"), "Alacritty": app("Alacritty"),
+                          "hidden": app("hidden", "hidden", { noDisplay: true }) }
+        const lookup = id => entries[id] || null
+        const defaults = [{ id: "browser", current: "gone.desktop" }, { id: "terminal", current: "Alacritty.desktop" },
+                          { id: "files", current: "org.kde.dolphin.desktop" }, { id: "text", current: "Alacritty.desktop" }]
+        T.eq(S.suggested(defaults, lookup).map(item => item.kind + ":" + (item.entry ? item.entry.id : "")),
+             ["app:org.kde.dolphin", "app:Alacritty", "settings:"], "files, terminal, browser if installed, then Settings")
+        T.eq(S.suggested([{ id: "files", current: "Alacritty.desktop" }, { id: "terminal", current: "Alacritty.desktop" },
+                          { id: "browser", current: "hidden.desktop" }], lookup).length, 2, "each app once, a hidden one not")
+        T.eq(S.suggested(null, null).map(item => item.kind), ["settings"], "the defaults not read yet: Settings")
+        T.eq(S.appMenuRows({ source: "suggested", pinned: false }).map(row => row.kind), ["open", "pinStart"], "a suggestion can be pinned")
 
         // ---- places ----------------------------------------------------------------------
         const german = 'XDG_DOCUMENTS_DIR="$HOME/Dokumente"\nXDG_DOWNLOAD_DIR="$HOME/Downloads"\nXDG_PICTURES_DIR="/data/Bilder"\n'

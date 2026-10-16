@@ -7,7 +7,9 @@ import QtQuick.Shapes
 import qs.theme
 import qs.services
 import "../../services/arrange/ArrangeLogic.js" as Arrange
+import "../../services/dock/DockLogic.js" as DockLogic
 import "NavLogic.js" as Nav
+import "PanelPlaceLogic.js" as Place
 
 // An overlay hosting one floating panel card. Handles focus, scrim, Escape,
 // click-outside and the open/close transition.
@@ -27,8 +29,13 @@ PanelWindow {
     property string placement: "top-right"   // top-right, center, top-center, right
     property real cardWidth: Metrics.controlCenterWidth
     property real cardHeight: -1               // -1 follows content height
-    property real maxCardHeight: anchorBottom >= 0 ? anchorBottom - Metrics.screenMargin
-        : screenH - (anchorTop >= 0 ? anchorTop : Metrics.screenMargin) - bottomOffset
+    // The most the card may be. Growing up out of something (a widget in the
+    // lower half, the dock's bell) it stops below the bar or the notch
+    // (`topClear`) rather than at the screen margin, where a tall one covered
+    // a top bar's end; beside a side dock it keeps clear of both.
+    property real maxCardHeight: Math.max(0, anchorBottom >= 0 ? anchorBottom - topClear
+        : dockAnchored ? screenH - topClear - bottomOffset
+        : screenH - (anchorTop >= 0 ? anchorTop : Metrics.screenMargin) - bottomOffset)
     // What is really left below where the card starts, which without an anchor
     // is `topOffset` (under the notch or the bar) rather than the screen edge.
     // `maxCardHeight` measures from the edge and so promises more room than
@@ -40,7 +47,14 @@ PanelWindow {
     // whose size follows the body height - which turns the clamp into a
     // binding loop on `targetHeight`. Panels that need the honest figure ask
     // for it; fixing the rest is its own piece of work.
-    readonly property real roomBelowTop: Math.max(0, screenH - topOffset - bottomOffset)
+    //
+    // It is never more than the card may be, though: out of the dock the card
+    // was capped at the room above the dock while a list sized by this figure
+    // took the room below the bar, and its last rows were cut off with no
+    // way to scroll to them (round 12, ui-rest#4). Out of the dock it is the
+    // card's own bound - the card starts where that room starts.
+    readonly property real roomBelowTop: dockAnchored ? maxCardHeight
+        : Math.max(0, Math.min(screenH - topOffset - bottomOffset, maxCardHeight))
     property color scrimColor: Colors.scrim
     // A panel the user may drag by the strip along the top of its card.
     // `moveX`/`moveY` are an offset from where the panel would otherwise sit,
@@ -111,21 +125,61 @@ PanelWindow {
     readonly property real clockCentre: clockRect ? clockRect.x + clockRect.width / 2 : -1
     property real topOffset: clockBottom >= 0 || barBottom >= 0
         ? Math.max(clockBottom, barBottom >= 0 ? barBottom + Metrics.spaceSm : -1) : Metrics.panelTopOffset
+    // What every panel keeps clear of at the top, whatever opened it: the bar
+    // there or the notch. Less than `topOffset`, which also starts a panel
+    // without an anchor under a desktop clock; this is only where a panel
+    // growing up out of the dock or a widget has to stop.
+    readonly property real topClear: barBottom >= 0 ? barBottom + Metrics.spaceSm : Metrics.screenMargin
+    // The dock, while it is on: how far it reaches in from each edge of this
+    // screen while it is shown. Panels are Overlay surfaces that ignore every
+    // reserved zone, so the taskbar's zone kept nothing off it - the
+    // notification center ran down over the taskbar and hid the bell that
+    // opens it (round 12, D1). Read only while the dock is on, so a panel
+    // never starts the dock's service (pitfall 101). The whole edge, not
+    // only where the dock's body runs (the popups ask that): where the card
+    // stands along the edge follows its width, and the resizable panels'
+    // width follows `roomBelowTop` - a binding loop.
+    readonly property string placeScreen: screen ? screen.name : ""
+    readonly property bool dockOn: SettingsService.value("dock.enabled") === true
+    readonly property var dockState: dockOn
+        ? ({ position: DockService.position, shown: DockService.shownOn[placeScreen] === true,
+             reach: DockService.reachOn[placeScreen] || 0 })
+        : null
     // What a panel has to stay clear of at the bottom: the bar when it is
-    // there, otherwise the screen margin every panel already keeps.
-    readonly property real bottomOffset: barAtBottom && barInset >= 0
-        ? barInset + Metrics.spaceSm : Metrics.screenMargin
-    // The same pair for a bar that runs down one side. `under` and `above`
-    // have a twin in `beside`, and so does this.
-    readonly property real leftOffset: barAtLeft && barInset >= 0
-        ? barInset + Metrics.spaceSm : Metrics.screenMargin
-    readonly property real rightOffset: barAtRight && barInset >= 0
-        ? barInset + Metrics.spaceSm : Metrics.screenMargin
+    // there and the dock beyond it, otherwise the screen margin every panel
+    // already keeps.
+    readonly property real bottomOffset: Place.edgeClear(barAtBottom ? barInset : -1,
+        Place.dockReach(dockState, "bottom"), Metrics.spaceSm, Metrics.screenMargin)
+    // The same pair for a bar (and a dock) that runs down one side. `under`
+    // and `above` have a twin in `beside`, and so does this.
+    readonly property real leftOffset: Place.edgeClear(barAtLeft ? barInset : -1,
+        Place.dockReach(dockState, "left"), Metrics.spaceSm, Metrics.screenMargin)
+    readonly property real rightOffset: Place.edgeClear(barAtRight ? barInset : -1,
+        Place.dockReach(dockState, "right"), Metrics.spaceSm, Metrics.screenMargin)
     // Panels opened from a pill are centred below it (screen x in PanelService.args).
     // The arguments are kept while closing: PanelService clears them at once,
     // which would move the card to its default place during the animation.
     property var openArgs: ({})
     function argNumber(name) { return openArgs && typeof openArgs[name] === "number" ? openArgs[name] : -1 }
+    // Opened by a key or over IPC, a panel whose widget the dock always shows
+    // comes out of that widget, as a click on it would: Super+N above the
+    // taskbar's bell, Super+O above its status group, not under a desktop
+    // clock a screen away from them (round 12, D13 g). Only while the dock is
+    // always there (a hidden one would open the panel out of nothing) and
+    // only when nothing else placed the panel. The widgets per panel are
+    // PanelPlaceLogic.DOCK_ITEMS; a panel may name its own. The anchor is the
+    // click's own (Pill.qml): the gap measured off the dock's body, not off
+    // the item inside it.
+    property var dockItems: Place.dockItems(panelId)
+    function placedArgs(args) {
+        if (!dockOn || !dockItems.length || Place.placed(args)
+            || SettingsService.value("dock.visibility") !== "always") return args
+        const name = PanelService.screen ? PanelService.screen.name : ""
+        const rect = Place.firstRect(dockItems, type => LayoutService.dockItemRect(name, type))
+        if (!rect) return args
+        return Place.withDockItem(args, rect,
+            DockLogic.panelAnchor(SettingsService.value("dock.position"), rect, Metrics.dockPanelGap, DockService.placeOf(name)))
+    }
     // A top-right panel opened by a hotkey follows the desktop clock, so it
     // lands under the thing that told you the time. In notch mode the clock
     // *is* the notch, dead centre, so the panel ends up centred - which is
@@ -325,7 +379,14 @@ PanelWindow {
     onCompactRectChanged: holdRect()
     onShownChanged: holdRect()
     onScreenChanged: heldRect = compactRect
-    Component.onCompleted: { holdRect(); PanelService.reportPresent(panelId, true) }
+    // A panel built while it is already the active one (a lazy loader that
+    // went off, came back and was opened within one turn) opens now: the
+    // handler below does not run for the value a property starts with.
+    Component.onCompleted: {
+        holdRect()
+        if (wanted) opening()
+        PanelService.reportPresent(panelId, true)
+    }
     Component.onDestruction: PanelService.reportPresent(panelId, false)
     // Origin and target together, so the morph is never cut off.
     readonly property rect compactRect: {
@@ -383,32 +444,35 @@ PanelWindow {
 
     onWantedChanged: {
         if (wanted) {
-            openFrames = 0
-            openWorstMs = 0
-            progress.armed = false
-            progress.value = 0
-            openArgs = PanelService.args
-            // The scrim is **not** drawn here: there is one for all panels, on
-            // its own surface below them (shell/components/ScrimLayer.qml),
-            // because two panels are on screen whenever one hands over to
-            // another and two scrims fading past each other is a visible
-            // flicker. Saying how deep this one wants it is all that is left.
-            PanelService.reportScrim(panelId, scrimColor, dismissOnOutsideClick, fromNotch)
-            // A panel that may be moved starts where it was left.
-            if (movable) { moveX = savedMoveX; moveY = savedMoveY }
-            closeTimer.stop()
-            shown = true
-            progress.target = 1
-            Qt.callLater(focusEntry)
+            opening()
         } else {
             progress.target = 0
             closeTimer.restart()
         }
     }
+    function opening() {
+        openFrames = 0
+        openWorstMs = 0
+        progress.armed = false
+        progress.value = 0
+        openArgs = placedArgs(PanelService.args)
+        // The scrim is **not** drawn here: there is one for all panels, on
+        // its own surface below them (shell/components/ScrimLayer.qml),
+        // because two panels are on screen whenever one hands over to
+        // another and two scrims fading past each other is a visible
+        // flicker. Saying how deep this one wants it is all that is left.
+        PanelService.reportScrim(panelId, scrimColor, dismissOnOutsideClick, fromNotch)
+        // A panel that may be moved starts where it was left.
+        if (movable) { moveX = savedMoveX; moveY = savedMoveY }
+        closeTimer.stop()
+        shown = true
+        progress.target = 1
+        Qt.callLater(focusEntry)
+    }
 
     Connections {
         target: PanelService
-        function onArgsChanged() { if (window.wanted) window.openArgs = PanelService.args }
+        function onArgsChanged() { if (window.wanted) window.openArgs = window.placedArgs(PanelService.args) }
     }
 
     Timer {
@@ -622,7 +686,7 @@ PanelWindow {
                 : window.dockAnchored
                     ? (window.anchorLeft >= 0 ? Math.max(0, Math.min(window.screenW - targetWidth, window.anchorLeft))
                        : window.anchorRight >= 0 ? Math.max(0, Math.min(window.screenW - targetWidth, window.anchorRight - targetWidth))
-                       : Math.max(Metrics.screenMargin, Math.min(window.screenW - targetWidth - Metrics.screenMargin, window.anchorX - targetWidth / 2)))
+                       : Math.max(window.leftOffset, Math.min(window.screenW - targetWidth - window.rightOffset, window.anchorX - targetWidth / 2)))
                 : window.placement === "center" ? (window.screenW - targetWidth) / 2
                 : window.anchorLeft >= 0 ? Math.max(0, Math.min(window.screenW - targetWidth, window.anchorLeft))
                 : window.anchorRight >= 0 ? Math.max(0, Math.min(window.screenW - targetWidth, window.anchorRight - targetWidth))
@@ -637,17 +701,23 @@ PanelWindow {
             // the top, and above it when it is at the bottom. Its anchor is fixed
             // for the panel's whole life and only this margin moves, which is what
             // a mapped layer surface will accept.
+            // Out of the dock it stops below the bar or the notch rather than
+            // at the screen margin (`topClear`; the notification center from
+            // the taskbar's bell started 16 px from the top and covered a top
+            // bar's end), and beside a side dock it keeps off a bottom bar.
             readonly property real targetY: window.fromNotch ? 0
-                : window.dockAnchored && window.anchorBottom >= 0 ? Math.max(Metrics.screenMargin, window.anchorBottom - targetHeight)
+                : window.dockAnchored && window.anchorBottom >= 0 ? Math.max(window.topClear, window.anchorBottom - targetHeight)
                 : window.dockAnchored && window.anchorY >= 0
-                    ? Math.max(Metrics.screenMargin, Math.min(window.screenH - targetHeight - Metrics.screenMargin, window.anchorY - targetHeight / 2))
+                    ? Math.max(window.topClear, Math.min(window.screenH - targetHeight - window.bottomOffset, window.anchorY - targetHeight / 2))
                 : window.placement === "center" ? (window.screenH - targetHeight) / 2
                 : window.placement === "right" ? Metrics.screenMargin
-                // Centred on the pill that opened it, clamped into the screen.
+                // Centred on the pill that opened it, clamped into the screen
+                // and above a bottom dock (`bottomOffset` is the screen margin
+                // beside a side bar without one).
                 : window.anchorY >= 0
                     ? Math.max(Metrics.screenMargin,
-                               Math.min(window.screenH - targetHeight - Metrics.screenMargin, window.anchorY - targetHeight / 2))
-                : window.anchorBottom >= 0 ? Math.max(Metrics.screenMargin, window.anchorBottom - targetHeight)
+                               Math.min(window.screenH - targetHeight - window.bottomOffset, window.anchorY - targetHeight / 2))
+                : window.anchorBottom >= 0 ? Math.max(window.topClear, window.anchorBottom - targetHeight)
                 : window.anchorTop >= 0 ? Math.min(window.anchorTop, window.screenH - targetHeight - window.bottomOffset)
                 : window.barAtBottom ? window.screenH - targetHeight - window.bottomOffset
                 : window.topOffset

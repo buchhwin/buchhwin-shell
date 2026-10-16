@@ -104,6 +104,11 @@ ShellCard {
                     sourceSize.width: Metrics.notificationImageSize
                     sourceSize.height: Metrics.notificationImageSize
                     fillMode: Image.PreserveAspectFit
+                    // A theme icon (image://icon) on the GUI thread although
+                    // it loads off it too (TileContent): one icon per card,
+                    // and asynchronously the bell below would stand in its
+                    // place until it arrives, as the popup comes in. Files
+                    // and pictures load off it.
                     asynchronous: !String(source).startsWith("image://")
                     visible: status === Image.Ready
                 }

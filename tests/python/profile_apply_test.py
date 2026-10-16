@@ -12,6 +12,7 @@ import io
 import json
 import os
 import pathlib
+import stat
 import sys
 import tempfile
 
@@ -26,6 +27,10 @@ failures = []
 def check(condition, message):
     if not condition:
         failures.append(message)
+
+
+def mode(path):
+    return stat.S_IMODE(os.lstat(path).st_mode)
 
 
 def run(*argv):
@@ -63,6 +68,22 @@ with tempfile.TemporaryDirectory() as temp:
                                             "Categories=System;TerminalEmulator;\n", encoding="utf-8")
 
     # ---- the backup's name -------------------------------------------------------
+    # What earlier runs left: a backup directory 0755 with a 0644 copy in it,
+    # beside other things in the state directory that are not backups.
+    old = state / "backup-2026-10-14"
+    old.mkdir(parents=True)
+    (old / "settings.json").write_text("{}\n", encoding="utf-8")
+    os.chmod(old, 0o755)
+    os.chmod(old / "settings.json", 0o644)
+    other = state / "round12"
+    other.mkdir()
+    os.chmod(other, 0o755)
+    elsewhere = base / "elsewhere"
+    elsewhere.mkdir()
+    os.chmod(elsewhere, 0o755)
+    (state / "backup-2026-10-13").symlink_to(elsewhere)
+    # The live settings.json was 0644, whatever umask this test runs under.
+    os.chmod(config / "settings.json", 0o644)
     morning = datetime.datetime(2026, 10, 15, 9, 30, 5)
     first, copied = module.backup(config, state, morning)
     check(first == state / "backup-2026-10-15", "the first backup of a day is named after the day: %s" % first)
@@ -70,6 +91,14 @@ with tempfile.TemporaryDirectory() as temp:
           "settings, layout and the session's default-app list are copied: %r" % copied)
     check((first / "settings.json").read_text(encoding="utf-8") == '{"appearance": {"accent": "#123456"}}\n',
           "with their content")
+    # security#8: settings.json holds the weather's place.
+    check(mode(config / "settings.json") == 0o644, "the original keeps its own mode")
+    check(mode(first) == 0o700, "a backup directory is the user's alone: %o" % mode(first))
+    check(all(mode(first / name) == 0o600 for name in copied),
+          "and so is every copy in it: %r" % {name: oct(mode(first / name)) for name in copied})
+    check(mode(old) == 0o700, "an earlier run's backup directory is closed: %o" % mode(old))
+    check(mode(other) == 0o755 and mode(elsewhere) == 0o755,
+          "nothing else in the state directory is touched, and a link named like a backup is not followed")
     second, _ = module.backup(config, state, morning)
     check(second == state / "backup-2026-10-15-093005", "a second one that day gets the time: %s" % second)
     third, _ = module.backup(config, state, morning)
@@ -187,6 +216,8 @@ with tempfile.TemporaryDirectory() as temp:
     check(target == daily / "backup-2026-10-15" and written == ["layout.json", "settings.json"] and not kept,
           "the day's backup holds the two files: %r %r" % (target, written))
     check((target / "settings.json").read_text(encoding="utf-8") == texts["settings.json"], "as they were handed over")
+    check(mode(target) == 0o700 and all(mode(target / name) == 0o600 for name in written),
+          "the day's backup is the user's alone too")
     check(sorted(path.name for path in target.iterdir()) == ["layout.json", "settings.json"],
           "and nothing else: a name that is not one of the two is not a file to write")
     again, written, kept = module.daily_backup({"settings.json": "{}\n"}, daily, morning)

@@ -32,8 +32,13 @@ Singleton {
     // The initial in the lock screen avatar: a glyph, not a text role.
     readonly property int avatarInitialSize: size(34)
     // The start menu's fastfetch Saturn: small enough to stand beside two
-    // lines of text, large enough that it is still letters.
-    readonly property int startAsciiSize: size(8)
+    // lines of text, large enough that it is still letters. At 8 px the
+    // planet's and the ring's letters ran into one mass (round 12, D13 d;
+    // the ring's tone moved off the planet's too, Colors.saturnRing). At 9
+    // the logo is about 300 x 180 px: one step, because the menu is one
+    // fixed height and its home view has the pins, Frequent and Places
+    // under the head (10 would be 330 x 200).
+    readonly property int startAsciiSize: size(9)
     readonly property int startAvatarInitialSize: size(15)
     readonly property int displaySize: size(56)
     // The charge in the battery popup: bigger than a headline, smaller than
@@ -44,6 +49,8 @@ Singleton {
     readonly property int pairingCodeSize: size(39)
     // One emoji in the picker's grid.
     readonly property int emojiSize: size(28)
+    // A group's emoji on the picker's tabs: an icon's size, not a label's.
+    readonly property int emojiTabSize: size(20)
     // Lock screen (macOS style: date above a very large, heavy clock).
     readonly property int lockDateSize: size(22)
     readonly property int lockClockSize: size(118)

@@ -82,6 +82,22 @@ unit_escape() {
     fi
   done
 }
+# A unit name has at most 255 characters, and systemd-run refuses a longer
+# one - the application would not start at all. An id that escapes past what
+# is left beside the prefix and the pid (a long name of spaces and symbols,
+# each four characters escaped: Citrix's subscribed apps are named like
+# "XenApp 7.x.RDS-Desk $S101-255") is cut at the edge of an escape. Every
+# backslash in an escaped name begins one (a backslash itself is \x5c).
+unit_shorten() {
+  local max=$1 tail
+  (( ${#escaped} > max )) || return 0
+  escaped=${escaped:0:max}
+  tail=${escaped: -3}
+  if [[ $tail == *\\* ]]; then
+    tail=${tail%\\*}
+    escaped=${escaped:0:max-3+${#tail}}
+  fi
+}
 
 if command -v systemd-run >/dev/null 2>&1 && manager_running; then
   if [[ -n $unit ]]; then
@@ -95,6 +111,8 @@ if command -v systemd-run >/dev/null 2>&1 && manager_running; then
       --description="$id (buchhwin-shell)" "${forward[@]}" -- "$@"
   fi
   unit_escape "$id"
+  # app-buchhwin- (13), -<pid> (8 at most: pid_max is 4194304) and .scope (6).
+  unit_shorten $(( 255 - 13 - 8 - 6 ))
   exec systemd-run --user --scope --quiet --slice=app.slice \
     --unit="app-buchhwin-$escaped-$$.scope" -- "$@"
 fi

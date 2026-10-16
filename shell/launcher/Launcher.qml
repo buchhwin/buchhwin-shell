@@ -567,8 +567,19 @@ ShellPanel {
 
             Flickable {
                 id: categoryFlick
-                anchors.fill: parent
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
                 anchors.margins: Metrics.spaceSm
+                // Whole rows only, as in the results beside it: the cell's
+                // height is no multiple of a row, and the list ended on half
+                // a "Utilities" next to a list that ends on whole ones. A
+                // compact ListRow is controlHeight + spaceXs tall; n rows
+                // take n pitches less one spacing. All of them when they fit.
+                readonly property real pitch: Metrics.controlHeight + Metrics.spaceXs + categoryColumn.spacing
+                readonly property real room: parent.height - Metrics.spaceSm * 2
+                height: Math.min(room, Math.max(pitch, Math.floor((room + categoryColumn.spacing) / pitch) * pitch)
+                    - categoryColumn.spacing)
                 contentHeight: categoryColumn.implicitHeight
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
@@ -727,13 +738,23 @@ ShellPanel {
                 // results, so the hint was centred on the list's top edge and
                 // its upper half clipped away.
                 EmptyState {
+                    // A file search that found nothing because the index has
+                    // nothing from home says why (LauncherService.fileIndexHint),
+                    // instead of a bare "No files found" on every query.
+                    readonly property bool unindexed: root.mode.id === "files" && root.query.length >= 3
+                        && !LauncherService.fileSearchRunning && LauncherService.fileIndexHint.length > 0
                     anchors.centerIn: list
+                    // As wide as it needs, never wider than the list: the
+                    // hint wraps instead of running past the card.
+                    width: Math.min(implicitWidth, list.width - 2 * Metrics.spaceLg)
                     visible: root.results.length === 0
                     icon: root.mode.id === "files" && LauncherService.fileSearchRunning ? Icons.busy : root.mode.icon
-                    title: root.mode.id === "files" ? (root.query.length < 3 ? "Type a file name" : LauncherService.fileSearchRunning ? "Searching …" : "No files found")
+                    title: root.mode.id === "files" ? (root.query.length < 3 ? "Type a file name" : LauncherService.fileSearchRunning ? "Searching …"
+                            : unindexed ? "Your home folder is not in the file index" : "No files found")
                         : root.mode.id === "calculator" ? "Calculator"
                         : "No results"
-                    description: root.mode.id === "calculator" ? "Type an expression, e.g. = 12 * (3 + 4)" : ""
+                    description: root.mode.id === "calculator" ? "Type an expression, e.g. = 12 * (3 + 4)"
+                        : unindexed ? LauncherService.fileIndexHint : ""
                 }
             }
         }

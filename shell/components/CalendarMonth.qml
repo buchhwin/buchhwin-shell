@@ -119,6 +119,11 @@ ColumnLayout {
         ShellButton { toolTip: "Next month"; icon: Icons.forward; variant: "ghost"; compact: true; onClicked: root.shift(1) }
     }
 
+    // Seven equal columns. Every cell asks for the same token width and
+    // fills the rest: with no width of its own a day cell left the weekday
+    // names to share the row out, and "Wed" took more than "Fri" and "Sat",
+    // which ended up squeezed together (column steps of 63/62/64/51/45/55 px;
+    // round 12, D7).
     GridLayout {
         Layout.fillWidth: true
         columns: 7
@@ -130,6 +135,7 @@ ColumnLayout {
             ShellText {
                 required property int index
                 Layout.fillWidth: true
+                Layout.preferredWidth: 1
                 horizontalAlignment: Text.AlignHCenter
                 text: SettingsService.locale.dayName((index + 1) % 7, Locale.ShortFormat)
                 role: "small"
@@ -144,6 +150,7 @@ ColumnLayout {
                 id: cell
                 required property var modelData
                 Layout.fillWidth: true
+                Layout.preferredWidth: 1
                 implicitHeight: Metrics.controlHeight
                 // A stop for the panel's keys like a ListRow, only where a day
                 // can be chosen: the arrows walk the grid, Return or Space

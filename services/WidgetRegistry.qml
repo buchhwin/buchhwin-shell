@@ -8,6 +8,12 @@ import qs.theme
 // available widget can also be a pill bar item; pillDisplay is its default
 // look there ("icon" or "full"). `action` is the panel a click opens: the
 // clock opens the dashboard, most others their own popup (shell/popups).
+//
+// Three flags for the dock's own pieces: `dockOnly` (nowhere but the dock -
+// not in availableTypes, refused by LayoutService elsewhere), `once` (one on
+// the dock is enough: a second Apps drew every app twice, and two start
+// buttons shared one place to open the menu from) and `pillSized: false` (it
+// sizes itself, so the editor offers no item size for it).
 Singleton {
     readonly property var categories: [
         { id: "time", label: "Time" },
@@ -28,10 +34,11 @@ Singleton {
         // menu (shell/startmenu), or the launcher (`dock.startOpens`, see
         // actionOf). Not offered on the desktop or the bar - the apps need the
         // dock's surface around them.
-        "apps": { label: "Apps", icon: Icons.window, category: "dock", dockOnly: true, pillDisplay: "full",
-                  pillDisplays: ["full"], file: "AppsWidget.qml", sizes: ["small"], action: "", available: true,
-                  noHighlight: true, defaults: {} },
-        "start": { label: "Start button", icon: Icons.apps, category: "dock", dockOnly: true, pillDisplay: "icon",
+        // The apps take their size from Settings > Dock (dock.iconSize).
+        "apps": { label: "Apps", icon: Icons.window, category: "dock", dockOnly: true, once: true, pillSized: false,
+                  pillDisplay: "full", pillDisplays: ["full"], file: "AppsWidget.qml", sizes: ["small"], action: "",
+                  available: true, noHighlight: true, defaults: {} },
+        "start": { label: "Start button", icon: Icons.apps, category: "dock", dockOnly: true, once: true, pillDisplay: "icon",
                    file: "StartWidget.qml", sizes: ["small", "medium", "large"], action: "startMenu", available: true,
                    defaults: {} },
         "clock": { label: "Clock", icon: "󰥔", category: "time", file: "ClockWidget.qml",
@@ -142,9 +149,27 @@ Singleton {
         return values.map(value => ({ value: value, label: labels[value] }))
     }
 
-    function availableTypes() {
-        return Object.keys(types).filter(name => isAvailable(name))
+    // The dock's own pieces only for a caller that asks for them: every
+    // picker but the layout editor's dock one (which lists by category) puts
+    // a widget somewhere else - an Apps widget there is empty and a start
+    // button opens nothing.
+    function availableTypes(includeDockOnly) {
+        return Object.keys(types).filter(name => isAvailable(name) && (includeDockOnly === true || !types[name].dockOnly))
             .map(name => Object.assign({ name: name }, types[name]))
+    }
+
+    function isDockOnly(name) {
+        const entry = types[name]
+        return entry !== undefined && entry.dockOnly === true
+    }
+    function isOnce(name) {
+        const entry = types[name]
+        return entry !== undefined && entry.once === true
+    }
+    // Whether the editor's Item size means anything for it.
+    function pillSized(name) {
+        const entry = types[name]
+        return entry === undefined || entry.pillSized !== false
     }
 
     function typesIn(category) {

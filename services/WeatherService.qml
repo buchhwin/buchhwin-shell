@@ -146,12 +146,25 @@ Singleton {
         onTriggered: root.refresh()
     }
 
+    // The cache holds the place's coordinates and is the user's alone
+    // (WeatherLogic.privateFileCommand): set for a cache from before when it
+    // is first read, and after every write - an atomic write (QSaveFile) keeps
+    // the mode of the file it replaces, but makes a new one with the default
+    // 0644, and one process per forecast is nothing.
+    property bool cacheChecked: false
+    function keepCachePrivate() { Quickshell.execDetached(Logic.privateFileCommand(cacheFile.path)) }
+
     FileView {
         id: cacheFile
         path: Paths.cacheDir + "/weather.json"
         atomicWrites: true
         printErrors: false
+        onSaved: root.keepCachePrivate()
         onLoaded: {
+            if (!root.cacheChecked) {
+                root.cacheChecked = true
+                root.keepCachePrivate()
+            }
             if (root.model !== null || !text().trim().length) return
             try {
                 const cached = Logic.fromCache(text())

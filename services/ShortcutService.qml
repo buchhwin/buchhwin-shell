@@ -7,7 +7,8 @@ import "shortcuts/ShortcutLogic.js" as Logic
 // Settings > Shortcuts: every key binding of the running compositor
 // (`hyprctl -j binds`) and the user's own shortcuts from
 // ~/.config/buchhwin-shell/shortcuts.json. Custom shortcuts are runtime binds
-// (HyprCompat bindExec/unbind, description "Custom: …"), applied at start,
+// (HyprCompat bindExec/unbind, a shell action's global shortcut through
+// Logic.globalBind; description "Custom: …"), applied at start,
 // whenever the file changes and after Hyprland reloads its config (which drops
 // them). The Hyprland config files stay untouched.
 Singleton {
@@ -38,17 +39,26 @@ Singleton {
     // so a second sync cannot bind the same shortcut twice.
     property bool applying: false
 
-    readonly property var rows: Logic.rows(binds, custom, entry => labelFor(entry))
+    // Names from the desktop entries, which arrive one at a time after the
+    // shell is up: the rows follow LauncherService's count of finished scans
+    // rather than every single entry (`byId` alone would not be followed).
+    readonly property var rows: {
+        LauncherService.entriesRevision
+        return Logic.rows(binds, custom, entry => labelFor(entry))
+    }
 
     function labelFor(entry) {
-        if (!entry.app) return entry.command
-        const app = DesktopEntries.applications.values.find(item => item.id === entry.app)
+        if (!entry.app) return Logic.entryLabel(entry)
+        const app = DesktopEntries.byId(entry.app)
         return app ? app.name : entry.app
     }
     function iconFor(entry) {
-        const app = entry.app ? DesktopEntries.applications.values.find(item => item.id === entry.app) : null
+        const app = entry.app ? DesktopEntries.byId(entry.app) : null
         return app ? LauncherService.iconSource(app.icon) : ""
     }
+    // The shell actions a shortcut can be put on, as { value, label }
+    // (ShellShortcuts.BINDABLE: the start menu).
+    readonly property var shellActions: Logic.shellActions()
     function comboOf(entry) { return Logic.comboOf(entry) }
 
     // The combination a shortcut started on. For one that has not been moved
@@ -154,9 +164,10 @@ Singleton {
         messageError = isError
     }
 
-    // { mods, key, app } or { mods, key, command }; returns an error text or "".
+    // { mods, key, app }, { mods, key, shell } or { mods, key, command };
+    // returns an error text or "".
     function add(entry) {
-        const error = Logic.comboError(entry.mods, entry.key) || (entry.app ? "" : Logic.commandError(entry.command))
+        const error = Logic.comboError(entry.mods, entry.key) || (entry.app || entry.shell ? "" : Logic.commandError(entry.command))
         if (error) return error
         const used = usedBy(entry.mods, entry.key)
         if (used) return "Already used by " + used
@@ -184,21 +195,61 @@ Singleton {
         sync()
     }
 
+    // What each custom shortcut's bind was made to run, by combination and
+    // description: the bind cannot say (a Lua bind reports `__lua`), and a
+    // bind with the right name may still run an older command line - one an
+    // older shell made with gtk-launch, or one made before the app's desktop
+    // entry was read. Those are bound again (Logic.syncPlan).
+    property var boundCommands: ({})
+    function bindKey(entry) { return Logic.comboOf(entry) + "|" + Logic.descriptionFor(entry) }
+    // The command line of a custom shortcut: an app the way the launcher
+    // starts it (Logic.commandFor); a shell action's bind sends its global
+    // shortcut instead (Logic.globalBind).
+    function commandOf(entry) {
+        return Logic.commandFor(entry, { app: entry.app ? DesktopEntries.byId(entry.app) : null,
+                                         overrides: LauncherService.appOverrides, script: name => Paths.script(name) })
+    }
+
     function apply() {
-        const plan = Logic.syncPlan(binds, custom)
+        // Each entry on its own: a command line a bind cannot hold (a `;`
+        // or a control character in a desktop entry's Exec) costs that
+        // shortcut, not all of them.
+        const built = {}
+        let failed = ""
+        for (const entry of custom) {
+            const text = commandOf(entry)
+            try {
+                built[bindKey(entry)] = { text: text, bind: entry.shell ? Logic.globalBind(entry)
+                                                         : HyprCompat.commands.bindExec(entry.mods, entry.key, text, Logic.descriptionFor(entry)) }
+            } catch (error) {
+                console.warn("buchhwin-shell: shortcut rejected:", Logic.comboOf(entry), error)
+                if (!failed.length) failed = Logic.comboOf(entry)
+            }
+        }
+        // One that cannot be built keeps whatever bind it has.
+        const plan = Logic.syncPlan(binds, custom, entry => !built[bindKey(entry)] || boundCommands[bindKey(entry)] === built[bindKey(entry)].text)
         conflicts = plan.conflicts
-        const overrides = {}
-        for (const id of Object.keys(LauncherService.appOverrides)) overrides[id] = Paths.script(LauncherService.appOverrides[id])
+        if (failed.length) say(failed + " could not be applied", true)
         const commands = []
+        const bound = {}
+        for (const entry of custom) {
+            const key = bindKey(entry)
+            if (boundCommands[key] !== undefined) bound[key] = boundCommands[key]
+        }
         try {
             for (const item of plan.unbind) commands.push(HyprCompat.commands.unbind(item.mods, item.key))
-            for (const entry of plan.bind)
-                commands.push(HyprCompat.commands.bindExec(entry.mods, entry.key, Logic.commandFor(entry, overrides), Logic.descriptionFor(entry)))
         } catch (error) {
             console.warn("buchhwin-shell: shortcut rejected:", error)
             say("A shortcut could not be applied", true)
             return
         }
+        for (const entry of plan.bind) {
+            const ready = built[bindKey(entry)]
+            if (!ready) continue
+            commands.push(ready.bind)
+            bound[bindKey(entry)] = ready.text
+        }
+        boundCommands = bound
         if (!commands.length) return
         applying = true
         HyprCompat.configure(HyprCompat.commands.combine(commands))
@@ -274,6 +325,14 @@ Singleton {
     Connections {
         target: HyprlandService
         function onConfigReloaded() { reloadDelay.restart() }
+    }
+    // An app's command line comes from its desktop entry: once a scan has
+    // finished (at the start, or an app installed or changed), the binds of
+    // app shortcuts are checked again. Nothing is rebound unless a command
+    // changed.
+    Connections {
+        target: LauncherService
+        function onEntriesRevisionChanged() { if (root.custom.some(entry => entry.app)) root.sync() }
     }
 
     FileView {

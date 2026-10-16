@@ -66,8 +66,12 @@ exec "\$@"
 EOF
 chmod +x "$work/bin"/*
 export PATH="$work/bin:$PATH" HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" XDG_STATE_HOME="$work/home/.local/state"
-export HYPRLAND_INSTANCE_SIGNATURE=shell-update-test
-unset BUCHHWIN_NESTED BUCHHWIN_NESTED_DIR WAYLAND_DISPLAY
+# A Hyprland session of the test's own, socket and all, in a runtime directory
+# of the sandbox: the shell is only restarted inside one (round 12, scripts#0).
+export HYPRLAND_INSTANCE_SIGNATURE=shell-update-test XDG_RUNTIME_DIR="$work/run"
+mkdir -p -m 700 "$XDG_RUNTIME_DIR/hypr/shell-update-test"
+python3 -c "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])" "$XDG_RUNTIME_DIR/hypr/shell-update-test/.socket.sock"
+unset BUCHHWIN_NESTED BUCHHWIN_NESTED_DIR WAYLAND_DISPLAY BUCHHWIN_START_WITHOUT_HYPRLAND
 unset BUCHHWIN_SHELL_PATH
 unset MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME
 for tool in systemctl hyprctl quickshell notify-send systemd-run setsid busctl pgrep pkill; do
@@ -147,6 +151,17 @@ check 'grep -q "notify-send" "$work/calls.log"' 'the user was told'
 check '! grep -q "update failed" "$work/calls.log"' 'and not that it failed'
 check '[[ $(readlink -f "$HOME/.local/bin/buchhwin") == "$src/scripts/buchhwin" ]]' 'install.sh re-ran (the links exist)'
 check '[[ $(update apply 2>&1) == "Already up to date." ]]' 'a second apply has nothing to do'
+
+# an apply with no Hyprland session (a timer that fired while the user is in
+# Plasma, with the signature the user manager kept from the last login):
+# updated, the shell neither stopped nor started, and said
+echo "// later" >> "$other/shell.qml"; gitc -C "$other" commit --quiet -am "feat: a later shell change"
+gitc -C "$other" push --quiet origin HEAD:main
+: > "$work/calls.log"
+out=$(HYPRLAND_INSTANCE_SIGNATURE=gone-signature WAYLAND_DISPLAY=wayland-0 update apply 2>&1)
+check '[[ $(git -C "$src" rev-parse HEAD) == $(git -C "$other" rev-parse HEAD) ]]' "an apply without a session still updates ($out)"
+check 'grep -q "No Hyprland session found" <<<"$out"' "and says the shell starts from it at the next login ($out)"
+check '! grep -q "^quickshell \|^busctl" "$work/calls.log"' 'and touches neither the shell nor the bus'
 
 # local changes and local commits are refused - and said so in a
 # notification: apply runs detached (systemd-run without --wait), so its

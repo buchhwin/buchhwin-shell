@@ -60,6 +60,18 @@ if command -v hyprland-dialog >/dev/null 2>&1; then
 else
   printf 'missing  hyprland-guiutils (Hyprland dialogs and startup notice; %s)\n' "$(distro_install_hint "$distro" hyprland-guiutils)"
 fi
+# A default app without a launcher of its own (Firefox, Konsole, foot,
+# Nautilus … in Settings > Default apps) and an app shortcut start through
+# gtk-launch (scripts/launch-default.sh); without it the key does nothing, and
+# nothing says why. GTK 3 ships it, in gtk3-tools on openSUSE.
+if command -v gtk-launch >/dev/null 2>&1; then
+  printf 'ok       gtk-launch\n'
+else
+  gtk_package=gtk3
+  [[ $distro == opensuse-leap ]] && gtk_package=gtk3-tools
+  printf 'missing  gtk-launch (default apps without a launcher of their own and app shortcuts do nothing; %s)\n' \
+    "$(distro_install_hint "$distro" "$gtk_package")"
+fi
 # /usr/lib64 on Fedora and openSUSE, /usr/lib on Arch (where lib64 is a link
 # to it, but the real path reads better in a check).
 qt6_dir=/usr/lib64/qt6
@@ -167,6 +179,32 @@ if [[ -r "$fastfetch_config" ]]; then
   fi
 else
   printf 'absent   %s (run install/install.sh --apply to copy it)\n' "$fastfetch_config"
+fi
+
+# The launcher's file search (/report, /png) asks plocate's index for what is
+# under $HOME. On btrfs, /home is usually a subvolume of its own (@home), and
+# updatedb takes a subvolume mounted from the same device for a bind mount:
+# with PRUNE_BIND_MOUNTS = "yes" (Arch's default) it never indexes it, and
+# every search ends in "No files found" (16.10.: 0 entries under /home, 4636
+# under /etc). A machine setting, said rather than changed. .snapshots joins
+# PRUNENAMES at the same time, or updatedb walks every snapper snapshot.
+if command -v plocate >/dev/null 2>&1; then
+  # -c prints the count and exits 1 when it is 0.
+  home_entries=$(plocate -c -- "$HOME/" 2>/dev/null) || true
+  if [[ $home_entries == 0 ]]; then
+    printf '\nLauncher file search\n'
+    printf 'note     plocate has nothing under %s, so the launcher finds no files\n' "$HOME"
+    updatedb_conf=/etc/updatedb.conf
+    home_fs=$(findmnt -no FSTYPE --target "$HOME" 2>/dev/null) || home_fs=""
+    if [[ -r $updatedb_conf ]] && grep -qE '^[[:space:]]*PRUNE_BIND_MOUNTS[[:space:]]*=[[:space:]]*"?(yes|1)"?' "$updatedb_conf" \
+        && [[ $home_fs == btrfs ]]; then
+      printf '         (%s is a btrfs subvolume, which updatedb skips as a bind mount):\n' "$HOME"
+      printf "         sudo sed -i -e 's/^PRUNE_BIND_MOUNTS *= *.*/PRUNE_BIND_MOUNTS = \"no\"/' -e '/^PRUNENAMES/{/\\.snapshots/!s/\"\$/ .snapshots\"/}' %s\n" "$updatedb_conf"
+      printf '         sudo systemctl start plocate-updatedb.service\n'
+    else
+      printf '         (the index may be new or empty): sudo systemctl start plocate-updatedb.service\n'
+    fi
+  fi
 fi
 
 # A machine setting, said rather than changed: with transparent huge pages

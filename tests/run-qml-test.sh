@@ -18,7 +18,13 @@ tar -C "$project_dir" --exclude=.git -cf - . | tar -C "$root" -xf -
 sed -e 's#"\.\./\.\./#"#g' -e 's#"\.\./fixtures/#"tests/fixtures/#g' -e 's#"Harness\.js"#"tests/qml/Harness.js"#g' \
   "$test_file" > "$root/__test__.qml"
 
-env -u WAYLAND_DISPLAY -u DISPLAY QT_QPA_PLATFORM=offscreen \
+# Without the session's compositor and shell: a test that pulls in a service
+# talking to Hyprland (WallpaperTest reaches DisplayService, which runs
+# `hyprctl -j monitors all`) reached the live one through the signature, and
+# DisplayService's write paths are one condition away from that read
+# (pitfall 82; round 12, tests-docs#2). hyprctl without a signature picks no
+# instance. BUCHHWIN_SHELL_PATH is the session shell's own path.
+env -u WAYLAND_DISPLAY -u DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u BUCHHWIN_SHELL_PATH QT_QPA_PLATFORM=offscreen \
   XDG_CONFIG_HOME="$sandbox/config" XDG_STATE_HOME="$sandbox/state" \
   XDG_CACHE_HOME="$sandbox/cache" \
   quickshell -p "$root/__test__.qml" >"$output" 2>&1 &
@@ -47,7 +53,10 @@ done
 kill "$pid" 2>/dev/null || true
 wait "$pid" 2>/dev/null || true
 
-sed -E 's/\x1b\[[0-9;]*m//g' "$output" | grep -E 'FAIL|TESTS|Error|WARN|Binding loop|recursive rearrange|Unable to assign|Cannot assign' || true
+# ERROR too: a test that does not load prints "ERROR: Failed to load
+# configuration" and the "caused by @__test__.qml[line:col]" line under it,
+# and without them the run said nothing but exit 1.
+sed -E 's/\x1b\[[0-9;]*m//g' "$output" | grep -E 'FAIL|TESTS|Error|ERROR|caused by|WARN|Binding loop|recursive rearrange|Unable to assign|Cannot assign' || true
 if [[ $status -eq 2 ]]; then
   printf 'Timed out: %s\n' "$test_file" >&2
 fi

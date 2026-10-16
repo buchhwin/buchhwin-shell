@@ -49,6 +49,8 @@ ShellRoot {
         T.eq([S.describeExec("quickshell --path /opt/b ipc call dock toggle").title,
               S.describeExec("quickshell --path /opt/b ipc call dock toggle").group], ["Dock", "panels"],
              "the dock's key in the conf dialect, which has no description")
+        T.eq(S.describeExec("quickshell --path /opt/b ipc call startMenu toggle"), { title: "Start menu", group: "panels" },
+             "the start menu, once a key is put on it")
         T.eq([S.describeExec("quickshell --path /opt/b ipc call recording toggle region").title,
               S.describeExec("quickshell --path /opt/b ipc call recording toggle screen").title,
               S.describeExec("quickshell --path /opt/b ipc call recording toggle screen").group],
@@ -148,13 +150,25 @@ ShellRoot {
             { mods: ["SUPER"], key: "x", command: "a; b" },
             { mods: ["HYPER"], key: "x", command: "bad modifier" },
             { mods: ["SUPER"], key: "code:28", command: "keycode" },
-            { mods: ["SUPER"], key: "Y", app: "bad id!" }
+            { mods: ["SUPER"], key: "Y", app: "bad;id" },
+            { mods: ["SUPER"], key: "U", app: "-x" },
+            { mods: ["SUPER"], key: "R", app: "Citrix_subscribed_XenApp 7.x.RDS-Buchhwin $S101-255" },
+            { mods: ["SUPER"], key: "S", shell: "startMenu toggle" },
+            { mods: ["SUPER"], key: "V", shell: "launcher toggle" }
         ] }))
         T.eq(store, [
             { mods: ["SUPER", "SHIFT"], key: "F", app: "firefox" },
             { mods: ["SUPER"], key: "T", command: "kitty --hold" },
-            { mods: [], key: "F9", command: "notify-send nine" }
-        ], "store validated and deduplicated")
+            { mods: [], key: "F9", command: "notify-send nine" },
+            { mods: ["SUPER"], key: "R", app: "Citrix_subscribed_XenApp 7.x.RDS-Buchhwin $S101-255" },
+            { mods: ["SUPER"], key: "S", shell: "startMenu toggle" }
+        ], "store validated and deduplicated: a Citrix id with spaces and `$` is kept, a shell action only from the offered ones")
+        T.eq([S.validAppId("org.kde.dolphin"), S.validAppId("Citrix_subscribed_XenApp 7.x.RDS-Buchhwin $S101-255"),
+              S.validAppId("a;b"), S.validAppId("a\nb"), S.validAppId("--unit"), S.validAppId("a/b"), S.validAppId(""), S.validAppId(3)],
+             [true, true, false, false, false, false, false, false], "desktop ids a bind can carry")
+        T.eq(S.shellActions(), [{ value: "startMenu toggle", label: "Start menu" }], "the start menu is offered as a shell action")
+        T.eq(S.entryLabel({ mods: ["SUPER"], key: "S", shell: "startMenu toggle" }), "Start menu", "a shell action named by its panel")
+        T.eq(S.descriptionFor({ mods: ["SUPER"], key: "S", shell: "startMenu toggle" }), "Custom: Start menu", "and described so")
         T.eq(S.parseStore("{"), [], "broken store")
         T.eq(S.parseStore(S.serializeStore(store)), store, "store round trip")
         // The watch reads back every save of the service's own (pitfall 77):
@@ -171,9 +185,50 @@ ShellRoot {
         T.eq(S.commandError("echo a; echo b"), "Use && instead of ; or put the commands in a script", "semicolon refused")
         T.eq(S.commandError("echo a\necho b"), "Commands must be on one line", "newline refused")
         T.eq(S.commandError("  "), "Enter a command", "empty command")
-        T.eq(S.commandFor(store[0], {}), "gtk-launch firefox", "apps via gtk-launch")
-        T.eq(S.commandFor({ mods: ["SUPER"], key: "T", app: "kitty" }, { kitty: "/opt/buchhwin-shell/scripts/launch-kitty.sh" }), "/opt/buchhwin-shell/scripts/launch-kitty.sh", "launcher override")
-        T.eq(S.commandFor({ mods: ["SUPER"], key: "T", app: "kitty" }, { kitty: "/opt/my shell/launch-kitty.sh" }), "'/opt/my shell/launch-kitty.sh'", "override path quoted")
+        // An app starts the way the launcher starts it (LaunchLogic), not by
+        // a bare gtk-launch: a web app past launch-brave.sh came up without
+        // the wallet (pitfalls 32, 98), and GLib knows no terminal installed
+        // here, so a Terminal=true entry started nothing (round 12).
+        const script = name => "/s/" + name
+        const overrides = { "kitty": "launch-kitty.sh", "brave-browser": "launch-brave.sh" }
+        const start = app => ({ app: app, overrides: overrides, script: script })
+        const outlook = { id: "brave-faolnafnngnfdaknnbpnkhgohbobgegn-Default",
+            command: ["/opt/brave-bin/brave", "--profile-directory=Default", "--app-id=faolnafnngnfdaknnbpnkhgohbobgegn"] }
+        T.eq(S.commandFor({ mods: ["SUPER"], key: "O", app: outlook.id }, start(outlook)),
+             "/s/launch-brave.sh --profile-directory=Default --app-id=faolnafnngnfdaknnbpnkhgohbobgegn",
+             "a Brave web app through launch-brave.sh")
+        T.eq(S.commandFor({ mods: ["SUPER"], key: "H", app: "htop" }, start({ id: "htop", command: ["htop"], runInTerminal: true })),
+             "/s/launch-terminal.sh -- htop", "a Terminal=true entry in the session's terminal")
+        T.eq(S.commandFor({ mods: ["SUPER"], key: "T", app: "kitty" }, start({ id: "kitty", command: ["kitty"] })),
+             "/s/launch-kitty.sh", "an override's session launcher")
+        T.eq(S.commandFor({ mods: ["SUPER"], key: "T", app: "kitty" }, { app: { id: "kitty", command: ["kitty"] }, overrides: overrides,
+                                                                       script: name => "/opt/my shell/" + name }),
+             "'/opt/my shell/launch-kitty.sh'", "a script path with a space quoted")
+        T.eq(S.commandFor({ mods: ["SUPER"], key: "G", app: "game" }, start({ id: "game", command: ["./run", "--level=2"], workingDirectory: "/opt/my game" })),
+             "cd -- '/opt/my game' && /s/launch-app.sh game ./run --level=2", "the entry's Path= first, as the launcher passes it")
+        const citrixId = "Citrix_subscribed_XenApp 7.x.RDS-Buchhwin $S101-255"
+        T.eq(S.commandFor({ mods: ["SUPER"], key: "R", app: citrixId },
+                          start({ id: citrixId, command: ["/opt/Citrix/ICAClient/util/storebrowse", "-L", "XenApp 7.x.RDS-Buchhwin $S101-255", "it's"] })),
+             "/s/launch-app.sh 'Citrix_subscribed_XenApp 7.x.RDS-Buchhwin '\"$\"'S101-255' /opt/Citrix/ICAClient/util/storebrowse -L "
+             + "'XenApp 7.x.RDS-Buchhwin '\"$\"'S101-255' 'it'\\''s'",
+             "spaces, quotes and `$` quoted for sh; the `$` outside the quotes, where the conf dialect's ${NAME} reads the same")
+        T.eq(S.commandFor({ mods: ["SUPER", "SHIFT"], key: "F", app: "firefox" }, { app: null, overrides: overrides, script: script }),
+             "/s/launch-app.sh firefox gtk-launch firefox", "an id the desktop entries do not know: gtk-launch, in a unit of its own")
+        T.eq(S.commandFor({ mods: ["SUPER"], key: "X", app: "dbus-only" }, start({ id: "dbus-only", command: [] })),
+             "/s/launch-app.sh dbus-only gtk-launch dbus-only", "an entry without a command line the same")
+        // A shell action's bind is the global shortcut itself, like the
+        // built-in keys: pressed and released, and the shell acts on the press.
+        const startMenu = { mods: ["SUPER", "ALT"], key: "S", shell: "startMenu toggle" }
+        T.eq(S.globalBind(startMenu), {
+            legacy: "keyword bindd SUPER ALT,S,Custom: Start menu,global,buchhwin:startMenu.toggle", legacyEmpty: [],
+            lua: "hl.bind(\"SUPER + ALT + S\", hl.dsp.global(\"buchhwin:startMenu.toggle\"), { description = \"Custom: Start menu\" })" },
+             "a shell action binds its global shortcut in both dialects")
+        T.eq(S.commandFor(startMenu, {}), "global buchhwin:startMenu.toggle", "and is remembered by it")
+        T.throwsError(() => S.globalBind({ mods: ["SUPER"], key: "S", shell: "launcher toggle" }), "only the offered actions")
+        T.throwsError(() => S.globalBind({ mods: ["SUPER"], key: "S,exec", shell: "startMenu toggle" }), "the key checked as for any bind")
+        T.eq(S.commandFor({ mods: ["SUPER"], key: "T", command: "kitty --hold" }, start(null)), "kitty --hold", "a command as typed")
+        T.eq([S.shellWord("plain-word_1.2,x=y:z@%+/"), S.shellWord(""), S.shellWord("a b"), S.shellWord("~/x"), S.shellWord("#x")],
+             ["plain-word_1.2,x=y:z@%+/", "''", "'a b'", "'~/x'", "'#x'"], "only plain words stay bare")
         T.eq(S.descriptionFor({ command: "notify-send \"a, b\" # $HOME; x" }), "Custom: notify-send \"a b\" HOME x", "description without hyprlang separators")
         T.eq(S.conflictFor(legacyBinds, ["SUPER"], "d"), "Launcher", "conflict found case-insensitively")
         T.eq(S.conflictFor(legacyBinds, ["SUPER", "CTRL"], "D"), "", "free combination")
@@ -194,6 +249,16 @@ ShellRoot {
         const renamed = S.syncPlan(legacyBinds, [{ mods: ["SUPER", "SHIFT"], key: "F", command: "firefox --private-window" }])
         T.eq(renamed.unbind, [{ mods: ["SUPER", "SHIFT"], key: "F" }], "changed entry unbound")
         T.eq(renamed.bind.length, 1, "changed entry bound again")
+        // A bind with the right name may run an older command line (an older
+        // shell's gtk-launch, or one made before the desktop entries were
+        // read): bound again, and only that one.
+        const outdated = S.syncPlan(legacyBinds, [{ mods: ["SUPER", "SHIFT"], key: "F", app: "firefox" }], entry => false)
+        T.eq([outdated.unbind, outdated.bind], [[{ mods: ["SUPER", "SHIFT"], key: "F" }], [{ mods: ["SUPER", "SHIFT"], key: "F", app: "firefox" }]],
+             "an outdated bind is unbound and bound again")
+        const current = S.syncPlan(legacyBinds, [{ mods: ["SUPER", "SHIFT"], key: "F", app: "firefox" }], entry => true)
+        T.eq([current.unbind, current.bind], [[], []], "a current one is left alone")
+        T.eq(S.syncPlan(legacyBinds, [{ mods: ["SUPER"], key: "D", command: "taken" }], entry => false).conflicts, ["Super+D"],
+             "and a config bind on the combination stays a conflict, never unbound")
 
         // Key capture (Qt key codes and modifier flags)
         T.eq(S.captureKey(0x54, 0x10000000 | 0x02000000, 36), { mods: ["SUPER", "SHIFT"], key: "T" }, "Super+Shift+T")

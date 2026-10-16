@@ -101,6 +101,10 @@ read_as_user() {
   fi
 }
 
+# Root's copies of what was read as the user, removed when the run ends.
+staged_files=()
+trap 'rm -f -- "${staged_files[@]}"' EXIT
+
 # What a file is by its first bytes - png, jpg, webp, avif, jxl, bmp or svg -
 # or nothing. A path the user can read can still name their own secrets (a
 # key, a password store) under an image's name; only an image goes into a
@@ -161,8 +165,7 @@ install_theme() {
   local staged=""
   if [[ -n $wallpaper ]]; then
     staged=$(mktemp)
-    # shellcheck disable=SC2064 # the path is fixed now
-    trap "rm -f -- '$staged'" EXIT
+    staged_files+=("$staged")
     local problem=""
     if ! read_as_user "$wallpaper" > "$staged" 2>/dev/null; then
       problem="not readable${user:+ by $user}"
@@ -176,6 +179,26 @@ install_theme() {
       fi
       printf 'Configured wallpaper %s, using the bundled gradient: %s\n' "$problem" "$wallpaper"
       wallpaper=""
+    fi
+  fi
+
+  # The avatar the same way, before anything changes: named on the command
+  # line by whoever runs this as root, it is still a path in someone's home
+  # (a symlink there to a root-only file was copied world-readable into
+  # faces/), and only a picture goes there - a mistyped path to a key would
+  # have landed beside the others.
+  local staged_face=""
+  if [[ -n $avatar ]]; then
+    [[ -n $user ]] || { printf 'Avatar needs a user (--user NAME, or run it through sudo)\n' >&2; exit 1; }
+    staged_face=$(mktemp)
+    staged_files+=("$staged_face")
+    if ! read_as_user "$avatar" > "$staged_face" 2>/dev/null; then
+      printf 'Avatar not readable by %s: %s\n' "$user" "$avatar" >&2
+      exit 1
+    fi
+    if [[ -z $(image_kind "$staged_face") ]]; then
+      printf 'Avatar is not an image: %s\n' "$avatar" >&2
+      exit 1
     fi
   fi
 
@@ -234,13 +257,12 @@ install_theme() {
   chmod 0644 -- "$user_conf"
 
   mkdir -p -- "$state_dir"
-  if [[ -n $avatar ]]; then
-    [[ -r $avatar && -n $user ]] || { printf 'Avatar needs a readable file and a user\n' >&2; exit 1; }
+  if [[ -n $staged_face ]]; then
     mkdir -p -- "$faces_dir"
     if [[ -e $faces_dir/$user.face.icon && ! -e $state_dir/face-installed ]]; then
       cp -p -- "$faces_dir/$user.face.icon" "$state_dir/$user.face.icon.backup"
     fi
-    install -m0644 -- "$avatar" "$faces_dir/$user.face.icon"
+    install -m0644 -- "$staged_face" "$faces_dir/$user.face.icon"
     printf '%s\n' "$user" > "$state_dir/face-installed"
     printf 'Installed avatar for %s\n' "$user"
   fi

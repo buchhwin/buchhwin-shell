@@ -19,11 +19,22 @@ check() {
 }
 
 # The machine's own repositories must not decide what the dry run prints: a
-# zypper that knows none stands in for the real one.
+# zypper that knows none stands in for the real one. Nor its packages: the
+# AUR step (3b) asks pacman whether brave-bin is installed, and finds paru or
+# yay on PATH - a stand-in pacman answers as STUB_BRAVE says (installed or
+# not), and a paru is there.
 stub_bin=$(mktemp -d)
 trap 'rm -rf -- "$stub_bin"' EXIT
 printf '#!/bin/sh\nexit 1\n' >"$stub_bin/zypper"
-chmod +x "$stub_bin/zypper"
+cat >"$stub_bin/pacman" <<'P'
+#!/bin/sh
+case "$*" in
+  "-Q brave-bin") [ "${STUB_BRAVE:-}" = installed ] ;;
+  *) exit 1 ;;
+esac
+P
+printf '#!/bin/sh\nexit 0\n' >"$stub_bin/paru"
+chmod +x "$stub_bin/zypper" "$stub_bin/pacman" "$stub_bin/paru"
 export PATH="$stub_bin:$PATH"
 
 # ---- the dry run, per distribution ----------------------------------------
@@ -104,7 +115,10 @@ check 'Arch adds no repository and refreshes nothing on its own' '[[ $arch != *"
 check 'Arch installs Hyprland and its portal as packages' \
   'grep -qx hyprland <<<"$arch_list" && grep -qx xdg-desktop-portal-hyprland <<<"$arch_list"'
 check 'Arch does not build anything' '[[ $arch != *"built from source"* ]]'
-check 'Arch takes Brave from the AUR' '[[ $arch == *"3b. From the AUR"*"brave-bin"* ]]'
+check 'Arch takes Brave from the AUR, with the helper there is' '[[ $arch == *"3b. From the AUR"*"  paru -S --needed brave-bin"* ]]'
+arch_brave=$(STUB_BRAVE=installed "$script" --distro arch)
+check 'Arch leaves an installed brave-bin alone' \
+  '[[ $arch_brave == *"3b. From the AUR"*"brave-bin is already installed"* && $arch_brave != *"paru -S"* ]]'
 check 'the AUR package is not in the list CI resolves against the repositories' '! grep -qx brave-bin <<<"$arch_list"'
 check 'Arch installs both Nerd Fonts as packages' \
   'grep -qx ttf-firacode-nerd <<<"$arch_list" && grep -qx ttf-jetbrains-mono-nerd <<<"$arch_list"'
@@ -224,6 +238,52 @@ while IFS=: read -r category desktop_id; do
     'grep -qx -- "$category" <<<"$known"'
   check "'$category' is set to a desktop id" '[[ $desktop_id == *.desktop ]]'
 done < <(sed -n '/^app_defaults=(/,/^)/p' "$script" | grep -oP '"\K[^"]+(?=")')
+
+# The file manager comes first: it is the category a session without a
+# choice gets wrong.
+order=$(sed -n '/^app_defaults=(/,/^)/p' "$script" | grep -oP '"\K[a-z]+(?=:)' | paste -sd' ')
+check "the file manager is set before the browser ($order)" '[[ $order == "files browser"* ]]'
+
+# ---- step 7 as --apply runs it -------------------------------------------------
+# app_default, out of the script, against the real default-apps.py over an XDG
+# tree of its own: Brave is not installed (Arch's AUR step went on without a
+# helper), Dolphin and Ark are, and kitty's hidden helper comes first in the
+# system's cache. The browser first, the worst order: a refused id ended the
+# whole run there once, under set -e, before the file manager was set.
+xdg=$(mktemp -d)
+trap 'rm -rf -- "$os_release" "$stub_bin" "$pacman_bin" "$xdg"' EXIT
+mkdir -p "$xdg/data/applications" "$xdg/config"
+desktop_entry() { printf '[Desktop Entry]\nType=Application\nName=%s\n%s\n' "$2" "$3" > "$xdg/data/applications/$1"; }
+desktop_entry org.kde.dolphin.desktop Dolphin $'Categories=System;FileManager;\nMimeType=inode/directory;'
+desktop_entry kitty-open.desktop 'kitty URL Launcher' $'NoDisplay=true\nMimeType=inode/directory;'
+desktop_entry org.kde.ark.desktop Ark 'Categories=Utility;Archiving;'
+printf '[MIME Cache]\ninode/directory=kitty-open.desktop;org.kde.dolphin.desktop;\n' > "$xdg/data/applications/mimeinfo.cache"
+step7() {
+  (
+    set -euo pipefail
+    export XDG_CONFIG_HOME="$xdg/config" XDG_DATA_HOME="$xdg/no-data" XDG_DATA_DIRS="$xdg/data" \
+      XDG_CONFIG_DIRS="$xdg/no-etc" XDG_CURRENT_DESKTOP=buchhwin-shell:Hyprland
+    defaults_tool="$project_dir/scripts/default-apps.py"
+    eval "$(sed -n '/^app_default() {/,/^}/p' "$script")"
+    for entry in "$@"; do app_default "${entry%%:*}" "${entry#*:}"; done
+    printf 'end\n'
+  ) 2>&1
+}
+step7_status=0
+step7_out=$(step7 browser:brave-browser.desktop files:org.kde.dolphin.desktop archives:org.kde.ark.desktop) || step7_status=$?
+session_list="$xdg/config/buchhwin-shell-mimeapps.list"
+check "step 7 goes on past an application that is not installed (status $step7_status: $step7_out)" \
+  '[[ $step7_status -eq 0 && $step7_out == *"browser   brave-browser.desktop is not installed; skipped"*end ]]'
+check 'the file manager is Dolphin, never kitty'"'"'s helper' '[[ $step7_out == *"files     keeps org.kde.dolphin.desktop"* ]]'
+check 'a category without a default gets the one named' \
+  '[[ $step7_out == *"+ archives  org.kde.ark.desktop"* ]] && grep -qx "application/zip=org.kde.ark.desktop;" "$session_list"'
+check 'nothing is written for the browser' '! grep -q brave "$session_list"'
+# kitty's helper named in a mimeapps.list (Plasma's, say) is still no file
+# manager for this session.
+printf '[Default Applications]\ninode/directory=kitty-open.desktop;\n' > "$xdg/config/mimeapps.list"
+step7_out=$(step7 files:org.kde.dolphin.desktop) || true
+check "kitty's helper as a choice is replaced ($step7_out)" \
+  '[[ $step7_out == *"+ files     org.kde.dolphin.desktop"* ]] && grep -qx "inode/directory=org.kde.dolphin.desktop;" "$session_list"'
 
 if (( failures )); then
   printf 'TESTS FAILED bootstrap (%d failed)\n' "$failures"

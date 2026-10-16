@@ -1,13 +1,19 @@
 import Quickshell
 import Quickshell.Io
 import QtQuick
+import qs.services
+import qs.theme
 import "Harness.js" as T
 import "../../services/LayoutLogic.js" as L
 import "../../services/dock/DockLogic.js" as D
+import "../../services/appearance/ContrastLogic.js" as C
 
 // The dock's layout in layout.json (LayoutLogic: zones of pills like the
 // bar's, the dock's own pins, kept in a profile's state), the bar's
 // operations on it, its two shipped presets, and where its zones go along it.
+// And the registry's word on the dock's own pieces (WidgetRegistry, which
+// runs nothing), and the editor's frames on it (Colors, in the test's
+// settings sandbox).
 ShellRoot {
     FileView { id: taskbarFile; path: Qt.resolvedUrl("../../config/dock-presets/taskbar.json").toString().replace("file://", ""); blockLoading: true }
     FileView { id: dockFile; path: Qt.resolvedUrl("../../config/dock-presets/dock.json").toString().replace("file://", ""); blockLoading: true }
@@ -25,7 +31,15 @@ ShellRoot {
                                     center: [{ items: [] }], pins: ["org.kde.dolphin.desktop", "@terminal", "@nope", "a b", "@terminal"] })
         T.eq(odd.left.map(pill => pill.id), ["dock-pill-1", "dock-pill"], "pill ids start with dock-, and stay unique")
         T.eq(odd.center, [], "an empty pill is no pill")
-        T.eq(odd.pins, ["org.kde.dolphin", "@terminal"], "pins: ids without .desktop, known defaults, once each")
+        T.eq(odd.pins, ["org.kde.dolphin", "@terminal", "a b"], "pins: ids without .desktop, known defaults, once each")
+        // Citrix's subscribed apps are desktop ids with spaces and '$'
+        // (StartupWMClass=RDS-…): "Pin to dock" did nothing for them.
+        const citrix = "Citrix_subscribed_XenApp 7.x.RDS-Sample $S101-255"
+        T.eq(L.sanitizeDockPins([citrix + ".desktop"]), [citrix], "an id with spaces and '$' is a pin")
+        T.eq(L.dockPinAt(fresh, citrix).pins.slice(-1), [citrix], "and can be pinned")
+        T.eq(L.dockUnpin(L.dockPinAt(fresh, citrix), citrix).pins, fresh.pins, "and unpinned")
+        T.eq(L.sanitizeDockPins(["", "  ", "a\nb", "tab\there", "x/y", "-rf", "@nope", "../up", "a".repeat(300)]), [],
+             "but nothing, a control character, a slash, a leading dash, an unknown @ name or a run-on is none")
         T.eq(L.sanitizeDock({ left: [] }).pins, fresh.pins, "no pins stored: the default ones")
         T.eq(L.sanitizeDock({ left: [], pins: [] }).pins, [], "but an empty list stays empty")
         const many = L.sanitizeDock({ pins: Array.from({ length: 20 }, (_, i) => "app" + i) })
@@ -44,6 +58,32 @@ ShellRoot {
         T.eq(dock.left, [], "and removed")
         T.eq(L.findPill(dock, "dock-apps"), { zone: "center", index: 0 }, "the bar's lookup finds a dock pill")
 
+        // A new pill in an earlier zone must not take an untouched pill's
+        // id: addPill names it in the bar's way ("pill-3"), and in zone
+        // order the left one used to win "dock-pill-3" - the date pill on
+        // the right was renamed, and the editor selected it instead.
+        const ids = d => L.barPillIds(d)
+        let named = L.dockZoneOp(fresh, L.addPill, ["right", "clock", "full"])
+        named = L.dockZoneOp(named, L.addPill, ["right", "date", "full"])
+        const datePill = named.right[1].id
+        named = L.dockZoneOp(named, L.removePill, [named.right[0].id])
+        const beforeAdd = ids(named)
+        named = L.dockZoneOp(named, L.addPill, ["left", "volume", "icon"])
+        T.eq(named.right.map(pill => [pill.id, pill.items[0].type]), [[datePill, "date"]], "an untouched pill keeps its id (" + datePill + ")")
+        const created = ids(named).filter(id => beforeAdd.indexOf(id) < 0)
+        T.eq(created.length, 1, "one id is new")
+        T.eq(L.findPill(named, created[0]), { zone: "left", index: 0 }, "and it is the new pill's")
+        T.eq(new Set(ids(named)).size, ids(named).length, "every id once")
+        // The same for a split: the pill split off is the only one renamed
+        // (two pills, so splitItem names the new one "pill-3").
+        let split = L.sanitizeDock({ left: [{ id: "dock-a", items: [{ type: "clock" }, { type: "date" }] }],
+                                     right: [{ id: "dock-pill-3", items: [{ type: "volume" }] }] })
+        const splitBefore = ids(split)
+        split = L.dockZoneOp(split, L.splitItem, ["dock-a", 1])
+        T.eq(split.right.map(pill => pill.id), ["dock-pill-3"], "a split renames no other pill")
+        T.eq(split.left.map(pill => pill.items[0].type), ["clock", "date"], "and makes two")
+        T.eq(ids(split).filter(id => splitBefore.indexOf(id) < 0).length, 1, "with one new id")
+
         // ---- pins -------------------------------------------------------------------
         dock = L.dockPinAt(fresh, "org.kde.kate")
         T.eq(dock.pins[dock.pins.length - 1], "org.kde.kate", "pinned at the end")
@@ -56,6 +96,43 @@ ShellRoot {
         const full = L.sanitizeDock({ pins: Array.from({ length: L.DOCK_PIN_LIMIT }, (_, i) => "app" + i) })
         T.eq(L.dockPinAt(full, "more").pins, full.pins, "nothing new past the limit")
         T.eq(L.dockPinAt(full, "app5", 0).pins[0], "app5", "but a pinned one still moves")
+
+        // ---- a preset and the user's pins ------------------------------------------------
+        const presetLayout = L.sanitizeDock({ center: [{ id: "dock-apps", items: [{ type: "apps" }] }], pins: ["@files", "@browser"] })
+        const mine = L.dockPinAt(fresh, "org.kde.kate")
+        T.eq(L.dockFromPreset(mine, presetLayout).pins, mine.pins, "a preset keeps the apps the user pinned")
+        T.eq(L.dockFromPreset(mine, presetLayout).center, presetLayout.center, "and brings its zones")
+        T.eq(L.dockFromPreset(fresh, presetLayout).pins, ["@files", "@browser"], "onto the default pins it brings its own")
+        T.eq(L.dockFromPreset(L.sanitizeDock({ pins: [] }), presetLayout).pins, ["@files", "@browser"], "and onto none")
+        T.eq(L.dockFromPreset(undefined, presetLayout).pins, ["@files", "@browser"], "no dock yet: the preset's")
+        const reordered = L.dockPinAt(fresh, "@browser", 0)
+        T.eq(L.dockFromPreset(reordered, presetLayout).pins, reordered.pins, "the defaults in an order of the user's are theirs too")
+
+        // ---- the registry: the dock's own pieces ------------------------------------------
+        const offered = WidgetRegistry.availableTypes().map(entry => entry.name)
+        T.ok(offered.indexOf("apps") < 0 && offered.indexOf("start") < 0,
+             "the pickers elsewhere (widgets, bar, control center, dashboard, notch) are not offered the dock's pieces")
+        T.ok(offered.indexOf("clock") >= 0, "but every other widget")
+        const all = WidgetRegistry.availableTypes(true).map(entry => entry.name)
+        T.ok(all.indexOf("apps") >= 0 && all.indexOf("start") >= 0, "a caller that asks gets them")
+        T.ok(WidgetRegistry.isDockOnly("apps") && WidgetRegistry.isDockOnly("start") && !WidgetRegistry.isDockOnly("clock"), "dockOnly")
+        T.ok(WidgetRegistry.isOnce("apps") && WidgetRegistry.isOnce("start") && !WidgetRegistry.isOnce("clock"), "once on the dock")
+        T.ok(!WidgetRegistry.pillSized("apps") && WidgetRegistry.pillSized("start") && WidgetRegistry.pillSized("workspace"),
+             "the apps size themselves, every other item takes the editor's item size")
+
+        // ---- the editor's frames ------------------------------------------------------------
+        // The only sign on the flat taskbar of what can be dragged: a mark
+        // at 3:1 on the panel under the editor's scrim, in both themes (the
+        // divider line it was came to 1.1-1.2:1).
+        const hex = color => typeof color === "string" ? color : String(Qt.rgba(color.r, color.g, color.b, 1))
+        for (const theme of ["dark", "light"]) {
+            SettingsService.set("appearance.theme", theme)
+            const under = Colors.flat(Colors.scrim, Colors.panelBase)
+            T.ok(C.contrast(hex(Colors.editorFrame), hex(under)) >= 3,
+                 theme + ": a frame is a mark on the dimmed panel (" + C.contrast(hex(Colors.editorFrame), hex(under)).toFixed(2) + ")")
+            T.ok(C.contrast(hex(Colors.flat(Colors.border, under)), hex(under)) < 3, theme + ": which the divider line was not")
+        }
+        SettingsService.set("appearance.theme", "dark")
 
         // ---- a profile keeps its dock ----------------------------------------------------
         const state = L.sanitizeProfileState({ settings: {}, dock: { center: [{ id: "dock-apps", items: [{ type: "apps" }] }], pins: ["x"] } })

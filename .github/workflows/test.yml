@@ -17,8 +17,11 @@
 # because the last step checks that every package name it hands out exists -
 # and the first run of that check found one, `starship`, that only resolved on
 # the machine the list was written on. The `leap-packages` job does the same
-# for openSUSE Leap 16; the suite itself runs on Fedora only, because the QML
-# files are the same on both.
+# for openSUSE Leap 16. The suite runs twice: on Fedora, and on Arch
+# (`test-arch`), the platform the shell is used on - Arch's Qt is newer
+# (6.12, with its own warnings and strict-mode differences, testing.md
+# pitfalls 59 and 94), and there the suite runs against the package list
+# bootstrap.sh hands out, installed rather than only looked up.
 name: test
 
 on:
@@ -43,7 +46,7 @@ jobs:
           dnf -y config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
           dnf -y install \
             hyprland quickshell \
-            git jq ripgrep zsh python3 python3-pillow tar findutils diffutils which gzip procps-ng \
+            git jq zsh python3 python3-pillow tar findutils diffutils which gzip procps-ng \
             qt6-qtdeclarative-devel \
             plasma-workspace kdepim-addons akonadi-server kf6-kitemmodels
 
@@ -184,3 +187,52 @@ jobs:
             exit 1
           fi
           printf 'every package for Arch exists\n'
+
+  test-arch:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    env:
+      # The image generates no locale; C.UTF-8 is glibc's own.
+      LANG: C.UTF-8
+    steps:
+      - name: What checkout needs
+        run: pacman -Syu --noconfirm --needed git
+
+      - uses: actions/checkout@v4
+        with:
+          # tests/deploy-test.sh clones the repository and makes a worktree.
+          fetch-depth: 0
+
+      - name: Install the Arch package list and what the checks need
+        # The list itself (Hyprland, Quickshell, the KDE PIM QML modules the
+        # QML tests load the shell with ...), so the suite meets what users
+        # get; then qmllint (qt6-declarative) and what Arch's base leaves out.
+        # Captured first: a failing bootstrap.sh is a failure, not an empty
+        # list.
+        shell: bash
+        run: |
+          set -eux
+          packages=$(install/bootstrap.sh --distro arch --list-packages)
+          [ -n "$packages" ] || { echo "the package list came back empty" >&2; exit 1; }
+          mapfile -t wanted <<<"$packages"
+          pacman -S --noconfirm --needed "${wanted[@]}" \
+            qt6-declarative which diffutils findutils tar gzip procps-ng
+
+      - name: Run the checks
+        # As on Fedora: an unprivileged user (Hyprland refuses root), a
+        # runtime directory, and doctor.sh skipped (it asks about the machine).
+        shell: bash
+        run: |
+          set -eux
+          useradd -m ci
+          chown -R ci:ci "$GITHUB_WORKSPACE"
+          runuser -u ci -- bash -lc '
+            set -eux
+            cd "'"$GITHUB_WORKSPACE"'"
+            export XDG_RUNTIME_DIR=/tmp/xdg-ci LANG=C.UTF-8
+            mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+            git config --global --add safe.directory "*"
+            git config --global user.email ci@example.invalid
+            git config --global user.name CI
+            BUCHHWIN_SKIP_ENVIRONMENT=1 scripts/test.sh
+          '

@@ -19,9 +19,15 @@ var ACTIONS = [
     "colorPicker pick", "switcher next", "switcher previous", "switcher confirm",
     "clipboard toggle", "emoji toggle", "recording toggle region", "recording toggle screen",
     "kbdBacklight up", "kbdBacklight down", "kbdBacklight toggle", "brightness up", "brightness down",
-    "dock toggle"
+    "dock toggle", "startMenu toggle"
 ].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "workspaces switchTo " + n))
  .concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "workspaces move " + n))
+
+// The actions without a key of their own in hypr/, which Settings > Shortcuts
+// offers to put on one (ShortcutLogic: a custom shortcut `{ shell }`). The
+// start menu was reachable by a click or IPC only (round 12); its key is the
+// user's choice - Super+D stays the launcher.
+var BINDABLE = ["startMenu toggle"]
 
 // The touchpad swipes that open a panel (Settings > Input): in a Lua session
 // a swipe's action sends `buchhwin:gestures.run.<name>` (GestureLogic.shortcut)
@@ -62,4 +68,13 @@ function runsOn(name, pressed) {
 
 function names() {
     return ACTIONS.concat(GESTURES).map(nameOf)
+}
+
+function bindable(action) {
+    return BINDABLE.indexOf(String(action || "")) >= 0
+}
+
+// The global shortcut of an action as a bind sends it: "buchhwin:startMenu.toggle".
+function shortcutName(action) {
+    return APPID + ":" + nameOf(action)
 }

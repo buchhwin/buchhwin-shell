@@ -38,7 +38,7 @@ printf '[Wayland]\nCurrent=not-a-theme\n' > "$root/etc/sddm.conf.d/20-unrelated.
 ln -s /usr/lib/systemd/system/plasmalogin.service "$root/etc/systemd/system/display-manager.service"
 # Synthetic files that start like the formats they are named after.
 printf 'RIFF\044\000\000\000WEBPVP8 synthetic' > "$home/Pictures/Wall.WEBP"
-printf 'synthetic face' > "$sandbox/face.png"
+printf '\211PNG\r\n\032\nsynthetic face' > "$sandbox/face.png"
 printf '{ "wallpaper": { "path": "~/Pictures/Wall.WEBP" } }\n' > "$home/.config/buchhwin-shell/settings.json"
 cp -p "$root/etc/sddm.conf" "$sandbox/sddm.conf.orig"
 cp -p "$root/etc/sddm.conf.d/10-other.conf" "$sandbox/10-other.conf.orig"
@@ -56,6 +56,7 @@ check '! grep -qE "^[[:space:]]*Current" "$root/etc/sddm.conf" && grep -qx "Curs
 check '! grep -qE "^[[:space:]]*Current" "$root/etc/sddm.conf.d/10-other.conf"' "conf.d theme selection commented out"
 check 'cmp -s "$sandbox/20-unrelated.conf.orig" "$root/etc/sddm.conf.d/20-unrelated.conf"' "Current= outside [Theme] untouched"
 check 'cmp -s "$sandbox/face.png" "$root/usr/share/sddm/faces/tester.face.icon"' "avatar installed"
+check '[[ $(stat -c %a "$root/usr/share/sddm/faces/tester.face.icon") == 644 ]]' "the avatar is readable by the greeter"
 check 'grep -q "Would run: systemctl disable plasmalogin.service" <<<"$output" && grep -q "Would run: systemctl enable sddm.service" <<<"$output"' "display manager switch planned"
 
 # Unsupported files are refused; a second install keeps the first backups.
@@ -85,6 +86,24 @@ check '! compgen -G "$theme/background.*" >/dev/null && grep -q "not an image, u
   "a readable file that is no picture falls back to the gradient"
 check '! "$project_dir/install/sddm-theme.sh" install --root "$root" --wallpaper "$home/Pictures/notes.png" >/dev/null 2>&1' \
   "and one named on the command line is refused"
+# The avatar takes the same way: read as the user, and only a picture. A
+# symlink to a root-only file is refused, and so is a readable file that is no
+# picture (a mistyped path to a key); the face already there stays.
+face="$root/usr/share/sddm/faces/tester.face.icon"
+cp "$face" "$sandbox/face.before"
+ln -s "$private/shadow" "$home/me.png"
+: > "$sandbox/runuser.log"
+status=0; output=$("$project_dir/install/sddm-theme.sh" install --root "$root" --avatar "$home/me.png" --user tester 2>&1) || status=$?
+check '[[ $status -ne 0 ]] && cmp -s "$face" "$sandbox/face.before" && ! grep -rqs "root only" "$root/usr/share/sddm"' \
+  "an avatar that is a symlink to a root-only file is not copied (status $status)"
+check 'grep -q "Avatar not readable by tester" <<<"$output" && grep -qx tester "$sandbox/runuser.log"' "it is read as the user, and the run says why: $output"
+printf 'ssh-ed25519 not a picture' > "$home/id_key"
+status=0; output=$("$project_dir/install/sddm-theme.sh" install --root "$root" --avatar "$home/id_key" --user tester 2>&1) || status=$?
+check '[[ $status -ne 0 ]] && cmp -s "$face" "$sandbox/face.before" && grep -q "Avatar is not an image" <<<"$output"' \
+  "an avatar that is no picture is refused (status $status: $output)"
+status=0; "$project_dir/install/sddm-theme.sh" install --root "$root" --avatar "$sandbox/face.png" >/dev/null 2>&1 || status=$?
+check '[[ $status -ne 0 ]]' "an avatar without a user is refused"
+
 # Every format the theme accepts, recognised by its first bytes.
 for sample in 'png:\211PNG\r\n\032\n' 'jpeg:\377\330\377' 'webp:RIFF\0\0\0\0WEBP' 'avif:\0\0\0\034ftypavif' \
   'jxl:\377\012' 'bmp:BM' 'svg:<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"/>'; do

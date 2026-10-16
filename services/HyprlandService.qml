@@ -55,9 +55,19 @@ Singleton {
     // can see must not take a block of numbers or collect workspace rules.
     // `Quickshell.screens` is the enabled set, and it is what every other
     // per-screen surface in the shell is built from.
+    //
+    // The place comes from that screen, not from the HyprlandMonitor: under
+    // Hyprland 0.56 a HyprlandMonitor's x, y, width, height and scale are all
+    // 0, refreshMonitors() or not (testing.md pitfall 99; probed again
+    // 17.10.: an empty lastIpcObject). With every monitor at 0,0 the order
+    // fell back to the names - DP-10, DP-13, DP-8 at the desk instead of
+    // DP-8, DP-10, DP-13 left to right - and the blocks of numbers no longer
+    // matched the overview's (from `hyprctl monitors`) or the Displays page's.
+    // A ShellScreen's x/y are logical, in the same space as Hyprland's.
     readonly property var monitorList: Hyprland.monitors.values
-        .filter(monitor => Quickshell.screens.some(screen => screen.name === monitor.name))
-        .map(monitor => ({ name: monitor.name, x: monitor.x, y: monitor.y }))
+        .map(monitor => Quickshell.screens.find(screen => screen.name === monitor.name))
+        .filter(screen => !!screen)
+        .map(screen => ({ name: screen.name, x: screen.x, y: screen.y }))
     readonly property string focusedMonitorName: Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
 
     // Which workspace a given screen is showing - not the globally focused one.

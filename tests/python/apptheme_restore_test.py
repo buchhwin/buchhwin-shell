@@ -356,6 +356,112 @@ with tempfile.TemporaryDirectory() as scratch:
             else:
                 os.environ[name] = value
 
+# ---- GTK files (round 12) ------------------------------------------------------
+# GTK 3 reads its dark variant from settings.ini and the Breeze theme draws with
+# gtk.css's colors.css; while the shell follows a light theme both have to say
+# light, and the logout gives back exactly what was there.
+SETTINGS_INI = """[Settings]
+gtk-application-prefer-dark-theme=true
+gtk-font-name=Noto Sans,  10
+gtk-icon-theme-name=breeze-dark
+gtk-theme-name=Breeze
+"""
+DARK_COLORS = "@define-color borders_breeze #4c4e51;\n@define-color theme_bg_color_breeze #202326;\n"
+LIGHT_COLORS = "@define-color theme_bg_color_breeze #eff0f1;\n"
+check(module.palette_dark(DARK_COLORS) is True and module.palette_dark(LIGHT_COLORS) is False
+      and module.palette_dark("@define-color content_view_bg_breeze #141618;") is True and module.palette_dark("") is None,
+      "palette brightness from the window (or view) background")
+check(module.ini_settings(SETTINGS_INI, ["gtk-icon-theme-name", "gtk-cursor-theme-name"])
+      == {"gtk-icon-theme-name": "breeze-dark", "gtk-cursor-theme-name": None}, "settings.ini keys")
+edited = module.edit_ini(SETTINGS_INI, {"gtk-application-prefer-dark-theme": "false", "gtk-icon-theme-name": None,
+                                        "gtk-cursor-theme-name": "macOS"})
+check(edited == SETTINGS_INI.replace("dark-theme=true", "dark-theme=false").replace("gtk-icon-theme-name=breeze-dark\n", "")
+      + "gtk-cursor-theme-name=macOS\n", f"settings.ini edited in place, a key removed, a missing one added: {edited!r}")
+check(module.edit_ini("[Other]\na=b\n", {"k": "v"}) == "[Settings]\nk=v\n\n[Other]\na=b\n", "no [Settings] group: one is added")
+check(module.edit_ini(SETTINGS_INI, {"gtk-icon-theme-name": "breeze-dark"}) == SETTINGS_INI, "nothing to change: the same text")
+IMPORTED = "@import 'colors.css';"
+left_out = module.edit_import(IMPORTED, False)
+check(left_out.startswith("/*") and not any(module.IMPORT.match(line) for line in left_out.split("\n")), "the import is commented out")
+check(module.edit_import(left_out, True) == IMPORTED, "and comes back byte for byte")
+check(module.edit_import("", True) == IMPORTED + "\n" and module.edit_import("a {}\n", True) == IMPORTED + "\na {}\n",
+      "an import added in front where there was none")
+check(module.edit_import(IMPORTED, True) == IMPORTED and module.edit_import("a {}", False) == "a {}", "nothing to change")
+for values in ({"preferDark": "a\nb"}, {"iconTheme": " x"}, {"colorsImport": "no"}, {"theme": "x"}, {}, []):
+    check(not module.valid_gtk_values(values), f"refused GTK change {values!r}")
+check(module.valid_gtk_values({"preferDark": None, "iconTheme": "breeze", "colorsImport": False}), "allowed GTK change")
+
+with tempfile.TemporaryDirectory() as scratch:
+    home = pathlib.Path(scratch) / "config"
+    (home / "gtk-3.0").mkdir(parents=True)
+    (home / "gtk-4.0").mkdir()
+    (home / "gtk-3.0" / "settings.ini").write_text(SETTINGS_INI)
+    (home / "gtk-3.0" / "settings.ini").chmod(0o600)
+    (home / "gtk-3.0" / "gtk.css").write_text(IMPORTED)
+    (home / "gtk-3.0" / "colors.css").write_text(DARK_COLORS)
+    # gtk-4.0's settings.ini is a link (a dotfile repository), and it has no gtk.css.
+    (home / "real.ini").write_text(SETTINGS_INI)
+    (home / "gtk-4.0" / "settings.ini").symlink_to(home / "real.ini")
+    snap = module.gtk_snapshot(home)
+    check(snap == {"gtk-3.0": {"preferDark": "true", "iconTheme": "breeze-dark", "colorsImport": True, "colorsDark": True},
+                   "gtk-4.0": {"preferDark": "true", "iconTheme": "breeze-dark"}}, f"GTK snapshot: {snap}")
+    check(module.gtk_snapshot(pathlib.Path(scratch) / "none") == {}, "no GTK folders: nothing")
+    module.apply_gtk("gtk-3.0", {"preferDark": "false", "iconTheme": "breeze", "colorsImport": False}, home)
+    module.apply_gtk("gtk-4.0", {"preferDark": "false", "colorsImport": False}, home)
+    check(module.gtk_snapshot(home) == {"gtk-3.0": {"preferDark": "false", "iconTheme": "breeze", "colorsImport": False, "colorsDark": True},
+                                        "gtk-4.0": {"preferDark": "false", "iconTheme": "breeze-dark"}}, "GTK files follow the light theme")
+    check((home / "gtk-4.0" / "settings.ini").is_symlink() and "dark-theme=false" in (home / "real.ini").read_text(),
+          "a linked settings.ini is written through the link")
+    check(((home / "gtk-3.0" / "settings.ini").stat().st_mode & 0o777) == 0o600, "permissions kept")
+    check(not (home / "gtk-4.0" / "gtk.css").exists(), "a file that is not there is not made")
+    try:
+        module.apply_gtk("gtk-5.0", {"preferDark": "true"}, home)
+        check(False, "another folder refused")
+    except ValueError:
+        pass
+    saved = {"gtk": {"gtk-3.0": {"preferDark": "true", "iconTheme": "breeze-dark", "colorsImport": True, "colorsDark": True},
+                     "gtk-4.0": {"preferDark": "true", "iconTheme": "breeze-dark"}, "gtk-9.0": {"preferDark": "x"}}}
+    gtk_state = {"version": 2, "applied": True, "restoreOnLogout": True, "saved": saved,
+                 "restore": [["gsettings", "set", "org.gnome.desktop.interface", "icon-theme", "breeze-dark"]]}
+    restore = module.restore_commands(gtk_state, gtk_current=module.gtk_snapshot(home))
+    check(restore == [["gsettings", "set", "org.gnome.desktop.interface", "icon-theme", "breeze-dark"],
+                      [module.GTK_HELPER, "--gtk", "gtk-3.0", json.dumps({"preferDark": "true", "iconTheme": "breeze-dark", "colorsImport": True},
+                                                                          separators=(",", ":"))],
+                      [module.GTK_HELPER, "--gtk", "gtk-4.0", json.dumps({"preferDark": "true"}, separators=(",", ":"))]],
+          f"GTK restore: the icon theme key, then the files: {restore}")
+    for command in restore[1:]:
+        module.apply_gtk(command[2], json.loads(command[3]), home)
+    check((home / "gtk-3.0" / "settings.ini").read_text() == SETTINGS_INI and (home / "real.ini").read_text() == SETTINGS_INI
+          and (home / "gtk-3.0" / "gtk.css").read_text() == IMPORTED, "the GTK files are what they were, byte for byte")
+    check(module.restore_commands(gtk_state, gtk_current=module.gtk_snapshot(home)) == gtk_state["restore"], "restored: nothing left for GTK")
+    check(sorted(path.name for path in (home / "gtk-3.0").iterdir()) == ["colors.css", "gtk.css", "settings.ini"], "no temporary files")
+
+    # --gtk from the shell, and never in a nested session.
+    previous_config = os.environ.get("XDG_CONFIG_HOME")
+    previous_nested = os.environ.get("BUCHHWIN_NESTED")
+    os.environ["XDG_CONFIG_HOME"] = str(home)
+    try:
+        os.environ["BUCHHWIN_NESTED"] = "1"
+        with redirect_stderr(io.StringIO()):
+            check(module.main(["--gtk", "gtk-3.0", '{"preferDark":"false"}']) == 0, "nested --gtk: status")
+        check("dark-theme=true" in (home / "gtk-3.0" / "settings.ini").read_text(), "nested --gtk changes nothing")
+        os.environ.pop("BUCHHWIN_NESTED")
+        os.environ["BUCHHWIN_NESTED_DIR"] = str(pathlib.Path(scratch) / "absent")
+        check(module.main(["--gtk", "gtk-3.0", '{"preferDark":"false"}']) == 0, "--gtk status")
+        check("dark-theme=false" in (home / "gtk-3.0" / "settings.ini").read_text(), "--gtk changes the file")
+        with redirect_stderr(io.StringIO()):
+            check(module.main(["--gtk", "gtk-3.0", '{"rm":"-rf"}']) == 1, "--gtk refuses other keys")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            check(module.main(["--gtk-snapshot"]) == 0, "--gtk-snapshot status")
+        check(json.loads(output.getvalue())["gtk-3.0"]["preferDark"] == "false", "--gtk-snapshot output")
+    finally:
+        for name, value in (("XDG_CONFIG_HOME", previous_config), ("BUCHHWIN_NESTED", previous_nested)):
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+        os.environ.pop("BUCHHWIN_NESTED_DIR", None)
+
 if failures:
     for failure in failures:
         print("FAIL", failure)

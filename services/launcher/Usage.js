@@ -7,6 +7,15 @@
 var HALF_LIFE_DAYS = 14
 var MAX_ENTRIES = 200
 
+// Any desktop id: the file is JSON, so the id needs no rule of its own beyond
+// being one line. The Citrix entries here ("Citrix_subscribed_XenApp
+// 7.x.RDS-Buchhwin $S101-255") failed the old letters-and-dots rule and lost
+// their history at every start (round 12). `__proto__` would set the result's
+// prototype instead of an entry.
+function validId(id) {
+    return /^[^\x00-\x1f\x7f]{1,255}$/.test(id) && id !== "__proto__"
+}
+
 function parse(text) {
     let data = null
     try { data = JSON.parse(text) } catch (error) { return {} }
@@ -14,7 +23,7 @@ function parse(text) {
     if (!data || data.version !== 1 || typeof data.apps !== "object" || data.apps === null) return result
     for (const id of Object.keys(data.apps)) {
         const entry = data.apps[id]
-        if (!/^[A-Za-z0-9._-]+$/.test(id) || !entry) continue
+        if (!validId(id) || !entry) continue
         const count = Math.max(0, Math.floor(Number(entry.count) || 0))
         const last = Number(entry.last) || 0
         if (count > 0 && last > 0) result[id] = { count: count, last: last }

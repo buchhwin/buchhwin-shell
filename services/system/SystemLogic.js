@@ -3,13 +3,17 @@
 // Parsing for CPU, memory and disk usage and the busiest processes
 // (SystemStatsService, the CPU/RAM/disk widgets and the system popup).
 
-// First line of /proc/stat → { idle, total } jiffies (idle includes iowait).
+// First line of /proc/stat → { idle, total } jiffies (idle includes iowait),
+// and `cpus`, the count of the per-CPU lines after it (1 when there are none):
+// what a process's top figure is shared out over (processShare).
 function cpuTimes(statText) {
-    const line = String(statText || "").split("\n")[0].trim()
+    const lines = String(statText || "").split("\n")
+    const line = lines[0].trim()
     if (!line.startsWith("cpu ")) return null
     const fields = line.split(/\s+/).slice(1).map(Number)
     if (fields.length < 4 || fields.some(value => isNaN(value))) return null
-    return { idle: fields[3] + (fields[4] || 0), total: fields.reduce((sum, value) => sum + value, 0) }
+    const cpus = lines.filter(item => /^cpu\d+\s/.test(item)).length
+    return { idle: fields[3] + (fields[4] || 0), total: fields.reduce((sum, value) => sum + value, 0), cpus: Math.max(1, cpus) }
 }
 
 // Share of busy time between two samples (0..1); -1 without a usable pair.
@@ -74,6 +78,15 @@ function topProcesses(text, count) {
         if (result.length >= (count || 5)) break
     }
     return result
+}
+
+// top's %CPU is a share of one CPU (Irix mode: a process busy on four cores
+// says 400 %), while the meter above the list is the whole machine's: the
+// popup said "CPU 5 %" over "code 54.8 %". → percent of the whole machine.
+function processShare(percent, cpus) {
+    const value = Number(percent)
+    const count = Math.max(1, Math.floor(Number(cpus) || 1))
+    return isNaN(value) ? 0 : Math.max(0, value) / count
 }
 
 // Bytes → "512 MB", "7.4 GB", "1.9 TB" (decimal units like df -H and KDE).

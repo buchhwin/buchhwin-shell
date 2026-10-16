@@ -69,6 +69,38 @@ nested_mixed_environment() {
   (( nested_signature != nested_display ))
 }
 
+# Prints the signature of the Hyprland session a shell started from here
+# would belong to, and fails when there is none: the caller's own signature
+# when its compositor socket is there, else the one instance hyprctl lists,
+# if it runs on the caller's display (or the caller has none). The same rule
+# start-shell.sh applies before it starts anything; reload-shell.sh and the
+# deploy's reload (scripts/lib/reload.sh) ask first, so a run from Plasma -
+# no Hyprland at all, or a signature the user manager kept from the last
+# Hyprland login - restarts nothing and says so (round 12, scripts#0). Two
+# instances are a nested test session beside the real one: no guess.
+#
+# A signature whose socket is there is not enough on its own either: with a
+# Hyprland still running on another VT, the user manager hands its live
+# signature to a Plasma terminal, next to KWin's WAYLAND_DISPLAY. Hyprland's
+# lock file names the display it runs (its pid, then its socket, what
+# `hyprctl instances` reads); one that names another display is no session
+# of this caller. No lock file, or no second line, says nothing.
+hyprland_session() {
+  local runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)} signature=${HYPRLAND_INSTANCE_SIGNATURE:-} listed socket
+  if [[ -z $signature ]]; then
+    command -v hyprctl >/dev/null 2>&1 || return 1
+    listed=$(hyprctl instances 2>/dev/null) || listed=""
+    [[ $(grep -c '^instance ' <<<"$listed") == 1 ]] || return 1
+    socket=$(sed -n 's/^[[:space:]]*wl socket: *//p' <<<"$listed" | head -n1) || socket=""
+    [[ -z ${WAYLAND_DISPLAY:-} || -z $socket || $socket == "$WAYLAND_DISPLAY" ]] || return 1
+    signature=$(sed -n 's/^instance \(.*\):$/\1/p' <<<"$listed" | head -n1) || signature=""
+  fi
+  [[ -n $signature && -S $runtime/hypr/$signature/.socket.sock ]] || return 1
+  socket=$(sed -n 2p "$runtime/hypr/$signature/hyprland.lock" 2>/dev/null) || socket=""
+  [[ -z ${WAYLAND_DISPLAY:-} || -z $socket || $socket == "$WAYLAND_DISPLAY" ]] || return 1
+  printf '%s\n' "$signature"
+}
+
 nested_guard_fail() {
   printf 'nested-guard: %s; refusing (start scripts/nested-session.sh and export its values)\n' "$1" >&2
   return 1

@@ -2,6 +2,7 @@ import Quickshell
 import QtQuick
 import qs.services
 import qs.theme
+import qs.shell.widgets
 import "Harness.js" as T
 import "../../services/appearance/ContrastLogic.js" as C
 import "../../services/appearance/PanelStyleLogic.js" as P
@@ -17,6 +18,9 @@ ShellRoot {
     id: root
     property int waits: 0
     readonly property var swatches: ["#4f8ff7", "#8b6cf6", "#d46ad8", "#ef5f67", "#f28b3c", "#e7b43c", "#4fbf73", "#50e2cb", "#8f97a6"]
+    // A level widget as it is drawn on a panel (no service: WidgetBase
+    // alone), for the meter's colour.
+    property Item meterWidget: WidgetBase { sizeClass: "medium"; meter: 0.5 }
 
     // A colour property or a "#rrggbb" string (Colors.flat gives strings) as
     // "#rrggbb", without its alpha.
@@ -116,9 +120,31 @@ ShellRoot {
                 // and from each other.
                 T.ok(contrast(Colors.saturnPlanet, Colors.contrastBase) >= (theme === "light" ? 4.5 : 3), label + ": the Saturn's planet " + hex(Colors.saturnPlanet))
                 T.ok(contrast(Colors.saturnRing, Colors.contrastBase) >= 3, label + ": its ring " + hex(Colors.saturnRing))
-                T.ok(contrast(Colors.saturnPlanet, Colors.saturnRing) > 1.15, label + ": planet and ring apart " + contrast(Colors.saturnPlanet, Colors.saturnRing))
+                // Apart enough to read as two at the menu's small letters:
+                // the teal's half-white ring was 1.25:1 from its planet.
+                T.ok(contrast(Colors.saturnPlanet, Colors.saturnRing) >= Colors.saturnSeparation,
+                     label + ": planet and ring apart " + contrast(Colors.saturnPlanet, Colors.saturnRing))
+                // The overview's labels and outlines on its scrim at its
+                // lightest, over a white wallpaper: 2.5-3.2:1 in the light
+                // theme before.
+                T.ok(contrast(Colors.overviewAccent, Colors.overviewBackdrop) >= 4.5,
+                     label + ": an accent label on the overview's scrim " + contrast(Colors.overviewAccent, Colors.overviewBackdrop))
+                T.ok(contrast(Colors.scrimText, Colors.overviewBackdrop) >= 4.5, label + ": the overview's text on its scrim")
+                const mutedOnScrim = C.over("#ffffff", Colors.scrimMutedText.a, hex(Colors.overviewBackdrop))
+                T.ok(C.contrast(mutedOnScrim, hex(Colors.overviewBackdrop)) >= 4.5, label + ": and its grey labels " + C.contrast(mutedOnScrim, hex(Colors.overviewBackdrop)))
             }
         }
+        set("dark", "auto", "#50e2cb")
+        T.eq(hex(Colors.overviewAccent), "#50e2cb", "the shipped teal on the dark overview scrim stays as it is")
+        // A level is drawn in the accent made for a fill (round 12,
+        // ui-rest#2): the raw teal was 1.08:1 on a light track.
+        T.ok(Qt.colorEqual(root.meterWidget.meterColor, Colors.accentFill), "a dark panel's meter: the accent itself")
+        set("light", "auto", "#50e2cb")
+        T.ok(Qt.colorEqual(root.meterWidget.meterColor, Colors.accentFill) && !Qt.colorEqual(Colors.accentFill, Colors.accent),
+             "a light panel's meter: the 3:1 line, not the raw teal")
+        T.ok(contrast(root.meterWidget.meterColor, Colors.cardBase) >= 3, "and it stands off the card")
+        set("dark", "auto", "#50e2cb")
+        T.ok(Colors.saturnRing.r > Colors.saturnRingMix.r, "the teal's ring takes more white than ff's half")
         // `ff`'s second colour: the accent mixed half with white, which is
         // the shipped logo's pale blue for its sky blue.
         set("dark", "auto", "#5fafff")

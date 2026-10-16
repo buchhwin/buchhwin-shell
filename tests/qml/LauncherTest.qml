@@ -2,6 +2,7 @@ import Quickshell
 import QtQuick
 import "Harness.js" as T
 import "../../services/launcher/LaunchLogic.js" as Launch
+import "../../services/launcher/FileSearch.js" as Files
 
 // How the launcher starts an entry: always through scripts/launch-app.sh (a
 // unit named after the entry, and the session's environment instead of the
@@ -74,6 +75,21 @@ ShellRoot {
              overrides, script).command, ["/s/launch-terminal.sh", "--", "htop", "-t"], "a terminal entry's action in the terminal")
         T.eq(Launch.actionContext(outlook, { id: "none", command: [] }, overrides, script), null, "an empty action: nothing")
         T.eq(Launch.actionContext(outlook, null, overrides, script), null, "no action")
+
+        // The file search (round 12): the home folder as a pattern of its
+        // own, so plocate's limit counts only matches under it - with the
+        // query alone /usr and the hidden folders used up 200 matches and
+        // "png" found nothing at home - and hidden folders left out after.
+        T.eq(Files.command("/home/u", "report"), ["plocate", "-i", "-l", "5000", "--", "/home/u/", "report"],
+             "the home folder first, both patterns from the index")
+        T.eq(Files.paths("/home/u/a.png\n/usr/share/b.png\n/home/u/.cache/c.png\n/home/u/Pictures/.thumbs/d.png\n"
+                         + "/home/uv/e.png\n/home/u/Pictures/f.png\n", "/home/u"), ["/home/u/a.png", "/home/u/Pictures/f.png"],
+             "only the user's own files: not outside home, not hidden, not a neighbour's home")
+        T.eq(Files.paths(Array.from({ length: 80 }, (unused, i) => "/home/u/f" + i).join("\n"), "/home/u").length, 50, "fifty rows at most")
+        T.eq(Files.paths("", "/home/u"), [], "nothing found")
+        T.eq(Files.indexCommand("/home/u"), ["plocate", "-c", "--", "/home/u/"], "the index is asked for the home folder")
+        T.eq([Files.count("0\n"), Files.count("4636\n"), Files.count(""), Files.count("plocate: no db")], [0, 4636, -1, -1],
+             "its count; no answer is not none")
         T.finish("LauncherTest")
     }
 }

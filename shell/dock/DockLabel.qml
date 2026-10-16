@@ -6,6 +6,9 @@ import qs.shell.components
 // the room the dock's surface keeps for it - a tooltip window of its own
 // would be a second surface, and ToolTipLayer only knows above and below.
 // The look is the tooltips': solid surface, panel border, small text.
+// Kept on its parent, or - outside the apps widget that holds it - on the
+// dock's surface, so the first app's name on a taskbar does not run off the
+// screen.
 Rectangle {
     id: root
 
@@ -14,12 +17,12 @@ Rectangle {
     property var anchorRect: null
     property string text: ""
     property bool shown: false
-    // Kept inside its parent: a label on the dock's surface. The apps widget
-    // puts it outside itself, into the room the dock keeps above it.
-    property bool clampToArea: true
+    // Kept inside the window rather than its parent: the apps widget puts it
+    // outside itself, into the room the dock keeps above (or beside) it.
+    property bool clampToWindow: false
 
     readonly property bool vertical: edge === "left" || edge === "right"
-    readonly property Item area: parent
+    readonly property Item area: clampToWindow ? Window.contentItem : parent
 
     visible: opacity > 0 && anchorRect !== null && text.length > 0
     opacity: shown && anchorRect !== null ? 1 : 0
@@ -41,8 +44,13 @@ Rectangle {
     readonly property real wantedY: !anchorRect ? 0
         : vertical ? anchorRect.y + anchorRect.height / 2 - height / 2
         : anchorRect.y - height - Metrics.dockLabelGap
-    x: clampToArea ? Math.max(0, Math.min((area ? area.width : 0) - width, wantedX)) : wantedX
-    y: clampToArea ? Math.max(0, Math.min((area ? area.height : 0) - height, wantedY)) : wantedY
+    // Where the parent's corner is in the area it is kept in: read whenever
+    // the place is, which is when the label moves to another icon.
+    function areaOffset() {
+        return area && parent && area !== parent && anchorRect !== null ? parent.mapToItem(area, 0, 0) : Qt.point(0, 0)
+    }
+    x: { const at = areaOffset(); return Math.max(-at.x, Math.min((area ? area.width : 0) - at.x - width, wantedX)) }
+    y: { const at = areaOffset(); return Math.max(-at.y, Math.min((area ? area.height : 0) - at.y - height, wantedY)) }
 
     ShellText {
         id: name

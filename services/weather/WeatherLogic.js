@@ -251,3 +251,12 @@ function fromCache(text) {
     }
     return { key: data.key, updated: new Date(data.updated), model: model }
 }
+
+// The cache's `key` is the place's coordinates (rounded to ~1 km, and still
+// where the user lives), so the file is the user's alone (0600), like the
+// clipboard history: a home directory that is not private - older openSUSE
+// defaults, a shared or NFS home - would show it to every local account.
+// The command that makes it so; a file that is not there is left so, quietly.
+function privateFileCommand(path) {
+    return ["sh", "-c", "[ ! -f \"$1\" ] || chmod 600 -- \"$1\"", "sh", String(path)]
+}

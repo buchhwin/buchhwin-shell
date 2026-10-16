@@ -66,8 +66,26 @@ while [ $# -gt 0 ] && [ "$1" != "--" ] && [ "$1" != "true" ]; do shift; done
 [ "$1" = "--" ] && shift
 exec "$@"
 EOF
+# hyprctl lists the instances in $HYPR_INSTANCES (`hyprctl instances` text),
+# none otherwise - never the host's.
+cat > "$bin/hyprctl" <<'EOF'
+#!/bin/sh
+[ "$1" = instances ] && [ -n "${HYPR_INSTANCES:-}" ] && printf '%b' "$HYPR_INSTANCES"
+exit 0
+EOF
 chmod +x "$bin"/*
 export PATH="$bin:$PATH"
+# The sessions the cases name, each with its compositor socket, in a runtime
+# directory of the sandbox: reload-shell.sh only acts inside a Hyprland
+# session whose socket is there (round 12, scripts#0).
+runtime="$sandbox/run"
+for signature in real-signature nested-signature other-vt-signature; do
+  mkdir -p "$runtime/hypr/$signature"
+  python3 -c "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])" "$runtime/hypr/$signature/.socket.sock"
+done
+# A Hyprland still running on another VT names its display in its lock file
+# (pid, then socket, as Hyprland writes it).
+printf '1\nwayland-1\n' > "$runtime/hypr/other-vt-signature/hyprland.lock"
 if [[ $(command -v quickshell) != "$bin/quickshell" ]]; then
   printf 'shell-control test: stubs are not first in PATH, refusing to run\n' >&2
   exit 1
@@ -107,7 +125,8 @@ echo 1 > "$nested/hyprland.pid"
 # value had already sent the script down a different branch.
 sandboxed() {
   env -u BUCHHWIN_SHELL_PATH -u BUCHHWIN_NESTED -u WAYLAND_DISPLAY \
-    -u HYPRLAND_INSTANCE_SIGNATURE CALLS="$calls" HOME="$home" \
+    -u HYPRLAND_INSTANCE_SIGNATURE -u BUCHHWIN_START_WITHOUT_HYPRLAND -u HYPR_INSTANCES \
+    CALLS="$calls" HOME="$home" XDG_RUNTIME_DIR="$runtime" \
     BUCHHWIN_NESTED_DIR="$nested" "$@"
 }
 
@@ -192,6 +211,43 @@ for script in reload-shell.sh stop-shell.sh; do
   done
 done
 rm -f -- "$nested/wayland-display" "$nested/instance"
+
+# ---- no Hyprland session --------------------------------------------------------
+# Run from Plasma - no Hyprland at all, a signature the user manager kept from
+# the last Hyprland login, or the one instance on another display - a reload
+# stopped nothing and started the shell on KWin's display, after ending
+# Plasma's kded6 (round 12, scripts#0). Refused before anything is stopped,
+# and said. The tests' opt-in goes on as before.
+no_session() {   # no_session LABEL ENV...
+  local label=$1 status=0; shift
+  : > "$calls"
+  sandboxed "$@" BUCHHWIN_SHELL_PATH="$checkout" bash "$checkout/scripts/reload-shell.sh" \
+    >"$sandbox/out.log" 2>"$sandbox/err.log" || status=$?
+  check '[[ $status -ne 0 ]] && ! said "^quickshell kill" && ! said "^start-shell"' "$label: reload refuses and touches no shell (status $status)"
+  check 'grep -q "no Hyprland session here" "$sandbox/err.log"' "$label: and says why ($(cat "$sandbox/err.log"))"
+}
+no_session "no Hyprland at all" WAYLAND_DISPLAY=wayland-0 XDG_CURRENT_DESKTOP=KDE
+no_session "a signature whose socket is gone" WAYLAND_DISPLAY=wayland-0 HYPRLAND_INSTANCE_SIGNATURE=gone-signature
+no_session "a live signature of another display" WAYLAND_DISPLAY=wayland-0 HYPRLAND_INSTANCE_SIGNATURE=other-vt-signature
+no_session "the one instance on another display" WAYLAND_DISPLAY=wayland-0 HYPR_INSTANCES='instance real-signature:\n\twl socket: wayland-1\n'
+# the one instance on this display is the session
+: > "$calls"
+sandboxed WAYLAND_DISPLAY=wayland-1 HYPR_INSTANCES='instance real-signature:\n\twl socket: wayland-1\n' BUCHHWIN_SHELL_PATH="$checkout" \
+  bash "$checkout/scripts/reload-shell.sh" >/dev/null 2>&1 || true
+for _ in {1..20}; do said "^start-shell" && break; sleep 0.1; done
+check 'said "^quickshell kill" && said "^start-shell"' "the one instance on this display is a session to reload"
+# a signature whose lock file names this display is the session too
+: > "$calls"
+sandboxed WAYLAND_DISPLAY=wayland-1 HYPRLAND_INSTANCE_SIGNATURE=other-vt-signature BUCHHWIN_SHELL_PATH="$checkout" \
+  bash "$checkout/scripts/reload-shell.sh" >/dev/null 2>&1 || true
+for _ in {1..20}; do said "^start-shell" && break; sleep 0.1; done
+check 'said "^quickshell kill" && said "^start-shell"' "a signature on this display is a session to reload"
+# the tests' way past the check
+: > "$calls"
+sandboxed BUCHHWIN_START_WITHOUT_HYPRLAND=1 BUCHHWIN_SHELL_PATH="$checkout" \
+  bash "$checkout/scripts/reload-shell.sh" >/dev/null 2>&1 || true
+for _ in {1..20}; do said "^start-shell" && break; sleep 0.1; done
+check 'said "^start-shell"' "BUCHHWIN_START_WITHOUT_HYPRLAND=1 reloads without a session"
 
 # ---- what the shell is started with --------------------------------------------
 # Not the caller's own environment: a deploy from an editor by a coding agent

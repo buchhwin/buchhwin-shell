@@ -670,6 +670,11 @@ Variants {
                     // under the same keys, and this one - restarted by every
                     // frame of the morph - would win and report nothing.
                     screenName: window.expanded ? "" : window.screenName
+                    // No screen under a fullscreen window: the dock draws
+                    // nothing there (Dock.qml), so a notch that stays over it
+                    // (notch.fullscreen "show") keeps the time it would
+                    // otherwise leave to the taskbar.
+                    ownerScreen: window.fullscreenOn ? "" : window.screenName
                     reportOrigin: window.reportOrigin
                 }
             }

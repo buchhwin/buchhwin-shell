@@ -92,7 +92,13 @@ case "$action" in
     # Point ~/.local/share/buchhwin-shell and the other session links at the
     # stable copy (existing links are backed up by install.sh).
     "$stable_dir/install/install.sh" --apply
-    if $reload; then
+    if ! $reload; then
+      :
+    elif ! hyprland_session >/dev/null; then
+      # From Plasma, or from a terminal whose Hyprland has gone: there is no
+      # shell of this session to replace (scripts/lib/reload.sh).
+      printf 'No Hyprland session found; the shell starts from the stable worktree at the next login.\n'
+    else
       "$stable_dir/scripts/reload-shell.sh"
       printf 'Restarted the shell from the stable worktree.\n'
     fi
@@ -137,6 +143,20 @@ if [[ $ref == main && -n $(git_dev status --porcelain --untracked-files=no) ]]; 
   printf 'deploy: the development checkout has uncommitted changes; commit them first\n' >&2
   exit 1
 fi
+# Untracked files too, unless ignored. The suite below runs on the working
+# tree, but stable gets the commit: a new QML file that shell.qml already
+# uses and that was never added passes every test here and is missing in
+# stable, and the reload then brings up a shell that fails with "is not a
+# type" - the desktop without a shell, what the stable worktree is for
+# (round 12, scripts#1). docs/ and the like are in .git/info/exclude.
+if [[ $ref == main ]] || $run_tests; then
+  untracked=$(git_dev ls-files --others --exclude-standard --directory --no-empty-directory)
+  if [[ -n $untracked ]]; then
+    printf 'deploy: the development checkout has untracked files the commit does not carry; add, ignore or remove them first:\n' >&2
+    sed 's/^/  /' <<<"$untracked" >&2
+    exit 1
+  fi
+fi
 
 if $run_tests; then
   if [[ $(git_dev rev-parse HEAD) != "$target" ]]; then
@@ -154,7 +174,13 @@ if $run_tests; then
     exit 1
   fi
   printf 'Running scripts/test.sh --session …\n'
-  if ! BUCHHWIN_NESTED_DIR=${BUCHHWIN_NESTED_DIR:-"${XDG_RUNTIME_DIR:-/tmp}/buchhwin-nested-deploy"} "$project_dir/scripts/test.sh" --session; then
+  # From an empty sandbox (BUCHHWIN_NESTED_FRESH, scripts/nested-session.sh):
+  # the last run's settings.json and layout.json - a bar mode a failed smoke
+  # run left switched, a wallpaper path of another profile (pitfall 92) -
+  # failed good commits, and a first start was never what the deploy tested.
+  # BUCHHWIN_NESTED_FRESH=0 keeps the sandbox.
+  if ! BUCHHWIN_NESTED_DIR=${BUCHHWIN_NESTED_DIR:-"${XDG_RUNTIME_DIR:-/tmp}/buchhwin-nested-deploy"} \
+       BUCHHWIN_NESTED_FRESH=${BUCHHWIN_NESTED_FRESH:-1} "$project_dir/scripts/test.sh" --session; then
     printf 'deploy: tests failed; stable stays at %s\n' "$(git_dev rev-parse --short "$previous")" >&2
     exit 1
   fi

@@ -2,9 +2,10 @@
 .import "../hypr/HiddenWindows.js" as Hidden
 
 // The dock (shell/dock/Dock.qml, services/DockService.qml): pinned apps - the
-// launcher's pins - and the apps that have windows, along one edge of a
-// screen. Everything here is arithmetic on plain objects, so the tests can
-// ask it everything the surface and the service decide.
+// dock's own pins (LayoutService.dockLayout.pins) - and the apps that have
+// windows, along one edge of a screen. Everything here is arithmetic on plain
+// objects, so the tests can ask it everything the surface and the service
+// decide.
 
 var POSITIONS = ["bottom", "left", "right"]
 var SPANS = ["fit", "full"]
@@ -21,11 +22,14 @@ var MIN_ICON = 20
 
 // Hyprland's events after which a window may have come over the dock or left
 // it. There is no event for a floating window moved or resized by hand: that
-// is what the slow poll is for (needsPoll).
+// is what the slow poll is for (needsPoll). A focus change (activewindowv2)
+// moves no window, and re-reading every window after each Alt+Tab bought
+// nothing; a workspace moved to another monitor (moveworkspace) takes its
+// windows there.
 var COVER_EVENTS = ["openwindow", "closewindow", "movewindow", "movewindowv2", "changefloatingmode",
     "fullscreen", "workspace", "workspacev2", "focusedmon", "focusedmonv2", "activespecial",
-    "activespecialv2", "activewindowv2", "pin", "togglegroup", "moveintogroup", "moveoutofgroup",
-    "monitoradded", "monitoraddedv2", "monitorremoved", "monitorremovedv2", "configreloaded"]
+    "activespecialv2", "moveworkspace", "moveworkspacev2", "pin", "togglegroup", "moveintogroup",
+    "moveoutofgroup", "monitoradded", "monitoraddedv2", "monitorremoved", "monitorremovedv2", "configreloaded"]
 
 function lower(text) { return String(text || "").toLowerCase() }
 
@@ -175,17 +179,32 @@ function clickTarget(item, activeAddress, mru) {
 }
 
 // The desktop action that opens a new window, when the entry has one (Brave,
-// Chrome: "new-window"; never the private one), else "".
-function newWindowAction(actions) {
+// Chrome: "new-window"; VS Code: "new-empty-window"; never the private one),
+// else "". A bare "New" counts only when it runs the entry's own program
+// (Alacritty's "New Terminal"): elsewhere it may well be a new document.
+// `command` is the entry's (DesktopEntry.command).
+function program(command) {
+    const list = Array.prototype.slice.call(command || [])
+    const first = String(list.length ? list[0] : "")
+    return first.split("/").pop()
+}
+function newWindowAction(actions, command) {
     const list = Array.prototype.slice.call(actions || [])
-    const found = list.find(action => action && /^new[-_ ]?window$/i.test(String(action.id || "")))
+    const own = program(command)
+    const found = list.find(action => {
+        const id = String(action && action.id || "")
+        if (/^(new[-_ ]?(empty[-_ ]?)?window|new[-_ ]?instance)$/i.test(id)) return true
+        return /^new$/i.test(id) && own.length > 0 && program(action.command) === own
+    })
     return found ? found.id : ""
 }
 
 // The rows of an app's menu, top to bottom. Kinds: window (one per window, up
 // to `maxWindows`, then a "more"), new, action (desktop actions but the new
-// window one), pin/unpin, close.
-function menuRows(item, actions, pinnedFull, maxWindows) {
+// window one), pin/unpin, close. A pin row that is off says why (`reason`:
+// "full", or "hidden" for an entry the dock could not draw once pinned).
+// `command` is the entry's own, for the new window action.
+function menuRows(item, actions, pinnedFull, maxWindows, command) {
     if (!item) return []
     const rows = []
     const windows = item.windows || []
@@ -193,16 +212,20 @@ function menuRows(item, actions, pinnedFull, maxWindows) {
     for (let index = 0; index < shown; ++index)
         rows.push({ kind: "window", address: windows[index].address, workspace: windows[index].workspace })
     if (windows.length > shown) rows.push({ kind: "more", count: windows.length - shown })
-    if (item.special === "settings") {
+    // The shell's Settings and a default's placeholder: no entry of their
+    // own to start a second time or to list actions of.
+    if (item.special) {
         rows.push({ kind: "unpin" })
         return rows
     }
     if (item.entryId) {
         rows.push({ kind: "new" })
-        const skip = newWindowAction(actions)
+        const skip = newWindowAction(actions, command)
         for (const action of Array.prototype.slice.call(actions || []))
             if (action && action.id !== skip) rows.push({ kind: "action", id: action.id, name: action.name || action.id })
-        rows.push(item.pinned ? { kind: "unpin" } : { kind: "pin", enabled: !pinnedFull })
+        if (item.pinned) rows.push({ kind: "unpin" })
+        else if (item.pinnable === false) rows.push({ kind: "pin", enabled: false, reason: "hidden" })
+        else rows.push(pinnedFull ? { kind: "pin", enabled: false, reason: "full" } : { kind: "pin", enabled: true })
     }
     if (windows.length) rows.push({ kind: "close", count: windows.length })
     return rows
@@ -210,17 +233,22 @@ function menuRows(item, actions, pinnedFull, maxWindows) {
 
 // ---- panels out of the dock -------------------------------------------------------
 // Where a panel opened from a place on the dock stands (`rect`, on the
-// screen): above it on a bottom dock, beside it on a side one, `gap` away,
-// centred on it along the edge. A pill's click, an app's menu and the start
-// menu opened without a click all come out of the dock this way.
-function panelAnchor(edge, rect, gap) {
+// screen): above it on a bottom dock, beside it on a side one, centred on it
+// along the edge. A pill's click, an app's menu and the start menu opened
+// without a click all come out of the dock this way. `gap` is measured from
+// the dock's `body` (its drawn base, on the screen) when it is given - an
+// item sits inside the body, and a gap measured from the item was used up
+// inside a taskbar, which left the start menu flush on it - else from the
+// item itself.
+function panelAnchor(edge, rect, gap, body) {
     if (!validRect(rect)) return {}
     const space = Math.max(0, Number(gap) || 0)
+    const base = validRect(body) ? body : rect
     if (edge === "left")
-        return { anchorY: Math.round(rect.y + rect.height / 2), anchorLeft: rect.x + rect.width + space, fromDock: true }
+        return { anchorY: Math.round(rect.y + rect.height / 2), anchorLeft: base.x + base.width + space, fromDock: true }
     if (edge === "right")
-        return { anchorY: Math.round(rect.y + rect.height / 2), anchorRight: rect.x - space, fromDock: true }
-    return { anchorX: Math.round(rect.x + rect.width / 2), anchorBottom: rect.y - space, fromDock: true }
+        return { anchorY: Math.round(rect.y + rect.height / 2), anchorRight: base.x - space, fromDock: true }
+    return { anchorX: Math.round(rect.x + rect.width / 2), anchorBottom: base.y - space, fromDock: true }
 }
 
 // ---- covered: intellihide ------------------------------------------------------------
@@ -288,6 +316,9 @@ function wantRevealed(state) {
 function maskKind(state) {
     const s = state || {}
     if (!s.active) return "none"
+    // A drag on it keeps the whole surface: a pointer that left the body
+    // would be a leave, and Qt cancels the drag at a leave.
+    if (s.dragging) return "window"
     if (s.revealed) return "body"
     return s.reserves ? "none" : "strip"
 }
@@ -298,6 +329,47 @@ function revealTarget(focused, docks) {
     const list = Array.prototype.slice.call(docks || [])
     if (list.indexOf(focused) >= 0) return focused
     return list.length ? list[0] : ""
+}
+
+// What Super+Shift+D does (DockService.toggleFromKey). `s`: { enabled, target
+// (the screen it acts on), fullscreen (a fullscreen window there), hotkey
+// (the screen the key showed the dock on), peeking (that was only the look
+// after "on") }. "on": the dock is switched on and shown for a moment;
+// "fullscreen": nothing - the dock is not drawn under a fullscreen window,
+// and keys armed then took the keyboard the moment the fullscreen ended;
+// "hidden": the key's dock goes again; "shown": shown with the keyboard.
+function keyAction(state) {
+    const s = state || {}
+    if (!s.enabled) return "on"
+    if (!String(s.target || "").length) return "none"
+    if (s.fullscreen) return "fullscreen"
+    if (s.hotkey === s.target && !s.peeking) return "hidden"
+    return "shown"
+}
+
+// The dock had the keyboard and a panel changed (`active`, "" for none):
+// whether the dock keeps the keys, and whether its menu holds them for it
+// meanwhile. The dock's menu takes the keys with a grab of its own, and the
+// dock's grab steps aside for it - the compositor ends the older grab when a
+// newer one starts, which used to end the dock's keyboard mode. Closed with
+// Escape, the keys come back to the dock; closed by a click elsewhere, an
+// action or another panel, the dock lets them go.
+function keysAfterPanel(active, withMenu, escaped) {
+    const panel = String(active || "")
+    if (panel === "dockMenu") return { keep: true, withMenu: true }
+    if (!panel.length && withMenu) return { keep: escaped === true, withMenu: false }
+    return { keep: !panel.length, withMenu: false }
+}
+
+// Where the keys can go on the dock: its apps (0 .. count - 1) and a start
+// button before them (-1) or after them (count), `start` "before", "after" or
+// "" for none.
+function keyRange(count, start) {
+    const n = Math.max(0, Math.round(count || 0))
+    return { low: start === "before" ? -1 : 0, high: start === "after" ? n : Math.max(0, n - 1) }
+}
+function keyOnStart(index, count, start) {
+    return (start === "before" && index === -1) || (start === "after" && index === Math.max(0, Math.round(count || 0)))
 }
 
 // ---- geometry ------------------------------------------------------------------
@@ -342,42 +414,24 @@ function magnify(pointer, centres, peak, reach) {
     })
 }
 
-// The dock on one edge. `m`: { icon, pad, gap, margin, headroom, windowGap,
-// strip, count, room (the surface's length along the edge), sep, sepRoom }.
-// Returns the surface's thickness, the zone it reserves when it does, the
-// fitted icon size and, in the surface's own coordinates, the body and the
-// strip at the edge. The thickness follows the settings only - never the
-// number of apps - so the surface never changes size while mapped (pitfall 57).
-function geometry(edge, m, reserve) {
-    const side = POSITIONS.indexOf(edge) >= 0 ? edge : "bottom"
-    const across = m.icon + 2 * m.pad
-    const thickness = m.margin + across + m.headroom
-    const icon = fit(m.count, m.icon, m.gap, m.room, m.pad)
-    const along = layout(m.count, icon, m.gap, null, m.pad, m.sep === undefined ? -1 : m.sep, m.sepRoom || 0).length
-    const length = Math.min(m.room, Math.max(along, 2 * m.pad))
-    const start = Math.round((m.room - length) / 2)
-    // Across: from the screen edge in, the margin, then the body.
-    const near = m.margin
-    const body = side === "bottom" ? { x: start, y: thickness - near - across, width: length, height: across }
-        : side === "left" ? { x: near, y: start, width: across, height: length }
-        : { x: thickness - near - across, y: start, width: across, height: length }
-    const strip = side === "bottom" ? { x: start, y: thickness - m.strip, width: length, height: m.strip }
-        : side === "left" ? { x: 0, y: start, width: m.strip, height: length }
-        : { x: thickness - m.strip, y: start, width: m.strip, height: length }
-    // The body and the margin band down to the edge: the pointer resting on
-    // the screen edge under the dock is on it.
-    const hit = side === "bottom" ? { x: start, y: body.y, width: length, height: thickness - body.y }
-        : side === "left" ? { x: 0, y: start, width: body.x + across, height: length }
-        : { x: body.x, y: start, width: thickness - body.x, height: length }
-    return {
-        edge: side, vertical: vertical(side), thickness: thickness, across: across, icon: icon,
-        length: length, start: start, body: body, strip: strip, hit: hit,
-        // The room the windows leave: the body and a margin on each side of
-        // it, less the gap Hyprland puts back (NotchLogic.reserveHeight).
-        zone: reserve ? Math.max(0, 2 * m.margin + across - m.windowGap) : 0,
-        // How far the dock reaches into the screen, for the OSD above it.
-        reach: m.margin + across
-    }
+// The room the apps have along the body: the body at its longest (`room`,
+// the edge less the margins) less its padding, every other zone, the gaps
+// between the zones that hold something, and whatever else shares a zone
+// with the apps. `zones`: [{ apps, length (a zone without the apps), beside
+// (in the apps' zone: the rest of that zone) }]. -1 when no zone holds them.
+// Measured without the apps themselves, which are fitted into it.
+function appsRoom(room, pad, gap, zones) {
+    const list = Array.prototype.slice.call(zones || [])
+    const at = list.findIndex(zone => zone && zone.apps === true)
+    if (at < 0) return -1
+    let used = 0
+    let taken = 0
+    list.forEach((zone, index) => {
+        const length = index === at ? Math.max(0, Number(zone.beside) || 0) : Math.max(0, Number(zone && zone.length) || 0)
+        if (index === at || length > 0) used += 1
+        taken += length
+    })
+    return Math.max(0, room - 2 * pad - taken - Math.max(0, used - 1) * gap)
 }
 
 // The body in global coordinates: the surface's body moved by where the
@@ -398,10 +452,10 @@ function globalRect(rect, screen, offsets, thickness, edge) {
 }
 
 // ---- drag ---------------------------------------------------------------------
-// What a drop does: `index` is the slot among the pins the pointer is over
-// (counted without the dragged app). A pinned app moves, an unpinned one with
-// an entry is pinned there - unless ten are pinned - and a drop where it
-// already is, or of an app without an entry, does nothing.
+// What a drop does: `index` is the place among the stored pins (counted
+// without the dragged app; storedSlot). A pinned app moves, an unpinned one
+// with an entry is pinned there - unless the pins are full (`limit`) - and a
+// drop where it already is, or of an app without an entry, does nothing.
 function dropPlan(item, index, pinIds, limit) {
     const pins = Array.prototype.slice.call(pinIds || [])
     const pin = item ? (item.pin || item.entryId || "") : ""
@@ -412,7 +466,7 @@ function dropPlan(item, index, pinIds, limit) {
         const from = pins.indexOf(pin)
         return from === to ? { action: "none" } : { action: "move", id: pin, index: to }
     }
-    if (pins.length >= (limit || 10)) return { action: "full" }
+    if (pins.length >= limit) return { action: "full" }
     return { action: "pin", id: pin, index: to }
 }
 
@@ -433,6 +487,24 @@ function defaultFor(pin, categories) {
     return entry && entry.current ? String(entry.current).replace(/\.desktop$/, "") : ""
 }
 
+// A default's pin that names no app the dock can draw: the session's list
+// not read yet, none set, or a hidden helper set (a NoDisplay entry). It keeps
+// its place with the category's glyph instead of leaving the dock; once the
+// list is `known`, it asks for an app ("choose": a click opens Settings >
+// Default apps), before that ("default") a click starts the default the way
+// its hotkey does. Either way it is `special`: no entry of its own, so its
+// menu offers no New window that would start nothing. `glyphs`: { files,
+// terminal, browser }.
+var DEFAULT_NAMES = { files: "File manager", terminal: "Terminal", browser: "Web browser" }
+var DEFAULT_CHOICES = { files: "Choose a file manager", terminal: "Choose a terminal", browser: "Choose a web browser" }
+function defaultPlaceholder(pin, known, glyphs) {
+    const category = pinCategory(pin)
+    if (!category.length) return null
+    return { id: "default:" + category, name: known ? DEFAULT_CHOICES[category] : DEFAULT_NAMES[category],
+             icon: "", startupClass: "", pin: pin, special: known ? "choose" : "default",
+             glyph: String((glyphs || {})[category] || "") }
+}
+
 // When an app that was started shows: a window more than it had, or the
 // time is up. `since` is when it was started (ms), `before` its window count
 // then.
@@ -450,7 +522,65 @@ function slotAt(along, pins) {
     return list.length
 }
 
+// The slot a drop lands in, counted over the pins the dock shows, as a place
+// in the stored list - which also holds pins the dock cannot draw (an app
+// that is gone): before the shown pin at that slot, or at the end. Both
+// without the dragged pin.
+function storedSlot(slot, shownPins, storedPins, dragged) {
+    const shown = Array.prototype.slice.call(shownPins || []).filter(pin => pin !== dragged)
+    const others = Array.prototype.slice.call(storedPins || []).filter(pin => pin !== dragged)
+    const index = Math.max(0, Math.round(Number(slot) || 0))
+    if (index >= shown.length) return others.length
+    const at = others.indexOf(shown[index])
+    return at >= 0 ? at : others.length
+}
+
+// What letting go of a dragged app does: a drop among the pins (`dropSlot`
+// >= 0, the pointer still near the dock), an unpin for a pinned app pulled
+// `reach` slots and more away from the dock, else nothing. `away` is how far
+// the pointer left the dock across it; a drag the system took away (a grab
+// elsewhere) ends with Infinity and does nothing.
+// Whether a press has become a drag: moved `along` the dock past the
+// threshold, or pulled `out` past the icon by it - straight up off a bottom
+// dock is how a pin is pulled off, and counted along alone that never began
+// a drag. Out counts only beyond the icon, so a click that wobbles on it
+// stays a click.
+function dragStarts(along, out, threshold) {
+    return Math.abs(Number(along) || 0) >= threshold || Math.max(0, Number(out) || 0) >= threshold
+}
+// `room`: how far the pointer can go off the body and still be on the dock's
+// surface (its headroom above a bottom dock, 36 px at the defaults). A pull
+// that leaves the surface is a pointer leave, and Qt cancels the drag there -
+// so the unpin distance is never more than that room, or it could not be
+// reached (16.10., nested: a straight pull off the taskbar never unpinned).
+function unpinDistance(slot, reach, room) {
+    const far = Math.max(0, Number(slot) || 0) * Math.max(0, Number(reach) || 0)
+    const near = Number(room)
+    return isFinite(near) && near > 0 ? Math.min(far, near) : far
+}
+function dragAway(item, away, slot, reach, room) {
+    const out = Number(away)
+    return !!item && item.pinned === true && isFinite(out) && out >= unpinDistance(slot, reach, room)
+}
+function dragOutcome(item, away, slot, dropSlot, reach, room) {
+    if (!item || !isFinite(Number(away))) return "none"
+    if (dragAway(item, away, slot, reach, room)) return "unpin"
+    return dropSlot >= 0 && Math.max(0, Number(away) || 0) < slot ? "drop" : "none"
+}
+
 // ---- zones --------------------------------------------------------------------
+// The pills of a zone that show something, counted by their own condition
+// (`hasContent`), never by `visible`: a hidden dock hides its content, every
+// pill under it then reads invisible (testing.md pitfall 89), and a zone that
+// counted those shrank the hidden dock's body - its reveal strip and its
+// intellihide rect - to its padding.
+function shownFlags(pills) {
+    return Array.prototype.slice.call(pills || []).map(pill => pill !== null && pill !== undefined && pill.hasContent === true)
+}
+function shownCount(pills) {
+    return shownFlags(pills).filter(Boolean).length
+}
+
 // The zones' length together, one after the other with a gap between the
 // ones that hold something.
 function zonesLength(lengths, gap) {

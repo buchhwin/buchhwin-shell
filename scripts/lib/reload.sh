@@ -5,6 +5,11 @@
 # machine) and scripts/shell-update.sh (a clone that follows its remote, on
 # any other). Source this file.
 
+# hyprland_session: is there a Hyprland session whose shell a restart would
+# replace? (scripts/lib/nested-guard.sh, shared with reload-shell.sh.)
+# shellcheck source=nested-guard.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/nested-guard.sh"
+
 # Hyprland watches its configuration and reloads by itself, and a checkout
 # replaces a file by removing and writing it - so it can read exactly while the
 # file is gone and leave "cannot open hyprland.lua" on screen although the
@@ -16,14 +21,11 @@
 if [[ -r "$(dirname -- "${BASH_SOURCE[0]}")/hyprland-prefix.sh" ]]; then source "$(dirname -- "${BASH_SOURCE[0]}")/hyprland-prefix.sh"; fi
 reload_hyprland() {
   command -v hyprctl >/dev/null 2>&1 || return 0
-  local signature=${HYPRLAND_INSTANCE_SIGNATURE:-} instances
-  if [[ -z $signature ]]; then
-    instances=$(hyprctl instances 2>/dev/null | grep -c '^instance ' || true)
-    # More than one means a nested test session is running: never guess which.
-    [[ $instances == 1 ]] || { printf 'Hyprland was not reloaded (no session found).\n'; return 0; }
-    signature=$(hyprctl instances 2>/dev/null | sed -n 's/^instance \(.*\):$/\1/p' | head -1)
-    [[ -n $signature ]] || return 0
-  fi
+  local signature
+  # The caller's session when its socket is there, else the one instance
+  # (hyprland_session): more than one means a nested test session is
+  # running, and a signature without its socket is a Hyprland that is gone.
+  signature=$(hyprland_session) || { printf 'Hyprland was not reloaded (no session found).\n'; return 0; }
   HYPRLAND_INSTANCE_SIGNATURE=$signature hyprctl reload >/dev/null 2>&1 || return 0
   if [[ -n $(HYPRLAND_INSTANCE_SIGNATURE=$signature hyprctl configerrors 2>/dev/null | tr -d '[:space:]') ]]; then
     HYPRLAND_INSTANCE_SIGNATURE=$signature hyprctl reload >/dev/null 2>&1 || true
@@ -48,10 +50,29 @@ reload_for_changes() {
   if grep -q '^hypr/' <<<"$changed"; then
     reload_hyprland
   fi
-  if grep -qvE '^(hypr/|[^/]+\.md$|docs/|Promt$|tests/|install/|session/sddm/|\.gitignore$)' <<<"$changed"; then
+  # The session's units are links into the checkout (install.sh); the user
+  # manager reads them again only when told. The shell itself never loads
+  # them.
+  if grep -q '^systemd/' <<<"$changed"; then
+    if systemctl --user daemon-reload >/dev/null 2>&1; then
+      printf 'Reloaded the user units.\n'
+    fi
+  fi
+  # What the running shell never reads restarts nothing: the page's own files
+  # (.github/, LICENSE, the Markdown), the tests and installers, the zsh files
+  # and completion a terminal reads when it starts, and the units above.
+  # scripts/ stays: drives.py, the Bluetooth agent, the clipboard bridge and
+  # the KDE Connect helper run for as long as the shell does, and only a
+  # restart starts them from the new files (round 12, scripts#9).
+  if ! grep -qvE '^(hypr/|[^/]+\.md$|docs/|Promt$|tests/|install/|session/sddm/|\.gitignore$|\.github/|LICENSE$|shell-completion/|zsh/|systemd/)' <<<"$changed"; then
+    printf 'No shell files changed; the shell keeps running.\n'
+  elif ! hyprland_session >/dev/null; then
+    # A deploy from Plasma (or from a terminal whose Hyprland has gone): no
+    # shell of this session to replace, and start-shell.sh would refuse a new
+    # one. The next Hyprland login starts it from the new files.
+    printf 'No Hyprland session found; the shell was not restarted and starts from the new files at the next login.\n'
+  else
     "$dir/scripts/reload-shell.sh"
     printf 'Restarted the shell.\n'
-  else
-    printf 'No shell files changed; the shell keeps running.\n'
   fi
 }

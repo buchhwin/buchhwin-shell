@@ -27,7 +27,8 @@ ShellRoot {
         const query = A.parseQuery(queryText)
         T.eq(query, { plasma: true, gsettings: true, colorScheme: "BreezeLight", accentColor: "", kdeColors: null,
                       schemes: ["BreezeDark", "BreezeLight"], gtkColorScheme: "prefer-dark", colorSchemeRange: ["default", "prefer-dark", "prefer-light"],
-                      gtkTheme: "adw-gtk3-dark", themes: ["Breeze", "Breeze-Dark"] }, "query: empty kdeglobals key uses the listed current scheme")
+                      gtkTheme: "adw-gtk3-dark", themes: ["Breeze", "Breeze-Dark"], iconTheme: "", icons: [], gtk: null },
+             "query: empty kdeglobals key uses the listed current scheme")
         T.eq(A.parseQuery("[colorScheme]\nBreezeDark\n[schemes]\n * BreezeLight (current color scheme)\n").colorScheme, "BreezeDark", "kdeglobals key wins")
         const bare = A.parseQuery("")
         T.eq([bare.plasma, bare.gsettings, bare.colorScheme, bare.gtkTheme, bare.themes], [false, false, "BreezeLight", "", []], "tools missing")
@@ -50,9 +51,9 @@ ShellRoot {
         T.eq([A.gtkThemeTarget("Clearlooks", true, installed), A.gtkThemeTarget("Clearlooks", true, []), A.gtkThemeTarget("", false, installed),
               A.gtkThemeTarget("Material-dark", false, [])],
              ["Breeze-Dark", "", "Breeze", ""], "Breeze fallback or no change")
-        T.eq(A.targets(true, query), { colorScheme: "BreezeDark", gtkColorScheme: "prefer-dark", gtkTheme: "adw-gtk3-dark" }, "dark targets")
-        T.eq(A.targets(false, query), { colorScheme: "BreezeLight", gtkColorScheme: "prefer-light", gtkTheme: "Breeze" }, "light targets")
-        T.eq(A.targets(true, bare), { colorScheme: "", gtkColorScheme: "", gtkTheme: "" }, "no tools, no targets")
+        T.eq(A.targets(true, query), { colorScheme: "BreezeDark", gtkColorScheme: "prefer-dark", gtkTheme: "adw-gtk3-dark", iconTheme: "" }, "dark targets")
+        T.eq(A.targets(false, query), { colorScheme: "BreezeLight", gtkColorScheme: "prefer-light", gtkTheme: "Breeze", iconTheme: "" }, "light targets")
+        T.eq(A.targets(true, bare), { colorScheme: "", gtkColorScheme: "", gtkTheme: "", iconTheme: "" }, "no tools, no targets")
 
         // Commands skip values that already match.
         T.eq(A.commandsFor(A.targets(true, query), query), [["plasma-apply-colorscheme", "BreezeDark"]], "dark: only the KDE scheme differs")
@@ -68,11 +69,13 @@ ShellRoot {
         T.eq([A.afterCommands(query, [])], [query], "no commands, same values")
 
         // State file.
-        T.eq(A.snapshot(query), { colorScheme: "BreezeLight", accentColor: "", kdeColors: null, gtkColorScheme: "prefer-dark", gtkTheme: "adw-gtk3-dark" }, "snapshot")
-        T.eq(A.snapshot(bare), { colorScheme: "", accentColor: "", kdeColors: null, gtkColorScheme: "", gtkTheme: "" }, "snapshot without tools")
+        T.eq(A.snapshot(query), { colorScheme: "BreezeLight", accentColor: "", kdeColors: null, gtkColorScheme: "prefer-dark", gtkTheme: "adw-gtk3-dark",
+                                  iconTheme: "", gtk: null }, "snapshot")
+        T.eq(A.snapshot(bare), { colorScheme: "", accentColor: "", kdeColors: null, gtkColorScheme: "", gtkTheme: "", iconTheme: "", gtk: null }, "snapshot without tools")
         T.eq([A.parseState(""), A.parseState("{broken"), A.parseState("[]"), A.parseState("null")],
              [A.emptyState(), A.emptyState(), A.emptyState(), A.emptyState()], "unreadable state files")
-        const saved = { colorScheme: "BreezeLight", accentColor: "", kdeColors: null, gtkColorScheme: "prefer-dark", gtkTheme: "adw-gtk3-dark" }
+        const saved = { colorScheme: "BreezeLight", accentColor: "", kdeColors: null, gtkColorScheme: "prefer-dark", gtkTheme: "adw-gtk3-dark",
+                        iconTheme: "", gtk: null }
         const parsed = A.parseState(JSON.stringify({ version: 1, applied: true, restoreOnLogout: false, saved: saved,
                                                      restore: [["rm", "-rf", "/"]] }))
         T.eq(parsed.applied, true, "applied state")
@@ -218,6 +221,76 @@ ShellRoot {
         T.ok(entry.indexOf("\nOnlyShowIn=KDE;\n") >= 0 && entry.indexOf("\nExec=python3 \"/home/u/.local/share/buchhwin-shell/scripts/apptheme-restore.py\"\n") >= 0,
              "autostart entry only for Plasma")
         T.eq(A.execQuote("/a b/$x\"`\\"), "\"/a b/\\$x\\\"\\`\\\\\"", "Exec quoting")
+
+        // GTK apps (round 12): GTK 3 takes the dark variant from
+        // settings.ini, not from gsettings, and the Breeze theme draws with
+        // the colours of the user's gtk.css, which Plasma's kded wrote for
+        // BreezeDark and nothing rewrites here - GTK apps stayed dark when
+        // the shell went light. The live files of this machine, as
+        // --gtk-snapshot prints them.
+        const gtkNow = { "gtk-3.0": { preferDark: "true", iconTheme: "breeze-dark", colorsImport: true, colorsDark: true },
+                         "gtk-4.0": { preferDark: "true", iconTheme: "breeze-dark", colorsImport: true, colorsDark: true } }
+        const gtkText = plasmaText + "[iconTheme]\n'breeze-dark'\n[icons]\n/usr/share/icons/breeze/index.theme\n/usr/share/icons/breeze-dark/index.theme\n"
+            + "/usr/share/icons/Adwaita/index.theme\n[gtk]\n" + JSON.stringify(gtkNow) + "\n"
+        const gtkQuery = A.parseQuery(gtkText)
+        T.eq([gtkQuery.iconTheme, gtkQuery.icons, gtkQuery.gtk], ["breeze-dark", ["breeze", "breeze-dark", "Adwaita"], gtkNow],
+             "query: the icon theme, the installed ones and the GTK files")
+        T.eq(A.parseGtk(JSON.stringify({ "gtk-3.0": { preferDark: "a\nb", iconTheme: null, colorsImport: "yes" }, "gtk-5.0": { preferDark: "true" } })),
+             { "gtk-3.0": { iconTheme: null } }, "GTK snapshot validated: no other folders, no multi-line values")
+        T.eq([A.parseGtk(""), A.parseGtk("{}"), A.parseGtk("{")], [null, null, null], "no GTK files")
+        T.eq([A.iconThemeTarget("breeze-dark", false, ["breeze", "breeze-dark"]), A.iconThemeTarget("breeze", true, ["breeze", "breeze-dark"]),
+              A.iconThemeTarget("Papirus", true, ["breeze-dark"]), A.iconThemeTarget("breeze-dark", false, []), A.iconThemeTarget("", true, ["breeze-dark"])],
+             ["breeze", "breeze-dark", "Papirus", "breeze-dark", ""], "an icon theme follows only to its own other variant")
+        T.eq([A.preferDarkValue("true"), A.preferDarkValue("1"), A.preferDarkValue("false"), A.preferDarkValue(null)], [true, true, false, false],
+             "settings.ini's dark variant")
+        const helper = (dir, values) => [A.GTK_HELPER, "--gtk", dir, JSON.stringify(values)]
+        const lightGtk = A.plan(follow(false, true), gtkQuery, A.emptyState())
+        T.eq(lightGtk.commands.filter(command => command[0] === A.GTK_HELPER || command[3] === "icon-theme"),
+             [["gsettings", "set", "org.gnome.desktop.interface", "icon-theme", "breeze"],
+              helper("gtk-3.0", { preferDark: "false", iconTheme: "breeze", colorsImport: false }),
+              helper("gtk-4.0", { preferDark: "false", iconTheme: "breeze", colorsImport: false })],
+             "light: the light icons, no dark variant, and the dark colors.css left out")
+        T.eq([lightGtk.state.saved.iconTheme, lightGtk.state.saved.gtk], ["breeze-dark", gtkNow], "the GTK values saved before they change")
+        T.ok(A.sameCommand(lightGtk.commands[lightGtk.commands.length - 1], A.NOTIFY_COMMAND), "the palette signal still comes last")
+        const afterLight = A.afterCommands(gtkQuery, lightGtk.commands, lightGtk.state.saved)
+        T.eq([afterLight.iconTheme, afterLight.gtk["gtk-3.0"]],
+             ["breeze", { preferDark: "false", iconTheme: "breeze", colorsImport: false, colorsDark: true }], "simulated GTK values")
+        T.eq(A.plan(follow(false, true), afterLight, lightGtk.state).commands.filter(command => command[0] === A.GTK_HELPER), [],
+             "light again: nothing left to change")
+        const darkAgain = A.plan(follow(true, true), afterLight, lightGtk.state)
+        T.eq(darkAgain.commands.filter(command => command[0] === A.GTK_HELPER),
+             [helper("gtk-3.0", { preferDark: "true", iconTheme: "breeze-dark", colorsImport: true }),
+              helper("gtk-4.0", { preferDark: "true", iconTheme: "breeze-dark", colorsImport: true })],
+             "dark: the dark colors.css is the theme's again")
+        const gtkOff = A.plan(off(true), afterLight, lightGtk.state)
+        T.eq(gtkOff.commands.filter(command => command[0] === A.GTK_HELPER || command[3] === "icon-theme"),
+             [["gsettings", "set", "org.gnome.desktop.interface", "icon-theme", "breeze-dark"],
+              helper("gtk-3.0", { preferDark: "true", iconTheme: "breeze-dark", colorsImport: true }),
+              helper("gtk-4.0", { preferDark: "true", iconTheme: "breeze-dark", colorsImport: true })],
+             "off: exactly the saved GTK values come back")
+        // A light colors.css (Plasma in BreezeLight) is left out for dark, and
+        // a gtk.css that never imported one is not given an import.
+        const lightPalette = A.parseQuery(gtkText.replace(JSON.stringify(gtkNow), JSON.stringify({
+            "gtk-3.0": { preferDark: null, iconTheme: "breeze", colorsImport: true, colorsDark: false },
+            "gtk-4.0": { preferDark: "false", colorsImport: false, colorsDark: true } })).replace("'breeze-dark'", "'breeze'"))
+        T.eq(A.plan(follow(true, true), lightPalette, A.emptyState()).commands.filter(command => command[0] === A.GTK_HELPER),
+             [helper("gtk-3.0", { preferDark: "true", iconTheme: "breeze-dark", colorsImport: false }), helper("gtk-4.0", { preferDark: "true" })],
+             "dark over a light palette; no import where there was none; a missing key is set, a missing file left alone")
+        T.eq(A.plan(follow(false, true), lightPalette, A.emptyState()).commands.filter(command => command[0] === A.GTK_HELPER), [],
+             "light over a light palette: nothing to change")
+        // A state from before GTK followed: an older shell never changed the
+        // GTK files, so what is there now is saved before anything changes.
+        const oldState = A.parseState(JSON.stringify({ version: 2, applied: true, restoreOnLogout: true,
+            saved: { colorScheme: "BreezeDark", accentColor: "", kdeColors: backup, gtkColorScheme: "prefer-dark", gtkTheme: "Breeze-Dark" } }))
+        T.eq([oldState.saved.iconTheme, oldState.saved.gtk], ["", null], "an older state has no GTK values")
+        const upgraded = A.plan(follow(false, true), gtkQuery, oldState)
+        T.eq([upgraded.state.saved.iconTheme, upgraded.state.saved.gtk, upgraded.state.saved.colorScheme], ["breeze-dark", gtkNow, "BreezeDark"],
+             "completed from now, the rest kept")
+        T.ok(upgraded.commands.some(command => command[0] === A.GTK_HELPER), "and the GTK files follow")
+        T.ok(upgraded.state.restore.some(command => command[3] === "icon-theme" && command[4] === "breeze-dark"),
+             "the icon theme is in the logout restore")
+        T.eq(A.parseState(A.stateText(lightGtk.state)), lightGtk.state, "GTK state round trip")
+        T.eq(A.parseState(JSON.stringify({ applied: true, saved: { gtk: gtkNow } })).applied, true, "GTK values alone are worth restoring")
         T.finish("AppTheme")
     }
 }

@@ -73,9 +73,21 @@ Item {
     property string screenName: ""
     // Where this strip's window sits on the screen; see Notch.reportOrigin.
     property point reportOrigin: Qt.point(0, 0)
-    // While a recording runs the chip leads the strip, unless the list carries
-    // one itself - the same rule the pill bar follows for its recording pill.
-    readonly property var items: Logic.stripItems(NotchService.collapsedItems, RecordingService.active, TimerService.running)
+    // The screen the strip belongs to, kept while the notch is expanded too
+    // (when `screenName` is empty): what a taskbar on that screen shows already
+    // stays left out through the morph, so the strip keeps its width. Empty
+    // leaves nothing out (Notch.qml: under a fullscreen window, where the
+    // dock is not drawn).
+    property string ownerScreen: ""
+    // The arranged list, without the readouts a taskbar on this screen holds
+    // as well when the notch is told so (notch.dockDuplicates "hide"; with the
+    // default "keep" this reads nothing else). While a recording runs the chip
+    // leads the strip, unless the list carries one itself - the same rule the
+    // pill bar follows for its recording pill.
+    readonly property var arranged: NotchService.dockDuplicatesHidden
+        ? Logic.withoutTypes(NotchService.collapsedItems, NotchService.dockDuplicatesOn(ownerScreen))
+        : NotchService.collapsedItems
+    readonly property var items: Logic.stripItems(arranged, RecordingService.active, TimerService.running)
 
     implicitWidth: symmetry.width
     implicitHeight: NotchService.bodyHeight

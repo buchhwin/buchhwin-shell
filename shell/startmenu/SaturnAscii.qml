@@ -14,6 +14,10 @@ Item {
     // fastfetch's `$1` (the planet) and every other colour (the ring).
     property color firstColor: Colors.saturnPlanet
     property color otherColor: Colors.saturnRing
+    // The room it has, in cells (0: any): a larger logo of the user's own is
+    // drawn smaller to fit, never one smaller than the room larger.
+    property int boxColumns: 0
+    property int boxRows: 0
 
     FontMetrics {
         id: metrics
@@ -23,21 +27,33 @@ Item {
     }
     readonly property real cell: metrics.advanceWidth("M")
     readonly property real pitch: metrics.height
+    readonly property real naturalWidth: logo.columns * cell
+    readonly property real naturalHeight: logo.rows * pitch
+    readonly property real fit: Math.min(1,
+        boxColumns > 0 && logo.columns > boxColumns ? boxColumns / logo.columns : 1,
+        boxRows > 0 && logo.rows > boxRows ? boxRows / logo.rows : 1)
 
-    implicitWidth: Math.ceil(logo.columns * cell)
-    implicitHeight: Math.ceil(logo.rows * pitch)
+    implicitWidth: Math.ceil(naturalWidth * fit)
+    implicitHeight: Math.ceil(naturalHeight * fit)
 
-    Repeater {
-        model: root.logo.runs
-        Text {
-            required property var modelData
-            x: modelData.col * root.cell
-            y: modelData.row * root.pitch
-            text: modelData.text
-            color: modelData.tone === 1 ? root.firstColor : root.otherColor
-            font: metrics.font
-            textFormat: Text.PlainText
-            renderType: Typography.renderType
+    Item {
+        width: root.naturalWidth
+        height: root.naturalHeight
+        scale: root.fit
+        transformOrigin: Item.TopLeft
+
+        Repeater {
+            model: root.logo.runs
+            Text {
+                required property var modelData
+                x: modelData.col * root.cell
+                y: modelData.row * root.pitch
+                text: modelData.text
+                color: modelData.tone === 1 ? root.firstColor : root.otherColor
+                font: metrics.font
+                textFormat: Text.PlainText
+                renderType: Typography.renderType
+            }
         }
     }
 }

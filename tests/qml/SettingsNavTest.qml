@@ -39,6 +39,20 @@ ShellRoot {
         T.eq(N.pageIds(N.rows("taskleiste")), ["dock"], "German finds the dock")
         T.eq(N.pageIds(N.rows("dock")), ["profiles", "dock"], "dock finds the dock and the profiles' docked mode")
         T.eq(N.pageIds(N.rows("dashboard")), ["weather", "calendar"], "the old group name still finds weather and calendar")
+        // The launcher's pins are the start menu's Pinned grid too; the dock
+        // keeps its own (and its Start button setting).
+        T.eq(N.pageIds(N.rows("pinned")), ["dock", "launcher"], "pinned finds both lists of pins")
+        T.eq(N.pageIds(N.rows("start menu")), ["dock", "launcher"], "the start menu: its button on the dock, its pins in the launcher")
+        T.eq(N.pageIds(N.rows("angeheftet")), ["dock", "launcher"], "German too")
+        T.eq(N.pageIds(N.rows("anheften")), ["launcher"], "the launcher's German word for pinning")
+        T.eq(N.pageIds(N.rows("alacritty")), ["terminal"], "Alacritty's one process is on the Terminal page")
+        const sidebar = N.rows("")
+        const firstOfDesktop = sidebar.findIndex(row => row.kind === "heading" && row.key === "desktop")
+        T.eq([N.headingIndex(sidebar, "profiles"), N.headingIndex(sidebar, "shortcuts")], [firstOfDesktop, firstOfDesktop],
+             "the heading over a page is its group's, for the first page and the last")
+        T.eq(N.headingIndex(sidebar, "appearance"), 0, "the first group's heading is the first row")
+        T.eq([N.headingIndex(sidebar, "nowhere"), N.headingIndex([], "about"), N.headingIndex(N.rows("wifi"), "about")], [-1, -1, -1],
+             "a page not listed has no heading")
         T.eq(N.pageIds(N.rows("lock fingerprint")), ["lockScreen"], "every word must match")
         // Page titles are sentence case, like the section titles under them,
         // and the search ignores case, so the old spelling still finds them.

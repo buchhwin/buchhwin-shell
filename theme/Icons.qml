@@ -16,7 +16,14 @@ Singleton {
     readonly property string refresh: "󰑐"
     readonly property string copy: "󰅌"
     readonly property string search: "󰍉"
-    readonly property string settings: "󰒓"
+    // Outlined, as the power glyph beside it in every footer and header is
+    // (the start menu's, the control center's): a filled cog and padlock
+    // next to a thin power ring were three weights in one row (round 12,
+    // D13 b).
+    readonly property string settings: "󰢻"
+    // Settings as an app, not as a button: the filled cog on its accent tile
+    // on the dock and in the start menu, where it stands among app icons.
+    readonly property string settingsApp: "󰒓"
     readonly property string location: "󰍎"
     readonly property string folder: "󰉋"
     // Arranging tiles, cards and widgets: the 2x2 grid of the arrange button
@@ -75,8 +82,11 @@ Singleton {
     // Leaving the session, and what is locked: the power menu, the lock
     // screen's buttons, the launcher's commands and the start menu drew these
     // five each on their own. `lock` is also the padlock on a secured network
-    // or an encrypted drive - the same thing, shut.
-    readonly property string lock: "󰌾"
+    // or an encrypted drive - the same thing, shut. Outlined like `settings`
+    // and `poweroff`, the line glyph they sit beside; `unlock` is its open
+    // twin (a phone to unlock).
+    readonly property string lock: "󰍁"
+    readonly property string unlock: "󰍀"
     readonly property string suspend: "󰤄"
     readonly property string logout: "󰍃"
     readonly property string reboot: "󰜉"

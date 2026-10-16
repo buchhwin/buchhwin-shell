@@ -66,7 +66,7 @@ CardSection {
                     width: Math.max(height, parent.width * (dayRow.modelData.max - dayRow.modelData.min) / root.span)
                     height: parent.height
                     radius: height / 2
-                    color: Colors.accent
+                    color: Colors.accentFill
                 }
             }
             ShellText {

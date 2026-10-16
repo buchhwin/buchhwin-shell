@@ -182,6 +182,11 @@ hl.animation({ leaf = "windows", enabled = true, speed = 2.0, spring = "buchhwin
 hl.animation({ leaf = "windowsOut", enabled = true, speed = 1.7, spring = "buchhwinSpatialFast", style = "popin 87%" })
 hl.animation({ leaf = "windowsMove", enabled = true, speed = 2.0, spring = "buchhwinSpatial" })
 hl.animation({ leaf = "fade", enabled = true, speed = 1.7, spring = "buchhwinEffects" })
+-- A new window's own fade-in, faster than every other fade: 90 % opaque after
+-- ~70 ms instead of ~105 (16.10., computed from the springs), so a window that
+-- has just started looks there sooner. Its popin is not what waits: the
+-- window is drawn from the first frame at 87 %.
+hl.animation({ leaf = "fadeIn", enabled = true, speed = 1.2, spring = "buchhwinEffectsFast" })
 hl.animation({ leaf = "layers", enabled = true, speed = 1.7, bezier = "buchhwinStandard", style = "fade" })
 hl.animation({ leaf = "layersOut", enabled = true, speed = 1.5, bezier = "buchhwinAccel", style = "fade" })
 hl.animation({ leaf = "workspaces", enabled = true, speed = 2.2, spring = "buchhwinSpatial", style = "slide" })

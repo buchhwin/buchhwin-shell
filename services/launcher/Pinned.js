@@ -12,7 +12,11 @@
 //
 // Stored as a comma-string of desktop entry ids: `SettingsService` rebuilds
 // every stored object with `Object.keys`, so an array becomes `{"0": …}` on the
-// first write of any setting.
+// first write of any setting. Any id but one with a comma, then: the Citrix
+// entries' spaces and `$` are fine here.
+//
+// The launcher's and the start menu's pins only; the dock keeps its own
+// (LayoutLogic.dockPinAt) since the dock became a second bar.
 
 // More than this and the row is a second app grid rather than a shortcut, and
 // it starts eating the height the results need.
@@ -36,8 +40,8 @@ function has(text, id) {
 // limit, pinning one more is refused rather than quietly dropping the oldest:
 // a list that forgets what you put on it is worse than one that says no.
 function toggle(text, id) {
-    const name = String(id || "")
-    if (!name.length) return ids(text).join(",")
+    const name = String(id || "").trim()
+    if (!name.length || name.indexOf(",") >= 0) return ids(text).join(",")
     const list = ids(text)
     const index = list.indexOf(name)
     if (index >= 0) list.splice(index, 1)
@@ -74,33 +78,5 @@ function move(text, id, delta) {
     if (from < 0 || to < 0 || to >= list.length) return list.join(",")
     const moved = list.splice(from, 1)[0]
     list.splice(to, 0, moved)
-    return list.join(",")
-}
-
-// The dock's drag: `id` to `index` of the list it ends up in (the place it
-// is dropped on, counted without it), clamped into the list. An id that is
-// not pinned leaves the list as it is.
-function moveTo(text, id, index) {
-    const list = ids(text)
-    const name = String(id || "")
-    const from = list.indexOf(name)
-    if (from < 0) return list.join(",")
-    list.splice(from, 1)
-    const to = Math.max(0, Math.min(list.length, Math.round(Number(index) || 0)))
-    list.splice(to, 0, name)
-    return list.join(",")
-}
-
-// An app dropped among the pins: pinned at that place, or moved there when
-// it is pinned already. At the limit nothing new gets in - `full` says so
-// before, for the hint.
-function insertAt(text, id, index) {
-    const name = String(id || "")
-    if (!name.length) return ids(text).join(",")
-    if (has(text, name)) return moveTo(text, name, index)
-    const list = ids(text)
-    if (list.length >= LIMIT) return list.join(",")
-    const to = Math.max(0, Math.min(list.length, Math.round(Number(index) || 0)))
-    list.splice(to, 0, name)
     return list.join(",")
 }

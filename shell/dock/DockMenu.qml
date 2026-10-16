@@ -14,6 +14,9 @@ import "../../services/dock/DockLogic.js" as Logic
 //
 // The body is only built while it is open: the panel exists from the start,
 // and the dock's service is not asked anything while the dock is off.
+//
+// Opened by the menu key while the dock has the keyboard, it holds the keys
+// for the dock (DockService.keysWithMenu), and an Escape gives them back.
 ShellPanel {
     id: root
     panelId: "dockMenu"
@@ -24,6 +27,7 @@ ShellPanel {
     followBarSpot: false
     outOfNotch: false
     keyNavigation: true
+    onEscapePressed: DockService.noteMenuEscape()
 
     Loader {
         id: body
@@ -37,7 +41,7 @@ ShellPanel {
                 readonly property var app: DockService.itemFor(key)
                 readonly property var entry: DockService.entryOf(app)
                 readonly property var rows: Logic.menuRows(app, entry ? entry.actions : [], LayoutService.dockPinsFull,
-                                                           Metrics.dockMenuWindows)
+                                                           Metrics.dockMenuWindows, entry ? entry.command : [])
                 // The app went (its last window closed, it was unpinned).
                 onAppChanged: if (root.wanted && app === null) PanelService.close("dockMenu")
 
@@ -76,6 +80,7 @@ ShellPanel {
                             : modelData.kind === "close" ? (modelData.count > 1 ? "Close " + modelData.count + " windows" : "Close window")
                             : ""
                         subtitle: modelData.kind === "window" ? "Workspace " + modelData.workspace
+                            : modelData.kind === "pin" && modelData.reason === "hidden" ? "Not shown in the app list"
                             : modelData.kind === "pin" && modelData.enabled === false ? "At most " + LayoutService.dockPinLimit + " apps on the dock" : ""
                         interactive: modelData.kind !== "more" && !(modelData.kind === "pin" && modelData.enabled === false)
                         onClicked: root.run(modelData)

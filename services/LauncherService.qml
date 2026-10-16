@@ -10,6 +10,7 @@ import "launcher/WebSearch.js" as Web
 import "launcher/ModeOrder.js" as ModeOrder
 import "launcher/Pinned.js" as Pinned
 import "launcher/LaunchLogic.js" as Launch
+import "launcher/FileSearch.js" as FileSearch
 import "settings/SettingsNavLogic.js" as Nav
 
 // Launcher providers. Prefixes: none = apps (+ calculator, commands and, for
@@ -43,7 +44,7 @@ Singleton {
     // you want before you type. See services/launcher/Pinned.js.
     readonly property string pinnedStored: SettingsService.value("launcher.pinned")
     readonly property bool showPinned: SettingsService.value("launcher.showPinned")
-    readonly property var pinnedApps: Pinned.apps(pinnedStored, DesktopEntries.applications.values)
+    readonly property var pinnedApps: Pinned.apps(pinnedStored, entries)
     readonly property bool pinnedFull: Pinned.full(pinnedStored)
     function isPinned(id) { return Pinned.has(pinnedStored, id) }
     function togglePin(id) { return SettingsService.set("launcher.pinned", Pinned.toggle(pinnedStored, id)) }
@@ -60,12 +61,38 @@ Singleton {
         { name: "Utilities", icon: "󰦪", keys: ["Utility", "TextEditor", "TerminalEmulator", "FileManager"] },
         { name: "Games", icon: "󰊴", keys: ["Game"] }
     ]
+    // ---- the desktop entries ---------------------------------------------
+    // DesktopEntries fills its list one entry at a time once the shell is up
+    // - 69 `valuesChanged` within 4 ms at a start here, one per entry - and
+    // does it again for every app installed or removed. Every binding over
+    // `values` ran once per entry, with the launcher closed: the categories
+    // and their counts 70 times at every login (perf#2, round 12). These
+    // bindings read a copy taken once a scan has settled instead, and
+    // `entriesRevision` counts the copies for anyone who looks entries up by
+    // id (ShortcutService), which no binding would follow by itself.
+    property var entries: []
+    property int entriesRevision: 0
+    function takeEntries() {
+        const values = DesktopEntries.applications.values
+        const list = []
+        for (let index = 0; index < values.length; ++index) if (values[index]) list.push(values[index])
+        entries = list
+        entriesRevision += 1
+    }
+    Component.onCompleted: takeEntries()
+    Connections {
+        target: DesktopEntries.applications
+        function onValuesChanged() { entriesSettle.restart() }
+    }
+    Timer { id: entriesSettle; interval: 50; onTriggered: root.takeEntries() }
+
     // What counts as an app: every entry that does not ask to be left out of
     // menus. The launcher's results and categories and the start menu's lists
-    // all start here. Read it under a panel's `shown`: DesktopEntries rescans
-    // on any file made in $HOME, and each rescan is a new list.
+    // all start here. Read it under a panel's `shown`.
     function visibleApps() {
-        return DesktopEntries.applications.values.filter(app => app && !app.noDisplay)
+        // `app.id` too: an entry removed by a scan is gone before the copy
+        // is retaken, and what is left of it has no id.
+        return entries.filter(app => app && app.id && !app.noDisplay)
     }
 
     // Categories that contain at least one visible app, with their app count.
@@ -401,9 +428,33 @@ Singleton {
         if (fileQuery.length < 2) { fileSearchRunning = false; return }
         fileProc.stale = false
         fileProc.query = fileQuery
-        fileProc.command = ["plocate", "-i", "-l", "200", "--", fileQuery]
+        // Under the home folder, from the index (FileSearch.command).
+        fileProc.command = FileSearch.command(Paths.home, fileQuery)
+        // Asked again while the index has nothing from home (a few ms), so
+        // the hint goes once the user has fixed it - no restart needed.
+        if (homeIndexed <= 0) checkFileIndex()
         fileSearchRunning = true
         fileProc.running = true
+    }
+
+    // How many paths under the home folder the file index holds; -1 until
+    // asked (with a file search, or by Settings > Launcher). None
+    // means every search ends in "No files found": on this machine /home is
+    // the btrfs subvolume @home, which updatedb takes for a bind mount and
+    // skips (PRUNE_BIND_MOUNTS = "yes" in /etc/updatedb.conf, round 12). The
+    // fix needs root, so it is the user's: `fileIndexHint` says which.
+    property int homeIndexed: -1
+    readonly property string fileIndexHint: homeIndexed !== 0 ? ""
+        : "The file index holds nothing from your home folder. If /home is a btrfs subvolume, updatedb skips it as a bind mount: "
+          + "set PRUNE_BIND_MOUNTS = \"no\" in /etc/updatedb.conf, then run sudo systemctl start plocate-updatedb.service."
+    function checkFileIndex() {
+        if (!indexProc.running) indexProc.running = true
+    }
+    Process {
+        id: indexProc
+        command: FileSearch.indexCommand(Paths.home)
+        stderr: ErrorLog { label: "LauncherService.indexProc" }
+        stdout: StdioCollector { onStreamFinished: root.homeIndexed = FileSearch.count(text) }
     }
 
     Process {
@@ -416,9 +467,7 @@ Singleton {
             onStreamFinished: {
                 if (fileProc.stale || fileProc.query !== root.fileQuery) return
                 const home = Paths.home + "/"
-                root.fileResults = text.split("\n")
-                    .filter(path => path.startsWith(home) && !path.slice(home.length).split("/").some(part => part.startsWith(".")))
-                    .slice(0, 50)
+                root.fileResults = FileSearch.paths(text, Paths.home)
                     .map(path => ({
                         kind: "file", title: path.split("/").pop(), subtitle: "~/" + path.slice(home.length),
                         icon: /\.(png|jpe?g|webp|svg|gif)$/i.test(path) ? "󰋩" : /\.pdf$/i.test(path) ? "󰈦" : "󰈔",

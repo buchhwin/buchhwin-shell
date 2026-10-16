@@ -36,6 +36,8 @@ import "services/appearance/AnimationLogic.js" as AnimationLogic
 import "services/shortcuts/ShellShortcuts.js" as ShellShortcuts
 import "services/display/DisplayLogic.js" as DisplayLogic
 import "services/dock/DockLogic.js" as DockLogic
+import "services/ipc/IpcLogic.js" as IpcLogic
+import "services/settings/SettingsNavLogic.js" as SettingsNav
 
 ShellRoot {
     id: root
@@ -95,7 +97,15 @@ ShellRoot {
 
     Launcher {}
     EmojiPanel {}
-    WelcomePanel {}
+    // The tour: built for the first start (until it has been seen), or when
+    // Settings > About or IPC opens it again - not at every start for a panel
+    // shown once per install (PanelService.lazyPanels). Opened once, it stays
+    // for the session, so marking itself completed does not unload it.
+    LazyLoader {
+        active: PanelService.demanded.welcome === true
+            || (SettingsService.loaded && SettingsService.value("onboarding.completed") !== true)
+        WelcomePanel {}
+    }
     ControlCenter {}
     NotificationPopupStack {}
     NotificationCenter {}
@@ -297,8 +307,21 @@ ShellRoot {
             return SettingsService.set("appearance.animationSpeed", Math.round(speed * 20) / 20)
         }
         function setTheme(theme: string): bool { return SettingsService.set("appearance.theme", theme) }
-        function get(path: string): string { return JSON.stringify(SettingsService.value(path)) }
-        function open(page: string): void { PanelService.open("settings", { page: page }) }
+        // Not what says where the user is or what they did (the weather place,
+        // the calendars, the colours picked, the folders and files used):
+        // for those only whether they are set (IpcLogic.privateSetting).
+        function get(path: string): string {
+            const value = SettingsService.value(path)
+            return JSON.stringify(IpcLogic.privateSetting(path)
+                ? IpcLogic.withheldAnswer(value, SettingsService.defaultOf(path)) : value)
+        }
+        // A page id that is not one of Settings' pages is refused (false), so a
+        // typo in a script says so instead of opening the last page.
+        function open(page: string): bool {
+            if (page.length && !SettingsNav.pageById(page)) return false
+            PanelService.open("settings", page.length ? { page: page } : {})
+            return true
+        }
         function toggle(): void { PanelService.toggle("settings") }
         function close(): void { PanelService.close("settings") }
     }
@@ -644,7 +667,11 @@ ShellRoot {
         id: dockIpc
         target: "dock"
         function toggle(): void {
-            if (DockService.toggleFromKey() === "on") osd.showMessage("Dock on", Icons.dock)
+            const result = DockService.toggleFromKey()
+            if (result === "on") osd.showMessage("Dock on", Icons.dock)
+            // A fullscreen window hides the dock; the key changes nothing then
+            // (DockService), and says so instead of seeming to do nothing.
+            else if (result === "fullscreen") osd.showMessage("No dock over fullscreen", Icons.dock)
         }
         function reveal(): void { DockService.reveal() }
         function conceal(): void { DockService.conceal() }
@@ -937,17 +964,23 @@ ShellRoot {
 
     IpcHandler {
         target: "audio"
-        // Route an app stream (node id) to a sink node.name; "default" resets.
+        // Route an app stream (node id) to a sink, by its id (as `get` lists
+        // them) or its node.name; "default" resets.
         function route(stream: string, sink: string): bool {
             const node = AudioService.playbackStreams.find(item => String(item.id) === stream)
-            if (!node || (sink !== "default" && !AudioService.sinkInfo.some(item => item.name === sink))) return false
-            AudioService.routeStream(node, sink === "default" ? "" : sink)
+            const target = sink === "default" ? null : IpcLogic.sinkFor(sink, AudioService.sinkInfo)
+            if (!node || (sink !== "default" && !target)) return false
+            AudioService.routeStream(node, target ? target.name : "")
             return true
         }
-        // Stream ids with their target, no app names.
+        // Stream and sink ids, a stream's target as its sink's id: no app
+        // names, and no node names - a Bluetooth sink's carries the
+        // headphones' address (IpcLogic.sinkIds).
         function get(): string {
-            return JSON.stringify({ ready: AudioService.ready, sinks: AudioService.sinkInfo.map(item => item.name),
-                                    streams: AudioService.playbackStreams.map(item => ({ id: item.id, target: AudioService.streamTarget(item) })),
+            const sinks = AudioService.sinkInfo
+            return JSON.stringify({ ready: AudioService.ready, sinkCount: sinks.length, sinks: IpcLogic.sinkIds(sinks),
+                                    streams: AudioService.playbackStreams.map(item => ({
+                                        id: item.id, target: IpcLogic.sinkIdOf(AudioService.streamTarget(item), sinks) })),
                                     routingTrackers: AudioService.routingTrackers, meterTrackers: AudioService.meterTrackers,
                                     meterRunning: AudioService.meterRunning, micInUse: AudioService.micInUse,
                                     level: AudioService.inputLevel })
@@ -1041,36 +1074,42 @@ ShellRoot {
     PrivacyPopup {}
     SystemPopup {}
     ProfilePopup {}
-    // Only while the dock is on: a panel is built at the start whether it
-    // opens or not, and this one has nothing to open without a dock
-    // (nested, 16.10.: 5-10 MB with the dock off).
+    // Built on their first open, not at the start: a panel is built whether it
+    // opens or not (testing.md pitfall 101; 5-10 MB nested), and these may
+    // never open. PanelService asks for them (`demanded`) and opens them once
+    // they are there; a feature switched off lets its panel go again.
+    // The dock's menu: only with a dock, which a right click needs.
     LazyLoader {
-        active: SettingsService.value("dock.enabled") === true
+        readonly property bool feature: SettingsService.value("dock.enabled") === true
+        onFeatureChanged: if (!feature) PanelService.release("dockMenu")
+        active: feature && PanelService.demanded.dockMenu === true
         DockMenu {}
     }
-    // The start menu: only for a dock with a start button that opens it
-    // (Settings > Dock > Start button), or once IPC asked for it - a dock
-    // without one pays nothing for it.
-    property bool startMenuDemanded: false
+    // The start menu: opened by a dock's start button (Settings > Dock >
+    // Start button) or by IPC, which works without a dock too (centred then).
+    // The dock's start button going away lets it go.
     LazyLoader {
         id: startMenuLoader
-        active: root.startMenuDemanded || (SettingsService.value("dock.enabled") === true && LayoutService.dockHasStart
-            && SettingsService.value("dock.startOpens") !== "launcher")
+        readonly property bool feature: SettingsService.value("dock.enabled") === true && LayoutService.dockHasStart
+            && SettingsService.value("dock.startOpens") !== "launcher"
+        onFeatureChanged: if (!feature) PanelService.release("startMenu")
+        active: PanelService.demanded.startMenu === true
         StartMenu {}
     }
-    // Out of the dock's start button when there is one on that screen,
-    // in the middle of it otherwise. Built first if it is not.
+    // Out of the dock's start button when there is one on that screen, a gap
+    // off the dock's body as a click on it does (Pill.qml), in the middle of
+    // the screen otherwise. PanelService builds it first if it is not.
+    // DockService only with a dock that is on (testing.md pitfall 101: the
+    // service is not made for one that is off), whose button it is.
     function openStartMenu(view) {
-        startMenuDemanded = true
-        Qt.callLater(() => {
-            const screen = PanelService.focusedScreen()
-            const name = screen ? screen.name : ""
-            const button = LayoutService.dockItemRect(name, "start")
-            const args = { onScreen: name, startView: view }
-            if (button) Object.assign(args, DockLogic.panelAnchor(SettingsService.value("dock.position"), button, Metrics.spaceSm),
-                                      { originX: button.x, originY: button.y, originWidth: button.width, originHeight: button.height })
-            PanelService.open("startMenu", args)
-        })
+        const screen = PanelService.focusedScreen()
+        const name = screen ? screen.name : ""
+        const button = SettingsService.value("dock.enabled") === true ? LayoutService.dockItemRect(name, "start") : null
+        const args = { onScreen: name, startView: view }
+        if (button) Object.assign(args, DockLogic.panelAnchor(SettingsService.value("dock.position"), button,
+                                                              Metrics.dockPanelGap, DockService.placeOf(name)),
+                                  { originX: button.x, originY: button.y, originWidth: button.width, originHeight: button.height })
+        PanelService.open("startMenu", args)
     }
     ColorPickerPopup {}
     ColorPickerOverlay {}
@@ -1090,7 +1129,7 @@ ShellRoot {
         overview: overviewIpc, wallpaperPicker: wallpaperPickerIpc, colorPicker: colorPickerIpc,
         switcher: switcherIpc, clipboard: clipboardIpc, emoji: emojiIpc, recording: recordingIpc,
         workspaces: workspacesIpc, kbdBacklight: kbdBacklightIpc, brightness: brightnessIpc,
-        gestures: gesturesIpc, dock: dockIpc
+        gestures: gesturesIpc, dock: dockIpc, startMenu: startMenuIpc
     })
     function runShortcut(name) {
         const call = ShellShortcuts.parse(name)

@@ -70,6 +70,20 @@ if [[ -x /usr/bin/systemd-escape ]]; then
     check '[[ $escaped == "$expected" ]]' "escaping $name: $escaped, systemd-escape says $expected"
   done
 fi
+# Citrix's subscribed apps have ids with spaces and a '$' (desktop entries the
+# Workspace app writes): the scope is named after them all the same.
+: > "$calls"
+status=0; "$project_dir/scripts/launch-app.sh" 'Citrix_subscribed_XenApp 7.x.RDS-Desk $S101-255.desktop' true || status=$?
+check '[[ $status -eq 0 ]] && grep -qF -- "--unit=app-buchhwin-Citrix_subscribed_XenApp\x207.x.RDS\x2dDesk\x20\x24S101\x2d255-" "$calls"' \
+  "an id with spaces and a dollar names its scope ($(grep systemd-run "$calls" | head -1))"
+# A unit name has at most 255 characters: an id that escapes past that is cut
+# at the edge of an escape, and the application still starts.
+long_id="Citrix_subscribed_$(printf '%0.s- $' {1..30})end"
+: > "$calls"
+status=0; out=$("$project_dir/scripts/launch-app.sh" "$long_id" printf started) || status=$?
+unit_name=$(grep -oE -- '--unit=[^ ]+' "$calls" | head -1); unit_name=${unit_name#--unit=}
+check '[[ $status -eq 0 && $out == started && ${#unit_name} -le 255 && $unit_name =~ ^app-buchhwin-Citrix_subscribed_(\\x2d\\x20\\x24)*(\\x2d|\\x2d\\x20)?-[0-9]+\.scope$ ]]' \
+  "a long id is cut at an escape's edge, within 255 characters (${#unit_name}: $unit_name)"
 # A user manager without its socket - a container, a login without one: the
 # command runs as it is, with systemd-run on PATH.
 : > "$calls"
@@ -312,22 +326,25 @@ mv "$sandbox/xdg-open.kept" "$sys/xdg-open"
 
 # ---- scripts/launch-alacritty.sh -------------------------------------------------
 # The account's Alacritty with Settings > Terminal's opacity on top (for every
-# cell background, not only the default one), in its own scope; the default without a setting, and nothing but a number in [0, 1]
-# reaches the command line.
+# cell background, not only the default one), in its own scope; the default
+# without a setting, and nothing but a number in [0, 1] reaches the command
+# line. A process of its own here: no display to name a daemon after, or the
+# daemon switched off (terminal.alacrittyDaemon); the daemon's cases follow.
 stub alacritty
 cfg="$sandbox/alacritty-cfg"; mkdir -p "$cfg/buchhwin-shell"
 : > "$calls"
-XDG_CONFIG_HOME="$cfg" "$project_dir/scripts/launch-alacritty.sh" -e true
-check 'grep -qE "unit=app-buchhwin-Alacritty-[0-9]+\.scope -- alacritty -o window.opacity=0.8 -o colors.transparent_background_colors=true -e true$" "$calls"' \
+env -u WAYLAND_DISPLAY -u DISPLAY XDG_CONFIG_HOME="$cfg" "$project_dir/scripts/launch-alacritty.sh" -e true
+check 'grep -qE "unit=app-buchhwin-Alacritty-[0-9]+\.scope -- alacritty -o window.opacity=0.8 -o colors.transparent_background_colors=true -e true$" "$calls" && ! grep -qE -- "--daemon| msg " "$calls"' \
   "Alacritty starts at the default 0.8 in its scope ($(grep systemd-run "$calls" | head -1))"
 if command -v jq >/dev/null 2>&1; then
-  printf '{ "terminal": { "opacity": 0.65 } }\n' > "$cfg/buchhwin-shell/settings.json"
+  printf '{ "terminal": { "opacity": 0.65, "alacrittyDaemon": false } }\n' > "$cfg/buchhwin-shell/settings.json"
   : > "$calls"
-  XDG_CONFIG_HOME="$cfg" "$project_dir/scripts/launch-alacritty.sh"
-  check 'grep -q "^alacritty -o window.opacity=0.65 -o colors.transparent_background_colors=true$" "$calls"' "the opacity follows Settings > Terminal"
-  printf '{ "terminal": { "opacity": "1; rm -rf ~" } }\n' > "$cfg/buchhwin-shell/settings.json"
+  WAYLAND_DISPLAY=wayland-9 XDG_CONFIG_HOME="$cfg" "$project_dir/scripts/launch-alacritty.sh"
+  check 'grep -q "^alacritty -o window.opacity=0.65 -o colors.transparent_background_colors=true$" "$calls" && ! grep -qE -- "--daemon| msg " "$calls"' \
+    "the opacity follows Settings > Terminal, and the daemon switched off is a process of its own"
+  printf '{ "terminal": { "opacity": "1; rm -rf ~", "alacrittyDaemon": false } }\n' > "$cfg/buchhwin-shell/settings.json"
   : > "$calls"
-  XDG_CONFIG_HOME="$cfg" "$project_dir/scripts/launch-alacritty.sh"
+  WAYLAND_DISPLAY=wayland-9 XDG_CONFIG_HOME="$cfg" "$project_dir/scripts/launch-alacritty.sh"
   check 'grep -q "^alacritty -o window.opacity=0.8 -o colors.transparent_background_colors=true$" "$calls"' "anything but a number falls back to 0.8"
 fi
 check 'grep -q "Alacritty.desktop) exec \"\$project_dir/scripts/launch-alacritty.sh\"" "$project_dir/scripts/launch-default.sh"' \
@@ -339,6 +356,99 @@ XDG_CONFIG_HOME="$sandbox/alacritty-none" "$project_dir/scripts/launch-alacritty
 run_line=$(grep "^systemd-run" "$calls" | head -1)
 check '[[ $run_line == *"--unit=buchhwin-upgrade "*" -- alacritty -o window.opacity=0.8 -o colors.transparent_background_colors=true --hold -e true" && $run_line != *--scope* ]]' \
   "launch-alacritty.sh --unit runs Alacritty as that unit ($run_line)"
+
+# ---- launch-alacritty.sh: one process for every window --------------------------
+# The daemon is a stand-in that listens on the socket it is given, as long as
+# the test runs; `msg` connects to it as the real one does, and fails where
+# nothing listens. A runtime directory with a short path: a socket's has 107
+# bytes. Every stand-in daemon is ended by the pid it wrote.
+drt=$(mktemp -d /tmp/buchhwin-alacritty.XXXXXX)
+daemon_pids="$sandbox/daemon-pids"
+trap 'if [[ -r $daemon_pids ]]; then while read -r pid; do kill "$pid" 2>/dev/null || true; done < "$daemon_pids"; fi; rm -rf -- "$sandbox" "$drt"' EXIT
+mkdir -p "$drt/systemd" "$sandbox/home" "$sandbox/work/sub"
+python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$drt/systemd/private"
+cat > "$bin/alacritty" <<'STUB'
+#!/bin/sh
+printf 'alacritty %s\n' "$*" >> "$STUB_CALLS"
+case $1 in
+  --daemon)
+    printf '%s\n' "$$" >> "$STUB_DAEMONS"
+    printf 'daemon-cwd %s\n' "$PWD" >> "$STUB_CALLS"
+    [ -z "${STUB_NO_SOCKET:-}" ] || exit 1
+    exec python3 -c 'import socket,sys,time; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.listen(); time.sleep(60)' "$3" ;;
+  msg)
+    [ -z "${STUB_MSG_FAIL:-}" ] || exit 1
+    exec python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).connect(sys.argv[1])' "$3" 2>/dev/null ;;
+esac
+exit 0
+STUB
+chmod +x "$bin/alacritty"
+export STUB_CALLS="$calls" STUB_DAEMONS="$daemon_pids"
+sock="$drt/buchhwin-alacritty-wayland-9-1700000000_42.sock"
+state=${sock%.sock}
+options="-o window.opacity=0.8 -o colors.transparent_background_colors=true"
+# A key's start: from a directory of the caller's, on a display of a
+# Hyprland instance, with no settings (the daemon is on by default).
+key() {
+  : > "$calls"; status=0
+  (cd "$sandbox/work" && env WAYLAND_DISPLAY=wayland-9 HYPRLAND_INSTANCE_SIGNATURE="${key_instance:-c0ffee_1700000000_42}" \
+     XDG_RUNTIME_DIR="$drt" XDG_CONFIG_HOME="$sandbox/alacritty-none" HOME="$sandbox/home" \
+     "$project_dir/scripts/launch-alacritty.sh" "$@" </dev/null) || status=$?
+}
+alone() { grep -qE "unit=app-buchhwin-Alacritty-[0-9]+\.scope -- alacritty $options$1\$" "$calls" && ! grep -q -- "--daemon" "$calls"; }
+key -e true
+check '[[ $status -eq 0 ]] && grep -qE "^systemd-run --user --scope .*--unit=app-buchhwin-Alacritty-[0-9]+\.scope -- alacritty --daemon --socket $sock $options$" "$calls"' \
+  "the first window starts the daemon in Alacritty's scope, its socket named after the display and the instance ($(grep -- "--daemon" "$calls" | head -1))"
+check 'grep -qx "daemon-cwd $sandbox/home" "$calls"' "from the home directory: it holds no one's working directory"
+check 'grep -qx "alacritty msg --socket $sock create-window --working-directory $sandbox/work $options -e true" "$calls"' \
+  "and the window is asked of it, in the caller's directory ($(grep " msg " "$calls"))"
+daemon_pid=$(cat "$state.pid" 2>/dev/null || true)
+check '[[ -n $daemon_pid && -d /proc/$daemon_pid ]] && ! ls -l "/proc/$daemon_pid/fd" 2>/dev/null | grep -q "\.lock$"' \
+  "the daemon runs on, without the lock's descriptor"
+key
+check '[[ $status -eq 0 ]] && ! grep -qE -- "--daemon|^systemd-run" "$calls" && grep -qx "alacritty msg --socket $sock create-window --working-directory $sandbox/work $options" "$calls"' \
+  "the next window goes to the same daemon, no process of its own ($(tr '\n' ' ' < "$calls"))"
+key --hold --title "System upgrade" -e sh -c 'echo hi'
+check 'grep -qx "alacritty msg --socket $sock create-window --working-directory $sandbox/work $options --hold --title System upgrade -e sh -c echo hi" "$calls"' \
+  "--hold, the title and the command after -e reach the window ($(grep " msg " "$calls"))"
+key --working-directory sub
+check 'grep -qx "alacritty msg --socket $sock create-window --working-directory $sandbox/work/sub $options" "$calls"' \
+  "a relative working directory goes along, absolute ($(grep " msg " "$calls"))"
+key --config-file /x.toml -e true
+check '[[ $status -eq 0 ]] && ! grep -q " msg " "$calls" && alone " --config-file /x.toml -e true"' \
+  "an option only a new process knows: a process of its own ($(grep systemd-run "$calls" | head -1))"
+key --working-directory "$sandbox/missing"
+check '! grep -q " msg " "$calls" && alone " --working-directory $sandbox/missing"' \
+  "a working directory that is not there: a new process, which says so itself"
+key --unit buchhwin-upgrade --hold -e true
+check '! grep -q " msg " "$calls" && grep -q -- "--unit=buchhwin-upgrade " "$calls"' "--unit: the window is that unit's own process"
+export STUB_MSG_FAIL=1
+key -e true
+unset STUB_MSG_FAIL
+check '[[ $status -eq 0 ]] && alone " -e true" && [[ -d /proc/$daemon_pid ]]' \
+  "a daemon that is alive but does not answer is never replaced: this window is a process of its own ($(tr '\n' ' ' < "$calls"))"
+kill "$daemon_pid" 2>/dev/null || true
+for _ in {1..50}; do [[ -d /proc/$daemon_pid ]] || break; sleep 0.05; done
+key -e true
+check '[[ $status -eq 0 && -S $sock ]] && grep -q -- "alacritty --daemon --socket $sock" "$calls" && grep -q " msg --socket $sock create-window" "$calls" && [[ $(cat "$state.pid" 2>/dev/null) != "$daemon_pid" ]]' \
+  "a daemon that is gone is started again, its socket left behind replaced ($(tr '\n' ' ' < "$calls"))"
+kill "$(cat "$state.pid" 2>/dev/null)" 2>/dev/null || true
+export STUB_NO_SOCKET=1
+key -e true
+check '[[ $status -eq 0 && -e $state.failed ]] && grep -q -- "alacritty --daemon" "$calls" && grep -qE "Alacritty-[0-9]+\.scope -- alacritty $options -e true$" "$calls"' \
+  "a daemon that never comes up: the window is a process of its own ($(tr '\n' ' ' < "$calls"))"
+key -e true
+check 'alone " -e true"' "and no daemon is tried again in this login"
+unset STUB_NO_SOCKET
+# A file it cannot write - the lock, here a directory in its place, or
+# anything in a full runtime directory - ends no start under set -e: the
+# window is a process of its own (another login's names, no daemon yet).
+key_instance=c0ffee_1700000001_43
+mkdir -p "$drt/buchhwin-alacritty-wayland-9-1700000001_43.lock"
+key -e true 2>/dev/null
+check '[[ $status -eq 0 ]] && alone " -e true"' \
+  "a lock it cannot open: the window is a process of its own (status $status: $(tr '\n' ' ' < "$calls"))"
+unset key_instance
 
 if (( failures )); then printf 'TESTS FAILED launch-app (%d failed)\n' "$failures"; exit 1; fi
 printf 'TESTS PASSED launch-app\n'

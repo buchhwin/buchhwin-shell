@@ -35,8 +35,14 @@ RowLayout {
         sourceSize.width: Metrics.iconLg * 2
         sourceSize.height: Metrics.iconLg * 2
         fillMode: Image.PreserveAspectFit
-        // Theme icons (image://icon) must load on the GUI thread.
-        asynchronous: !String(source).startsWith("image://")
+        // Off the GUI thread, theme icons too, as the dock, the start menu's
+        // tiles and the launcher load them: "theme icons must load on the GUI
+        // thread" was a claim nobody had measured, and Quickshell 0.3.2 serves
+        // image://icon asynchronously (probed in round 12). Loaded here, the
+        // first switch to All apps decoded every new row's icon inside the
+        // frame (about 1 ms each; perf#5). The slot keeps its size, so a row
+        // does not move when its icon arrives.
+        asynchronous: true
     }
     ShellIcon {
         visible: root.icon.length > 0 && root.iconSource.length === 0

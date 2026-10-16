@@ -172,6 +172,9 @@ Singleton {
     // faint for a three-pixel hint at the edge of a translucent panel.
     readonly property color scrollHint: surfaceDark ? Qt.rgba(1, 1, 1, 0.3) : Qt.rgba(0, 0, 0, 0.26)
     readonly property color knob: "#ffffff"
+    // What an alpha mask shows through (a list's faded edges): only its
+    // opacity counts, the colour is never seen.
+    readonly property color maskShown: "#ffffff"
     // Keeps the white toggle knob visible on the light off track and on
     // light accents.
     readonly property color knobBorder: Qt.rgba(0, 0, 0, surfaceDark ? 0.16 : 0.14)
@@ -235,7 +238,16 @@ Singleton {
     readonly property color scrimFaint: Qt.rgba(0, 0, 0, dark ? 0.08 : 0.05)
     // Overview backdrop: dark enough (and above the blur threshold) to hide
     // window content behind the previews.
-    readonly property color overviewScrim: Qt.rgba(0.02, 0.024, 0.03, dark ? 0.78 : 0.62)
+    // The same in both themes: what is written on it is light in both, and
+    // the light theme's thinner 0.62 let a bright wallpaper through - its
+    // accent labels came to 2.5-3.2:1 there and the grey ones under 4:1 over
+    // white (round 12, D10).
+    readonly property color overviewScrim: Qt.rgba(0.02, 0.024, 0.03, 0.78)
+    // The lightest that scrim gets: over a white wallpaper. What is written
+    // on it is measured there, not against a dark guess.
+    readonly property color overviewBackdrop: flat(overviewScrim, "#ffffff")
+    // The accent as text and outline on that scrim: 4.5:1 at its lightest.
+    readonly property color overviewAccent: Contrast.readable(String(accent), String(overviewBackdrop))
     // Text directly on the dark overview scrim, in both themes.
     readonly property color scrimText: "#f5f6f8"
     readonly property color scrimMutedText: Qt.rgba(1, 1, 1, 0.7)
@@ -270,10 +282,30 @@ Singleton {
     // blue of the shipped logo's second colour (#5fafff → #afd7ff). On a light
     // panel the planet is the accent as text and the ring that pale mix
     // darkened until it is a mark that reads (3:1).
+    //
+    // The two keep `saturnSeparation` apart, or at the menu's small letters
+    // they run into one mass: the teal's half-white ring was 1.25:1 from its
+    // planet (round 12, D13 d). On a dark panel the ring takes more white
+    // until it stands that far off (the logo's own blue already does, and
+    // stays #afd7ff); on a light one the planet is darkened past its 4.5:1
+    // until it stands that far below the ring.
+    readonly property real saturnSeparation: 1.5
     readonly property color saturnRingMix: Qt.tint(accent, Qt.rgba(1, 1, 1, 0.5)) // style: ff's own mix, half white
-    readonly property color saturnPlanet: surfaceDark ? accentLine : accentForeground
-    readonly property color saturnRing: surfaceDark ? saturnRingMix
-        : Contrast.readable(String(saturnRingMix), String(contrastBase), 3)
+    readonly property color saturnRingLight: Contrast.readable(String(saturnRingMix), String(contrastBase), Contrast.LARGE_RATIO)
+    readonly property color saturnPlanet: surfaceDark ? accentLine
+        : Contrast.readable(String(accent), String(contrastBase),
+            Math.max(Contrast.TEXT_RATIO, Contrast.contrast(String(saturnRingLight), String(contrastBase)) * saturnSeparation))
+    readonly property color saturnRing: surfaceDark ? ringApart(String(accent), String(saturnPlanet)) : saturnRingLight
+    // The accent mixed with white from ff's half upwards, in steps of a
+    // twentieth, until it stands `saturnSeparation` off `planet`; white when
+    // nothing short of it does.
+    function ringApart(accentHex, planet) {
+        for (let step = 10; step <= 20; ++step) {
+            const ring = Contrast.over("#ffffff", step / 20, accentHex)
+            if (Contrast.contrast(ring, planet) >= saturnSeparation) return ring
+        }
+        return "#ffffff"
+    }
     readonly property color dockBorder: surfaceDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.08)
     // Bar style "bar": item hover highlight and the line between item groups.
     readonly property color barItemHover: surfaceDark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.06)
@@ -367,4 +399,11 @@ Singleton {
     readonly property color notchFieldBorder: Qt.rgba(1, 1, 1, 0.08)
     readonly property color notchButton: Qt.rgba(1, 1, 1, 0.14)
     readonly property color notchCoverFallback: Qt.rgba(1, 1, 1, 0.1)
+    // The frame around a pill or a dock group in the layout editor
+    // (shell/editor/BarEditOverlay.qml). On a flat bar or the taskbar it is
+    // the only sign of what can be dragged, so it is a mark at 3:1 on the
+    // panel under the editor's scrim - not a divider: `border` there was
+    // 1.1-1.2:1, and subtleText alone 2.8:1 on a light panel under the scrim.
+    readonly property color editorFrame: Contrast.readableOnAll(String(subtleText),
+        [String(flat(scrim, panelBase)), String(flat(scrim, cardBase))], Contrast.LARGE_RATIO)
 }

@@ -344,6 +344,22 @@ function lidPending(target, live, internalName) {
     return update(target, internalName, { disabled: true })
 }
 
+// What applying the saved layout makes of the live monitors (DisplayService
+// applySavedIfNeeded, at the start and after a monitor event): `base` the
+// saved file over them, `target` that with the lid's adjustment and, while
+// nobody has said yet whether the lid is shut, the panel held as it is
+// (`held`, lidPending). null when there is nothing to do: no monitors yet, or
+// no saved file and an open lid. A missing monitors.json alone is no reason
+// to skip it - logged in at the dock with the lid shut, the panel still has
+// to go off.
+function savedTarget(monitors, saved, internalName, lidClosed, lidKnown) {
+    if (!monitors || !monitors.length || (!saved && !lidClosed)) return null
+    const base = saved ? applySaved(monitors, saved, internalName) : monitors
+    const adjusted = lidAdjusted(base, internalName, lidClosed)
+    const pending = !lidKnown && !lidClosed ? lidPending(adjusted, monitors, internalName) : adjusted
+    return { base: base, target: pending, held: pending !== adjusted }
+}
+
 // Whether `name` is the laptop panel. DisplayService passes the name it
 // found (a nested session can name any output); without one the connector
 // name decides, as `isInternal` does.
