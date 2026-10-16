@@ -17,9 +17,13 @@ import "../../services/LayoutLogic.js" as Logic
 Item {
     id: overlay
     required property var editor
+    // "bar" or "dock": the two surfaces of pills (LayoutService.pill*). The
+    // dock reports its zones under its own names (Dock.qml).
+    property string target: "bar"
+    readonly property string prefix: target === "dock" ? "dock-" : ""
     readonly property string screenName: editor.screenName
-    readonly property var bar: LayoutService.bar
-    readonly property string unit: bar.style === "bar" ? "group" : "pill"
+    readonly property var bar: LayoutService.zonesOf(target)
+    readonly property string unit: target === "dock" || LayoutService.bar.style === "bar" ? "group" : "pill"
 
     // Drag state; `dropIndex` counts the target zone without the dragged pill.
     property string dragPill: ""
@@ -32,7 +36,8 @@ Item {
     // Which way the bar runs. Every piece of this file that has a direction
     // asks it: the zone the pointer is over, the index a drop would take, the
     // marker, the drag threshold and the labels.
-    readonly property bool vertical: BarLogic.vertical(bar.edge)
+    readonly property string edgeName: target === "dock" ? DockService.position : BarLogic.edge(LayoutService.bar.edge)
+    readonly property bool vertical: BarLogic.vertical(edgeName)
 
     function rectOf(key) {
         const unused = LayoutService.surfaceRects
@@ -45,7 +50,7 @@ Item {
     // with the bar.
     function zoneRects() {
         return zoneKeys.map(key => {
-            const rect = rectOf("zone:" + key)
+            const rect = rectOf(prefix + "zone:" + key)
             return rect ? { key: key, x: rect.x, y: rect.y,
                             width: rect.width, height: rect.height } : null
         }).filter(Boolean)
@@ -62,13 +67,13 @@ Item {
     // it is, and the callers read better for it.
     function barTop() {
         for (const key of zoneKeys) {
-            const rect = rectOf("zone:" + key)
+            const rect = rectOf(prefix + "zone:" + key)
             if (rect) return rect
         }
         return null
     }
     function marker() {
-        const zone = rectOf("row:" + dropZone)
+        const zone = rectOf(prefix + "row:" + dropZone)
         return Arrange.markerRect(pillRects(dropZone), dropIndex, dragPill, zone, Metrics.pillGap, vertical)
     }
 
@@ -86,8 +91,8 @@ Item {
     }
     function endDrag() {
         if (dragPill.length && dropZone.length
-            && Arrange.changes(LayoutService.barPlace(dragPill), dropZone, dropIndex))
-            LayoutService.barMovePillTo(dragPill, dropZone, dropIndex)
+            && Arrange.changes(LayoutService.pillPlace(target, dragPill), dropZone, dropIndex))
+            LayoutService.pillMoveTo(target, dragPill, dropZone, dropIndex)
         cancelDrag()
     }
     function cancelDrag() {
@@ -103,7 +108,7 @@ Item {
         model: overlay.dragPill.length ? overlay.zoneKeys : []
         Rectangle {
             required property var modelData
-            readonly property var rect: overlay.rectOf("zone:" + modelData)
+            readonly property var rect: overlay.rectOf(overlay.prefix + "zone:" + modelData)
             readonly property bool target: overlay.dropZone === modelData
             visible: rect !== null
             x: rect ? rect.x : 0
@@ -120,7 +125,7 @@ Item {
                 // bottom one, beside a side bar. Always below put the labels
                 // of a bottom bar, and the last third of a side bar, off the
                 // screen.
-                readonly property string edge: BarLogic.edge(overlay.bar.edge)
+                readonly property string edge: overlay.edgeName
                 x: edge === "left" ? parent.width + Metrics.spaceXs
                     : edge === "right" ? -width - Metrics.spaceXs
                     : (parent.width - width) / 2
@@ -141,7 +146,7 @@ Item {
 
     // One frame and one drag surface per pill, on top of the real pill.
     Repeater {
-        model: Logic.barPillIds(overlay.bar)
+        model: LayoutService.pillIds(overlay.target)
         Item {
             id: frame
             required property var modelData
@@ -219,9 +224,9 @@ Item {
     // same x there, so asking about x answered "the first one" wherever the
     // pointer was.
     function itemUnder(pillId, x, y) {
-        const place = LayoutService.barPlace(pillId)
+        const place = LayoutService.pillPlace(target, pillId)
         if (!place) return -1
-        const items = LayoutService.bar[place.zone][place.index].items
+        const items = bar[place.zone][place.index].items
         if (items.length < 2) return -1
         const along = vertical ? y : x
         for (let index = 0; index < items.length; ++index) {

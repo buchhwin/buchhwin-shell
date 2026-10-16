@@ -266,7 +266,7 @@ ColumnLayout {
             model: UpdatesService.flatpaksExpanded ? UpdatesService.flatpaks : []
             UpdateRow {
                 required property var modelData
-                icon: modelData.kind === "runtime" ? "󰏖" : "󰀻"
+                icon: modelData.kind === "runtime" ? "󰏖" : Icons.apps
                 title: modelData.name
                 subtitle: UpdatesService.flatpakSubtitle(modelData)
             }

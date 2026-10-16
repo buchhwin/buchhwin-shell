@@ -94,4 +94,11 @@ Singleton {
     // A shadow under a small surface (a desktop widget, the lock clock's text).
     readonly property int shadowOffsetSm: 1
     readonly property real shadowBlurSm: 1
+
+    // The dock (shell/dock/DockItem.qml): how much a starting app's icon
+    // shrinks at the deepest of a breath (Full) or fades (Reduced, and
+    // steadily in Off), and how strong the hover square is at rest.
+    readonly property real dockLaunchShrink: 0.14
+    readonly property real dockLaunchFade: 0.45
+    readonly property real dockHoverOpacity: 0.8
 }

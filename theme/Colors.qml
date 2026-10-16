@@ -108,10 +108,10 @@ Singleton {
     // (PanelStyleService: ShellPanel ids or group keys such as "widgets"),
     // a light one never below its floor.
     readonly property color panel: panelWithOpacity(Effects.panelOpacity)
-    function panelFor(id) { return panelWithOpacity(PanelStyleService.opacity(id)) }
-    function panelWithOpacity(alpha) {
+    function panelFor(id) { return panelWithOpacity(PanelStyleService.opacity(id), id) }
+    function panelWithOpacity(alpha, id) {
         const rgb = PanelStyleService.rgb(panelHex)
-        return Qt.rgba(rgb.r, rgb.g, rgb.b, PanelStyleService.surfaceOpacity(alpha, !surfaceDark))
+        return Qt.rgba(rgb.r, rgb.g, rgb.b, PanelStyleService.surfaceOpacity(alpha, !surfaceDark, id))
     }
     // Check marks on colour swatches.
     readonly property color onLightSwatch: "#1b1e25"
@@ -262,6 +262,9 @@ Singleton {
         return surfaceDark ? Qt.rgba(0.09, 0.1, 0.12, alpha) : Qt.rgba(1, 1, 1, alpha)
     }
     readonly property color pillBorder: surfaceDark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.12)
+    // The dock's outline: fainter than a panel's - the dock stays on screen,
+    // and a full panel border read as a frame around the apps.
+    readonly property color dockBorder: surfaceDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.08)
     // Bar style "bar": item hover highlight and the line between item groups.
     readonly property color barItemHover: surfaceDark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.06)
     readonly property color barSeparator: surfaceDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)

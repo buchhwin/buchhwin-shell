@@ -14,6 +14,9 @@ Rectangle {
     property var anchorRect: null
     property string text: ""
     property bool shown: false
+    // Kept inside its parent: a label on the dock's surface. The apps widget
+    // puts it outside itself, into the room the dock keeps above it.
+    property bool clampToArea: true
 
     readonly property bool vertical: edge === "left" || edge === "right"
     readonly property Item area: parent
@@ -38,8 +41,8 @@ Rectangle {
     readonly property real wantedY: !anchorRect ? 0
         : vertical ? anchorRect.y + anchorRect.height / 2 - height / 2
         : anchorRect.y - height - Metrics.dockLabelGap
-    x: Math.max(0, Math.min((area ? area.width : 0) - width, wantedX))
-    y: Math.max(0, Math.min((area ? area.height : 0) - height, wantedY))
+    x: clampToArea ? Math.max(0, Math.min((area ? area.width : 0) - width, wantedX)) : wantedX
+    y: clampToArea ? Math.max(0, Math.min((area ? area.height : 0) - height, wantedY)) : wantedY
 
     ShellText {
         id: name

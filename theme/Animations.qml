@@ -236,4 +236,11 @@ Singleton {
     readonly property int dockLabelDelay: 350
     // Sliding in and out.
     readonly property int dockSlide: travel(220)
+    // An app the dock started breathes until its window shows: checked this
+    // often, given up after this long (an app that opens no window, one that
+    // hands it to a running instance elsewhere).
+    readonly property int dockLaunchCheck: 250
+    readonly property int dockLaunchLimit: 10000
+    // One breath of a starting app's icon.
+    readonly property int dockLaunchPulse: Math.round(900 * factor)
 }

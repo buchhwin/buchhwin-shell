@@ -6,15 +6,17 @@ import qs.theme
 import "dock/DockLogic.js" as Logic
 import "model/KeyedLogic.js" as Keyed
 import "overview/OverviewLogic.js" as Overview
-import "launcher/Pinned.js" as Pinned
 
 // The dock's apps and what they do (shell/dock/Dock.qml draws them). Created
 // the first time something asks: Dock.qml reads `dock.enabled` from the
 // settings itself, so with the dock off nothing reaches this - and once it is
 // here, everything that listens or polls is gated on `enabled`.
 //
-// The apps are the launcher's pins (launcher.pinned, LauncherService) and the
-// apps that have windows (Hyprland's toplevels), in DockLogic.build's order.
+// The apps are the dock's own pins (LayoutService.dockLayout.pins - ids, or
+// the session's defaults @files/@terminal/@browser and the shell's @settings)
+// and the apps that have windows (Hyprland's toplevels), in DockLogic.build's
+// order. The dock draws them through its "apps" widget (shell/widgets/
+// AppsWidget.qml), beside whatever else its zones hold.
 // Intellihide reads the windows' geometry, which only Hyprland's IPC has:
 // `refreshToplevels()` after the events that may move a window over a dock,
 // and every second while a floating window - which moves without an event -
@@ -28,6 +30,7 @@ Singleton {
     readonly property bool enabled: SettingsService.value("dock.enabled") === true
     readonly property string visibility: SettingsService.value("dock.visibility")
     readonly property string position: SettingsService.value("dock.position")
+    readonly property string span: SettingsService.value("dock.span")
     readonly property int iconSize: SettingsService.value("dock.iconSize")
     readonly property int margin: SettingsService.value("dock.margin")
     readonly property bool showRunning: SettingsService.value("dock.showRunning") !== false
@@ -102,6 +105,24 @@ Singleton {
     function pinOf(entry) {
         return { id: entry.id, name: entry.name, icon: entry.icon, startupClass: entry.startupClass }
     }
+    // The session's default apps, for @files/@terminal/@browser: read once
+    // when a pin asks for them (default-apps.py list), again when Settings >
+    // Default apps changes one.
+    readonly property var defaultCategories: DefaultAppsService.categories
+    readonly property bool needsDefaults: enabled && (LayoutService.dockLayout.pins || []).some(pin => Logic.pinCategory(pin).length > 0)
+    onNeedsDefaultsChanged: if (needsDefaults && !defaultCategories.length && !DefaultAppsService.loading) DefaultAppsService.refresh()
+    // A stored pin as the entry it stands for now; null when it is not there
+    // (an app not installed, a default not read yet).
+    function resolvePin(pin) {
+        if (pin === "@settings")
+            return { id: "shell-settings", name: "Settings", icon: "", startupClass: "", pin: pin, special: "settings", glyph: Icons.settings }
+        const id = Logic.pinCategory(pin).length ? Logic.defaultFor(pin, defaultCategories) : pin
+        const entry = id.length ? DesktopEntries.byId(id) : null
+        if (!entry || entry.noDisplay) return null
+        return Object.assign(pinOf(entry), { pin: pin })
+    }
+    readonly property var pins: enabled
+        ? (LayoutService.dockLayout.pins || []).map(pin => resolvePin(pin)).filter(Boolean) : []
     function lookup(cls) {
         const entry = DesktopEntries.heuristicLookup(cls) || DesktopEntries.byId(cls)
             || DesktopEntries.byId(String(cls).toLowerCase())
@@ -119,7 +140,14 @@ Singleton {
         return list
     }
     readonly property var items: enabled
-        ? kept(Logic.build(LauncherService.pinnedApps.map(pinOf), windows, lookup, { showRunning: showRunning }))
+        // The fields added before the keeping, so a change of them makes a
+        // new object and the delegate hears of it.
+        ? kept(Logic.build(pins, windows, lookup, { showRunning: showRunning }).map(item => Object.assign(item, {
+            // The shell's Settings has no window of its own: it is "running"
+            // while its panel is open.
+            running: item.special === "settings" ? PanelService.active === "settings" : item.running,
+            active: item.special === "settings" ? PanelService.active === "settings" : item.active,
+            launching: launching[item.key] !== undefined })))
         : []
     readonly property int pinnedCount: items.filter(item => item.pinned).length
     readonly property int runningCount: items.filter(item => item.running).length
@@ -131,7 +159,7 @@ Singleton {
         const toplevel = Hyprland.toplevels.values.find(item => addressOf(item) === address)
         return toplevel && toplevel.title ? toplevel.title : ""
     }
-    function entryOf(item) { return item && item.entryId ? DesktopEntries.byId(item.entryId) : null }
+    function entryOf(item) { return item && item.entryId && !item.special ? DesktopEntries.byId(item.entryId) : null }
 
     // ---- intellihide -----------------------------------------------------------------
     // Each dock's body on the screen (global, logical), as Dock.qml reports it.
@@ -241,11 +269,32 @@ Singleton {
         reportShown(name, false)
     }
 
+    // Where each dock's surface sits on its screen, for the apps' menu and the
+    // panels a dock widget opens (Dock.qml reports it).
+    property var originOn: ({})
+    function reportOrigin(name, point) {
+        const current = originOn[name]
+        if (current && current.x === point.x && current.y === point.y) return
+        const next = Object.assign({}, originOn)
+        next[name] = { x: point.x, y: point.y }
+        originOn = next
+    }
+
     // ---- the key and the keyboard ----------------------------------------------------
     // The screen the key showed the dock on, "" for none, and the screen whose
     // dock has the keyboard.
     property string hotkeyScreen: ""
     property string keyboardScreen: ""
+    // The app the keys are on (an index into `items`).
+    property int keyIndex: 0
+    // The menu key on the dock: the apps widget on that screen opens the menu
+    // of the app the keys are on.
+    signal menuWanted()
+    function moveKey(delta) { keyIndex = Math.max(0, Math.min(items.length - 1, keyIndex + delta)) }
+    onKeyboardScreenChanged: if (keyboardScreen.length) {
+        const active = items.findIndex(item => item.active)
+        keyIndex = Math.max(0, active)
+    }
     function focusedName() {
         return Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
     }
@@ -332,16 +381,59 @@ Singleton {
         return target.action !== "none"
     }
     function launch(item) {
-        const entry = entryOf(item)
-        if (!entry) return false
+        if (!item) return false
         endKeyboard()
-        LauncherService.launchApp(entry, true)
+        if (item.special === "settings") {
+            PanelService.open("settings")
+            return true
+        }
+        // A default goes the way its hotkey does (launch-default.sh: the
+        // browser's wallet, the terminal's opacity), the rest as the
+        // launcher starts them.
+        const category = Logic.pinCategory(item.pin)
+        if (category.length) {
+            Quickshell.execDetached([Paths.script("launch-default.sh"), category])
+        } else {
+            const entry = entryOf(item)
+            if (!entry) return false
+            LauncherService.launchApp(entry, true)
+        }
+        markLaunching(item)
         return true
+    }
+
+    // ---- started, not open yet ------------------------------------------------
+    // An app the dock started, until a window more than it had shows or a
+    // while has passed: its icon breathes meanwhile (DockItem), so a click
+    // that takes a second to answer is seen to have been taken.
+    property var launching: ({})
+    function markLaunching(item) {
+        const next = Object.assign({}, launching)
+        next[item.key] = { since: Date.now(), before: item.count || 0 }
+        launching = next
+        launchTimer.start()
+    }
+    Timer {
+        id: launchTimer
+        interval: Animations.dockLaunchCheck
+        repeat: true
+        onTriggered: {
+            const now = Date.now()
+            const next = {}
+            for (const key of Object.keys(root.launching)) {
+                const state = root.launching[key]
+                const item = root.itemFor(key)
+                if (item && !Logic.launchSettled(item.count, state.before, state.since, now, Animations.dockLaunchLimit)) next[key] = state
+            }
+            if (Object.keys(next).length !== Object.keys(root.launching).length) root.launching = next
+            if (!Object.keys(next).length) stop()
+        }
     }
     // A middle click or "New window": the entry's own new-window action when
     // it has one (a browser), else the app started again.
     function newWindow(key) {
         const item = itemFor(key)
+        if (item && (item.special || Logic.pinCategory(item.pin).length)) return launch(item)
         const entry = entryOf(item)
         if (!entry) return false
         endKeyboard()
@@ -349,6 +441,7 @@ Singleton {
         const action = id.length ? Array.prototype.slice.call(entry.actions).find(candidate => candidate.id === id) : null
         if (action) LauncherService.launchAction(entry, action)
         else LauncherService.launchApp(entry, true)
+        markLaunching(item)
         return true
     }
     function runAction(key, actionId) {
@@ -366,17 +459,18 @@ Singleton {
         for (const window of item.windows) closeWindow(window.address)
         return item.windows.length > 0
     }
+    // Pinned to the dock (its own list, LayoutService.dockLayout.pins).
     function togglePin(key) {
         const item = itemFor(key)
-        if (!item || !item.entryId) return false
-        if (!item.pinned && LauncherService.pinnedFull) return false
-        return LauncherService.togglePin(item.entryId)
+        if (!item || !item.pin) return false
+        if (item.pinned) return LayoutService.dockUnpin(item.pin)
+        if (LayoutService.dockPinsFull) return false
+        return LayoutService.dockPin(item.pin)
     }
-    // A drop among the pins (DockLogic.dropPlan). "full" when ten are pinned.
+    // A drop among the pins (DockLogic.dropPlan). "full" when they are.
     function drop(key, index) {
-        const plan = Logic.dropPlan(itemFor(key), index, Pinned.ids(LauncherService.pinnedStored), Pinned.LIMIT)
-        if (plan.action === "move") LauncherService.movePinnedTo(plan.id, plan.index)
-        else if (plan.action === "pin") LauncherService.pinAt(plan.id, plan.index)
+        const plan = Logic.dropPlan(itemFor(key), index, LayoutService.dockLayout.pins || [], LayoutService.dockPinLimit)
+        if (plan.action === "move" || plan.action === "pin") LayoutService.dockPin(plan.id, plan.index)
         return plan.action
     }
 
@@ -386,7 +480,7 @@ Singleton {
         const item = itemFor(key)
         if (!item || !rect) return false
         const args = { key: key, onScreen: name, originX: rect.x, originY: rect.y,
-                       originWidth: rect.width, originHeight: rect.height }
+                       originWidth: rect.width, originHeight: rect.height, fromDock: true }
         if (position === "left") Object.assign(args, { anchorLeft: rect.x + rect.width + Metrics.spaceSm, anchorY: rect.y + rect.height / 2 })
         else if (position === "right") Object.assign(args, { anchorRight: rect.x - Metrics.spaceSm, anchorY: rect.y + rect.height / 2 })
         else Object.assign(args, { anchorX: rect.x + rect.width / 2, anchorBottom: rect.y - Metrics.spaceSm })
@@ -397,7 +491,7 @@ Singleton {
     // For `dock get`: counts and flags, never a name or a title.
     function describe() {
         return JSON.stringify({
-            enabled: enabled, visibility: visibility, position: position, iconSize: iconSize, margin: margin,
+            enabled: enabled, visibility: visibility, position: position, span: span, iconSize: iconSize, margin: margin,
             screens: screens.length, items: items.length, pinned: pinnedCount, running: runningCount,
             windows: windows.length, shown: screens.filter(screen => shownOn[screen.name] === true).length,
             covered: screens.filter(screen => covered(screen.name)).length, polling: polling,

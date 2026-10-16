@@ -6,9 +6,9 @@ import qs.services
 import qs.shell.components
 import "../../../services/dock/DockLogic.js" as Logic
 
-// Settings > Dock (shell/dock/Dock.qml). Everything here is a setting; the
-// page never asks DockService anything, so an open page does not start the
-// dock's service while the dock is off.
+// Settings > Dock (shell/dock/Dock.qml). Everything here is a setting or the
+// dock's layout; the page never asks DockService anything, so an open page
+// does not start the dock's service while the dock is off.
 ColumnLayout {
     id: page
     spacing: Metrics.pageGap
@@ -21,10 +21,87 @@ ColumnLayout {
     readonly property var shownOn: Logic.screensFor(screensStored, screenNames)
     readonly property bool barHere: LayoutService.barShown && LayoutService.barEdge(PanelService.screen ? PanelService.screen.name : "") === position
 
+    // A whole dock at once (config/dock-presets/): the taskbar first.
+    SettingsSection {
+        Layout.fillWidth: true
+        title: "Presets"
+        description: "A whole dock at once: its layout, its pinned apps and how it shows. Change anything afterwards here or in the layout editor."
+
+        Repeater {
+            model: LayoutService.builtinDockPresets
+            ShellCard {
+                id: card
+                required property var modelData
+                Layout.fillWidth: true
+                interactive: !LayoutService.readOnly
+                hovered: cardMouse.containsMouse
+                pressed: cardMouse.pressed && cardMouse.containsMouse
+                implicitHeight: cardBody.implicitHeight + Metrics.spaceSm * 2
+                activeFocusOnTab: !LayoutService.readOnly
+                Keys.onReturnPressed: apply()
+                Keys.onSpacePressed: apply()
+                Accessible.name: modelData.label
+                // Switched on with it: choosing a dock is asking for one.
+                function apply() {
+                    if (LayoutService.readOnly) return
+                    LayoutService.applyDockPreset(card.modelData.id)
+                    if (!page.enabled) SettingsService.set("dock.enabled", true)
+                }
+                FocusRing { active: card.activeFocus; controlRadius: card.radius }
+                MouseArea {
+                    id: cardMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    enabled: !LayoutService.readOnly
+                    onClicked: card.apply()
+                }
+                RowLayout {
+                    id: cardBody
+                    anchors.fill: parent
+                    anchors.margins: Metrics.spaceSm
+                    spacing: Metrics.spaceSm
+                    ShellIcon {
+                        glyph: card.modelData.id === "taskbar" ? Icons.apps : Icons.dock
+                        size: Metrics.iconLg
+                        color: Colors.accentForeground
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+                        ShellText { text: card.modelData.label; role: "title" }
+                        ShellText {
+                            Layout.fillWidth: true
+                            text: card.modelData.description
+                            role: "small"
+                            muted: true
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                }
+            }
+        }
+        SettingRow {
+            labelFills: true
+            label: "Layout"
+            hint: "What the dock holds - its apps, a start button, the clock, status and any other widget the bar can carry - and where: in the layout editor (Super+Alt+E, \"Dock\")."
+            ShellButton {
+                focusOnTab: true
+                icon: Icons.arrange; text: "Edit in the editor"; compact: true
+                onClicked: {
+                    if (!page.enabled) SettingsService.set("dock.enabled", true)
+                    PanelService.close("settings")
+                    LayoutService.editTarget = "dock"
+                    LayoutService.editMode = true
+                }
+            }
+        }
+    }
+
     SettingsSection {
         Layout.fillWidth: true
         title: "Dock"
-        description: "Your pinned apps and the apps that have windows, at the edge of the screen. It works next to the notch, the bar or the widgets."
+        description: "Your pinned apps and the apps that have windows, at the edge of the screen - a dock in the middle or a taskbar along the whole edge. It works next to the notch, the bar or the widgets."
 
         SettingRow {
             labelFills: true
@@ -61,6 +138,19 @@ ColumnLayout {
                 current: page.position
                 options: [{ value: "bottom", label: "Bottom" }, { value: "left", label: "Left" }, { value: "right", label: "Right" }]
                 onSelected: value => SettingsService.set("dock.position", value)
+            }
+        }
+        SettingRow {
+            label: "Width"
+            hint: "Fit: as long as what is on it, in the middle. Whole edge: along the full edge of the screen, like a taskbar."
+            SegmentedControl {
+                focusOnTab: true
+                enabledState: page.enabled
+                Layout.fillWidth: true
+                accessibleName: "Width"
+                current: SettingsService.value("dock.span")
+                options: [{ value: "fit", label: "Fit" }, { value: "full", label: "Whole edge" }]
+                onSelected: value => SettingsService.set("dock.span", value)
             }
         }
         ShellText {
@@ -126,7 +216,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Apps"
-        description: "The pinned apps are the launcher's: pin and unpin them here on the dock (right click), in the launcher, or in Settings > Launcher. Drag a pinned app along the dock to move it, or a running one among the pins to pin it."
+        description: "The dock keeps its own pinned apps: pin and unpin them on the dock (right click). Drag a pinned app along the dock to move it, or a running one among the pins to pin it. Files, terminal and browser follow Settings > Default apps."
 
         SettingRow {
             labelFills: true
@@ -153,17 +243,17 @@ ColumnLayout {
         }
         SettingRow {
             label: "Pinned apps"
-            hint: "At most 10, the same ones as in the launcher."
+            hint: "At most " + LayoutService.dockPinLimit + "."
             ShellText {
                 Layout.fillWidth: true
-                text: LauncherService.pinnedApps.length + " of 10 pinned"
+                text: (LayoutService.dockLayout.pins || []).length + " of " + LayoutService.dockPinLimit + " pinned"
                 role: "small"
                 muted: true
             }
             ShellButton {
                 focusOnTab: true
-                icon: Icons.leavesPanel; text: "Launcher settings"; variant: "ghost"; compact: true
-                onClicked: PanelService.open("settings", { page: "launcher" })
+                icon: Icons.leavesPanel; text: "Default apps"; variant: "ghost"; compact: true
+                onClicked: PanelService.open("settings", { page: "defaultApps" })
             }
         }
     }
@@ -181,7 +271,8 @@ ColumnLayout {
             ShellSlider {
                 focusOnTab: true
                 Layout.fillWidth: true
-                from: PanelStyleService.minOpacity; to: 1
+                // To nothing at all: the apps on the wallpaper.
+                from: PanelStyleService.minOpacityFor("dock"); to: 1
                 value: PanelStyleService.opacity("dock")
                 onMoved: value => PanelStyleService.setPreview("dock", value)
                 onReleased: value => PanelStyleService.setOwnOpacity("dock", value)

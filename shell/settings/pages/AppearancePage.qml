@@ -33,6 +33,8 @@ GridLayout {
         property bool highlighted: true
         property bool resettable: true
         property real opacityValue: 1
+        // The lowest the slider goes: the dock may go to nothing.
+        property real minimum: PanelStyleService.minOpacity
         signal preview(real value)
         signal commit(real value)
         signal reset()
@@ -41,7 +43,7 @@ GridLayout {
         ShellSlider {
             focusOnTab: true
             Layout.fillWidth: true
-            from: PanelStyleService.minOpacity; to: 1
+            from: opacityRow.minimum; to: 1
             value: opacityRow.opacityValue
             opacity: opacityRow.highlighted || pressed ? 1 : Effects.mutedOpacity
             onMoved: value => opacityRow.preview(value)
@@ -366,6 +368,7 @@ GridLayout {
                     caption: own ? "Own value" : "Default"
                     highlighted: own
                     opacityValue: PanelStyleService.opacity(modelData.key)
+                    minimum: PanelStyleService.minOpacityFor(modelData.key)
                     onPreview: value => PanelStyleService.setPreview(modelData.key, value)
                     onCommit: value => PanelStyleService.setOwnOpacity(modelData.key, value)
                     onReset: PanelStyleService.useDefaultOpacity(modelData.key)

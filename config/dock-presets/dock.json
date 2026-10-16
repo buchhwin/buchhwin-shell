@@ -1,0 +1,21 @@
+{
+  "configVersion": 1,
+  "id": "dock",
+  "label": "Dock",
+  "description": "Your apps in the middle of the bottom edge, out of the way as soon as a window touches it.",
+  "options": {
+    "visibility": "intellihide",
+    "position": "bottom",
+    "span": "fit",
+    "iconSize": 48,
+    "margin": 8,
+    "showRunning": true,
+    "magnification": false
+  },
+  "layout": {
+    "left": [],
+    "center": [{ "id": "dock-apps", "items": [{ "type": "apps" }] }],
+    "right": [],
+    "pins": ["@files", "@terminal", "@settings", "@browser"]
+  }
+}

@@ -266,6 +266,9 @@ Singleton {
             "enabled": false,
             "visibility": "intellihide",
             "position": "bottom",
+            // "fit": as long as what is on it; "full": the whole edge, like a
+            // taskbar.
+            "span": "fit",
             "iconSize": 48,
             "margin": 8,
             "screens": "",
@@ -494,6 +497,7 @@ Singleton {
         "notch.hoverMode": ["hover", "click", "off"],
         "dock.visibility": ["always", "intellihide", "hidden"],
         "dock.position": ["bottom", "left", "right"],
+        "dock.span": ["fit", "full"],
         "dock.iconSize": [40, 48, 56, 64],
         "dock.margin": [0, 4, 8, 16],
         "notch.shape": ["notch", "pill"],

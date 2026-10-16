@@ -62,10 +62,18 @@ function groupFor(id) {
     return PANEL_GROUPS[name] || FALLBACK_GROUP
 }
 
-function clampOpacity(value) {
+// A group may go lower than MIN_OPACITY: the dock to nothing at all, its
+// apps then standing on the wallpaper (the user's wish, 16.10.). Its own
+// labels and menus keep their surfaces.
+var GROUP_MIN_OPACITY = { dock: 0 }
+function minOpacity(key) {
+    return GROUP_MIN_OPACITY[key] !== undefined ? GROUP_MIN_OPACITY[key] : MIN_OPACITY
+}
+
+function clampOpacity(value, key) {
     const number = Number(value)
     if (!isFinite(number)) return MAX_OPACITY
-    return Math.max(MIN_OPACITY, Math.min(MAX_OPACITY, number))
+    return Math.max(minOpacity(key), Math.min(MAX_OPACITY, number))
 }
 
 function isOverride(stored) {
@@ -75,15 +83,16 @@ function isOverride(stored) {
 // Opacity of a panel or group: its own value, or the default transparency.
 // Small indicators (pill bar, OSD, notification popups) follow it as well.
 function effectiveOpacity(id, stored, defaultOpacity) {
-    return clampOpacity(isOverride(stored) ? stored : defaultOpacity)
+    return clampOpacity(isOverride(stored) ? stored : defaultOpacity, groupFor(id))
 }
 
 // The opacity a surface is drawn with: the chosen one, but a light surface
 // not below LIGHT_MIN_OPACITY. The setting keeps what was chosen, so a
 // dark panel colour later gets it back.
-function surfaceOpacity(alpha, light) {
-    const value = clampOpacity(alpha)
-    return light ? Math.max(LIGHT_MIN_OPACITY, value) : value
+// A group with a floor of its own (the dock) keeps it in the light theme too.
+function surfaceOpacity(alpha, light, key) {
+    const value = clampOpacity(alpha, key)
+    return light && minOpacity(key) >= MIN_OPACITY ? Math.max(LIGHT_MIN_OPACITY, value) : value
 }
 
 // "#rgb", "rgb", "#rrggbb" or "rrggbb" (surrounding spaces allowed) →

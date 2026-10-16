@@ -143,7 +143,13 @@ PanelWindow {
     // near edge, with anchorY for its height.
     readonly property real anchorLeft: argNumber("anchorLeft")
     readonly property real anchorRight: argNumber("anchorRight")
-    readonly property real anchorX: spotAlong >= 0 && !barVertical && followBarSpot ? spotAlong
+    // Opened from the dock (a widget on it, its start button, an app's menu):
+    // the panel comes out of that place whatever the bar, the notch or the
+    // panel's own placement say - the launcher, centred otherwise, opens
+    // above the start button.
+    readonly property bool fromDock: !!(openArgs && openArgs.fromDock)
+    readonly property bool dockAnchored: fromDock && (argNumber("anchorX") >= 0 || anchorLeft >= 0 || anchorRight >= 0)
+    readonly property real anchorX: spotAlong >= 0 && !barVertical && followBarSpot && !fromDock ? spotAlong
         : argNumber("anchorX") >= 0 && (followClock || !notchAnchor) ? argNumber("anchorX")
         : followClock && placement === "top-right" && clockCentre >= 0 && clockCentre < screenW * 2 / 3
             ? clockCentre : -1
@@ -152,7 +158,7 @@ PanelWindow {
     // The third anchor concept, for a bar that runs down the screen: "beside
     // me, centred on this height". The x follows from which side the bar is
     // on, so it needs no second number.
-    readonly property real anchorY: spotAlong >= 0 && barVertical && followBarSpot ? spotAlong : argNumber("anchorY")
+    readonly property real anchorY: spotAlong >= 0 && barVertical && followBarSpot && !fromDock ? spotAlong : argNumber("anchorY")
 
     // Where the bar says panels open, when it says anything: "widget" leaves
     // the pill's own anchor alone, the other three pin every panel to a place
@@ -181,7 +187,7 @@ PanelWindow {
     // with square top corners and the notch's ears, and the notch makes way
     // for it while it is open. Dialogs in the middle of the screen, a panel
     // the user drags and the overview are left where they are.
-    readonly property bool fromNotch: outOfNotch && NotchService.panelsFromNotch && notchOrigin !== null && notchOrigin !== undefined
+    readonly property bool fromNotch: outOfNotch && !fromDock && NotchService.panelsFromNotch && notchOrigin !== null && notchOrigin !== undefined
         && showCard && !movable && !barVertical
         && (placement === "top-right" || placement === "top-center")
     readonly property int earSize: Metrics.notchExpandedEar
@@ -607,6 +613,10 @@ PanelWindow {
             // other panel simply keeps clear of it.
             readonly property real targetX: window.fromNotch ? Math.max(window.leftOffset + window.earSize,
                     Math.min(window.screenW - targetWidth - window.rightOffset - window.earSize, (window.screenW - targetWidth) / 2))
+                : window.dockAnchored
+                    ? (window.anchorLeft >= 0 ? Math.max(0, Math.min(window.screenW - targetWidth, window.anchorLeft))
+                       : window.anchorRight >= 0 ? Math.max(0, Math.min(window.screenW - targetWidth, window.anchorRight - targetWidth))
+                       : Math.max(Metrics.screenMargin, Math.min(window.screenW - targetWidth - Metrics.screenMargin, window.anchorX - targetWidth / 2)))
                 : window.placement === "center" ? (window.screenW - targetWidth) / 2
                 : window.anchorLeft >= 0 ? Math.max(0, Math.min(window.screenW - targetWidth, window.anchorLeft))
                 : window.anchorRight >= 0 ? Math.max(0, Math.min(window.screenW - targetWidth, window.anchorRight - targetWidth))
@@ -622,6 +632,9 @@ PanelWindow {
             // for the panel's whole life and only this margin moves, which is what
             // a mapped layer surface will accept.
             readonly property real targetY: window.fromNotch ? 0
+                : window.dockAnchored && window.anchorBottom >= 0 ? Math.max(Metrics.screenMargin, window.anchorBottom - targetHeight)
+                : window.dockAnchored && window.anchorY >= 0
+                    ? Math.max(Metrics.screenMargin, Math.min(window.screenH - targetHeight - Metrics.screenMargin, window.anchorY - targetHeight / 2))
                 : window.placement === "center" ? (window.screenH - targetHeight) / 2
                 : window.placement === "right" ? Metrics.screenMargin
                 // Centred on the pill that opened it, clamped into the screen.

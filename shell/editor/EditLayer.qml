@@ -52,38 +52,50 @@ Variants {
             readonly property bool primaryIsGroup: primary !== null && primary.members !== undefined
 
             // The active desktop mode decides what is edited; exactly one of
-            // the three is true.
-            readonly property bool widgetsMode: LayoutService.widgetsShown
-            readonly property bool barMode: LayoutService.barShown
+            // the three is true - unless the dock is edited (the toolbar's
+            // "Dock"), which is a fourth thing beside them: then none of
+            // them is.
+            readonly property bool dockMode: LayoutService.editTarget === "dock"
+            readonly property bool widgetsMode: LayoutService.widgetsShown && !dockMode
+            readonly property bool barMode: LayoutService.barShown && !dockMode
+            // The bar and the dock are both zones of pills; their editing is
+            // one piece of code with a target (LayoutService.pill*).
+            readonly property bool zonesMode: barMode || dockMode
+            readonly property string zoneTarget: dockMode ? "dock" : "bar"
+            readonly property var zones: LayoutService.zonesOf(zoneTarget)
             // The order the cards are drawn in, so each one can wiggle at a
             // different point of the cycle.
             function placementIndex(id) { return LayoutService.placementIds(screenName, true).indexOf(id) }
-            readonly property bool notchMode: LayoutService.notchShown
+            readonly property bool notchMode: LayoutService.notchShown && !dockMode
 
             // Bar editing: the selected pill and, inside it, an item
             // (-1 = the whole pill).
             property string barPill: ""
             property int barItem: -1
             readonly property var barPlace: barPill.length && LayoutService.revision >= 0
-                ? LayoutService.barPlace(barPill) : null
-            readonly property var barPillEntry: barPlace ? LayoutService.bar[barPlace.zone][barPlace.index] : null
+                ? LayoutService.pillPlace(zoneTarget, barPill) : null
+            // null, never undefined: right after a move the place can be
+            // newer than the zones it points into for one evaluation.
+            readonly property var barPillEntry: barPlace ? ((zones[barPlace.zone] || [])[barPlace.index] || null) : null
             // Zone new pills go into: the selected pill's, otherwise the centre.
             property string addZone: "center"
             // Picker target: a new pill in `addZone` or the selected pill.
             property bool addToPill: false
-            readonly property string barUnit: LayoutService.bar.style === "bar" ? "group" : "pill"
+            readonly property string barUnit: dockMode || LayoutService.bar.style === "bar" ? "group" : "pill"
             // Where the editor's own panels may start, so the picker and the
             // inspector never cover the bar being edited. The bar is on one
             // edge, so exactly one of these three is pushed in - and `!==
             // "bottom"` used to stand for "top", which was true while those
             // were the only two edges there were: a bar on a *side* covers
             // nothing along the top and was pushing the panels down anyway.
-            readonly property string barSide: barMode ? LayoutService.barEdge(screenName) : ""
+            readonly property string barSide: barMode ? LayoutService.barEdge(screenName) : dockMode ? DockService.position : ""
             function clearOf(side) {
-                return editorRoot.barSide === side
-                    ? Math.max(Metrics.spaceXl, LayoutService.barBottom(screenName) + Metrics.spaceLg)
-                    : Metrics.spaceXl
+                if (editorRoot.barSide !== side) return Metrics.spaceXl
+                const reach = dockMode ? DockService.margin + DockService.iconSize + Metrics.dockPadding * 2
+                    : LayoutService.barBottom(screenName)
+                return Math.max(Metrics.spaceXl, reach + Metrics.spaceLg)
             }
+            readonly property real contentBottom: clearOf("bottom")
             readonly property real contentTop: clearOf("top")
             readonly property real contentLeft: clearOf("left")
             readonly property real contentRight: clearOf("right")
@@ -91,12 +103,12 @@ Variants {
             function addToBar(type) {
                 if (addToPill && barPlace) {
                     const id = barPill
-                    LayoutService.barAddItem(id, type, "")
-                    const place = LayoutService.barPlace(id)
-                    selectBar(id, place ? LayoutService.bar[place.zone][place.index].items.length - 1 : -1)
+                    LayoutService.pillAddItem(zoneTarget, id, type, "")
+                    const place = LayoutService.pillPlace(zoneTarget, id)
+                    selectBar(id, place ? LayoutService.zonesOf(zoneTarget)[place.zone][place.index].items.length - 1 : -1)
                     return
                 }
-                const created = LayoutService.barAddPillId(addZone, type, "")
+                const created = LayoutService.pillAddId(zoneTarget, addZone, type, "")
                 if (created.length) selectBar(created, 0)
             }
 
@@ -108,18 +120,18 @@ Variants {
                 // lean, so the selection is visible on the bar itself.
                 LayoutService.editorSelection = pillId
                 if (pillId.length) {
-                    const place = LayoutService.barPlace(pillId)
+                    const place = LayoutService.pillPlace(zoneTarget, pillId)
                     if (place) addZone = place.zone
                 }
             }
             function barPillLabel(pillId) {
-                const place = LayoutService.barPlace(pillId)
+                const place = LayoutService.pillPlace(zoneTarget, pillId)
                 if (!place) return ""
-                return LayoutService.bar[place.zone][place.index].items
+                return zones[place.zone][place.index].items
                     .map(entry => (WidgetRegistry.type(entry.type) || { label: entry.type }).label).join(" · ")
             }
             function cycleBarSelection(step) {
-                const ids = Logic.barPillIds(LayoutService.bar)
+                const ids = LayoutService.pillIds(zoneTarget)
                 if (!ids.length) return
                 const index = ids.indexOf(barPill)
                 selectBar(ids[(index + step + ids.length) % ids.length], -1)
@@ -130,14 +142,14 @@ Variants {
                 if (!barPillEntry) return
                 const id = barPill
                 selectBar("", -1)
-                LayoutService.barRemovePill(id)
+                LayoutService.pillRemove(zoneTarget, id)
             }
             function cycleBarDisplay() {
                 if (!barPillEntry || barItem < 0) return
                 const item = barPillEntry.items[barItem]
                 const options = WidgetRegistry.pillDisplays(item.type).map(entry => entry.value)
                 if (!options.length) return
-                LayoutService.barSetDisplay(barPill, barItem, options[(options.indexOf(item.display) + 1) % options.length])
+                LayoutService.pillSetDisplay(zoneTarget, barPill, barItem, options[(options.indexOf(item.display) + 1) % options.length])
             }
 
             // The keys back to the editor itself, not to the control in it
@@ -180,11 +192,13 @@ Variants {
                         editorRoot.pickerOpen = false
                         editorRoot.barPill = ""
                         editorRoot.barItem = -1
+                        // The next editor opens on the desktop mode again.
+                        LayoutService.editTarget = "bar"
                     }
                 }
                 function onRevisionChanged() {
                     editorRoot.selection = editorRoot.selection.filter(id => LayoutService.item(id) !== null)
-                    if (editorRoot.barPill.length && !LayoutService.barPlace(editorRoot.barPill)) {
+                    if (editorRoot.barPill.length && !LayoutService.pillPlace(editorRoot.zoneTarget, editorRoot.barPill)) {
                         editorRoot.barPill = ""
                         editorRoot.barItem = -1
                     }
@@ -234,7 +248,7 @@ Variants {
                 else if (barPill.length) selectBar("", -1)
                 else LayoutService.editMode = false
             }
-            Keys.onDeletePressed: barMode ? removeBarSelection() : removeSelection()
+            Keys.onDeletePressed: zonesMode ? removeBarSelection() : removeSelection()
             function cycleSelection(step) {
                 const ids = LayoutService.placementIds(screenName, true)
                 if (!ids.length) return
@@ -270,8 +284,8 @@ Variants {
             function barKey(event) {
                 if (event.key === Qt.Key_Tab) cycleBarSelection(1)
                 else if (event.key === Qt.Key_Backtab) cycleBarSelection(-1)
-                else if (event.key === Qt.Key_Left) LayoutService.barMovePill(barPill, -1)
-                else if (event.key === Qt.Key_Right) LayoutService.barMovePill(barPill, 1)
+                else if (event.key === Qt.Key_Left) LayoutService.pillMove(zoneTarget, barPill, -1)
+                else if (event.key === Qt.Key_Right) LayoutService.pillMove(zoneTarget, barPill, 1)
                 else if (event.key === Qt.Key_S) cycleBarDisplay()
                 else if (event.key === Qt.Key_Delete || event.key === Qt.Key_Backspace) removeBarSelection()
                 else return false
@@ -323,7 +337,7 @@ Variants {
                 else if (inControl) event.accepted = false
                 else if (tab && ctrl && !notchMode) walkControls(event.key === Qt.Key_Tab)
                 else if (event.key === Qt.Key_A && !notchMode) pickerOpen = !pickerOpen
-                else if (barMode) event.accepted = barKey(event)
+                else if (zonesMode) event.accepted = barKey(event)
                 else if (notchMode) event.accepted = false
                 else if (event.key === Qt.Key_G) gridEnabled = !gridEnabled
                 else if (event.key === Qt.Key_Tab) cycleSelection(1)
@@ -370,11 +384,13 @@ Variants {
                 }
             }
 
-            // Desktop mode "Bar": frames and drop targets on the real bar.
+            // Desktop mode "Bar", or the dock: frames and drop targets on the
+            // real bar or the real dock.
             BarEditOverlay {
                 id: barOverlay
-                visible: editorRoot.barMode
+                visible: editorRoot.zonesMode
                 editor: editorRoot
+                target: editorRoot.zoneTarget
                 anchors.fill: parent
             }
 
@@ -415,7 +431,8 @@ Variants {
                 id: toolbar
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
-                anchors.bottomMargin: Metrics.spaceXl
+                // Above a dock at the bottom while the dock is edited.
+                anchors.bottomMargin: editorRoot.dockMode ? editorRoot.contentBottom : Metrics.spaceXl
                 width: toolbarRow.implicitWidth + Metrics.spaceMd * 2
                 height: toolbarRow.implicitHeight + Metrics.spaceMd * 2
                 radius: Metrics.radiusPanel
@@ -459,7 +476,28 @@ Variants {
                         options: [{ value: "widgets", label: "Widgets", icon: Icons.arrange },
                                   { value: "pills", label: "Bar", icon: "󰘔" },
                                   { value: "notch", label: "Notch", icon: "󱂩" }]
-                        onSelected: value => { editorRoot.selection = []; editorRoot.selectBar("", -1); LayoutService.setDesktopMode(value) }
+                        onSelected: value => {
+                            editorRoot.selection = []
+                            editorRoot.selectBar("", -1)
+                            LayoutService.editTarget = "bar"
+                            LayoutService.setDesktopMode(value)
+                        }
+                    }
+                    // The dock beside whichever of them is in use: its zones
+                    // are edited like the bar's. An off dock is switched on to
+                    // be edited - asking to edit it is asking to see it.
+                    ShellButton {
+                        focusOnTab: true
+                        icon: Icons.dock; text: "Dock"
+                        variant: editorRoot.dockMode ? "accent" : "surface"
+                        toolTip: editorRoot.dockMode ? "Back to the desktop mode" : "Edit the dock"
+                        onClicked: {
+                            editorRoot.selection = []
+                            editorRoot.selectBar("", -1)
+                            if (!editorRoot.dockMode && SettingsService.value("dock.enabled") !== true)
+                                SettingsService.set("dock.enabled", true)
+                            LayoutService.editTarget = editorRoot.dockMode ? "bar" : "dock"
+                        }
                     }
                     ShellButton {
                         visible: !editorRoot.notchMode
@@ -505,7 +543,7 @@ Variants {
                 // the notch's cards. Its "↑ ↓" read like arrow keys and were
                 // the small buttons on the items.
                 text: editorRoot.notchMode ? "Tab walks the controls · Ctrl+Z undoes · Enter done · Esc back"
-                    : editorRoot.barMode ? "Drag or arrow keys · Tab selects · Ctrl+Tab walks the controls · A adds · S changes the look · Del removes · Ctrl+Z undoes · Esc back"
+                    : editorRoot.zonesMode ? "Drag or arrow keys · Tab selects · Ctrl+Tab walks the controls · A adds · S changes the look · Del removes · Ctrl+Z undoes · Esc back"
                     : "Drag or arrow keys · Alt disables snapping · Shift+Click multi-selects · Tab selects · Ctrl+Tab walks the controls · A adds · S changes the look · +/− resizes · G grid · Del removes · Ctrl+Z undoes · Esc back"
                 role: "small"
             }
@@ -528,7 +566,7 @@ Variants {
                 contentSpacing: Metrics.spaceXs
 
                 ColumnLayout {
-                    visible: editorRoot.barMode
+                    visible: editorRoot.zonesMode
                     Layout.fillWidth: true
                     Layout.bottomMargin: Metrics.spaceSm
                     spacing: Metrics.spaceXs
@@ -548,10 +586,15 @@ Variants {
                         onSelected: value => editorRoot.addToPill = value === "pill"
                     }
                 }
-                Item { Layout.preferredHeight: editorRoot.barMode ? 0 : Metrics.spaceSm }
+                Item { Layout.preferredHeight: editorRoot.zonesMode ? 0 : Metrics.spaceSm }
 
                 Repeater {
-                    model: WidgetRegistry.categories
+                    // The dock's own pieces (its apps, the start button) only
+                    // while the dock is edited; first there.
+                    model: editorRoot.dockMode
+                        ? WidgetRegistry.categories.filter(category => category.dockOnly).concat(
+                              WidgetRegistry.categories.filter(category => !category.dockOnly))
+                        : WidgetRegistry.categories.filter(category => !category.dockOnly)
                     ColumnLayout {
                         required property var modelData
                         Layout.fillWidth: true
@@ -569,7 +612,7 @@ Variants {
                                 opacity: modelData.available ? 1 : Effects.disabledOpacity
                                 onClicked: {
                                     if (!modelData.available) return
-                                    if (editorRoot.barMode) {
+                                    if (editorRoot.zonesMode) {
                                         editorRoot.addToBar(modelData.name)
                                         return
                                     }

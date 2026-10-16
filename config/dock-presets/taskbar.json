@@ -1,0 +1,32 @@
+{
+  "configVersion": 1,
+  "id": "taskbar",
+  "label": "Taskbar",
+  "description": "Along the whole bottom edge and always there: the start button, your apps, and on the right the status, notifications and the clock.",
+  "options": {
+    "visibility": "always",
+    "position": "bottom",
+    "span": "full",
+    "iconSize": 40,
+    "margin": 0,
+    "showRunning": true,
+    "magnification": false
+  },
+  "layout": {
+    "left": [
+      { "id": "dock-start", "items": [{ "type": "start", "display": "icon", "size": "large" }] },
+      { "id": "dock-apps", "items": [{ "type": "apps" }] }
+    ],
+    "center": [],
+    "right": [
+      { "id": "dock-status", "items": [
+        { "type": "network", "display": "icon" },
+        { "type": "volume", "display": "icon" },
+        { "type": "battery", "display": "icon" }
+      ] },
+      { "id": "dock-notifications", "items": [{ "type": "notificationIndicator", "display": "icon" }] },
+      { "id": "dock-clock", "items": [{ "type": "clock" }, { "type": "date" }] }
+    ],
+    "pins": ["@files", "@terminal", "@settings", "@browser"]
+  }
+}

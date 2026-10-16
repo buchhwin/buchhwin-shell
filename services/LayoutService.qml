@@ -112,6 +112,79 @@ Singleton {
     function barRemovePill(pillId) { return changeBar(Logic.removePill, pillId) }
     function barPlace(pillId) { return Logic.findPill(bar, pillId) }
 
+    // ---- the dock's zones and pins -------------------------------------------
+    // The dock (shell/dock/Dock.qml) is laid out like the bar - zones of pills
+    // of widgets - and lives outside the modes like the notch: one dock in all
+    // five, kept in a profile's state. Its options are settings (dock.*).
+    readonly property var dockLayout: config.dock || Logic.defaultDock()
+    function changeDockLayout(operation) {
+        if (readOnly) return false
+        const args = Array.prototype.slice.call(arguments, 1)
+        beginChange()
+        mutate((mode, next) => { next.dock = operation.apply(null, [next.dock || Logic.defaultDock()].concat(args)) })
+        save()
+        return true
+    }
+    function dockPin(pin, index) { return changeDockLayout(Logic.dockPinAt, pin, index) }
+    function dockUnpin(pin) { return changeDockLayout(Logic.dockUnpin, pin) }
+    function dockPinned(pin) { return Logic.dockPinned(dockLayout, pin) }
+    readonly property int dockPinLimit: Logic.DOCK_PIN_LIMIT
+    readonly property bool dockPinsFull: (dockLayout.pins || []).length >= Logic.DOCK_PIN_LIMIT
+
+    // Which surface of pills the layout editor edits: "bar" or "dock". The
+    // functions below take it, so the editor's overlay, its inspector and its
+    // keys serve both; the bar's own names above stay for everything else.
+    property string editTarget: "bar"
+    function zonesOf(target) { return target === "dock" ? dockLayout : bar }
+    function changeZones(target, operation) {
+        const args = Array.prototype.slice.call(arguments, 2)
+        if (target === "dock") return changeDockLayout((dock) => Logic.dockZoneOp(dock, operation, args))
+        return changeBar.apply(null, [operation].concat(args))
+    }
+    function pillAdd(target, zone, type, display) { return changeZones(target, Logic.addPill, zone, type, display || defaultDisplay(type)) }
+    function pillAddItem(target, pillId, type, display) { return changeZones(target, Logic.addItem, pillId, type, display || defaultDisplay(type)) }
+    function pillRemoveItem(target, pillId, index) { return changeZones(target, Logic.removeItem, pillId, index) }
+    function pillMoveItem(target, pillId, index, delta) { return changeZones(target, Logic.moveItem, pillId, index, delta) }
+    function pillSetDisplay(target, pillId, index, display) { return changeZones(target, Logic.setItemDisplay, pillId, index, display) }
+    function pillSetItemSize(target, pillId, index, size) { return changeZones(target, Logic.setItemSize, pillId, index, size) }
+    function pillMove(target, pillId, delta) { return changeZones(target, Logic.movePill, pillId, delta) }
+    function pillMoveTo(target, pillId, zone, index) { return changeZones(target, Logic.movePillTo, pillId, zone, index) }
+    function pillSplit(target, pillId, index) { return changeZones(target, Logic.splitItem, pillId, index) }
+    function pillMerge(target, pillId) { return changeZones(target, Logic.mergeWithNext, pillId) }
+    function pillRemove(target, pillId) { return changeZones(target, Logic.removePill, pillId) }
+    function pillPlace(target, pillId) { return Logic.findPill(zonesOf(target), pillId) }
+    function pillIds(target) { return Logic.barPillIds(zonesOf(target)) }
+    // Adds a pill and returns its id, or "" when nothing was added.
+    function pillAddId(target, zone, type, display) {
+        const before = pillIds(target)
+        if (!pillAdd(target, zone, type, display)) return ""
+        const added = pillIds(target).filter(id => before.indexOf(id) < 0)
+        return added.length ? added[0] : ""
+    }
+
+    // ---- dock presets -----------------------------------------------------
+    // A whole dock at once: its layout, its pins and the options that shape
+    // it (DockLogic.PRESET_OPTIONS). Files in config/dock-presets/, in the
+    // picker's order: the taskbar first, then the dock as it was before
+    // there were presets. Applying one is a single undo step.
+    readonly property var builtinDockPresetNames: ["taskbar", "dock"]
+    property var builtinDockPresets: []
+    function dockPreset(id) {
+        for (const preset of builtinDockPresets) if (preset.id === id) return preset
+        return null
+    }
+    function applyDockPreset(id) {
+        const preset = dockPreset(id)
+        if (!preset || readOnly) return false
+        beginChange()
+        mutate((mode, next) => { next.dock = Logic.copyDock(preset.layout) })
+        const values = {}
+        for (const key of Object.keys(preset.options)) values["dock." + key] = preset.options[key]
+        if (Object.keys(values).length) SettingsService.setAll(values)
+        save()
+        return true
+    }
+
     // ---- quick settings ---------------------------------------------------
     // The control center's tiles, on the same model as the bar. They are
     // edited inside the control center itself rather than in the layout
@@ -1054,7 +1127,8 @@ Singleton {
 
     // The state as it is right now, in the form a profile keeps it.
     function currentState() {
-        return Logic.sanitizeProfileState({ settings: SettingsService.sanitized(), notch: config.notch, lock: config.lock })
+        return Logic.sanitizeProfileState({ settings: SettingsService.sanitized(), notch: config.notch, dock: config.dock,
+                                            lock: config.lock })
     }
 
     // The settings of a state (or of a shipped profile) this shell knows and
@@ -1826,6 +1900,28 @@ Singleton {
                         .concat([preset]).sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
                 } catch (error) {
                     console.warn("buchhwin-shell: notch preset unreadable:", modelData, error)
+                }
+            }
+        }
+    }
+
+    // The dock's presets, read the same way.
+    Instantiator {
+        model: root.builtinDockPresetNames
+        delegate: FileView {
+            required property string modelData
+            path: Quickshell.shellPath("config/dock-presets/" + modelData + ".json")
+            printErrors: false
+            onLoaded: {
+                try {
+                    const preset = Logic.sanitizeDockPreset(JSON.parse(text()))
+                    if (!preset) return
+                    preset.id = modelData
+                    const order = root.builtinDockPresetNames
+                    root.builtinDockPresets = root.builtinDockPresets.filter(item => item.id !== modelData)
+                        .concat([preset]).sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
+                } catch (error) {
+                    console.warn("buchhwin-shell: dock preset unreadable:", modelData, error)
                 }
             }
         }

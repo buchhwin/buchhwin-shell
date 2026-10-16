@@ -23,7 +23,7 @@ Singleton {
     readonly property bool fileSearch: SettingsService.value("launcher.fileSearch")
     // The order they are declared in, before the user's own is applied.
     readonly property var allModes: [
-        { id: "apps", prefix: "", label: "Apps", icon: "󰀻" },
+        { id: "apps", prefix: "", label: "Apps", icon: Icons.apps },
         { id: "commands", prefix: ">", label: "Commands", icon: "󰘳" },
         { id: "settings", prefix: "@", label: "Settings", icon: Icons.settings },
         { id: "calculator", prefix: "=", label: "Calculator", icon: "󰃬" },
@@ -48,12 +48,9 @@ Singleton {
     function isPinned(id) { return Pinned.has(pinnedStored, id) }
     function togglePin(id) { return SettingsService.set("launcher.pinned", Pinned.toggle(pinnedStored, id)) }
     function movePinned(id, delta) { return SettingsService.set("launcher.pinned", Pinned.move(pinnedStored, id, delta)) }
-    // The dock's drag: a pin to a place, an app pinned at one.
-    function movePinnedTo(id, index) { return SettingsService.set("launcher.pinned", Pinned.moveTo(pinnedStored, id, index)) }
-    function pinAt(id, index) { return SettingsService.set("launcher.pinned", Pinned.insertAt(pinnedStored, id, index)) }
 
     readonly property var categories: [
-        { name: "All", icon: "󰀻", keys: [] },
+        { name: "All", icon: Icons.apps, keys: [] },
         { name: "Internet", icon: "󰖟", keys: ["Network", "WebBrowser", "Email", "InstantMessaging"] },
         { name: "Office", icon: "󰈙", keys: ["Office", "Calendar", "ContactManagement"] },
         { name: "Graphics", icon: "󰋩", keys: ["Graphics", "2DGraphics", "3DGraphics", "Photography"] },

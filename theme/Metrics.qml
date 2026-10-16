@@ -521,6 +521,16 @@ Singleton {
     readonly property int dockDotActive: 12
     readonly property int dockDotGap: 3
     readonly property int dockMaxDots: 3
+    // How much of its slot an app's icon fills: the rest is air to the
+    // dock's border (an icon drawn edge to edge stood on it), and the glyph
+    // on the shell's own Settings tile.
+    readonly property real dockIconFill: 0.78
+    readonly property real dockGlyphFill: 0.6
+    // Widgets on the dock: drawn in proportion to its thickness (this much of
+    // it), never above the ceiling; the gap between two zones in fit.
+    readonly property real dockWidgetFill: 0.62
+    readonly property real dockWidgetScaleMax: 1.3
+    readonly property int dockZoneGap: 12
     // Magnification: the icon under the pointer this much bigger, falling off
     // over this many icon sizes.
     readonly property real dockMagnifyScale: 1.5

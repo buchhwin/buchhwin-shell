@@ -64,6 +64,8 @@ Singleton {
     // active-window widget's glyph is data (the window that is open) and
     // stays with the registry.
     readonly property string window: "󰖲"
+    // The launcher's own: its "All" category, and the dock's start button.
+    readonly property string apps: "󰀻"
     // The dock: its Settings page, its OSD line. A row of apps on a base.
     readonly property string dock: "\u{f1888}"
     // Pinning an app to the dock and the launcher.

@@ -122,6 +122,12 @@ ShellRoot {
         target: "editor"
         function toggle(): void { LayoutService.editMode = !LayoutService.editMode }
         function open(): void { LayoutService.editMode = true }
+        // The editor on the dock's zones (its toolbar's "Dock").
+        function dock(): void {
+            if (SettingsService.value("dock.enabled") !== true) SettingsService.set("dock.enabled", true)
+            LayoutService.editTarget = "dock"
+            LayoutService.editMode = true
+        }
         function close(): void { LayoutService.editMode = false }
         function undo(): void { LayoutService.undo() }
         // Counts only: the bar edits the real pills, so a test has to be able
@@ -612,6 +618,8 @@ ShellRoot {
             const parsed = DockLogic.optionValue(key, value)
             return parsed !== null && SettingsService.set("dock." + key, parsed)
         }
+        // A shipped preset (taskbar, dock): layout, pins and options at once.
+        function preset(name: string): bool { return LayoutService.applyDockPreset(name) }
         // By index, as `rects` lists them.
         function activate(index: int): bool {
             const app = DockService.items[index]

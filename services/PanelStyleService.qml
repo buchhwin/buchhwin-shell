@@ -11,6 +11,8 @@ Singleton {
 
     readonly property var groups: Logic.GROUPS
     readonly property real minOpacity: Logic.MIN_OPACITY
+    // A group's own floor (the dock goes to 0).
+    function minOpacityFor(group) { return Logic.minOpacity(Logic.groupFor(group)) }
     // The least a light surface is drawn with, whatever the slider says
     // (PanelStyleLogic.LIGHT_MIN_OPACITY says why).
     readonly property real lightMinOpacity: Logic.LIGHT_MIN_OPACITY
@@ -39,12 +41,12 @@ Singleton {
     function hoverRgb(hex) { return Logic.hoverRgb(hex) }
     function normalizeHex(text) { return Logic.normalizeHex(text) }
     function isLight(hex) { return Logic.isLight(hex) }
-    function surfaceOpacity(alpha, light) { return Logic.surfaceOpacity(alpha, light) }
+    function surfaceOpacity(alpha, light, group) { return Logic.surfaceOpacity(alpha, light, group === undefined ? undefined : Logic.groupFor(group)) }
     function matchesTheme(dark) { return Logic.matchesTheme(color, dark) }
 
     function setPreview(group, value) {
         const next = Object.assign({}, preview)
-        next[group] = Logic.clampOpacity(value)
+        next[group] = Logic.clampOpacity(value, Logic.groupFor(group))
         preview = next
     }
     function clearPreview(group) {
@@ -53,7 +55,7 @@ Singleton {
         delete next[group]
         preview = next
     }
-    function rounded(value) { return Math.round(Logic.clampOpacity(value) * 100) / 100 }
+    function rounded(value, group) { return Math.round(Logic.clampOpacity(value, group) * 100) / 100 }
 
     function setDefaultOpacity(value) {
         SettingsService.set("appearance.panelOpacity", rounded(value))
@@ -62,7 +64,7 @@ Singleton {
     // Starting an own value copies the current effective opacity.
     function setOwnOpacity(group, value) {
         const key = Logic.groupFor(group)
-        SettingsService.set("panelOpacity." + key, rounded(value === undefined ? opacity(key) : value))
+        SettingsService.set("panelOpacity." + key, rounded(value === undefined ? opacity(key) : value, key))
         clearPreview(key)
     }
     function useDefaultOpacity(group) {

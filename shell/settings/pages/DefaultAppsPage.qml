@@ -58,7 +58,7 @@ ColumnLayout {
                 ShellIcon {
                     Layout.alignment: Qt.AlignTop
                     Layout.topMargin: (Metrics.controlHeight - implicitHeight) / 2
-                    glyph: root.icons[appRow.modelData.id] || "󰀻"
+                    glyph: root.icons[appRow.modelData.id] || Icons.apps
                     size: Metrics.iconMd
                     color: Colors.accentForeground
                 }

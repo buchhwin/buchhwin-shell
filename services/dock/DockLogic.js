@@ -7,6 +7,7 @@
 // ask it everything the surface and the service decide.
 
 var POSITIONS = ["bottom", "left", "right"]
+var SPANS = ["fit", "full"]
 var VISIBILITY = ["always", "intellihide", "hidden"]
 var ICON_SIZES = [40, 48, 56, 64]
 var MARGINS = [0, 4, 8, 16]
@@ -55,6 +56,7 @@ function optionValue(key, value) {
         return text === "true" ? true : text === "false" ? false : null
     case "visibility": return VISIBILITY.indexOf(text) >= 0 ? text : null
     case "position": return POSITIONS.indexOf(text) >= 0 ? text : null
+    case "span": return SPANS.indexOf(text) >= 0 ? text : null
     case "iconSize": return ICON_SIZES.indexOf(Number(text)) >= 0 && /^\d+$/.test(text) ? Number(text) : null
     case "margin": return MARGINS.indexOf(Number(text)) >= 0 && /^\d+$/.test(text) ? Number(text) : null
     // Output names (eDP-1, DP-8, HDMI-A-1), comma-separated; "" is every screen.
@@ -118,7 +120,9 @@ function build(pins, windows, lookup, options) {
     Array.prototype.slice.call(pins || []).forEach((pin, index) => {
         if (!pin || !pin.id || byKey["app:" + pin.id]) return
         const item = { key: "app:" + pin.id, entryId: pin.id, name: pin.name || pin.id,
-                       icons: [pin.icon || "", pin.id], pinned: true, pinIndex: index, windows: [] }
+                       icons: [pin.icon || "", pin.id], pinned: true, pinIndex: index, windows: [],
+                       // What is stored for it: the id, or a default's token (@terminal).
+                       pin: pin.pin || pin.id, special: pin.special || "", glyph: pin.glyph || "" }
         byKey[item.key] = item
         items.push(item)
     })
@@ -131,7 +135,8 @@ function build(pins, windows, lookup, options) {
             const entry = found.entry
             item = { key: found.key, entryId: entry ? entry.id : "",
                      name: entry ? (entry.name || entry.id) : window.appClass,
-                     icons: [entry ? entry.icon || "" : "", window.appClass], pinned: false, pinIndex: -1, windows: [] }
+                     icons: [entry ? entry.icon || "" : "", window.appClass], pinned: false, pinIndex: -1, windows: [],
+                     pin: entry ? entry.id : "", special: "", glyph: "" }
             byKey[item.key] = item
             items.push(item)
         }
@@ -184,6 +189,10 @@ function menuRows(item, actions, pinnedFull, maxWindows) {
     for (let index = 0; index < shown; ++index)
         rows.push({ kind: "window", address: windows[index].address, workspace: windows[index].workspace })
     if (windows.length > shown) rows.push({ kind: "more", count: windows.length - shown })
+    if (item.special === "settings") {
+        rows.push({ kind: "unpin" })
+        return rows
+    }
     if (item.entryId) {
         rows.push({ kind: "new" })
         const skip = newWindowAction(actions)
@@ -376,15 +385,40 @@ function globalRect(rect, screen, offsets, thickness, edge) {
 // already is, or of an app without an entry, does nothing.
 function dropPlan(item, index, pinIds, limit) {
     const pins = Array.prototype.slice.call(pinIds || [])
-    if (!item || !item.entryId) return { action: "none" }
-    const others = pins.filter(id => id !== item.entryId)
+    const pin = item ? (item.pin || item.entryId || "") : ""
+    if (!pin.length) return { action: "none" }
+    const others = pins.filter(id => id !== pin)
     const to = Math.max(0, Math.min(others.length, Math.round(Number(index) || 0)))
     if (item.pinned) {
-        const from = pins.indexOf(item.entryId)
-        return from === to ? { action: "none" } : { action: "move", id: item.entryId, index: to }
+        const from = pins.indexOf(pin)
+        return from === to ? { action: "none" } : { action: "move", id: pin, index: to }
     }
     if (pins.length >= (limit || 10)) return { action: "full" }
-    return { action: "pin", id: item.entryId, index: to }
+    return { action: "pin", id: pin, index: to }
+}
+
+// A pin's place among the defaults: @files, @terminal, @browser are the
+// session's default apps (Settings > Default apps; default-apps.py's
+// categories), @settings the shell's own Settings. "" for an id.
+function pinCategory(pin) {
+    const text = String(pin || "")
+    return text === "@files" ? "files" : text === "@terminal" ? "terminal" : text === "@browser" ? "browser" : ""
+}
+
+// The desktop id a default stands for now, from default-apps.py's list
+// ([{ id: "terminal", current: "Alacritty.desktop" } …]), "" when unknown.
+function defaultFor(pin, categories) {
+    const category = pinCategory(pin)
+    if (!category.length) return ""
+    const entry = Array.prototype.slice.call(categories || []).find(item => item && item.id === category)
+    return entry && entry.current ? String(entry.current).replace(/\.desktop$/, "") : ""
+}
+
+// When an app that was started shows: a window more than it had, or the
+// time is up. `since` is when it was started (ms), `before` its window count
+// then.
+function launchSettled(count, before, since, now, limit) {
+    return count > before || now - since >= limit
 }
 
 // The pin slot under a point along the dock: before the first pin whose
@@ -395,4 +429,34 @@ function slotAt(along, pins) {
     for (let index = 0; index < list.length; ++index)
         if (along < list[index][0] + list[index][1] / 2) return index
     return list.length
+}
+
+// ---- zones --------------------------------------------------------------------
+// The zones' length together, one after the other with a gap between the
+// ones that hold something.
+function zonesLength(lengths, gap) {
+    const used = Array.prototype.slice.call(lengths || []).filter(length => length > 0)
+    return used.reduce((sum, length) => sum + length, 0) + Math.max(0, used.length - 1) * gap
+}
+
+// Where each of the three zones starts along the body. Fit: one after the
+// other from the padding. Full: the start zone at the start, the end zone at
+// the end, the centre zone centred but never under a neighbour.
+function zoneStarts(lengths, full, bodyLength, pad, gap) {
+    const l = Array.prototype.slice.call(lengths || [0, 0, 0])
+    if (!full) {
+        const starts = []
+        let at = pad
+        for (const length of l) {
+            starts.push(at)
+            if (length > 0) at += length + gap
+        }
+        return starts
+    }
+    const start = pad
+    const end = bodyLength - pad - l[2]
+    const low = l[0] > 0 ? start + l[0] + gap : start
+    const high = (l[2] > 0 ? end - gap : bodyLength - pad) - l[1]
+    const centred = (bodyLength - l[1]) / 2
+    return [start, Math.min(Math.max(low, centred), Math.max(low, high)), end]
 }

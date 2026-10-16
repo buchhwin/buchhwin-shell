@@ -27,7 +27,7 @@ ColumnLayout {
                 interactive: false
                 Layout.fillWidth: true
                 iconSource: app ? LauncherService.iconSource(app.icon) : ""
-                icon: app ? "" : "󰀻"
+                icon: app ? "" : Icons.apps
                 title: app ? app.name : modelData
                 subtitle: app ? (app.genericName || app.comment || "") : "No longer installed"
                 // Asks first, like the other removes in a list here.

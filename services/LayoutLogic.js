@@ -225,6 +225,7 @@ function sanitizeProfileState(state) {
     return {
         settings: Profile.profileSettings(state.settings, ""),
         notch: state.notch && typeof state.notch === "object" ? sanitizeNotch(state.notch) : null,
+        dock: state.dock && typeof state.dock === "object" ? sanitizeDock(state.dock) : null,
         lock: state.lock && typeof state.lock === "object" ? sanitizeLock(state.lock) : null
     }
 }
@@ -318,6 +319,7 @@ function settleAction(config, name, hasShipped, fresh) {
 function restoreStateLayout(config, state) {
     const next = copyConfig(config)
     if (state && state.notch) next.notch = copyNotch(state.notch)
+    if (state && state.dock) next.dock = copyDock(state.dock)
     if (state && state.lock) next.lock = sanitizeLock(JSON.parse(JSON.stringify(state.lock)))
     return sanitize(next)
 }
@@ -329,12 +331,14 @@ function sanitize(config) {
     // A file without it simply gets the default, the way a mode without a
     // `quick` does, so no version bump and no migration step is needed.
     const result = { configVersion: 3, activeProfile: DEFAULT_PROFILE, activeMode: MODE_NAMES[0],
-                     profiles: {}, notch: defaultNotch(), notchPresets: [], lock: defaultLock(), adopted: [] }
+                     profiles: {}, notch: defaultNotch(), notchPresets: [], dock: defaultDock(), lock: defaultLock(), adopted: [] }
     if (!config || typeof config !== "object") return result
     if (Array.isArray(config.adopted))
         result.adopted = config.adopted.filter(name => typeof name === "string" && name.length).map(String)
     if (config.notch) result.notch = sanitizeNotch(config.notch)
     result.notchPresets = sanitizeNotchPresets(config.notchPresets)
+    // The dock's zones and pins; a file without them gets the default dock.
+    result.dock = config.dock ? sanitizeDock(config.dock) : defaultDock()
     if (config.lock) result.lock = sanitizeLock(config.lock)
     if (typeof config.activeProfile === "string" && config.activeProfile.length)
         result.activeProfile = config.activeProfile
@@ -1285,6 +1289,116 @@ function setLockItemSize(lock, id, w, h) { return setTileSize(LOCK, lock, id, w,
 function moveLockItemTo(lock, id, index) { return moveTileTo(LOCK, lock, id, index) }
 function removeLockItem(lock, id) { return removeTile(LOCK, lock, id) }
 function addLockItem(lock, type) { return addTile(LOCK, lock, type) }
+
+// ---- the dock ---------------------------------------------------------------
+// The dock's zones (shell/dock/Dock.qml): the bar's zone -> pill -> item shape,
+// so the bar's operations and the bar's editor serve it as well, plus the
+// dock's own pinned apps. Outside the modes like the notch - one dock in all
+// five - and kept in a profile's state. Its pill ids start with "dock-": the
+// layout editor finds the bar's pills and the dock's in one table of
+// rectangles (LayoutService.surfaceRects), and "pill-1" was both.
+//
+// Two item types are the dock's own: "apps" (the pinned and running apps)
+// and "start" (a button for the launcher). Every bar widget may sit beside
+// them.
+//
+// A pin is a desktop entry id, or one of the session's defaults, which the
+// dock resolves when it draws: @files, @terminal, @browser (Settings >
+// Default apps), and @settings, the shell's own Settings.
+const DOCK_PIN_LIMIT = 12
+const DOCK_TOKENS = ["@files", "@terminal", "@browser", "@settings"]
+
+function dockPill(id, type, display) {
+    return { id: id, items: [{ type: type, display: display || "full", options: {} }] }
+}
+
+const DOCK_DEFAULT_PINS = ["@files", "@terminal", "@settings", "@browser"]
+
+// Sanitized like a stored one, so a default written and read back is the
+// same text.
+function defaultDock() {
+    return sanitizeDock({ left: [], center: [dockPill("dock-apps", "apps")], right: [], pins: DOCK_DEFAULT_PINS })
+}
+
+function sanitizeDockPins(list) {
+    const result = []
+    for (const entry of Array.isArray(list) ? list : []) {
+        const pin = typeof entry === "string" ? entry.trim().replace(/\.desktop$/, "") : ""
+        const valid = DOCK_TOKENS.indexOf(pin) >= 0 || /^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(pin)
+        if (valid && result.indexOf(pin) < 0) result.push(pin)
+        if (result.length >= DOCK_PIN_LIMIT) break
+    }
+    return result
+}
+
+function sanitizeDock(dock) {
+    if (!dock || typeof dock !== "object" || Array.isArray(dock)) return defaultDock()
+    const zones = sanitizeZones(dock, ZONES)
+    const taken = []
+    const result = { pins: Array.isArray(dock.pins) ? sanitizeDockPins(dock.pins) : DOCK_DEFAULT_PINS.slice() }
+    for (const zone of ZONES) {
+        result[zone] = zones[zone].map(pill => {
+            let id = pill.id.indexOf("dock-") === 0 ? pill.id : "dock-" + pill.id
+            if (taken.indexOf(id) >= 0) id = uniqueId("dock-pill", taken)
+            taken.push(id)
+            return { id: id, items: pill.items }
+        })
+    }
+    return result
+}
+
+function copyDock(dock) {
+    return sanitizeDock(JSON.parse(JSON.stringify(dock || defaultDock())))
+}
+
+// A bar operation (addPill, movePillTo, removeItem …) on the dock's zones:
+// the same function, handed the zones as a bar, and the pins kept.
+function dockZoneOp(dock, operation, args) {
+    const current = sanitizeDock(dock)
+    const asBar = sanitizeBar({ left: current.left, center: current.center, right: current.right })
+    const result = operation.apply(null, [asBar].concat(Array.prototype.slice.call(args || [])))
+    return sanitizeDock({ left: result.left, center: result.center, right: result.right, pins: current.pins })
+}
+
+// The pins: added at the end or at a place, moved, taken out. Never more than
+// DOCK_PIN_LIMIT; a pin that is there already is moved rather than doubled.
+function dockPinAt(dock, pin, index) {
+    const next = copyDock(dock)
+    const name = sanitizeDockPins([pin])[0]
+    if (!name) return next
+    const list = next.pins.filter(item => item !== name)
+    if (list.length >= DOCK_PIN_LIMIT) return next
+    const at = index === undefined || index === null ? list.length : Math.max(0, Math.min(list.length, Math.round(Number(index) || 0)))
+    list.splice(at, 0, name)
+    next.pins = list
+    return next
+}
+function dockUnpin(dock, pin) {
+    const next = copyDock(dock)
+    const name = String(pin || "").replace(/\.desktop$/, "")
+    next.pins = next.pins.filter(item => item !== name)
+    return next
+}
+function dockPinned(dock, pin) {
+    return copyDock(dock).pins.indexOf(String(pin || "").replace(/\.desktop$/, "")) >= 0
+}
+
+// Dock presets (config/dock-presets/*.json): its options in settings.json
+// (dock.*) and its layout here, applied together as one step.
+const DOCK_PRESET_OPTIONS = ["visibility", "position", "span", "iconSize", "margin", "showRunning", "magnification"]
+function sanitizeDockPreset(preset) {
+    if (!preset || typeof preset !== "object") return null
+    const label = typeof preset.label === "string" ? preset.label.trim().slice(0, 40) : ""
+    if (!label.length) return null
+    const options = {}
+    const source = preset.options && typeof preset.options === "object" ? preset.options : {}
+    for (const key of DOCK_PRESET_OPTIONS)
+        if (source[key] !== undefined && source[key] !== null && typeof source[key] !== "object") options[key] = source[key]
+    return { id: typeof preset.id === "string" && preset.id.length ? preset.id : Profile.slug(label), label: label,
+             description: typeof preset.description === "string" ? preset.description.slice(0, PRESET_DESCRIPTION_MAX) : "",
+             icon: typeof preset.icon === "string" ? preset.icon.slice(0, 8) : "",
+             layout: sanitizeDock(preset.layout), options: options }
+}
 
 function sanitizeBar(bar) {
     if (!bar || typeof bar !== "object") return defaultBar()

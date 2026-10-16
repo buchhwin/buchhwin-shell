@@ -97,7 +97,7 @@ ColumnLayout {
                 readonly property bool conflict: ShortcutService.conflicts.indexOf(combo) >= 0
                 Layout.fillWidth: true
                 iconSource: ShortcutService.iconFor(modelData)
-                icon: modelData.app ? "󰀻" : "󰆍"
+                icon: modelData.app ? Icons.apps : "󰆍"
                 title: ShortcutService.labelFor(modelData)
                 subtitle: conflict ? "Not active: the Hyprland config uses this combination too"
                     : modelData.app ? "App" : "Command"
@@ -195,7 +195,7 @@ ColumnLayout {
                 focusOnTab: true
                 Layout.fillWidth: true
                 current: root.kind
-                options: [{ value: "app", label: "Open an app", icon: "󰀻" }, { value: "command", label: "Run a command", icon: "󰆍" }]
+                options: [{ value: "app", label: "Open an app", icon: Icons.apps }, { value: "command", label: "Run a command", icon: "󰆍" }]
                 onSelected: value => { root.kind = value; root.error = "" }
             }
         }

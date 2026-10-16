@@ -13,8 +13,11 @@ EditorPanel {
     readonly property var place: editor.barPlace
     readonly property var pill: editor.barPillEntry
     readonly property var currentItem: pill !== null && editor.barItem >= 0 ? pill.items[editor.barItem] : null
-    readonly property string unit: LayoutService.bar.style === "bar" ? "Group" : "Pill"
-    visible: pill !== null && editor.barMode
+    // The bar's or the dock's: the editor says which (LayoutService.pill*).
+    readonly property string target: editor.zoneTarget
+    readonly property var zones: editor.zones
+    readonly property string unit: target === "dock" || LayoutService.bar.style === "bar" ? "Group" : "Pill"
+    visible: pill !== null && editor.zonesMode
     title: panel.unit + (panel.place ? " · " + (panel.place.zone === "left" ? "Left" : panel.place.zone === "center" ? "Center" : "Right") : "")
 
     // Every control is a Tab stop, top to bottom as drawn, like the panels'
@@ -53,7 +56,7 @@ EditorPanel {
             Layout.fillWidth: true
             current: panel.currentItem ? panel.currentItem.display : "full"
             options: panel.currentItem ? WidgetRegistry.pillDisplays(panel.currentItem.type) : []
-            onSelected: value => LayoutService.barSetDisplay(panel.pill.id, panel.editor.barItem, value)
+            onSelected: value => LayoutService.pillSetDisplay(panel.target, panel.pill.id, panel.editor.barItem, value)
         }
         // The size of this one item, on top of the bar's own size below: the
         // user asked to resize a tile, not only the whole strip.
@@ -64,7 +67,7 @@ EditorPanel {
             Layout.fillWidth: true
             current: panel.currentItem ? (panel.currentItem.size || "small") : "small"
             options: [{ value: "small", label: "Small" }, { value: "medium", label: "Medium" }, { value: "large", label: "Large" }]
-            onSelected: value => LayoutService.barSetItemSize(panel.pill.id, panel.editor.barItem, value)
+            onSelected: value => LayoutService.pillSetItemSize(panel.target, panel.pill.id, panel.editor.barItem, value)
         }
         RowLayout {
             Layout.fillWidth: true
@@ -75,7 +78,7 @@ EditorPanel {
                 enabledState: panel.editor.barItem > 0
                 onClicked: {
                     const index = panel.editor.barItem
-                    LayoutService.barMoveItem(panel.pill.id, index, -1)
+                    LayoutService.pillMoveItem(panel.target, panel.pill.id, index, -1)
                     panel.editor.selectBar(panel.pill.id, index - 1)
                 }
             }
@@ -85,7 +88,7 @@ EditorPanel {
                 enabledState: panel.pill !== null && panel.editor.barItem < panel.pill.items.length - 1
                 onClicked: {
                     const index = panel.editor.barItem
-                    LayoutService.barMoveItem(panel.pill.id, index, 1)
+                    LayoutService.pillMoveItem(panel.target, panel.pill.id, index, 1)
                     panel.editor.selectBar(panel.pill.id, index + 1)
                 }
             }
@@ -95,7 +98,7 @@ EditorPanel {
                 focusOnTab: true
                 icon: "󰤼"; text: "Split off"; compact: true
                 onClicked: {
-                    LayoutService.barSplitItem(panel.pill.id, panel.editor.barItem)
+                    LayoutService.pillSplit(panel.target, panel.pill.id, panel.editor.barItem)
                     panel.editor.selectBar(panel.pill.id, -1)
                 }
             }
@@ -106,8 +109,8 @@ EditorPanel {
             icon: Icons.remove; text: "Remove item"; variant: "danger"
             onClicked: {
                 const id = panel.pill.id
-                LayoutService.barRemoveItem(id, panel.editor.barItem)
-                panel.editor.selectBar(LayoutService.barPlace(id) ? id : "", -1)
+                LayoutService.pillRemoveItem(panel.target, id, panel.editor.barItem)
+                panel.editor.selectBar(LayoutService.pillPlace(panel.target, id) ? id : "", -1)
             }
         }
     }
@@ -122,26 +125,28 @@ EditorPanel {
             Layout.fillWidth: true
             current: panel.place ? panel.place.zone : "center"
             options: [{ value: "left", label: "Left" }, { value: "center", label: "Center" }, { value: "right", label: "Right" }]
-            onSelected: value => LayoutService.barMovePillTo(panel.pill.id, value, LayoutService.bar[value].length)
+            onSelected: value => LayoutService.pillMoveTo(panel.target, panel.pill.id, value, panel.zones[value].length)
         }
         RowLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceXs
             ShellButton { focusOnTab: true; icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Move left"
-                onClicked: LayoutService.barMovePill(panel.pill.id, -1) }
+                onClicked: LayoutService.pillMove(panel.target, panel.pill.id, -1) }
             ShellButton { focusOnTab: true; icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Move right"
-                onClicked: LayoutService.barMovePill(panel.pill.id, 1) }
+                onClicked: LayoutService.pillMove(panel.target, panel.pill.id, 1) }
             Item { Layout.fillWidth: true }
             ShellButton {
-                visible: panel.place !== null && panel.place.index < LayoutService.bar[panel.place.zone].length - 1
+                visible: panel.place !== null && panel.place.index < panel.zones[panel.place.zone].length - 1
                 focusOnTab: true
                 icon: "󰘞"; text: "Merge"; compact: true; toolTip: "Merge with the next " + panel.unit.toLowerCase()
-                onClicked: LayoutService.barMergeWithNext(panel.pill.id)
+                onClicked: LayoutService.pillMerge(panel.target, panel.pill.id)
             }
         }
     }
 
     ColumnLayout {
+        // The bar's own size; the dock's is its icon size (Settings > Dock).
+        visible: panel.target === "bar"
         Layout.fillWidth: true
         spacing: Metrics.spaceXs
         // Size lived only in Settings while widgets could be resized four ways
@@ -164,7 +169,7 @@ EditorPanel {
         onClicked: {
             const id = panel.pill.id
             panel.editor.selectBar("", -1)
-            LayoutService.barRemovePill(id)
+            LayoutService.pillRemove(panel.target, id)
         }
     }
 }

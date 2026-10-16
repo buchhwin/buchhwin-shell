@@ -100,7 +100,7 @@ ShellPanel {
 
             ShellButton {
                 visible: root.page.length === 0 && TrayService.items.length > 0
-                icon: "󰀻"; variant: "ghost"; iconSize: Metrics.iconMd
+                icon: Icons.apps; variant: "ghost"; iconSize: Metrics.iconMd
                 toolTip: "Background apps"
                 onClicked: root.page = "tray"
             }

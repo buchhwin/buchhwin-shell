@@ -48,8 +48,17 @@ Rectangle {
     // leans like a desktop tile, it reports where it is so the editor can draw
     // its frame and its drop marker on the real bar, and its items stop
     // opening panels.
-    readonly property bool editing: LayoutService.editMode && LayoutService.barShown
+    readonly property bool editing: surface === "dock"
+        ? LayoutService.editMode && LayoutService.editTarget === "dock"
+        : LayoutService.editMode && LayoutService.barShown && LayoutService.editTarget !== "dock"
     readonly property bool selected: editing && LayoutService.editorSelection === pill.id
+    // Which surface holds this pill: the bar, or the dock (shell/dock/Dock.qml,
+    // the same pills on another layer). A dock's pill edits with the dock,
+    // tells nothing to the table of where the bar's widgets are (a popup of
+    // the bar's clock must not come out of the dock's), and opens its panels
+    // beside the dock on `dockEdge`.
+    property string surface: "bar"
+    property string dockEdge: "bottom"
     property int wiggleIndex: 0
 
     // The pill reports for itself and for its items: one place, so a delayed
@@ -64,7 +73,7 @@ Rectangle {
             // And, whether or not the editor is open, where this type of
             // widget is: a notification and an OSD come out of the thing they
             // belong to, and they cannot wait for an editor to be opened.
-            if (index < pill.items.length)
+            if (index < pill.items.length && surface === "bar")
                 LayoutService.reportBarItemRect(screenName, pill.items[index].type,
                     visible && segment && segment.visible ? screenRect(segment) : null)
         }
@@ -86,7 +95,7 @@ Rectangle {
         LayoutService.reportSurfaceRect(screenName, pill.id, null)
         for (let index = 0; index < pill.items.length; ++index) {
             LayoutService.reportSurfaceRect(screenName, pill.id + "#" + index, null)
-            LayoutService.reportBarItemRect(screenName, pill.items[index].type, null)
+            if (surface === "bar") LayoutService.reportBarItemRect(screenName, pill.items[index].type, null)
         }
     }
 
@@ -360,7 +369,11 @@ Rectangle {
                                      : root.mapToItem(null, 0, root.height / 2).y + root.reportOrigin.y)
                         : (root.flat ? BarLogic.anchorAlong(topLeft.x, segment.width)
                                      : root.mapToItem(null, root.width / 2, 0).x + root.reportOrigin.x)
-                    const anchor = root.vertical ? { anchorY: along } : { anchorX: along }
+                    const anchor = root.surface !== "dock" ? (root.vertical ? { anchorY: along } : { anchorX: along })
+                        // Out of the dock: above it at the bottom, beside it on a side.
+                        : root.dockEdge === "left" ? { anchorY: along, anchorLeft: topLeft.x + box.width + Metrics.spaceSm, fromDock: true }
+                        : root.dockEdge === "right" ? { anchorY: along, anchorRight: topLeft.x - Metrics.spaceSm, fromDock: true }
+                        : { anchorX: along, anchorBottom: topLeft.y - Metrics.spaceSm, fromDock: true }
                     PanelService.toggle(segment.entry.action, Object.assign(anchor, {
                         originX: topLeft.x, originY: topLeft.y,
                         originWidth: box.width, originHeight: box.height

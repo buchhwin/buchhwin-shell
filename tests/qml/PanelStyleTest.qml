@@ -17,6 +17,12 @@ ShellRoot {
 
         T.near(P.effectiveOpacity("controlCenter", -1, 0.74), 0.74, "default follows the global value")
         T.near(P.effectiveOpacity("controlCenter", 0.5, 0.74), 0.5, "own value wins")
+        T.near(P.effectiveOpacity("dock", 0, 0.74), 0, "the dock may be fully transparent")
+        T.near(P.effectiveOpacity("launcher", 0, 0.74), P.MIN_OPACITY, "a panel keeps its floor")
+        T.near(P.clampOpacity(-1, "dock"), 0, "and not below nothing")
+        T.near(P.surfaceOpacity(0, true, "dock"), 0, "the dock has no light floor either")
+        T.near(P.surfaceOpacity(0.5, true, "launcher"), P.LIGHT_MIN_OPACITY, "a light panel still has")
+        T.eq([P.minOpacity("dock"), P.minOpacity("popups")], [0, P.MIN_OPACITY], "the floors by group")
         T.near(P.effectiveOpacity("controlCenter", 0, 0.74), 0.4, "own value is clamped to the minimum")
         T.near(P.effectiveOpacity("settings", 3, 0.74), 1, "own value is clamped to the maximum")
         T.near(P.effectiveOpacity("launcher", "0.5", 0.74), 0.74, "strings are not overrides")

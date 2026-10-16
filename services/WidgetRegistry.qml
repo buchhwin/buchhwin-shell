@@ -15,12 +15,23 @@ Singleton {
         { id: "desktop", label: "Desktop" },
         { id: "media", label: "Media" },
         { id: "information", label: "Information" },
-        { id: "optional", label: "Optional" }
+        { id: "optional", label: "Optional" },
+        // The dock's own pieces: offered only while the editor edits the dock.
+        { id: "dock", label: "Dock", dockOnly: true }
     ]
 
     readonly property var allStyles: ["minimal", "capsule", "card"]
 
     readonly property var types: ({
+        // The dock's own (shell/dock/Dock.qml): the pinned and running apps,
+        // and a start button that opens the launcher. Not offered on the
+        // desktop or the bar - the apps need the dock's surface around them.
+        "apps": { label: "Apps", icon: Icons.window, category: "dock", dockOnly: true, pillDisplay: "full",
+                  pillDisplays: ["full"], file: "AppsWidget.qml", sizes: ["small"], action: "", available: true,
+                  noHighlight: true, defaults: {} },
+        "start": { label: "Start button", icon: Icons.apps, category: "dock", dockOnly: true, pillDisplay: "icon",
+                   file: "StartWidget.qml", sizes: ["small", "medium", "large"], action: "launcher", available: true,
+                   defaults: {} },
         "clock": { label: "Clock", icon: "󰥔", category: "time", file: "ClockWidget.qml",
                    sizes: ["small", "medium", "large"], action: "dashboard", available: true,
                    defaults: { anchorX: "right", x: 0.985, y: 0.02, size: "small", style: "minimal" } },
