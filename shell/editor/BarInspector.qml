@@ -19,8 +19,9 @@ EditorPanel {
 
     // Every control is a Tab stop, top to bottom as drawn, like the panels'
     // forms. From the editor itself Tab still walks the pills
-    // (EditLayer.barKey); these are the stops for a focus that is already
-    // among the controls, and the names a screen reader gives them.
+    // (EditLayer.barKey) and Ctrl+Tab enters the controls
+    // (EditLayer.walkControls); Tab then walks on among them, and these are
+    // also the names a screen reader gives them.
     ColumnLayout {
         Layout.fillWidth: true
         spacing: Metrics.spaceXs

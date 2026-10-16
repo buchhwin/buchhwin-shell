@@ -142,7 +142,8 @@ Variants {
 
             // The keys back to the editor itself, not to the control in it
             // that had them last. Tab reaches the controls in notch mode (the
-            // other modes keep Tab for their selection), and two things would
+            // other modes keep Tab for their selection and reach them with
+            // Ctrl+Tab, see walkControls), and two things would
             // keep them there: forceActiveFocus() on a focus scope hands focus
             // straight back to that control, and a control that is hidden keeps
             // its focus and its keys - Left on the desktop-mode switch would go
@@ -290,18 +291,38 @@ Variants {
                 }
             }
 
+            // Into the controls from the selection: the toolbar, the inspector,
+            // the picker. Widgets and the bar keep Tab for their selection,
+            // which left every control there out of reach of the keyboard;
+            // Ctrl+Tab is Qt's way out of a place that keeps Tab for itself.
+            // Once a control has the keys, Tab walks on from it (below), and
+            // Escape hands them back (Keys.onEscapePressed).
+            function walkControls(forward) {
+                const next = editorRoot.nextItemInFocusChain(forward)
+                if (next && next !== editorRoot) next.forceActiveFocus(forward ? Qt.TabFocusReason : Qt.BacktabFocusReason)
+            }
+
             // Ctrl+Z and Enter mean the same in every mode, A wherever there
             // is a picker; the rest is the mode's. Notch mode has no keys of
             // its own - it is arranged with the pointer, on the notch - so
             // everything else goes on to the window: Tab then walks the option
             // cards and the toolbar, and Escape has its own handler above.
+            // A control that has the keys (Ctrl+Tab took them there) keeps
+            // them, Ctrl+Z and Enter aside: what it does not take goes on to
+            // the window too, so Tab walks the controls instead of the
+            // selection, and a letter or an arrow it ignores does not move or
+            // remove what is selected.
             Keys.onPressed: event => {
                 const ctrl = (event.modifiers & Qt.ControlModifier) !== 0
                 const step = (event.modifiers & Qt.ShiftModifier) ? Metrics.gridSize : 1
+                const tab = event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab
+                const inControl = editorRoot.Window.activeFocusItem !== editorRoot
                 event.accepted = true
                 if (event.key === Qt.Key_Z && ctrl) LayoutService.undo()
-                else if (event.key === Qt.Key_A && !notchMode) pickerOpen = !pickerOpen
                 else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) LayoutService.editMode = false
+                else if (inControl) event.accepted = false
+                else if (tab && ctrl && !notchMode) walkControls(event.key === Qt.Key_Tab)
+                else if (event.key === Qt.Key_A && !notchMode) pickerOpen = !pickerOpen
                 else if (barMode) event.accepted = barKey(event)
                 else if (notchMode) event.accepted = false
                 else if (event.key === Qt.Key_G) gridEnabled = !gridEnabled
@@ -415,9 +436,9 @@ Variants {
                         color: LayoutService.readOnly ? Colors.warning : Colors.mutedText
                         Layout.rightMargin: Metrics.spaceSm
                     }
-                    // Tab stops, left to right. Tab only gets here where the
-                    // mode leaves it free (notch mode); widgets and the bar
-                    // use it to walk their own selection.
+                    // Tab stops, left to right. Tab gets here where the mode
+                    // leaves it free (notch mode); widgets and the bar use it
+                    // to walk their own selection and get here with Ctrl+Tab.
                     SegmentedControl {
                         focusOnTab: true
                         accessibleName: "Profile"
@@ -484,8 +505,8 @@ Variants {
                 // the notch's cards. Its "↑ ↓" read like arrow keys and were
                 // the small buttons on the items.
                 text: editorRoot.notchMode ? "Tab walks the controls · Ctrl+Z undoes · Enter done · Esc back"
-                    : editorRoot.barMode ? "Drag or arrow keys · Tab selects · A adds · S changes the look · Del removes · Ctrl+Z undoes · Esc back"
-                    : "Drag or arrow keys · Alt disables snapping · Shift+Click multi-selects · Tab selects · A adds · S changes the look · +/− resizes · G grid · Del removes · Ctrl+Z undoes · Esc back"
+                    : editorRoot.barMode ? "Drag or arrow keys · Tab selects · Ctrl+Tab walks the controls · A adds · S changes the look · Del removes · Ctrl+Z undoes · Esc back"
+                    : "Drag or arrow keys · Alt disables snapping · Shift+Click multi-selects · Tab selects · Ctrl+Tab walks the controls · A adds · S changes the look · +/− resizes · G grid · Del removes · Ctrl+Z undoes · Esc back"
                 role: "small"
             }
 
@@ -597,6 +618,8 @@ Variants {
                     SectionLabel { text: "Style" }
                     SegmentedControl {
                         Layout.fillWidth: true
+                        focusOnTab: true
+                        accessibleName: "Style"
                         current: editorRoot.primary ? editorRoot.primary.style : "minimal"
                         options: [{ value: "minimal", label: "Minimal" }, { value: "capsule", label: "Capsule" }, { value: "card", label: "Card" }]
                         onSelected: value => editorRoot.change(() => LayoutService.updateItem(editorRoot.primary.id, { style: value }))
@@ -611,6 +634,8 @@ Variants {
                     SectionLabel { text: "Size" }
                     SegmentedControl {
                         Layout.fillWidth: true
+                        focusOnTab: true
+                        accessibleName: "Size"
                         current: editorRoot.primary && editorRoot.primary.size ? editorRoot.primary.size : "small"
                         options: (editorRoot.primary && WidgetRegistry.type(editorRoot.primary.type) ? WidgetRegistry.type(editorRoot.primary.type).sizes : [])
                             .map(size => ({ value: size, label: size === "small" ? "Small" : size === "medium" ? "Medium" : "Large" }))
@@ -629,6 +654,7 @@ Variants {
                     }
                     ShellSlider {
                         Layout.fillWidth: true
+                        focusOnTab: true
                         from: Metrics.widgetScaleMin
                         to: Metrics.widgetScaleMax
                         value: editorRoot.primary ? editorRoot.primary.scale : 1
@@ -641,6 +667,7 @@ Variants {
                     Layout.fillWidth: true
                     ShellText { text: "Visible"; Layout.fillWidth: true }
                     ShellToggle {
+                        focusOnTab: true
                         checked: editorRoot.primary ? editorRoot.primary.visible : true
                         onToggled: value => editorRoot.change(() => LayoutService.updateItem(editorRoot.primary.id, { visible: value }))
                     }
@@ -656,6 +683,7 @@ Variants {
                         ShellButton {
                             required property var modelData
                             Layout.fillWidth: true
+                            focusOnTab: true
                             icon: "󰍹"
                             text: "Move to " + modelData.name
                             onClicked: {
@@ -686,9 +714,9 @@ Variants {
                             title: (WidgetRegistry.type(modelData.type) || { label: modelData.type }).label
                             RowLayout {
                                 spacing: Metrics.spaceXxs
-                                ShellButton { toolTip: "Move left in the group"; icon: Icons.back; compact: true; variant: "ghost"
+                                ShellButton { toolTip: "Move left in the group"; icon: Icons.back; compact: true; variant: "ghost"; focusOnTab: true
                                     onClicked: editorRoot.change(() => LayoutService.moveMember(editorRoot.primary.id, modelData.id, -1)) }
-                                ShellButton { toolTip: "Move right in the group"; icon: Icons.forward; compact: true; variant: "ghost"
+                                ShellButton { toolTip: "Move right in the group"; icon: Icons.forward; compact: true; variant: "ghost"; focusOnTab: true
                                     onClicked: editorRoot.change(() => LayoutService.moveMember(editorRoot.primary.id, modelData.id, 1)) }
                             }
                         }
@@ -698,6 +726,7 @@ Variants {
                 ShellButton {
                     visible: editorRoot.selectedItems.length > 1 && editorRoot.selectedItems.every(entry => entry.members === undefined)
                     Layout.fillWidth: true
+                    focusOnTab: true
                     icon: "󰕸"
                     text: "Group"
                     onClicked: editorRoot.change(() => {
@@ -708,6 +737,7 @@ Variants {
                 ShellButton {
                     visible: editorRoot.primaryIsGroup
                     Layout.fillWidth: true
+                    focusOnTab: true
                     icon: "󰕹"
                     text: "Ungroup"
                     onClicked: {
@@ -718,6 +748,7 @@ Variants {
                 }
                 ShellButton {
                     Layout.fillWidth: true
+                    focusOnTab: true
                     icon: Icons.remove
                     text: "Remove"
                     variant: "danger"

@@ -27,6 +27,9 @@ packages=(
   # the backends the shell drives
   brightnessctl wireplumber pipewire-tools playerctl NetworkManager
   plocate jq curl grim slurp swappy wl-clipboard gammastep
+  # xclip: reads what an X11 program (Citrix) copied, for the clipboard
+  # bridge (scripts/x11-clipboard-bridge.py); in Leap 16.0's repo-oss
+  xclip
   swaylock swayidle kdialog udisks2 wireguard-tools
   # setpriv: the shell's long-running helpers die with it (--pdeathsig)
   util-linux
