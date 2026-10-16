@@ -231,24 +231,13 @@ malloc_arenas=${MALLOC_ARENA_MAX:-2}
 # exported value wins (A/B).
 mesa_glthread_value=${mesa_glthread:-false}
 gallium_thread=${GALLIUM_THREAD:-0}
-# Transparent huge pages back the shell's malloc heaps in 2 MB pieces when
-# the kernel runs them `always` (Arch does): on 15.10. 176 of the live shell's
-# 301 MB of anonymous memory were huge pages, mostly empty ones. Measured
-# nested, two runs each: RssAnon 340-349 MB with them, 178-182 MB without,
-# the screen identical. prctl(PR_SET_THP_DISABLE) turns them off for this
-# process and what it starts, and survives the exec into quickshell, so the
-# pid the loop waits for is still the shell's. A one-line Python stub, since
-# no tool has the call; without python3 the shell starts as before.
-# BUCHHWIN_SHELL_THP=on keeps them (A/B).
-thp_off=()
-if [[ ${BUCHHWIN_SHELL_THP:-off} != on ]] && command -v python3 >/dev/null 2>&1; then
-  thp_off=(python3 -I -c 'import ctypes, os, sys
-try:
-    ctypes.CDLL(None).prctl(41, 1, 0, 0, 0)
-except Exception:
-    pass
-os.execvp(sys.argv[1], sys.argv[1:])')
-fi
+# Transparent huge pages: with the kernel set to `always` (Arch's default)
+# the shell's heaps sit in mostly empty 2 MB pages - on 15.10. RssAnon was
+# 340-349 MB with them and 178-182 MB without (nested, the screen the same).
+# That is a setting of the machine, `madvise` on most desktops, and doctor.sh
+# says so; it is not switched off from here any more. A prctl in front of
+# quickshell did it for one day and every application the shell started -
+# a browser from the launcher, Citrix from that browser - inherited it.
 
 # The tray is the shell's: it is org.kde.StatusNotifierWatcher in this
 # session. A kded6 that something D-Bus-activated (all 29 Plasma modules,
@@ -277,7 +266,7 @@ while true; do
   release_tray
   env -u QT_QPA_PLATFORMTHEME QS_ICON_THEME="$icon_theme" MALLOC_ARENA_MAX="$malloc_arenas" \
     mesa_glthread="$mesa_glthread_value" GALLIUM_THREAD="$gallium_thread" \
-    "${thp_off[@]}" quickshell --no-duplicate --path "$config_dir" >>"$log_file" 2>&1 &
+    quickshell --no-duplicate --path "$config_dir" >>"$log_file" 2>&1 &
   child=$!
   # `wait` returns as soon as a trapped signal arrives, before the shell has
   # gone; wait again for its real status.

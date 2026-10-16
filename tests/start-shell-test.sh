@@ -41,8 +41,6 @@ if [[ ${1:-} == hold ]]; then
 fi
 n=$(cat "$COUNT" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$COUNT"
 echo "run $n"
-# Whether this process may have transparent huge pages (0: turned off).
-[[ -n ${THP_SEEN:-} ]] && awk '/^THP_enabled:/ { print $2 }' /proc/$$/status > "$THP_SEEN"
 # exit 139 is what the supervisor's wait sees from a shell killed by
 # SIGSEGV (128 + 11), without a real crash: a real one is a coredump, and
 # on a Plasma desktop DrKonqi reports every one of them as a crash of bash.
@@ -175,17 +173,6 @@ kill "$orphan" "$held_shell" 2>/dev/null; wait "$orphan" "$held_shell" 2>/dev/nu
 echo 0 > "$COUNT"; CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
 check '[[ $(cat "$COUNT") == 1 ]]' "a clean exit stops (got $(cat "$COUNT"))"
 
-# the shell runs without transparent huge pages, unless asked to keep them
-# (a kernel too old to report THP_enabled has nothing to compare)
-if grep -q '^THP_enabled:' /proc/self/status; then
-  : > "$SB/thp"; echo 0 > "$COUNT"; THP_SEEN="$SB/thp" bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
-  check '[[ $(cat "$SB/thp") == 0 ]]' "the shell starts with huge pages off (THP_enabled $(cat "$SB/thp"))"
-  # "on" leaves the shell as the process that started it is: a test run
-  # from a program the shell started has them off already (inherited).
-  inherited=$(awk '/^THP_enabled:/ { print $2 }' /proc/self/status)
-  : > "$SB/thp"; echo 0 > "$COUNT"; BUCHHWIN_SHELL_THP=on THP_SEEN="$SB/thp" bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
-  check '[[ $(cat "$SB/thp") == "$inherited" ]]' "BUCHHWIN_SHELL_THP=on leaves them as they were (THP_enabled $(cat "$SB/thp"), started with $inherited)"
-fi
 
 # SIGTERM is a request, not a fault
 cat > "$SB/bin/quickshell" <<'Q'

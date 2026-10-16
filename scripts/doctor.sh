@@ -148,4 +148,15 @@ else
   printf 'absent   %s (run install/install.sh --apply to copy it)\n' "$fastfetch_config"
 fi
 
+# A machine setting, said rather than changed: with transparent huge pages
+# `always` the kernel backs mostly empty heap ranges with 2 MB pages, and the
+# shell holds about twice its memory (15.10.: 340 against 180 MB). `madvise`
+# gives them to the programs that ask, the usual setting on a desktop.
+thp=/sys/kernel/mm/transparent_hugepage/enabled
+if [[ -r $thp ]] && grep -q '\[always\]' "$thp"; then
+  printf '\nMemory\n'
+  printf 'note     transparent huge pages are "always"; "madvise" halves the shell'"'"'s memory:\n'
+  printf '         echo madvise | sudo tee %s\n' "$thp"
+fi
+
 exit "$status"
