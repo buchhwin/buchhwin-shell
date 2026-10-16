@@ -29,7 +29,13 @@ PopupPanel {
         id: media
         spacing: Metrics.pageGap
         readonly property var player: MprisService.active
-        readonly property bool seekable: player !== null && player.lengthSupported && player.length > 0
+        // A real length (MprisService.lengthOf): a live stream has none, and
+        // gets no seek bar and no remaining time rather than a dead bar and
+        // "−153722867280:48".
+        readonly property real trackLength: MprisService.trackLength
+        readonly property bool seekable: player !== null && trackLength > 0
+        readonly property real shownPosition: seekable
+            ? Math.max(0, Math.min(trackLength, seek.pressed ? seek.liveValue * trackLength : player.position)) : 0
         readonly property var entry: player && player.desktopEntry ? DesktopEntries.byId(player.desktopEntry) : null
         Component.onCompleted: MprisService.trackers += 1
         Component.onDestruction: MprisService.trackers = Math.max(0, MprisService.trackers - 1)
@@ -103,7 +109,7 @@ PopupPanel {
                     visible: media.seekable
                     spacing: Metrics.spaceSm
                     ShellText {
-                        text: media.seekable ? MprisService.formatTime(seek.pressed ? seek.liveValue * media.player.length : media.player.position) : ""
+                        text: media.seekable ? MprisService.formatTime(media.shownPosition, media.trackLength) : ""
                         role: "caption"
                         font.features: { "tnum": 1 }
                     }
@@ -111,12 +117,13 @@ PopupPanel {
                         focusOnTab: true
                         id: seek
                         Layout.fillWidth: true
+                        accessibleName: "Position"
                         enabledState: media.player !== null && media.player.canSeek
-                        value: media.seekable ? media.player.position / media.player.length : 0
+                        value: media.seekable ? Math.min(1, media.player.position / media.trackLength) : 0
                         onReleased: value => MprisService.seekTo(value)
                     }
                     ShellText {
-                        text: media.seekable ? "−" + MprisService.formatTime(media.player.length - (seek.pressed ? seek.liveValue * media.player.length : media.player.position)) : ""
+                        text: media.seekable ? "−" + MprisService.formatTime(media.trackLength - media.shownPosition, media.trackLength) : ""
                         role: "caption"
                         font.features: { "tnum": 1 }
                     }
@@ -183,6 +190,7 @@ PopupPanel {
                         focusOnTab: true
                         visible: MprisService.hasVolume
                         Layout.preferredWidth: Metrics.popupMediaVolume
+                        accessibleName: "Player volume"
                         value: MprisService.volume
                         onMoved: value => MprisService.setVolume(value)
                     }

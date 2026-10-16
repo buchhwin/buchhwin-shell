@@ -20,7 +20,11 @@
 var catalogue = [
     { type: "clock", label: "Time", icon: "󰥔", w: 1, h: 2 },
     { type: "weather", label: "Weather", icon: "󰖐", w: 1, h: 4, minH: 2 },
-    { type: "calendar", label: "Month", icon: "󰃭", w: 1, h: 5, minH: 4 },
+    // Five rows, because the month is six weeks: the header, the weekday
+    // names and six rows of days are 346 px on a card, and four rows (292 px
+    // with the 12 px gaps) hid the sixth week - 30 November 2026 and every
+    // month like it. DashboardCardTest measures the grid against this.
+    { type: "calendar", label: "Month", icon: "󰃭", w: 1, h: 5, minH: 5 },
     { type: "events", label: "The day's events", icon: "󰃰", w: 1, h: 3, minH: 2 },
     // The two readouts the dashboard was planned with and never got. Their
     // start heights are *not* the control center's: a row there is 30 px and
@@ -58,11 +62,26 @@ function size(type) {
     return found ? { w: found.w, h: found.h } : { w: 1, h: 1 }
 }
 
-// The smallest cell this card may be pulled to. A month grid below three rows
-// is a strip of numbers with no month in it, and a forecast below two is a
-// heading; the clock is happy at a single step, so it says nothing here.
+// The smallest cell this card may be pulled to. A month grid below five rows
+// loses its last week, and a forecast below two is a heading; the clock is
+// happy at a single step, so it says nothing here.
 function minSize(type) {
     return Fit.minSize(entry(type))
+}
+
+// The cell a stored card is drawn in: its own size, but never below the
+// card's minimum. A layout from before a minimum was raised (the month at
+// four rows, Default's own) is drawn at the new one rather than cut off,
+// and nothing is written - the stored size stays the user's until they
+// pull the corner.
+function shownSize(type, w, h) {
+    const least = minSize(type)
+    return { w: Math.max(least.w, Number(w) || 1), h: Math.max(least.h, Number(h) || 1) }
+}
+
+// How tall a cell of `rows` steps is, gaps between them included.
+function cellHeight(rows, unit, gap) {
+    return rows * unit + Math.max(0, rows - 1) * gap
 }
 
 function isKnown(type) {

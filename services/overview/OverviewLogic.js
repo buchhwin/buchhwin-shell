@@ -149,8 +149,8 @@ function groups(entries, monitors) {
     // row per monitor it throws the one thing this layout is for away. The
     // rows then stood in a different order every time depending on which
     // screen the overview was opened from - left, middle, right becomes
-    // middle, left, right - and the user reported it as the workspaces being
-    // jumbled again. A row already says "Monitor 2 - DP-10" and draws that in
+    // middle, left, right - which reads as the workspaces being jumbled
+    // again. A row already says "Monitor 2 - DP-2" and draws that in
     // the accent colour when it is the focused one; that is enough to find it,
     // and it costs nothing to look for.
     return result

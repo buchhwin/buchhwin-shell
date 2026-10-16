@@ -19,6 +19,14 @@ if [[ $(readlink -f "${BUCHHWIN_SHELL_PATH:-$installed_dir}") == "$(readlink -f 
   printf 'stop-shell: set BUCHHWIN_SHELL_PATH to say which shell you mean\n' >&2
   exit 1
 fi
+# Half of a nested session's environment is refused too, as in
+# reload-shell.sh: a signature and a display of two different sessions do not
+# say which shell is meant, and quickshell looks for it on the display alone.
+if nested_mixed_environment; then
+  printf 'stop-shell: HYPRLAND_INSTANCE_SIGNATURE and WAYLAND_DISPLAY belong to different sessions; refusing\n' >&2
+  printf 'stop-shell: for the nested session export both (and its XDG dirs) from scripts/nested-session.sh start\n' >&2
+  exit 1
+fi
 # Called from another checkout (the development repository while the session
 # runs from the stable worktree, see scripts/deploy.sh): act on the session's
 # own copy instead of starting or stopping a shell from this checkout.

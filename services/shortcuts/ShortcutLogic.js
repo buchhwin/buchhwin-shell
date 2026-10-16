@@ -123,6 +123,31 @@ function titleOf(title, group, extra) {
     return Object.assign({ title: title, group: group || titleGroups[title] || "other" }, extra || {})
 }
 
+// What a scripts/launch-terminal.sh bind runs, for its title, from the rest
+// of the line after the script: the file name of the command's first word,
+// past the script's own options (`launch-terminal.sh --hold -- /usr/bin/btop`
+// is "btop"), or "" when the bind only opens the terminal. Words in plain sh
+// quotes, which is all a bind line holds.
+function terminalProgram(rest) {
+    const words = []
+    const pattern = /'([^']*)'|"((?:[^"\\]|\\.)*)"|(\S+)/g
+    let match
+    // A quoted script path leaves its closing quote in front.
+    const text = String(rest || "").replace(/^['"]/, "")
+    while ((match = pattern.exec(text)) !== null)
+        words.push(match[1] !== undefined ? match[1] : match[2] !== undefined ? match[2].replace(/\\(.)/g, "$1") : match[3])
+    let index = 0
+    while (index < words.length) {
+        const word = words[index]
+        if (word === "--") { index += 1; break }
+        if (word === "--unit" || word === "--title") index += 2
+        else if (word === "--hold") index += 1
+        else break
+    }
+    const program = index < words.length ? words[index] : ""
+    return program.slice(program.lastIndexOf("/") + 1)
+}
+
 function describeExec(arg) {
     const text = String(arg || "")
     let match = text.match(/ipc call (\w+) (\w+)/)
@@ -152,7 +177,13 @@ function describeExec(arg) {
     if (match) return titleOf(match[1] === "region" ? "Screenshot of a region" : match[1] === "screen" ? "Screenshot of the screen" : "Screenshot of a window")
     if (/reload-shell\.sh\b/.test(text)) return titleOf("Restart buchhwin-shell")
     if (/session-action\.sh lock\b/.test(text)) return titleOf("Lock screen")
+    match = text.match(/launch-terminal\.sh\b(.*)$/)
+    if (match) {
+        const program = terminalProgram(match[1])
+        return program.length ? titleOf(program + " in the terminal", "apps") : titleOf("Terminal")
+    }
     if (/launch-kitty\.sh\b/.test(text)) return titleOf("Kitty", "apps")
+    if (/launch-alacritty\.sh\b/.test(text)) return titleOf("Alacritty", "apps")
     if (/launch-brave\.sh\b/.test(text)) return titleOf("Brave", "apps")
     if (/launch-chrome\.sh\b/.test(text)) return titleOf("Google Chrome", "apps")
     if (/launch-chromium-browser\.sh\b/.test(text)) return titleOf("Chromium", "apps")
@@ -369,6 +400,17 @@ function parseStore(text) {
 
 function serializeStore(list) {
     return JSON.stringify({ configVersion: 1, custom: list }, null, 2) + "\n"
+}
+
+// Whether a read of shortcuts.json is news. Before the first read every
+// answer is; after it, not an empty read (the file caught while it is being
+// replaced) and not the text this shell wrote last, which the watch reads
+// back after every save (docs/testing.md, pitfall 77): parsed again it handed
+// out a new list, rebuilt every row and ran one more `hyprctl -j binds`.
+function storeReadIsNews(loaded, text, written) {
+    if (!loaded) return true
+    const value = String(text || "")
+    return value.trim().length > 0 && value !== written
 }
 
 function entryLabel(entry) {

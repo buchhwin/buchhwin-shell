@@ -247,6 +247,58 @@ function withState(config, name, state) {
     return sanitize(next)
 }
 
+// ---- undo ----------------------------------------------------------------
+// What LayoutService.undo decides, apart from the config the step holds.
+
+// The profiles' stored states for the config an undo step brings back. A step
+// holds none (LayoutService.undoConfig): each profile keeps the state it has
+// now, so undoing an edit never takes back what a switch stored or what
+// entering a built-in one applied. A profile without one now takes the state
+// its step was handed - the one that step's change took away: a profile
+// removed (back now), or a built-in one Reset while another was in use (its
+// state dropped so the next entry brings the shipped setup; undone, the
+// user's own comes back with its modes). Changes and returns `stepConfig`,
+// the step's own parsed copy.
+function withUndoStates(stepConfig, config, handed) {
+    const kept = handed && typeof handed === "object" ? handed : {}
+    const profiles = stepConfig && stepConfig.profiles ? stepConfig.profiles : {}
+    for (const name of Object.keys(profiles)) {
+        const now = config && config.profiles ? config.profiles[name] : null
+        const state = now && now.state ? now.state : kept[name] || null
+        if (state) profiles[name].state = state
+        else delete profiles[name].state
+    }
+    return stepConfig
+}
+
+// The mode an undo step leaves in use. A step holds the whole config, the
+// mode in use with it, but only the step of a switch the user made
+// (`modeSwitch`) takes the mode back. Any other keeps the mode in use now: it
+// differs from the step's only after an automatic switch (a monitor plugged
+// in), which takes no step - the machine chose that mode, and undoing an edit
+// made before it must not switch back under the user's hands. The same holds
+// for the user's switch once the machine has switched again since: the mode
+// it went to (`modeSwitch.to`) is no longer in use, and switching back to the
+// one before it would leave a docked laptop in Laptop.
+function modeAfterUndo(step, current) {
+    const switched = step && step.modeSwitch && step.config && typeof step.config.activeMode === "string"
+    if (!switched) return current
+    const to = step.modeSwitch.to
+    return typeof to === "string" && to.length && to !== current ? current : step.config.activeMode
+}
+
+// Do Not Disturb after a mode switch is undone. A mode whose template turns
+// it on (gaming's `effects.dnd`) and found it off says so in its step
+// (`modeSwitch.dnd`, the value it set). Undone, it goes off again - unless it
+// was changed since (it is no longer what the mode set), or the mode undone
+// to sets its own on entering (applyModeSettings does that). "" leaves it.
+function dndAfterUndo(switched, dndNow, restoredEffects) {
+    const set = switched && typeof switched.dnd === "string" ? switched.dnd : ""
+    if (!set.length || dndNow !== set) return ""
+    if (restoredEffects && restoredEffects.dnd) return ""
+    return "off"
+}
+
 // What the profile in use gets once per start (LayoutService.settleActiveState):
 // "" when it has a state already; "shipped" for a built-in one whose shipped
 // setup (`hasShipped`: the file was read) is to be applied; "current" when it
@@ -756,7 +808,7 @@ function notchItems(notch, zone) {
 // ---- notch presets ---------------------------------------------------------
 // A preset is a whole notch: both lists and the options that shape it (size,
 // outline, how it opens, and the collapsed body's height, corner radius and
-// padding - Classic's 32 / 11 / 16 against Island's 40 / 16 / 22). The
+// padding - Classic's 32 / 11 / 16 against Island's 34 / 14 / 22). The
 // built-in ones are files in config/notch-presets/ written in a short form;
 // the user's own live in the layout file beside the notch itself, global like
 // it. Applying one is a single undo step (LayoutService.applyNotchPreset).
@@ -796,6 +848,11 @@ function notchFromSpec(spec) {
     return sanitizeNotch({ collapsed: zone(spec && spec.collapsed), expanded: zone(spec && spec.expanded) })
 }
 
+// How long a preset's description may be. The picker wraps it under the name,
+// so this only keeps a hand-edited layout file from filling the card; at 120
+// it cut Island's own 143 characters off mid-word.
+var PRESET_DESCRIPTION_MAX = 280
+
 // A preset as stored or loaded: null when it has no name to show.
 function sanitizeNotchPreset(preset, builtin) {
     if (!preset || typeof preset !== "object") return null
@@ -804,7 +861,7 @@ function sanitizeNotchPreset(preset, builtin) {
     const layout = preset.layout && typeof preset.layout === "object" ? sanitizeNotch(preset.layout) : notchFromSpec(preset)
     return { id: typeof preset.id === "string" && preset.id.length ? preset.id : Profile.slug(label),
              label: label, builtin: builtin === true,
-             description: typeof preset.description === "string" ? preset.description.slice(0, 120) : "",
+             description: typeof preset.description === "string" ? preset.description.slice(0, PRESET_DESCRIPTION_MAX) : "",
              layout: layout, options: notchPresetOptions(preset.options) }
 }
 
@@ -935,10 +992,10 @@ function adoptNotchHeader(notch) {
 // blocks with two hand-written pairing rules - the mode switch riding in the
 // search field's row, the categories standing beside the result list - on the
 // reasoning that a free grid is one in which you can build yourself a result
-// list two rows high. The user asked for the grid anyway, twice, and named the
-// reason the second time: the rest of the shell works like that, and a surface
-// that does not is the odd one out. So the pairings are gone and the launcher
-// is a grid like the control center and the dashboard, with its own catalogue.
+// list two rows high. The grid won anyway, for the reason that decided it:
+// the rest of the shell works like that, and a surface that does not is the
+// odd one out. So the pairings are gone and the launcher is a grid like the
+// control center and the dashboard, with its own catalogue.
 //
 // **Four columns, eight rows, and a row is an eighth of the card's height.**
 // Everything else here uses a fixed row height and scrolls; the launcher

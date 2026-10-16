@@ -21,11 +21,13 @@ ColumnLayout {
             // the page's ink, as the bar widget's is. The accent on the
             // Network and Bluetooth pages says "on", and running on battery is
             // not something switched on - in the accent it read as a setting.
+            // Charging is on: the green, or the accent when Settings > Power >
+            // Status colors asks for it.
             RowLayout {
                 spacing: Metrics.spaceMd
                 ShellIcon {
                     glyph: PowerService.icon; size: Metrics.iconXl
-                    color: PowerService.charging ? Colors.success : PowerService.low ? Colors.danger : Colors.text
+                    color: PowerService.charging ? Colors.positive : PowerService.low ? Colors.danger : Colors.text
                 }
                 ColumnLayout {
                     spacing: 0
@@ -42,16 +44,23 @@ ColumnLayout {
         }
     }
 
-    SectionLabel { text: "Power profile"; Layout.leftMargin: Metrics.spaceSm }
-    SegmentedControl {
+    // The title inside the card, as on every other page of the control center
+    // (Audio's "Output", the Network and Bluetooth lists): an upper-case
+    // label floating above a bare control was the one section here drawn
+    // another way.
+    CardSection {
         Layout.fillWidth: true
-        accessibleName: "Power profile"
-        current: String(PowerService.profile)
-        options: [
-            { value: String(PowerProfile.PowerSaver), label: "Power saver", icon: "󰌪" },
-            { value: String(PowerProfile.Balanced), label: "Balanced", icon: "󰾅" }
-        ].concat(PowerService.hasPerformance ? [{ value: String(PowerProfile.Performance), label: "Performance", icon: "󰓅" }] : [])
-        onSelected: value => PowerService.setProfile(parseInt(value))
+        title: "Power profile"
+        SegmentedControl {
+            Layout.fillWidth: true
+            accessibleName: "Power profile"
+            current: String(PowerService.profile)
+            options: [
+                { value: String(PowerProfile.PowerSaver), label: "Power saver", icon: "󰌪" },
+                { value: String(PowerProfile.Balanced), label: "Balanced", icon: "󰾅" }
+            ].concat(PowerService.hasPerformance ? [{ value: String(PowerProfile.Performance), label: "Performance", icon: "󰓅" }] : [])
+            onSelected: value => PowerService.setProfile(parseInt(value))
+        }
     }
     ShellText {
         Layout.fillWidth: true

@@ -8,9 +8,10 @@ import "updates/UpdatesLogic.js" as Logic
 // as the user) and Flatpaks (system and user installations) through
 // scripts/updates-check.sh. Installing needs the administrator password, so
 // the shell only checks and hands off to Discover; Flatpaks of the user
-// installation can be updated in a Kitty window on request. The automatic
-// check (every `updates.checkHours`) and its notification only run in the real
-// session; nested sessions check on "Check now" from the dnf cache and never
+// installation can be updated in a terminal window on request (the session's
+// terminal, scripts/launch-terminal.sh). The automatic check (every
+// `updates.checkHours`) and its notification only run in the real session;
+// nested sessions check on "Check now" from the dnf cache and never
 // notify. Last check times, the notified set and the last result are kept in
 // $XDG_STATE_HOME/buchhwin-shell/updates.json.
 //
@@ -46,7 +47,7 @@ Singleton {
     readonly property string summary: checking && !result.packagesKnown && !result.flatpaksKnown ? "Checking for updates …" : Logic.summary(result)
     readonly property real lastCheck: preview ? previewTime : state.lastCheck
     readonly property string checkedText: Logic.checkedText(lastCheck, now)
-    readonly property bool flatpakUpdating: flatpakProc.running
+    readonly property bool flatpakUpdating: flatpakJob.busy
     readonly property bool actionsAllowed: realSession && !preview
     readonly property string flatpakInstallations: Logic.installationsText(result)
     // Expanded lists on the page (kept here so IPC can open them for screenshots).
@@ -75,12 +76,21 @@ Singleton {
     function finishShell(text) {
         shell = Logic.parseShellReport(text)
         saveState(Object.assign({}, state, { shell: shell }))
-        if (shellProc.automatic && shellAuto && realSession && shellUpdatable) updateShell()
+        if (shellProc.automatic && shellAuto && realSession && shellUpdatable
+            && Logic.shellUpdateAllowed(upgrading, flatpakUpdating)) updateShell()
     }
+
+    // An upgrade or Flatpak update in its terminal (below) holds the shell's
+    // own update back until it has finished.
+    readonly property bool terminalBusy: !Logic.shellUpdateAllowed(upgrading, flatpakUpdating)
 
     function updateShell() {
         if (!actionsAllowed) {
             say(preview ? "Preview data: updates are disabled" : "Updating only runs in the buchhwin-shell session", true)
+            return
+        }
+        if (terminalBusy) {
+            say("The shell updates once the update in the terminal window has finished", true)
             return
         }
         if (shellUpdateProc.running || !shellUpdatable) return
@@ -164,13 +174,15 @@ Singleton {
 
     // ---- actions --------------------------------------------------------------
     function openDiscover() {
-        Quickshell.execDetached(Logic.discoverCommand())
+        Quickshell.execDetached(Logic.discoverCommand(Paths.script("launch-app.sh")))
         PanelService.close("settings")
     }
 
     // The page's install button: Discover, or on Arch the whole upgrade in a
-    // terminal window, checked again once that window is closed.
-    readonly property bool upgrading: upgradeProc.running
+    // terminal window, checked again once that window is closed. Settings
+    // closes as it opens, as it does for Discover: it holds the keyboard and
+    // covers the window, and the terminal asks for a password first (pitfall 6).
+    readonly property bool upgrading: upgradeJob.busy
     function installSystem() {
         if (!DistroService.upgradesInTerminal) {
             openDiscover()
@@ -180,16 +192,10 @@ Singleton {
             say(preview ? "Preview data: updates are disabled" : "Updating only runs in the buchhwin-shell session", true)
             return
         }
-        if (upgradeProc.running) return
-        upgradeProc.command = Logic.terminalUpgradeCommand(Paths.script("launch-kitty.sh"))
-        upgradeProc.running = true
+        if (upgradeJob.busy) return
+        upgradeJob.start(Logic.terminalUpgradeCommand(Paths.script("launch-terminal.sh")))
         say("Upgrading the system in a terminal window …", false)
-    }
-
-    Process {
-        id: upgradeProc
-        stderr: ErrorLog { label: "UpdatesService.upgradeProc" }
-        onRunningChanged: if (!running) root.check(false)
+        PanelService.close("settings")
     }
 
     function updateFlatpaks() {
@@ -197,17 +203,96 @@ Singleton {
             say(preview ? "Preview data: updates are disabled" : "Updating only runs in the buchhwin-shell session", true)
             return
         }
-        if (flatpakProc.running) return
-        flatpakProc.command = Logic.flatpakUpdateCommand(Paths.script("launch-kitty.sh"))
-        flatpakProc.running = true
+        if (flatpakJob.busy) return
+        flatpakJob.start(Logic.flatpakUpdateCommand(Paths.script("launch-terminal.sh")))
         say("Updating Flatpaks in a terminal window …", false)
+        PanelService.close("settings")
     }
 
-    // Check again once the terminal window is closed.
-    Process {
-        id: flatpakProc
-        stderr: ErrorLog { label: "UpdatesService.flatpakProc" }
-        onRunningChanged: if (!running) root.check(false)
+    // A terminal of the page, run as a user service of its own and watched
+    // by its unit (UpdatesLogic.UPGRADE_UNIT): no longer a child of the shell,
+    // so a reload, a deploy or the shell's own update leaves it - and the
+    // pacman in it - alone. `busy` from the start until the unit is gone; a
+    // shell started while one runs (the restart after a deploy) picks it up.
+    // The unit lasts as long as the window because launch-terminal.sh keeps
+    // every terminal in its own process (Konsole --nofork, GNOME Terminal
+    // --wait …) rather than handing the window to one already running.
+    // A Process's `running` turns true only some time after the start, and a
+    // command that cannot start only turns it false, without `exited`
+    // (probed on 0.3.2): own flags say what is going on, and the status of
+    // the start is -1 until it exits (-2: watched only, not started here).
+    component TerminalJob: Scope {
+        id: job
+        required property string unit
+        property bool starting: false
+        property bool watching: false
+        property int startCode: -2
+        readonly property bool busy: starting || watching
+        // The unit ran and is gone: the window was closed.
+        signal ended()
+        signal failed(int code)
+
+        function start(command) {
+            if (busy) return
+            startCode = -1
+            starting = true
+            starter.command = command
+            starter.running = true
+        }
+        function watch() {
+            if (watching) return
+            watcher.seen = false
+            watching = true
+            watcher.running = true
+        }
+
+        Process {
+            id: starter
+            stderr: ErrorLog { label: "UpdatesService." + job.unit }
+            onExited: (code, status) => { job.startCode = code }
+            onRunningChanged: {
+                if (running || !job.starting) return
+                // Watching first, so `busy` does not drop for a moment.
+                job.watch()
+                job.starting = false
+            }
+        }
+        Process {
+            id: watcher
+            property bool seen: false
+            command: Paths.bound(Logic.unitWatchCommand(job.unit))
+            stderr: ErrorLog { label: "UpdatesService." + job.unit + ".watch" }
+            stdout: SplitParser { onRead: data => { if (data.trim() === "active") watcher.seen = true } }
+            onRunningChanged: {
+                if (running || !job.watching) return
+                job.watching = false
+                // Without a user manager launch-app.sh starts the terminal
+                // with no unit to watch (status 0): nothing to say then.
+                if (watcher.seen) job.ended()
+                else if (job.startCode !== 0 && job.startCode !== -2) job.failed(job.startCode)
+                job.startCode = -2
+            }
+        }
+    }
+
+    TerminalJob {
+        id: upgradeJob
+        unit: Logic.UPGRADE_UNIT
+        onEnded: root.check(false)
+        onFailed: code => root.say("The terminal window could not be opened (" + (code < 0 ? "not started" : "exit " + code) + ")", true)
+    }
+    TerminalJob {
+        id: flatpakJob
+        unit: Logic.FLATPAK_UNIT
+        onEnded: root.check(false)
+        onFailed: code => root.say("The terminal window could not be opened (" + (code < 0 ? "not started" : "exit " + code) + ")", true)
+    }
+
+    // A terminal started by the shell before a restart is still the page's.
+    Component.onCompleted: {
+        if (!realSession) return
+        upgradeJob.watch()
+        flatpakJob.watch()
     }
 
     // ---- notifications (notify-send to the shell's own server) ----------------

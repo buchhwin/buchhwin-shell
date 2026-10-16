@@ -83,7 +83,7 @@ ColumnLayout {
         // same thing is two answers to one question.
         ShellText {
             Layout.fillWidth: true
-            text: "App categories sit in the sidebar, as a row of chips, or not at all. The pencil in the launcher's own header arranges its blocks; Ctrl+Up and Ctrl+Down walk the categories wherever they are."
+            text: "App categories sit in the sidebar, as a row of chips, or not at all. “Arrange the launcher” in the launcher's own header moves its blocks; Ctrl+Up and Ctrl+Down walk the categories wherever they are."
             role: "small"; muted: true; wrapMode: Text.Wrap
         }
     }
@@ -137,12 +137,15 @@ ColumnLayout {
                             && LauncherService.pinnedApps[LauncherService.pinnedApps.length - 1].id !== id
                         onClicked: LauncherService.movePinned(id, 1)
                     }
+                    // Asks first, like the other removes in a list here.
                     ShellButton {
                         focusOnTab: true
                         icon: Icons.remove
                         variant: "ghost"
                         compact: true
                         toolTip: "Unpin"
+                        confirm: true
+                        confirmText: "Unpin?"
                         onClicked: LauncherService.togglePin(id)
                     }
                 }
@@ -180,20 +183,23 @@ ColumnLayout {
             visible: root.engine === "custom"
             label: "Address"
             hint: "Put %s where the search term belongs"
-            ShellTextField {
+            // Stored on Return or on leaving the field, and Escape never
+            // empties the setting (StoredTextField).
+            StoredTextField {
+                id: urlField
                 Layout.fillWidth: true
                 focusOnTab: true
-                text: root.template
+                storedText: root.template
                 placeholder: "https://example.org/search?q=%s"
                 error: Web.customError(text).length > 0
-                onTextChanged: SettingsService.set("launcher.searchUrl", text)
+                onCommit: value => SettingsService.set("launcher.searchUrl", value)
             }
         }
 
         ShellText {
             Layout.fillWidth: true
-            visible: root.engine === "custom" && Web.customError(root.template).length > 0
-            text: Web.customError(root.template)
+            visible: root.engine === "custom" && Web.customError(urlField.text).length > 0
+            text: Web.customError(urlField.text)
             role: "small"
             color: Colors.danger
             wrapMode: Text.Wrap

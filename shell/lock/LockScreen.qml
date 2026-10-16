@@ -10,9 +10,11 @@ import "../../services/LayoutLogic.js" as LayoutLogic
 
 // Session lock, run as its own process (lock.qml, started by
 // scripts/session-action.sh in a systemd unit): ext-session-lock through
-// WlSessionLock with one surface per screen, one PAM conversation shared by
-// all screens. If this process dies the compositor keeps the session locked
-// and the unit restarts it (misc:allow_session_lock_restore).
+// WlSessionLock with one surface per screen, one PAM conversation and one
+// password shared by all screens; only the screen whose surface has the
+// keyboard draws what is typed (`inputScreen`). If this process dies the
+// compositor keeps the session locked and the unit restarts it
+// (misc:allow_session_lock_restore).
 Scope {
     id: root
 
@@ -57,6 +59,10 @@ Scope {
     readonly property string initial: Logic.initial(displayName)
     property string avatar: ""
     property string password: ""
+    // The screen that draws the password (LockLogic.showsInput): the last one
+    // whose surface gained the keyboard or received a key, reported by each
+    // LockFace. "" until the first report.
+    property string inputScreen: ""
     property bool busy: false
     property bool submitPending: false
     property string status: ""
@@ -111,6 +117,12 @@ Scope {
     function engage() {
         engaged = true
         idleTimer.restart()
+    }
+
+    // A face reports its surface gaining (or losing) the keyboard, and every
+    // key it is given.
+    function noteInput(screenName, gained) {
+        inputScreen = Logic.inputScreenAfter(inputScreen, screenName, gained)
     }
 
     function type(text) {
@@ -359,7 +371,7 @@ Scope {
     }
 
     // Preview windows are "locked" as soon as they exist.
-    Timer { running: root.preview; interval: 200; onTriggered: marker.setText("1\n") }
+    Timer { running: root.preview && root.dir.length > 0; interval: 200; onTriggered: marker.setText("1\n") }
 
     Process {
         running: root.user.length > 0
@@ -372,7 +384,13 @@ Scope {
         command: ["python3", Paths.script("fastfetch-image.py"), "get"]
         stdout: StdioCollector {
             onStreamFinished: {
-                try { root.avatar = JSON.parse(text).source || "" } catch (error) { root.avatar = "" }
+                // Only a picture: a text logo (the buchhwin profile's
+                // saturn.txt) is fastfetch's too, and as an image it only
+                // failed to decode before the initial took its place.
+                try {
+                    const logo = JSON.parse(text)
+                    root.avatar = logo.kind === "image" ? logo.source || "" : ""
+                } catch (error) { root.avatar = "" }
             }
         }
     }

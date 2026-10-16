@@ -44,6 +44,31 @@ nested_environment() {
   return 1
 }
 
+# True when the environment is half a nested session's: the nested signature
+# with another display, or the nested display with another signature.
+# reload-shell.sh and stop-shell.sh refuse it. The testing recipe once
+# exported the nested signature but not the nested WAYLAND_DISPLAY, and
+# quickshell finds its instances by display: a reload meant for the nested
+# development shell found none on the user's screen and started a second one
+# there, talking to the nested Hyprland (16.10.). Stale files (their Hyprland
+# gone) say nothing, as in nested_environment.
+nested_mixed_environment() {
+  local base=${BUCHHWIN_NESTED_DIR:-"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/buchhwin-nested"} pid
+  local nested_signature=0 nested_display=0
+  [[ -r $base/instance && -r $base/wayland-display ]] || return 1
+  if [[ -r $base/hyprland.pid ]]; then
+    pid=$(<"$base/hyprland.pid")
+    [[ $pid =~ ^[0-9]+$ && -d /proc/$pid ]] || return 1
+  fi
+  if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} && $HYPRLAND_INSTANCE_SIGNATURE == "$(<"$base/instance")" ]]; then
+    nested_signature=1
+  fi
+  if [[ -n ${WAYLAND_DISPLAY:-} && $WAYLAND_DISPLAY == "$(<"$base/wayland-display")" ]]; then
+    nested_display=1
+  fi
+  (( nested_signature != nested_display ))
+}
+
 nested_guard_fail() {
   printf 'nested-guard: %s; refusing (start scripts/nested-session.sh and export its values)\n' "$1" >&2
   return 1

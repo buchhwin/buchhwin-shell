@@ -97,19 +97,25 @@ Rectangle {
         anchors.rightMargin: root.compact ? Metrics.spaceMd : Metrics.spaceLg
         spacing: Metrics.spaceMd
 
+        // A selected row sits on the accent tint, which takes contrast from
+        // the accent and the muted inks made for cards: the ones made for
+        // the tint instead (Colors.accentOnSoft, mutedOnSoft).
         TileContent {
             Layout.fillWidth: true
             icon: root.icon
             iconSource: root.iconSource
             title: root.title
             subtitle: root.subtitle
-            iconColor: root.active || root.selected ? Colors.accentForeground : Colors.mutedText
-            titleColor: root.active ? Colors.accentForeground : Colors.text
+            iconColor: !root.active && !root.selected ? Colors.mutedText
+                : root.selected ? Colors.accentOnSoft : Colors.accentForeground
+            titleColor: !root.active ? Colors.text : root.selected ? Colors.accentOnSoft : Colors.accentForeground
+            subtitleColor: root.selected ? Colors.mutedOnSoft : Colors.mutedText
         }
         ShellText {
             visible: root.trailingText.length > 0
             Layout.maximumWidth: Metrics.trailingTextMax
-            text: root.trailingText; role: "small"; muted: true
+            text: root.trailingText; role: "small"
+            color: root.selected ? Colors.mutedOnSoft : Colors.mutedText
         }
         Item {
             id: trailingSlot

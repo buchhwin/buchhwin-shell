@@ -263,13 +263,15 @@ function command(action, id) {
 }
 
 // KDE's own wizards; the shell never asks for credentials itself.
+// `app` is the wizard's desktop entry: the name scripts/launch-app.sh gives
+// its unit, which starts it with the session's environment.
 var TOOLS = {
     kaccounts: { label: "Online accounts …", hint: "Google, Nextcloud and other providers",
-                 argv: ["kcmshell6", "kcm_kaccounts"] },
+                 argv: ["kcmshell6", "kcm_kaccounts"], app: "kcm_kaccounts" },
     systemsettings: { label: "Online accounts …", hint: "Google, Nextcloud and other providers",
-                      argv: ["systemsettings", "kcm_kaccounts"] },
+                      argv: ["systemsettings", "kcm_kaccounts"], app: "systemsettings" },
     accountwizard: { label: "Mail & groupware …", hint: "IMAP, POP3, CalDAV, CardDAV and iCal files",
-                     argv: ["accountwizard"] }
+                     argv: ["accountwizard"], app: "org.kde.accountwizard" }
 }
 var TOOL_ORDER = ["kaccounts", "systemsettings", "accountwizard"]
 
@@ -293,6 +295,10 @@ function addOptions(tools) {
 
 function addCommand(tool) {
     return hasTool(tool) ? TOOLS[tool].argv.slice() : null
+}
+
+function appId(tool) {
+    return hasTool(tool) ? TOOLS[tool].app : ""
 }
 
 // Shell line for the dry run shown outside the real session.

@@ -56,6 +56,11 @@ MODE_SCOPED = {"blurStrength", "panelOpacity", "animationMode", "animationSpeed"
                "shellRadius", "borderEnabled", "borderSize", "gapsIn", "gapsOut"}
 
 COORDINATE = re.compile(r"[-+]?\d{1,3}\.\d{3,}\s*[,;]\s*[-+]?\d{1,3}\.\d{3,}")
+# The shape the shell and Open-Meteo store a place in - a number under a "lat"
+# or "lon" key - which the pair above never saw; scripts/lib/checks.py looks
+# for the same.
+COORDINATE_KEY = re.compile(r"\b(?:lat|lon|lng|latitude|longitude)\b[\"']?\s*[:=]\s*[\"']?[-+]?\d{1,3}\.\d{3,}",
+                            re.IGNORECASE)
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
 
@@ -151,6 +156,8 @@ def private_findings(text, home):
     found = []
     if COORDINATE.search(text):
         found.append("a coordinate pair")
+    if COORDINATE_KEY.search(text):
+        found.append("a coordinate")
     if EMAIL.search(text):
         found.append("an e-mail address")
     if home and home in text:

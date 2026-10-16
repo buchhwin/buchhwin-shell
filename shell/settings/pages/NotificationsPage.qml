@@ -18,6 +18,19 @@ ColumnLayout {
             options: [{ value: "off", label: "Off" }, { value: "1h", label: "1 hour" }, { value: "tomorrow", label: "Until tomorrow" }, { value: "manual", label: "Indefinitely" }]
             onSelected: value => NotificationService.setDnd(value)
         }
+        // Beside the choice it belongs to, and a label that fits its column:
+        // "“Until tomorrow” ends at" under Popups wrapped over two lines.
+        SettingRow {
+            label: "Ends at"
+            hint: "When “Until tomorrow” turns Do Not Disturb off"
+            SegmentedControl {
+                focusOnTab: true
+                Layout.fillWidth: true
+                current: String(SettingsService.value("notifications.dndTomorrowHour"))
+                options: [{ value: "6", label: "06:00" }, { value: "7", label: "07:00" }, { value: "8", label: "08:00" }]
+                onSelected: value => SettingsService.set("notifications.dndTomorrowHour", parseInt(value))
+            }
+        }
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
@@ -45,16 +58,6 @@ ColumnLayout {
                 options: [{ value: "2000", label: "2 s" }, { value: "4000", label: "4 s" },
                           { value: "6000", label: "6 s" }, { value: "10000", label: "10 s" }]
                 onSelected: value => SettingsService.set("notifications.popupTimeoutMs", parseInt(value))
-            }
-        }
-        SettingRow {
-            label: "“Until tomorrow” ends at"
-            SegmentedControl {
-                focusOnTab: true
-                Layout.fillWidth: true
-                current: String(SettingsService.value("notifications.dndTomorrowHour"))
-                options: [{ value: "6", label: "06:00" }, { value: "7", label: "07:00" }, { value: "8", label: "08:00" }]
-                onSelected: value => SettingsService.set("notifications.dndTomorrowHour", parseInt(value))
             }
         }
     }

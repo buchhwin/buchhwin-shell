@@ -41,10 +41,11 @@ packages=(
   # KDE pieces the session reuses instead of carrying its own; kwallet-pam
   # opens the wallet at the SDDM login (scripts/session-init.sh hands it on)
   xdg-desktop-portal-kde polkit-kde-agent kwallet kwallet-pam
-  # services/CalendarService.qml imports org.kde.akonadi, which merkuro
-  # ships; without it the service fails to load and takes the shell with it,
-  # as on Leap, so this is not an extra here either.
-  merkuro
+  # services/CalendarService.qml imports org.kde.akonadi (akonadi, which
+  # merkuro pulls in) and org.kde.plasma.PimCalendars (kdepim-addons, which
+  # nothing here depends on); without either the service fails to load and
+  # takes the shell with it, as on Leap, so neither is an extra here.
+  merkuro kdepim-addons
   # interface and monospace faces, and both Nerd Fonts: Arch packages them,
   # so the font step finds them and fetches nothing
   inter-font ttf-jetbrains-mono ttf-firacode-nerd ttf-jetbrains-mono-nerd
@@ -61,7 +62,6 @@ extras=(
   hyprland-guiutils           # Hyprland's own dialogs
   sddm                        # the login screen theme (the display manager is
                               # NOT switched); Arch's sddm is the Qt 6 build
-  kdepim-addons
   cmatrix cava                # terminal extras that follow the shell accent
 )
 

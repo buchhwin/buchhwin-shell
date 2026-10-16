@@ -63,7 +63,7 @@ ShellRoot {
 
         // Geocoding
         const places = W.parseGeocode({ results: [
-            { name: "Berlin", admin1: "Land Berlin", country: "Deutschland", latitude: 52.52437, longitude: 13.41053 },
+            { name: "Berlin", admin1: "Land Berlin", country: "Deutschland", latitude: 52.52437, longitude: 13.41053 }, // private-data: public
             { name: "Kaputt", latitude: "x", longitude: 1 },
             { name: "Ohne Region", latitude: 1.5, longitude: 2.5 }
         ] })
@@ -77,14 +77,21 @@ ShellRoot {
         T.eq(W.formatTemperature(null), "–", "missing temperature")
         // Location by IP (ipinfo.io), with a made-up place: city, region and the
         // coordinates rounded like a searched place.
-        T.eq(W.parseIpLocation('{"ip":"192.0.2.1","city":"Sampletown","region":"Exampleland","country":"XX","loc":"48.10,11.50"}'),
-             { name: "Sampletown", region: "Exampleland, XX", lat: 48.1, lon: 11.5 }, "ipinfo answer read")
-        T.eq(W.parseIpLocation({ region: "Exampleland", country: "XX", loc: "48.10,11.50" }).name, "Exampleland",
+        T.eq(W.parseIpLocation('{"ip":"192.0.2.1","city":"Sampletown","region":"Exampleland","country":"XX","loc":"12.34,56.78"}'),
+             { name: "Sampletown", region: "Exampleland, XX", lat: 12.34, lon: 56.78 }, "ipinfo answer read")
+        T.eq(W.parseIpLocation({ region: "Exampleland", country: "XX", loc: "12.34,56.78" }).name, "Exampleland",
              "the region stands in for a missing city")
         T.eq([W.parseIpLocation("{nope"), W.parseIpLocation({ city: "A" }), W.parseIpLocation({ city: "A", loc: "1,2,3" }),
               W.parseIpLocation({ city: "A", loc: "120,10" }), W.parseIpLocation({ loc: "10,10" }), W.parseIpLocation(null)],
              [null, null, null, null, null, null], "no place, broken or impossible answers are no answer")
         T.ok(W.IP_LOCATION_URL.indexOf("https://") === 0, "asked over HTTPS")
+        // Enter in the city search (ui-b#15): only results of the current query.
+        const found = [{ name: "Berlin" }, { name: "Bernau" }]
+        T.eq(W.firstResultFor("Ber", "Ber", found), found[0], "the current query's first place")
+        T.eq(W.firstResultFor(" Ber ", "Ber", found), found[0], "outer spaces are not a new query")
+        T.eq(W.firstResultFor("Bern", "Ber", found), null, "the previous query's places are not taken")
+        T.eq([W.firstResultFor("Bern", "Bern", []), W.firstResultFor("B", "B", found), W.firstResultFor("", "", found)],
+             [null, null, null], "nothing found, or nothing searched")
         T.finish("WeatherTest")
     }
 }

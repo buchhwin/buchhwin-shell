@@ -68,10 +68,12 @@ ShellPanel {
                 shortcut: root.pending ? "" : "SUPER + M"
             }
 
+            // The gap of every grid of cards (the control center's tiles, the
+            // dashboard's cards), not one of its own.
             RowLayout {
                 Layout.fillWidth: true
                 visible: !root.pending
-                spacing: Metrics.spaceSm
+                spacing: Metrics.cardGridGap
 
                 Repeater {
                     model: root.actions

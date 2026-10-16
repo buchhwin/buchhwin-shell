@@ -132,11 +132,23 @@ Singleton {
     // the animation mode: it is a rate, not a transition, and a session with
     // motion off still has to be able to reach the bottom of the list.
     readonly property int scrollTick: 16
+    // One wheel notch glides this long in a list (ScrollFeel), and a notch
+    // that arrives during the glide adds to where it is going, so a quick
+    // turn of the wheel is one smooth move. Not scaled by the speed setting:
+    // it answers a hand on the wheel, and at half speed every notch would
+    // trail the wheel by a third of a second. Reduced and Off jump.
+    readonly property int scroll: move(180)
+    // How fast a touchpad fling dies away after the fingers lift: its speed
+    // falls by the same share in every moment, this being the time constant
+    // in ms, so it covers its speed times this in all and most of it in the
+    // first half second. Only in Full, like every movement; in Reduced and
+    // Off the list stops where the fingers left it.
+    readonly property int scrollFling: 250
     // How long the pointer has to rest on a control before it explains itself.
     // Not scaled by the animation mode: it is a wait, not a transition, and a
     // session with motion off still wants to read the label.
     //
-    // A second, at the user's word. It was 550 ms when the only things with
+    // A second. It was 550 ms when the only things with
     // tooltips were icon-only buttons, where the bubble is the only way to
     // learn what the button does and waiting is pure cost. The "i" beside a
     // setting is the opposite: the pointer crosses a column of them on its way

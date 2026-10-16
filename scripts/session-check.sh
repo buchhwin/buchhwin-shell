@@ -33,6 +33,34 @@ running() {
   done
   return 1
 }
+# faillock_gap PASSWORD_SERVICE MAIN_SERVICE PAM_DIR...: prints the stack the
+# main lock service includes and succeeds when that stack counts wrong
+# passwords (pam_faillock) and the password-only service, which includes no
+# stack of its own, does not. Arch's system-auth allows three wrong passwords
+# and then locks the account for ten minutes; a password-only file without the
+# same lines let the lid-shut lock screen take guesses without limit and
+# unlocked an account system-auth had locked (16.10. review). The installed
+# file only changes by hand (system-install.sh installs it when missing), so an
+# older copy is named here. tests/session-launcher-test.sh covers it.
+faillock_gap() {
+  local password=$1 main=$2 stack dir
+  shift 2
+  [[ -r $password && -r $main ]] || return 1
+  # Fedora's password service includes password-auth, which counts whatever
+  # system-auth counts.
+  [[ -n $(awk '$1 == "auth" && $2 == "include" { print $3; exit }' "$password") ]] && return 1
+  grep -qE '^[[:space:]]*auth[[:space:]].*pam_faillock\.so[[:space:]]+authfail' "$password" && return 1
+  stack=$(awk '$1 == "auth" && $2 == "include" { print $3; exit }' "$main")
+  [[ -n $stack ]] || return 1
+  for dir in "$@"; do
+    if [[ -r $dir/$stack ]]; then
+      grep -qE '^[[:space:]]*auth[[:space:]].*pam_faillock\.so' "$dir/$stack" || return 1
+      printf '%s\n' "$stack"
+      return 0
+    fi
+  done
+  return 1
+}
 
 section "Session"
 if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then ok "Hyprland is running ($(hyprctl version -j 2>/dev/null | jq -r '.tag // .version // "?"'))"; else fail "no Hyprland session (HYPRLAND_INSTANCE_SIGNATURE is missing)"; exit 1; fi
@@ -210,6 +238,19 @@ for pam_service in buchhwin-lock buchhwin-lock-password; do
     fail "/etc/pam.d/$pam_service includes $pam_include, which this system does not have; remove the file and run sudo install/system-install.sh again"
   fi
 done
+if faillock_stack=$(faillock_gap /etc/pam.d/buchhwin-lock-password /etc/pam.d/buchhwin-lock /etc/pam.d /usr/lib/pam.d); then
+  # system-auth without password-auth is the Arch stack, and the .arch file
+  # carries the lines; openSUSE ships none (common-auth has no faillock there
+  # unless it was added by hand).
+  if [[ $faillock_stack == system-auth ]]; then
+    faillock_fix="sudo install -m 644 $project_dir/session/pam/buchhwin-lock-password.arch /etc/pam.d/buchhwin-lock-password"
+  else
+    faillock_fix="add pam_faillock preauth/authfail/authsucc around pam_unix, as session/pam/buchhwin-lock-password.arch does"
+  fi
+  warn "/etc/pam.d/buchhwin-lock-password does not count wrong passwords like $faillock_stack (pam_faillock): with the lid closed or the reader off, guesses at the lock screen are not limited ($faillock_fix)"
+elif grep -qE '^[[:space:]]*auth[[:space:]].*pam_faillock\.so[[:space:]]+authfail' /etc/pam.d/buchhwin-lock-password 2>/dev/null; then
+  ok "the password-only lock service counts wrong passwords (pam_faillock)"
+fi
 # 0.55 answers "bool: true", 0.56 "int: 1".
 lock_restore=$(hyprctl getoption misc:allow_session_lock_restore 2>/dev/null | head -1)
 [[ $lock_restore == *1 || $lock_restore == *true ]] && ok "a crashed lock screen can be restarted" || warn "misc:allow_session_lock_restore is off"

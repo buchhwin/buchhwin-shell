@@ -150,6 +150,10 @@ Singleton {
         actionProc.command = Logic.wrap(argv)
         actionProc.running = true
         say(action === "sync" ? "Synchronizing …" : action === "configure" ? "Opening the settings dialog …" : "Removing …", false)
+        // The agent's dialog is a window, and Settings is a panel above every
+        // window with the keyboard (testing.md pitfall 6): it steps aside, as
+        // it does for KDE's network editor. The answer waits on the page.
+        if (action === "configure") PanelService.close()
     }
 
     function sync(item) {
@@ -220,7 +224,8 @@ Singleton {
     // ---- adding ---------------------------------------------------------------
     // KDE's wizards own the provider list, the browser login and the tokens.
     function addAccount(option) {
-        const argv = Logic.addCommand(option ? option.tool : "")
+        const tool = option ? option.tool : ""
+        const argv = Logic.addCommand(tool)
         if (!argv) return
         confirmRemoveId = ""
         if (!realSession || preview) {
@@ -230,9 +235,14 @@ Singleton {
             return
         }
         previewCommand = ""
-        Quickshell.execDetached(argv)
+        // Through launch-app.sh: the wizard gets the session's environment
+        // (the Plasma look, none of the shell's own settings).
+        Quickshell.execDetached([Paths.script("launch-app.sh"), Logic.appId(tool)].concat(argv))
         say("The KDE wizard is opening. This list refreshes on its own.", false)
         refreshSoon.restart()
+        // The wizard asks for logins in a window of its own, which would open
+        // under Settings and its keyboard grab; Settings steps aside.
+        PanelService.close()
     }
 
     // ---- preview --------------------------------------------------------------

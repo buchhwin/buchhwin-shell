@@ -59,7 +59,7 @@ check("and its unscaled neighbour is not it", picker.pixel_at(scaled, big, 11, 2
 # The last logical pixel must not round past the end of the frame.
 check("the last logical pixel is inside the frame", picker.pixel_at(scaled, big, 99, 49), "#000000")
 
-# A fractional scale, which is what this machine actually runs.
+# A fractional scale, which is what many laptops actually run.
 fractional = {"name": "eDP-1", "x": 0, "y": 0, "width": 1280, "height": 800, "scale": 1.5}
 frame = solid(1920, 1200, (1, 2, 3))
 frame.putpixel((960, 600), (200, 100, 50))

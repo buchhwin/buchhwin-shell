@@ -4,6 +4,7 @@ import Quickshell.Services.UPower
 import QtQuick
 import "power/BatteryLogic.js" as BatteryLogic
 import "power/PowerSourceLogic.js" as PowerSourceLogic
+import "lock/LockLogic.js" as LockLogic
 
 // Battery and power profile state from UPower and power-profiles (tuned-ppd),
 // plus low battery warnings.
@@ -14,14 +15,19 @@ Singleton {
     readonly property bool hasBattery: device !== null && device.isLaptopBattery
     readonly property int percent: device ? Math.round(device.percentage * 100) : 0
     // UPower's OnBattery alone is not enough: it is false as soon as any power
-    // supply reports itself online, and on the ThinkPad on Arch (14.10.) a
-    // USB-C port stayed "online, charging" with nothing plugged in (UCSI) -
-    // the panel said "Plugged in" and the mains power settings applied while
-    // the battery ran down at 13 W. A battery that is discharging is on
-    // battery, whatever else is online.
+    // supply reports itself online, and on laptops with UCSI a USB-C port can
+    // stay "online, charging" with nothing plugged in - the panel said
+    // "Plugged in" and the mains power settings applied while the battery ran
+    // down at 13 W. A battery that is discharging is on battery, whatever else
+    // is online.
     readonly property bool onBattery: UPower.onBattery || discharging
-    readonly property bool charging: device !== null && (device.state === UPowerDeviceState.Charging
-        || device.state === UPowerDeviceState.PendingCharge)
+    // Charging means charging. PendingCharge is a battery held at its charge
+    // threshold on the charger (a laptop with charge thresholds set stops at
+    // the upper one): nothing flows, there is no time to full, and it used to
+    // read "Charging" in green all day on a docked laptop. It gets the level
+    // glyph and the plain ink, and says "Not charging".
+    readonly property bool charging: device !== null && device.state === UPowerDeviceState.Charging
+    readonly property bool pendingCharge: device !== null && device.state === UPowerDeviceState.PendingCharge
     readonly property bool full: device !== null && device.state === UPowerDeviceState.FullyCharged
     readonly property bool discharging: device !== null && device.state === UPowerDeviceState.Discharging
     readonly property real secondsRemaining: device ? (charging ? device.timeToFull : device.timeToEmpty) : 0
@@ -41,9 +47,8 @@ Singleton {
         return levels[Math.max(0, Math.min(10, Math.round(percent / 10)))]
     }
 
-    readonly property string stateLabel: !hasBattery ? "AC power"
-        : full ? "Fully charged"
-        : charging ? "Charging" : onBattery ? "On battery" : "Plugged in"
+    readonly property string stateLabel: BatteryLogic.stateLabel({ hasBattery: hasBattery, full: full, charging: charging,
+                                                                   onBattery: onBattery, pendingCharge: pendingCharge })
 
     function formatDuration(seconds) {
         if (!seconds || seconds <= 0) return ""
@@ -87,8 +92,15 @@ Singleton {
         sourceCheck.restart()
     }
 
+    // The lock screen's process (lock.qml) only shows the battery. Warnings and
+    // the power profile are the shell's, and asking IdleService from there
+    // started a second one in the lock process, lid handling included
+    // (LockLogic.lockProcess). `lockProcess` comes first so that IdleService
+    // is never even created there.
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+
     function checkBattery() {
-        if (!IdleService.realSession || device === null || !device.ready) return
+        if (lockProcess || !IdleService.realSession || device === null || !device.ready) return
         const discharging = hasBattery && onBattery && !charging && !full
         if (!discharging) dismissBatteryWarnings()
         const result = BatteryLogic.update(batteryState, {
@@ -145,7 +157,7 @@ Singleton {
     function checkSource() {
         const result = PowerSourceLogic.profileChange(sourceState, { ready: sourceReady, source: source, choice: profileChoice })
         sourceState = result.state
-        if (!result.profile.length || !IdleService.realSession) return
+        if (!result.profile.length || lockProcess || !IdleService.realSession) return
         const profiles = { powerSaver: PowerProfile.PowerSaver, balanced: PowerProfile.Balanced, performance: PowerProfile.Performance }
         setProfile(profiles[result.profile])
     }

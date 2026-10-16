@@ -24,7 +24,8 @@ RowLayout {
                 anchors.centerIn: parent
                 text: modelData
                 role: "small"
-                color: root.accent ? Colors.accentForeground : Colors.text
+                // On the accent tint: the accent made for the tint.
+                color: root.accent ? Colors.accentOnSoft : Colors.text
             }
         }
     }

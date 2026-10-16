@@ -40,9 +40,10 @@ Item {
     // block from the bottom right of the notch to the bottom left. The user
     // arranged that grid; a grid that rearranges itself is not an arrangement.
     //
-    // `hasContent` then decides what each cell draws - the real block, or its
-    // name quietly - which is what widgets have always done. Taking a block
-    // off the notch for good is what the editor's remove button is for.
+    // `hasContent` then decides what each cell draws - the real block, or
+    // quietly what it is missing ("No events") - which is what widgets do too.
+    // Taking a block off the notch for good is what the editor's remove
+    // button is for.
     readonly property var bodyItems: NotchService.expandedItems.filter(item =>
         item.type === "media" || item.type === "events" || item.type === "status"
             || WidgetRegistry.isAvailable(item.type))
@@ -59,6 +60,14 @@ Item {
         if (type === "status") return true
         return WidgetRegistry.isAvailable(type)
     }
+    // What a cell with nothing to show says instead (NotchLogic.emptyText):
+    // "No location", "No events", "Empty workspace" rather than the block's
+    // bare name.
+    readonly property bool workspaceEmpty: {
+        const workspace = HyprlandService.focusedWorkspace
+        return workspace !== null && workspace.toplevels.values.length === 0
+    }
+    readonly property var emptyFacts: ({ weather: WeatherService.status, workspaceEmpty: root.workspaceEmpty })
 
     readonly property var status: Logic.statusItems({
         battery: { present: PowerService.hasBattery, percent: PowerService.percent, charging: PowerService.charging,
@@ -95,12 +104,17 @@ Item {
 
     SystemClock { id: clock; precision: SystemClock.Minutes }
 
+    // Plain text, always: a track title, an artist or an event title is
+    // somebody else's string, and Qt's default format renders one that looks
+    // like markup - an <img src=...> in a YouTube title made the shell fetch
+    // the address it named.
     component NotchText: Text {
         property bool muted: false
         color: muted ? Colors.notchMutedText : Colors.notchText
         font.family: Typography.family
         font.pixelSize: Typography.bodySize
         elide: Text.ElideRight
+        textFormat: Text.PlainText
         renderType: Typography.renderType
     }
 
@@ -111,6 +125,7 @@ Item {
         font.pixelSize: size
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
+        textFormat: Text.PlainText
         renderType: Typography.renderType
     }
 
@@ -518,14 +533,16 @@ Item {
                     // subtle with the accent on, because the accent says "on".
                     // A low battery is red here as it is on every other
                     // surface - the notch's own red, since it is black in
-                    // both themes.
+                    // both themes. Charging is the green or, with Settings >
+                    // Power > Status colors on the accent, the accent made
+                    // for black - the colour the accent glyphs wear too.
                     RowLayout {
                         required property var modelData
                         spacing: Metrics.spaceXxs
                         NotchGlyph {
                             text: modelData.icon
                             size: Metrics.iconSm
-                            color: modelData.charging ? Colors.successOnDark
+                            color: modelData.charging ? Colors.positiveOnDark
                                 : modelData.low ? Colors.dangerOnDark
                                 : modelData.dim ? Colors.notchSubtleText
                                 : NotchService.overviewGlyphsInAccent ? Colors.notchAccent : Colors.notchMutedText
@@ -664,23 +681,29 @@ Item {
         onTriggered: root.reportRects()
     }
 
-    // A block with nothing to say, while the notch is arranged: its name and
-    // its icon, so it can be seen, taken hold of and put somewhere else.
+    // A block with nothing to say: its icon and what is missing, quietly, so
+    // it can be seen (and, while the notch is arranged, taken hold of and put
+    // somewhere else) without reading like a name left unfilled.
     Component {
         id: placeholderPart
         Field {
             id: box
             readonly property var entry: NotchService.entry(notchItem.type)
             Row {
+                id: placeholderRow
                 anchors.centerIn: parent
                 spacing: Metrics.spaceSm
                 NotchGlyph {
+                    id: placeholderGlyph
                     anchors.verticalCenter: parent.verticalCenter
                     text: box.entry.icon
                 }
                 NotchText {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: box.entry.label
+                    // Ends in "…" inside the cell rather than at its clip.
+                    width: Math.min(implicitWidth, Math.max(0, placeholderRow.parent.width
+                        - placeholderGlyph.implicitWidth - placeholderRow.spacing))
+                    text: Logic.emptyText(notchItem.type, root.emptyFacts, box.entry.label)
                     muted: true
                 }
             }
@@ -724,8 +747,8 @@ Item {
             // the registry names. Without it a widget on the notch was a
             // picture of a control - the volume readout did nothing at all.
             readonly property string action: entry ? entry.action : ""
-            // A widget with nothing to say says its name instead, the way an
-            // empty block does, rather than leaving an empty box.
+            // A widget with nothing to say says what is missing instead, the
+            // way an empty block does, rather than leaving an empty box.
             readonly property bool hasData: widget.item ? widget.item.hasData !== false : false
 
             Rectangle {
@@ -734,6 +757,21 @@ Item {
                 radius: widgetBox.radius
                 color: widgetMouse.containsMouse && widgetBox.action.length ? Colors.notchHover : "transparent"
                 Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
+            }
+            // The cell's click, under the widget rather than over it, as on
+            // the pill bar and the desktop: a widget's own controls - the
+            // Playback widget's play/pause - take the press they were aimed
+            // at, and this one only gets what they leave. Declared last, it
+            // covered them, and play/pause opened the media popup.
+            MouseArea {
+                id: widgetMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                enabled: widgetBox.action.length > 0
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.notch.openPanel(widgetBox.action,
+                                                widgetBox.entry && widgetBox.entry.actionArgs
+                                                    ? widgetBox.entry.actionArgs : {})
             }
             Loader {
                 id: widget
@@ -770,6 +808,9 @@ Item {
                     if (item.glyphInk !== undefined)
                         item.glyphInk = Qt.binding(() => NotchService.overviewGlyphsInAccent ? Colors.notchAccent : Colors.notchText)
                     if (item.trackColor !== undefined) item.trackColor = Colors.notchTrack
+                    // Black in both themes: the state colours (charging, low,
+                    // a tunnel up, unread) take their on-dark variants.
+                    if (item.onDark !== undefined) item.onDark = true
                     // The cell's room, inside the field's padding: the cell is
                     // the size the user dragged, and a label that did not know
                     // it ran past the edge and was cut mid-letter instead of
@@ -792,28 +833,23 @@ Item {
                 when: widget.item !== null
             }
             Row {
+                id: emptyRow
                 anchors.centerIn: parent
                 visible: !widgetBox.hasData
                 spacing: Metrics.spaceSm
                 NotchGlyph {
+                    id: emptyGlyph
                     anchors.verticalCenter: parent.verticalCenter
                     text: widgetBox.entry ? widgetBox.entry.icon : ""
                 }
                 NotchText {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: widgetBox.entry ? widgetBox.entry.label : notchItem.type
+                    width: Math.min(implicitWidth, Math.max(0, emptyRow.parent.width
+                        - emptyGlyph.implicitWidth - emptyRow.spacing))
+                    text: Logic.emptyText(notchItem.type, root.emptyFacts,
+                                          widgetBox.entry ? widgetBox.entry.label : notchItem.type)
                     muted: true
                 }
-            }
-            MouseArea {
-                id: widgetMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                enabled: widgetBox.action.length > 0
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.notch.openPanel(widgetBox.action,
-                                                widgetBox.entry && widgetBox.entry.actionArgs
-                                                    ? widgetBox.entry.actionArgs : {})
             }
         }
     }

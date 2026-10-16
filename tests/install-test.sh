@@ -112,6 +112,59 @@ check '[[ -L "$sandbox/xdg/data/zsh/site-functions/_buchhwin" ]]' 'the completio
 check '[[ $(readlink -f -- "$xdghome/.local/share/buchhwin-shell") == "$xdgcheckout" ]]' 'the session link stays at ~/.local/share/buchhwin-shell'
 check '[[ -L "$xdghome/.local/bin/buchhwin" ]]' 'and the launchers at ~/.local/bin'
 
+# ---- the session stays on the stable worktree --------------------------------
+# scripts/deploy.sh keeps a worktree on branch `stable` and points the session
+# at it; edits on main reach the desktop only through a deploy. The README's
+# update line or a bootstrap re-run from the development checkout used to
+# relink the session to main's half-edited files.
+repohome="$sandbox/repohome"
+dev="$repohome/git/buchhwin-shell"
+stable="$repohome/.local/share/buchhwin-shell-stable"
+mkdir -p "$dev"
+cp -r "$checkout/." "$dev/"
+git -C "$dev" init -q -b main
+git -C "$dev" add -A
+git -C "$dev" -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false commit -q -m fixture
+git -C "$dev" worktree add -q -b stable "$stable"
+in_repohome() { HOME="$repohome" XDG_CONFIG_HOME="$repohome/.config" XDG_DATA_HOME="$repohome/.local/share" "$@"; }
+session="$repohome/.local/share/buchhwin-shell"
+
+# What deploy.sh --init does: the stable worktree's own copy links to itself.
+in_repohome "$stable/install/install.sh" --apply > "$sandbox/stable.log" 2>&1 \
+  || { printf 'FAIL install: --apply from the stable worktree exited non-zero\n'; cat "$sandbox/stable.log"; exit 1; }
+check '[[ $(readlink -f -- "$session") == "$stable" ]]' 'the stable worktree links the session to itself'
+
+in_repohome "$dev/install/install.sh" --apply > "$sandbox/dev.log" 2>&1 \
+  || { printf 'FAIL install: --apply from the development checkout exited non-zero\n'; cat "$sandbox/dev.log"; exit 1; }
+check '[[ $(readlink -f -- "$session") == "$stable" ]]' 'a run from the development checkout keeps the session on the stable worktree'
+check '[[ $(readlink -f -- "$repohome/.local/bin/buchhwin") == "$stable/scripts/buchhwin" ]]' 'and the other links with it'
+check '! compgen -G "$session.backup-*" > /dev/null' 'and takes no backup'
+check 'grep -q "stable worktree" "$sandbox/dev.log" && grep -q -- "--relink" "$sandbox/dev.log"' 'and says so, with the way out'
+in_repohome "$dev/install/install.sh" > "$sandbox/dev-dry.log" 2>&1
+check 'grep -q -- "-> $stable" "$sandbox/dev-dry.log" && ! grep -q -- "-> $dev" "$sandbox/dev-dry.log"' 'the dry run shows the same'
+
+in_repohome "$dev/install/install.sh" --apply --relink > "$sandbox/relink.log" 2>&1 \
+  || { printf 'FAIL install: --relink exited non-zero\n'; cat "$sandbox/relink.log"; exit 1; }
+check '[[ $(readlink -f -- "$session") == "$dev" ]]' '--relink moves the session to the development checkout'
+check 'compgen -G "$session.backup-*" > /dev/null' 'backing the stable link up'
+
+# Back the other way, as deploy.sh --init does from a session on main.
+in_repohome "$stable/install/install.sh" --apply > "$sandbox/init.log" 2>&1 \
+  || { printf 'FAIL install: --apply from the stable worktree (second time) exited non-zero\n'; cat "$sandbox/init.log"; exit 1; }
+check '[[ $(readlink -f -- "$session") == "$stable" ]]' 'the stable worktree takes over a session that ran from main'
+
+BUCHHWIN_RELINK=1 in_repohome "$dev/install/install.sh" --apply > /dev/null 2>&1
+check '[[ $(readlink -f -- "$session") == "$dev" ]]' 'BUCHHWIN_RELINK=1 is the same as --relink'
+
+# Another branch is not the deploy's: a second checkout of main is relinked as before.
+in_repohome "$stable/install/install.sh" --apply > /dev/null 2>&1
+git -C "$stable" checkout -q -b elsewhere
+in_repohome "$dev/install/install.sh" --apply > /dev/null 2>&1
+check '[[ $(readlink -f -- "$session") == "$dev" ]]' 'a worktree on another branch than stable is not kept'
+
+unknown=0; in_repohome "$dev/install/install.sh" --aply > /dev/null 2>&1 || unknown=$?
+check '[[ $unknown -eq 2 ]]' 'an unknown option is refused before anything happens'
+
 if [[ $failures -gt 0 ]]; then
   printf 'install test: %d failure(s)\n' "$failures" >&2
   exit 1

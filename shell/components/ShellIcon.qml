@@ -8,6 +8,7 @@ Text {
 
     text: glyph
     color: Colors.text
+    textFormat: Text.PlainText
     font.family: Typography.iconFamily
     font.pixelSize: size
     horizontalAlignment: Text.AlignHCenter

@@ -59,8 +59,8 @@ ShellRoot {
         ], "rows for the shortcut list")
         T.eq(G.rows(getter({ "gestures.enabled": false })), [], "no rows when off")
 
-        T.ok(G.hasTouchpad(JSON.stringify({ mice: [{ name: "tpps/2-synaptics-trackpoint" }, { name: "elan06c9:00-04f3:320b-touchpad" }] })), "touchpad found")
-        T.ok(!G.hasTouchpad(JSON.stringify({ mice: [{ name: "logitech-mx-master" }], keyboards: [] })), "mouse only")
+        T.ok(G.hasTouchpad(JSON.stringify({ mice: [{ name: "ps/2-generic-pointing-stick" }, { name: "sample0000:00-1234:5678-touchpad" }] })), "touchpad found")
+        T.ok(!G.hasTouchpad(JSON.stringify({ mice: [{ name: "usb-optical-mouse" }], keyboards: [] })), "mouse only")
         T.ok(!G.hasTouchpad("not json"), "broken output")
 
         // Command builders

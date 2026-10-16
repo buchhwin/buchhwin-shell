@@ -30,13 +30,14 @@ shift
 
 root=""
 wallpaper=""
+wallpaper_given=""
 settings=""
 avatar=""
 user=${SUDO_USER:-}
 use_sddm=false
 while (( $# )); do
   case "$1" in
-    --wallpaper) wallpaper=${2:?--wallpaper needs a path}; shift 2 ;;
+    --wallpaper) wallpaper=${2:?--wallpaper needs a path}; wallpaper_given=$wallpaper; shift 2 ;;
     --settings) settings=${2:?--settings needs a file}; shift 2 ;;
     --avatar) avatar=${2:?--avatar needs a path}; shift 2 ;;
     --user) user=${2:?--user needs a name}; shift 2 ;;
@@ -87,6 +88,39 @@ run_systemctl() {
   fi
 }
 
+# Prints FILE with the rights of the user the login screen is set up for. The
+# wallpaper's path comes from that user's settings.json, which any program
+# running as them can write, and this runs as root: a symlink there to
+# /etc/shadow was copied, world-readable, into the theme. Read as the user, a
+# path is only as good as what they could open themselves.
+read_as_user() {
+  if [[ -n $user && $user != "$(id -un)" ]]; then
+    runuser -u "$user" -- cat -- "$1"
+  else
+    cat -- "$1"
+  fi
+}
+
+# What a file is by its first bytes - png, jpg, webp, avif, jxl, bmp or svg -
+# or nothing. A path the user can read can still name their own secrets (a
+# key, a password store) under an image's name; only an image goes into a
+# world-readable theme.
+image_kind() {
+  local magic text
+  magic=$(head -c 16 -- "$1" | od -An -v -tx1 | tr -d ' \n') || magic=""
+  case $magic in
+    89504e470d0a1a0a*) printf 'png\n'; return 0 ;;
+    ffd8ff*) printf 'jpg\n'; return 0 ;;
+    52494646????????57454250*) printf 'webp\n'; return 0 ;;
+    ????????6674797061766966*|????????6674797061766973*) printf 'avif\n'; return 0 ;;
+    ff0a*|0000000c4a584c200d0a870a*) printf 'jxl\n'; return 0 ;;
+    424d*) printf 'bmp\n'; return 0 ;;
+  esac
+  text=$(head -c 4096 -- "$1" | tr -d '\000') || text=""
+  [[ ${text,,} == *"<svg"* ]] && printf 'svg\n'
+  return 0
+}
+
 install_theme() {
   [[ -r $theme_source/Main.qml ]] || { printf 'Theme sources missing: %s\n' "$theme_source" >&2; exit 1; }
 
@@ -121,6 +155,30 @@ install_theme() {
     esac
   fi
 
+  # The wallpaper as the user can read it, into a file of root's own. A
+  # configured one that fails falls back to the gradient, as an unreadable
+  # one always did; one named on the command line stops the run.
+  local staged=""
+  if [[ -n $wallpaper ]]; then
+    staged=$(mktemp)
+    # shellcheck disable=SC2064 # the path is fixed now
+    trap "rm -f -- '$staged'" EXIT
+    local problem=""
+    if ! read_as_user "$wallpaper" > "$staged" 2>/dev/null; then
+      problem="not readable${user:+ by $user}"
+    elif [[ -z $(image_kind "$staged") ]]; then
+      problem="not an image"
+    fi
+    if [[ -n $problem ]]; then
+      if [[ -n $wallpaper_given ]]; then
+        printf 'Wallpaper %s: %s\n' "$problem" "$wallpaper" >&2
+        exit 1
+      fi
+      printf 'Configured wallpaper %s, using the bundled gradient: %s\n' "$problem" "$wallpaper"
+      wallpaper=""
+    fi
+  fi
+
   mkdir -p -- "$theme_dir"
   # Replace the theme files but keep nothing stale from older versions.
   find "$theme_dir" -mindepth 1 -delete
@@ -134,7 +192,7 @@ install_theme() {
   local user_conf="$theme_dir/theme.conf.user"
   printf '[General]\n' > "$user_conf"
   if [[ -n $wallpaper ]]; then
-    install -m0644 -- "$wallpaper" "$theme_dir/background.$extension"
+    install -m0644 -- "$staged" "$theme_dir/background.$extension"
     printf 'background=background.%s\n' "$extension" >> "$user_conf"
     printf 'Copied wallpaper %s\n' "$wallpaper"
   else

@@ -63,18 +63,16 @@ Item {
     }
 
     // Widgets without current content (e.g. no media player) stay editable.
-    ShellText {
+    // Nothing else is drawn behind it, so it brings its own plate, as the
+    // hint lines do: straight on the wallpaper the muted ink vanished on a
+    // dark image and the scrim's on a bright one.
+    EditorCaption {
         id: placeholder
         anchors.centerIn: parent
         visible: !frame.hasContent
         text: card.entry ? (WidgetRegistry.type(card.entry.type) || { label: card.entry.type }).label + " (empty)" : ""
         role: "small"
-        // Straight on the wallpaper under the editor's scrim, with nothing
-        // drawn behind it: the scrim's muted ink and the editor's outline, as
-        // the hint lines have. The panel's muted grey vanished on a dark image.
-        color: Colors.scrimMutedText
-        style: Text.Outline
-        styleColor: Colors.scrimStrong
+        muted: true
     }
 
     Rectangle {

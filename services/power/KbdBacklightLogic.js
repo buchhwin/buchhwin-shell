@@ -3,8 +3,8 @@
 // Keyboard backlight: which step it is on, what that step is called, and where
 // the next one is.
 //
-// It is a stepped light, not a dimmer. This ThinkPad has `max_brightness` 2,
-// so three levels; other machines have one step or four. A percentage would
+// It is a stepped light, not a dimmer. A ThinkPad has `max_brightness` 2,
+// so three levels; other laptops have one step or four. A percentage would
 // read "0% / 50% / 100%" on a track that looks like a hundred, which promises
 // a fineness the hardware does not have - so the OSD says the step's name and
 // draws one box per step. Nothing here hard-codes three: `maximum` decides.

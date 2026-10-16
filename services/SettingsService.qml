@@ -29,6 +29,11 @@ Singleton {
             "cursorTheme": "breeze_cursors",
             "cursorSize": 24,
             "accentFromWallpaper": false,
+            // What a good state wears - a battery charging, a tunnel up:
+            // "status" the green, "accent" the accent (Colors.positive,
+            // Settings > Power). A low battery and every warning keep red
+            // and amber either way. Per profile, like the accent itself.
+            "statusColors": "status",
             "panelOpacity": 0.74,
             // Whether the rest of the screen dims while a panel is open. One
             // scrim for all of them (shell/components/ScrimLayer.qml), so this
@@ -143,10 +148,11 @@ Singleton {
             // The collapsed body: how tall it is, how round its bottom corners
             // are and how much air the strip keeps at both ends. These are the
             // theme's tokens (Metrics.notchHeight / notchRadius / notchPadding,
-            // the Island body); the notch before Island was 32 / 11 / 16, and
-            // the Classic preset carries that. NotchLogic.bodySize clamps them.
-            "bodyHeight": 40,
-            "bodyRadius": 16,
+            // the Island body: 34 / 14 / 22); the notch before Island was
+            // 32 / 11 / 16, and the Classic preset carries that.
+            // NotchLogic.bodySize clamps them.
+            "bodyHeight": 34,
+            "bodyRadius": 14,
             "bodyPadding": 22,
             // The notch is not nailed to a size: both shapes are dragged in
             // the layout editor. The strip only horizontally - its height is
@@ -218,8 +224,9 @@ Singleton {
         // X11 applications and how they are scaled: whether they draw in real
         // pixels, and at what scale X11 is then told it runs - 0 follows the
         // largest screen, anything else is the scale itself (1.25 to 2).
-        // Citrix at the screen's 1.5 was "still a little small", and X11 has
-        // one DPI, so the number is the user's (see Settings > Displays).
+        // A remote desktop at the screen's 1.5 can still be a little small,
+        // and X11 has one DPI, so the number is the user's (see Settings >
+        // Displays).
         "display": {
             "xwaylandSharp": false,
             "x11Scale": 0
@@ -322,7 +329,11 @@ Singleton {
             "enabled": true,
             // With no place set, ask ipinfo.io once where this connection is
             // (LocationService). A place the user chose is never replaced.
-            "autoLocate": true,
+            // Off until the user says so: ipinfo.io sees this computer's
+            // address, and the first start used to ask it unasked. The
+            // welcome tour offers "Find my place", Settings > Weather the
+            // switch. settings.json keeps every key, so a stored value stays.
+            "autoLocate": false,
             "locationName": "",
             "lat": 0,
             "lon": 0,
@@ -339,6 +350,12 @@ Singleton {
             "mouseNaturalScroll": false,
             "touchpadNaturalScroll": true,
             "touchpadScrollFactor": 1.0,
+            // The shell's own lists scroll as far as a browser does: 120 px a
+            // wheel notch, a swipe twice the touchpad's pixels and a short
+            // fling (ScrollFeel). false is Qt's own scrolling again
+            // (72 px a notch, the touchpad one to one) - the way back, one
+            // line in settings.json.
+            "browserScroll": true,
             "tapToClick": true,
             "disableWhileTyping": true
         },
@@ -455,6 +472,7 @@ Singleton {
         "appearance.theme": ["dark", "light", "auto"],
         "appearance.clockFormat": ["locale", "24", "12"],
         "appearance.animationMode": ["full", "reduced", "off"],
+        "appearance.statusColors": ["status", "accent"],
         "wallpaper.order": ["sequential", "random"],
         "notch.hoverMode": ["hover", "click", "off"],
         "notch.shape": ["notch", "pill"],

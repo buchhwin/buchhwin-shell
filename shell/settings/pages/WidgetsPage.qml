@@ -26,7 +26,17 @@ ColumnLayout {
 
     function icon(entry) {
         if (entry.members !== undefined) return "󰕸"
-        return (WidgetRegistry.type(entry.type) || { icon: Icons.edit }).icon
+        return (WidgetRegistry.type(entry.type) || { icon: Icons.arrange }).icon
+    }
+
+    // Every change here is one undo step and reaches layout.json, the way the
+    // editor's own changes do (EditLayer.change). Remove, the switch and the
+    // style used to change the layout in memory only: the desktop followed at
+    // once, and the next restart brought the old state back, with no undo.
+    function change(callback) {
+        LayoutService.beginChange()
+        callback()
+        LayoutService.save()
     }
 
     DesktopModeSection { Layout.fillWidth: true }
@@ -47,7 +57,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 visible: screenSection.ids.length === 0
                 row: true
-                icon: Icons.edit
+                icon: Icons.arrange
                 title: "No widgets on this display yet"
             }
             Repeater {
@@ -72,12 +82,15 @@ ColumnLayout {
                             ShellToggle {
                                 focusOnTab: true
                                 checked: row.entry ? row.entry.visible : true
-                                onToggled: value => LayoutService.updateItem(row.modelData, { visible: value })
+                                onToggled: value => page.change(() => LayoutService.updateItem(row.modelData, { visible: value }))
                             }
+                            // Asks first, like the removes on the other
+                            // Settings pages; Undo at the top brings it back.
                             ShellButton {
                                 focusOnTab: true
                                 icon: Icons.remove; variant: "ghost"; compact: true; toolTip: "Remove"
-                                onClicked: LayoutService.removeItem(row.modelData)
+                                confirm: true; confirmText: "Remove?"
+                                onClicked: page.change(() => LayoutService.removeItem(row.modelData))
                             }
                         }
                     }
@@ -86,7 +99,11 @@ ColumnLayout {
                         Layout.fillWidth: true
                         current: row.entry ? row.entry.style : "minimal"
                         options: [{ value: "minimal", label: "Minimal" }, { value: "capsule", label: "Capsule" }, { value: "card", label: "Card" }]
-                        onSelected: value => LayoutService.updateItem(row.modelData, { style: value })
+                        onSelected: value => {
+                            // The style it already has is no undo step.
+                            if (row.entry && row.entry.style !== value)
+                                page.change(() => LayoutService.updateItem(row.modelData, { style: value }))
+                        }
                     }
                 }
             }
@@ -106,11 +123,7 @@ ColumnLayout {
                     focusOnTab: true
                     Layout.alignment: Qt.AlignTop
                     icon: Icons.add; text: "Add widget"
-                    onClicked: {
-                        LayoutService.beginChange()
-                        LayoutService.addWidget(screenSection.screenName, screenSection.addType)
-                        LayoutService.save()
-                    }
+                    onClicked: page.change(() => LayoutService.addWidget(screenSection.screenName, screenSection.addType))
                 }
             }
         }

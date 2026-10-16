@@ -9,8 +9,8 @@ import "../../services/launcher/LauncherCatalogue.js" as C
 //
 // The acceptance test is the first one: **the default is today's picture.**
 // It was a column of stacked blocks with two hand-written pairing rules until
-// the user asked twice for the grid the rest of the shell has; the rules are
-// gone and the picture has to survive them going.
+// it became the grid the rest of the shell has; the rules are gone and the
+// picture has to survive them going.
 ShellRoot {
     Component.onCompleted: {
         const fresh = L.defaultLauncher()
@@ -86,7 +86,7 @@ ShellRoot {
 
         // A block may name a ceiling of its own under the grid's (`maxW`/
         // `maxH`); none does at the moment - the search field's one-row
-        // ceiling lasted a day and went on the user's word - so every block
+        // ceiling lasted a day and went again - so every block
         // stops at the grid, and the search block is as tall as it is dragged.
         T.eq(C.maxSize("search"), { w: 4, h: 8 }, "the search field stops at the grid like the rest")
         T.eq([C.maxSize("results"), C.maxSize("categories")], [{ w: 4, h: 8 }, { w: 4, h: 8 }],

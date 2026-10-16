@@ -25,11 +25,12 @@ PopupPanel {
     body: ColumnLayout {
         id: content
         spacing: Metrics.pageGap
-        readonly property bool adapterOn: BluetoothService.enabled
+        // One viewer of the search, in a pair: BluetoothService counts them,
+        // so Settings opened from the footer keeps searching after this body
+        // is gone, and an adapter switched on while this is open starts
+        // searching by itself.
         Component.onCompleted: BluetoothService.setDiscovering(true)
         Component.onDestruction: BluetoothService.setDiscovering(false)
-        // Discovery starts only on a powered adapter; switching it on while open starts it too.
-        onAdapterOnChanged: if (adapterOn) BluetoothService.setDiscovering(true)
 
         CardSection {
             Layout.fillWidth: true

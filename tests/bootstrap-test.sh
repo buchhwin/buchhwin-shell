@@ -50,6 +50,10 @@ for distro in fedora opensuse-leap arch; do
   check "$distro: --minimal leaves the applications out" '[[ $minimal != *brave-browser* ]]'
   check "$distro: the default run has the applications" '[[ $out == *brave-browser* ]]'
   check "$distro: --minimal says what it left out" '[[ $minimal == *"--minimal:"* ]]'
+  # services/CalendarService.qml imports org.kde.plasma.PimCalendars, and
+  # without it the shell does not load: "only what the shell needs" has it.
+  check "$distro: --minimal installs kdepim-addons, which the calendar service cannot load without" \
+    '[[ $minimal == *" kdepim-addons "* ]]'
 
   skipped=$("$script" --distro "$distro" --skip-apps)
   check "$distro: --skip-apps leaves the applications out" '[[ $skipped != *brave-browser* ]]'
@@ -113,6 +117,13 @@ check 'Arch installs rtkit, which PipeWire asks for realtime priority' 'grep -qx
 # setpriv (Paths.bound) is in util-linux or util-linux-core depending on the
 # Fedora release; util-linux requires util-linux-core, so it covers both.
 fedora_list=$("$script" --distro fedora --list-packages)
+# org.kde.akonadi is akonadi-server's on Fedora, and no other package listed
+# requires it: --minimal once installed a desktop without a shell.
+fedora_minimal=$("$script" --distro fedora --minimal)
+check 'Fedora --minimal installs akonadi-server, which ships the Akonadi QML module' \
+  '[[ $fedora_minimal == *" akonadi-server "* ]]'
+check 'Leap and Arch --minimal install merkuro (the Akonadi QML module on Leap, akonadi on Arch)' \
+  '[[ $("$script" --distro opensuse-leap --minimal) == *" merkuro "* && $("$script" --distro arch --minimal) == *" merkuro "* ]]'
 check 'Fedora installs util-linux for setpriv, not util-linux-core alone' \
   'grep -qx util-linux <<<"$fedora_list" && ! grep -qx util-linux-core <<<"$fedora_list"'
 
@@ -180,7 +191,7 @@ check "Arch: an up-to-date system installs, pacman asking itself (status $safe_s
 out=$(safe "glibc 2.41-1 -> 2.42-1" "") && safe_status=0 || safe_status=$?
 check "Arch: pending upgrades refuse the install (status $safe_status)" \
   '[[ $safe_status -eq 1 && $out != *RUN* && $out == *"sudo pacman -Syu first"* && $out == *glibc* ]]'
-out=$(safe "icaclient 25.08-1 -> 26.04-1 [ignored]" "") && safe_status=0 || safe_status=$?
+out=$(safe "pinned-app 25.08-1 -> 26.04-1 [ignored]" "") && safe_status=0 || safe_status=$?
 check "Arch: a package held back with IgnorePkg is no pending upgrade (status $safe_status: $out)" \
   '[[ $safe_status -eq 0 && $out == *"RUN sudo pacman -S --needed quickshell"* ]]'
 out=$(safe "" "warning: downgrading package quickshell (0.3.3-1 => 0.3.2-1)") && safe_status=0 || safe_status=$?

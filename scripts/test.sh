@@ -13,9 +13,8 @@ strict_style=${BUCHHWIN_STRICT_STYLE:-1}
 # and again at the end. Two of the thirteen need one (Hyprland and Quickshell)
 # and both are installable, so a skip is a fact about the machine, not about
 # the suite - and a run that skipped something must not read the same as one
-# that did not. The private-data check is the exception: it fails rather than
-# skips, because the one thing that must never be wrong is not worth a
-# "passed" that means "not looked at".
+# that did not. The private-data check never skips: the one thing that must
+# never be wrong is not worth a "passed" that means "not looked at".
 skipped=()
 note_skip() {
   skipped+=("$1")
@@ -26,14 +25,19 @@ printf '== JSON\n'
 python3 "$project_dir/scripts/lib/checks.py" json
 
 printf '== Shell scripts\n'
-# bash -n only parses its first file argument, so check each file.
+# bash -n only parses its first file argument, so check each file. The ones
+# without a .sh name are listed by hand: the user's `buchhwin` command and
+# the nested key tool, whose parse error the smoke test would only report as
+# "tool cannot build" (a skip), and the session's xdg-open.
 for script in "$project_dir"/scripts/*.sh "$project_dir"/install/*.sh \
   "$project_dir"/tests/*.sh "$project_dir/session/buchhwin-shell-session" \
-  "$project_dir"/scripts/lib/*.sh "$project_dir/scripts/nested-pointer"; do
+  "$project_dir"/scripts/lib/*.sh "$project_dir/scripts/nested-pointer" \
+  "$project_dir/scripts/nested-keys" "$project_dir/scripts/buchhwin" "$project_dir/session/bin/xdg-open"; do
   bash -n "$script"
 done
 sh -n "$project_dir/session/buchhwin-shell-session-wrapper"
 zsh -n "$project_dir/zsh/.zshrc"
+zsh -n "$project_dir/shell-completion/_buchhwin"
 sh -n "$project_dir/session/pam/buchhwin-lid-closed"
 
 printf '== Hyprland configuration\n'
@@ -66,6 +70,7 @@ python3 "$project_dir/scripts/lib/checks.py" handlers
 python3 "$project_dir/scripts/lib/checks.py" icons
 python3 "$project_dir/scripts/lib/checks.py" ipc
 python3 "$project_dir/scripts/lib/checks.py" reserved
+python3 "$project_dir/scripts/lib/checks.py" plaintext
 
 printf '== QML lint\n'
 # The Qt 6 one, by name first: on openSUSE `qmllint` is Qt 5's, which rejects
@@ -79,19 +84,29 @@ done
 if [[ -n $qmllint_bin ]]; then
   # Without Quickshell's qmltypes every `qs.*` name is unresolved, so the full
   # report (tens of thousands of lines) goes to a file and only the kinds that
-  # mean something without them are shown. Warnings never fail the run.
+  # mean something without them are shown. Warnings do not fail the run - a
+  # syntax error does: Quickshell compiles a file only when something uses
+  # it, so a broken panel no unit test loads passed here, and CI runs no
+  # smoke test that would load it.
   lint_log=${XDG_CACHE_HOME:-$HOME/.cache}/buchhwin-shell/qmllint.log
   mkdir -p "${lint_log%/*}"
   "$qmllint_bin" --max-warnings -1 $(find "$project_dir/shell" "$project_dir/services" "$project_dir/theme" -name '*.qml' 2>/dev/null) >"$lint_log" 2>&1 || true
   lint_shown=$(grep -E '\[(duplicate-property-binding|syntax|read-only-property)\]' "$lint_log" || true)
   [[ -n $lint_shown ]] && printf '%s\n' "$lint_shown"
   printf '%s: %s warnings in all, full report in %s\n' "${qmllint_bin##*/}" "$(grep -c '^Warning' "$lint_log" || true)" "$lint_log"
+  if grep -q '\[syntax\]' "$lint_log"; then
+    printf 'qmllint found syntax errors (the [syntax] lines above). Refusing success.\n' >&2
+    exit 1
+  fi
 else
   note_skip 'QML lint (qmllint not installed; package qt6-qtdeclarative-devel, qt6-declarative on Arch)'
 fi
 
 printf '== QML/JS unit tests\n'
 if command -v quickshell >/dev/null; then
+  # The runner first: a runner that lets a binding loop pass would pass
+  # every test below for the wrong reason.
+  "$project_dir/tests/qml-runner-test.sh"
   for test_file in "$project_dir"/tests/qml/*Test.qml; do
     "$project_dir/tests/run-qml-test.sh" "$test_file"
   done
@@ -127,11 +142,14 @@ printf '== Session actions\n'
 "$project_dir/tests/session-action-test.sh"
 "$project_dir/tests/shell-control-test.sh"
 "$project_dir/tests/launch-app-test.sh"
+"$project_dir/tests/launch-terminal-test.sh"
+"$project_dir/tests/app-env-test.sh"
 "$project_dir/tests/wallet-unlock-test.sh"
 "$project_dir/tests/x11-dpi-test.sh"
 "$project_dir/tests/shell-update-test.sh"
 "$project_dir/tests/updates-check-test.sh"
 "$project_dir/tests/screenshot-test.sh"
+"$project_dir/tests/record-test.sh"
 
 printf '== Lid installers\n'
 "$project_dir/tests/fingerprint-lid-install-test.sh"
@@ -151,17 +169,13 @@ else
 fi
 
 printf '== Private data\n'
-# The only check in this file that used no `command -v` guard: without ripgrep
-# it simply passed, so the one thing that must never be wrong was not being
-# looked at. A missing tool is a failure here, not a pass.
-if ! command -v rg >/dev/null; then
-  printf 'ripgrep is required for the private-data check. Refusing success.\n' >&2
-  exit 1
-fi
-if rg -n --hidden --glob '!.git/**' \
-  '[-+]?[0-9]{1,3}\.[0-9]{4,}[[:space:]]*[,;][[:space:]]*[-+]?[0-9]{1,3}\.[0-9]{4,}' \
-  "$project_dir"; then
-  printf 'Possible coordinates found. Refusing success.\n' >&2
+# Places (side by side and under lat/lon keys), private keys, tokens, e-mail
+# addresses and this user's home, in every file Git would commit; the rules
+# and their allow-list are in checks.py. It used to be an rg pattern that only
+# knew "a, b" pairs - and without ripgrep it passed unlooked. Python is always
+# there; findings name the file and line, never the text.
+if ! python3 "$project_dir/scripts/lib/checks.py" private; then
+  printf 'Possible private data found. Refusing success.\n' >&2
   exit 1
 fi
 printf 'none found\n'

@@ -83,13 +83,15 @@ Singleton {
 
     function startDaemon() {
         if (!realSession || running || !known) return
-        Quickshell.execDetached(["kdeconnectd"])
+        Quickshell.execDetached([Paths.script("launch-app.sh"), "org.kde.kdeconnect.daemon", "kdeconnectd"])
         say("Starting KDE Connect …", false)
         refreshSoon.restart()
     }
 
+    // Applications go through launch-app.sh: the session's environment (the
+    // Plasma look, none of the shell's own settings) and a unit of their own.
     function openApp() {
-        Quickshell.execDetached(["kdeconnect-app"])
+        Quickshell.execDetached([Paths.script("launch-app.sh"), "org.kde.kdeconnect.app", "kdeconnect-app"])
         PanelService.close()
     }
 
@@ -134,8 +136,10 @@ Singleton {
         if (!actionsAllowed) { say(blockedReason || "KDE Connect is not running", true); return }
         const argv = Logic.command("sms", item.id)
         if (!argv) return
-        Quickshell.execDetached(argv)
+        Quickshell.execDetached([Paths.script("launch-app.sh"), "org.kde.kdeconnect.sms"].concat(argv))
         say("Opening Messages for " + item.name + " …", false)
+        // A window of its own, which would open under Settings (pitfall 6).
+        PanelService.close()
     }
 
     function toggleNotifications(item) {
@@ -191,10 +195,15 @@ Singleton {
 
     // Browsing the phone: the daemon mounts it over SFTP and opens the file
     // manager itself, so the shell never has to know where it landed.
+    // The file manager is a window, so Settings steps aside for it (pitfall
+    // 6); if the phone cannot be reached, Settings comes back on its page with
+    // the answer, the way "Send files" does.
     function browseFiles(item) {
         if (!actionsAllowed) { say(blockedReason || "KDE Connect is not running", true); return }
         const argv = Logic.command("browse", item.id)
-        if (argv) enqueue(argv, "browse", item.name)
+        if (!argv) return
+        enqueue(argv, "browse", item.name)
+        PanelService.close()
     }
 
     function dismissNotification(item, note) {
@@ -211,7 +220,8 @@ Singleton {
         if (pickProc.running || !Logic.validId(item.id)) return
         pickProc.deviceId = item.id
         pickProc.deviceName = item.name
-        pickProc.command = ["kdialog", "--title", "Send files to " + item.name, "--multiple", "--separate-output",
+        pickProc.command = [Paths.script("launch-app.sh"), "org.kde.kdialog",
+                            "kdialog", "--title", "Send files to " + item.name, "--multiple", "--separate-output",
                             "--getopenfilename", Paths.home]
         PanelService.close()
         pickProc.running = true
@@ -291,6 +301,8 @@ Singleton {
             else if (["play", "next", "previous", "volume", "player", "lock", "unlock"].indexOf(job.action) >= 0)
                 refreshSoon.restart()
             else if (job.action === "dismiss") root.loadNotifications()
+            else if (job.action === "browse" && code !== 0 && !PanelService.active.length)
+                PanelService.open("settings", { page: "kdeConnect" })
             root.next()
         }
     }

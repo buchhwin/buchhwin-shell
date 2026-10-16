@@ -173,6 +173,50 @@ function changes(original, draft, originalRule, rule) {
     return list
 }
 
+// ---- a form that outlives a close -------------------------------------------
+// The editor closes on any click outside it, on any monitor (cd1e136) - the
+// browser on the other screen the meeting link is copied from, too - and it
+// filled itself anew on every open, so a typed event was gone. What the form
+// held is kept across a close that nobody asked of it, and handed back when
+// the editor opens on the same day (a new event) or the same event (an edit).
+// Save, Cancel and Escape still end it, and so does an open for anything else.
+
+// The fields a person types or picks. The calendar is left out: the list of
+// calendars arrives after the form opened and fills it in by itself, which is
+// not a change anybody made.
+var FORM_FIELDS = ["title", "allDay", "date", "endDate", "start", "end", "location", "notes"]
+
+function formChanged(opened, draft) {
+    if (!opened || !draft) return false
+    return FORM_FIELDS.some(field => String(opened[field]) !== String(draft[field]))
+}
+
+// What to keep when the editor closes, or null. `args` are the arguments it
+// was opened with; `state` is { editing, opened, openedRule, draft, rule,
+// original, originalRule, scope }. A form nobody touched is not kept: a new
+// event starts at the next full hour, and an untouched draft handed back
+// three hours later would start in the past.
+function keptDraft(args, state) {
+    if (!args || !state || !state.draft) return null
+    if (args.mode === "details") {
+        if (!state.editing) return null
+        if (!changes(state.original, state.draft, state.originalRule, state.rule).length) return null
+        return { mode: "details", day: "", event: args.event || null, state: state }
+    }
+    const touched = formChanged(state.opened, state.draft)
+        || (state.rule && state.openedRule && !Rec.sameRule(state.openedRule, state.rule))
+    if (!touched) return null
+    return { mode: "new", day: String(args.day || ""), event: null, state: state }
+}
+
+// Whether an open is for the form that was kept: a new event on the same day,
+// or the same event's details.
+function resumes(kept, args) {
+    if (!kept || !args) return false
+    if (args.mode === "details") return kept.mode === "details" && sameEvent(kept.event, args.event)
+    return kept.mode === "new" && kept.day === String(args.day || "")
+}
+
 // ---- the requests the helper reads ------------------------------------------
 
 // Which command changes this event, given what the user chose in the dialog.

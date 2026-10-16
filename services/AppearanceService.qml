@@ -5,6 +5,7 @@ import QtQuick
 import "hypr/HyprCommands.js" as Commands
 import "hypr/HyprAnimations.js" as Anim
 import "display/DisplayLogic.js" as DisplayLogic
+import "lock/LockLogic.js" as LockLogic
 
 // Applies appearance settings that live outside QML: Hyprland blur, window
 // rounding, borders and gaps, and the cursor theme. Session environment
@@ -22,6 +23,11 @@ Singleton {
     // but must never touch the host's systemd environment.
     readonly property bool realSession: (Quickshell.env("BUCHHWIN_SHELL_PATH") || "").length > 0
         && Quickshell.env("BUCHHWIN_NESTED") !== "1"
+    // The lock process (lock.qml) can reach this service through something
+    // its face shows. It applies nothing from there: the compositor options,
+    // the cursor and the X11 scale are the shell's, and the X11 scale would
+    // also create DisplayService in the lock.
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
     readonly property bool macCursorInstalled: cursorThemes.some(theme => theme.name.toLowerCase().startsWith("macos"))
 
     function label(name) {
@@ -36,6 +42,7 @@ Singleton {
         ? SettingsService.accent.slice(1).toLowerCase() : "4f8ff7"
 
     function applyHyprland() {
+        if (lockProcess) return
         const blurSize = Math.round(2 + SettingsService.blurStrength * 10)
         HyprCompat.setOptions({
             "decoration:blur:enabled": SettingsService.blurStrength > 0,
@@ -68,6 +75,7 @@ Singleton {
     // re-emitted; the numbers come from HyprAnimations, which is also what the
     // two configuration files are checked against.
     function applyAnimations() {
+        if (lockProcess) return
         const mode = SettingsService.animationMode
         const pace = Anim.pace(SettingsService.animationSpeed)
         HyprCompat.configure(Commands.animationMode(Anim.entries(mode, pace),
@@ -86,15 +94,15 @@ Singleton {
     // follows the monitors and not only the switch. Like the compositor
     // option, only applications started afterwards read it.
     // The user may name the scale instead (Settings > Displays > X11 scale):
-    // Citrix at the screen's own 1.5 was still a little small to read, and
-    // a session that is mostly one remote desktop may well want 1.75 on a
+    // a remote desktop at the screen's own 1.5 can still be a little small
+    // to read, and a session that is mostly one may well want 1.75 on a
     // 4K screen. 0 is "the largest screen".
-    readonly property real x11Scale: !SettingsService.xwaylandSharp ? 1
+    readonly property real x11Scale: lockProcess || !SettingsService.xwaylandSharp ? 1
         : SettingsService.x11ScaleSetting > 0 ? SettingsService.x11ScaleSetting
         : DisplayLogic.x11Scale(DisplayService.monitors)
 
     function applyX11Scale() {
-        if (!realSession) return
+        if (lockProcess || !realSession) return
         // Before the monitors are known the largest scale reads as 1, and a
         // reset written then is a wrong answer for a moment - and a moment is
         // enough for an application starting at login to read it.
@@ -104,6 +112,7 @@ Singleton {
     }
 
     function applyCursor() {
+        if (lockProcess) return
         const theme = SettingsService.cursorTheme
         const size = String(SettingsService.cursorSize)
         Quickshell.execDetached(["hyprctl", "setcursor", theme, size])
@@ -138,7 +147,7 @@ Singleton {
     onX11ScaleChanged: { if (SettingsService.loaded) { applyX11Scale(); applyCursor() } }
 
     Connections {
-        target: HyprlandService
+        target: root.lockProcess ? null : HyprlandService
         function onConfigReloaded() {
             if (!SettingsService.loaded) return
             root.applyHyprland()

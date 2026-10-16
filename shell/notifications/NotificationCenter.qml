@@ -30,7 +30,11 @@ ShellPanel {
     readonly property var matching: shown ? Logic.search(NotificationService.history, query) : []
     readonly property var groups: Logic.group(matching)
 
-    onWantedChanged: if (wanted) { NotificationService.markRead(); query = "" }
+    // The field, not the query: the panel is built once and keeps its field,
+    // so clearing only `query` reopened it with the old words still in the
+    // field over an unfiltered list, and the next key searched for both.
+    // The field drives the query, so clearing it clears both.
+    onWantedChanged: if (wanted) { NotificationService.markRead(); search.text = "" }
 
     ColumnLayout {
         anchors.fill: parent
@@ -87,6 +91,7 @@ ShellPanel {
                 clip: true
                 contentHeight: groupColumn.implicitHeight
                 boundsBehavior: Flickable.StopAtBounds
+                ScrollFeel { view: list }
 
                 ColumnLayout {
                     id: groupColumn

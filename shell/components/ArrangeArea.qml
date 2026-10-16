@@ -78,8 +78,11 @@ Item {
     signal committed(string id, int index)
 
     // The flag is global so Escape and the panel can see it; `ownsDrag` keeps
-    // one area from reacting to another area's drag.
-    readonly property string dragId: LayoutService.arrangeDragging
+    // one area from reacting to another area's drag. An area that is not
+    // being arranged never reads it: the lock face's grid is one, and reading
+    // the flag would create LayoutService in the lock process - a second
+    // writer on layout.json (see LockScreen.qml).
+    readonly property string dragId: editing ? LayoutService.arrangeDragging : ""
     property bool ownsDrag: false
     readonly property bool dragging: ownsDrag && dragId.length > 0
     property int dropIndex: -1

@@ -435,7 +435,7 @@ Variants {
                         accessibleName: "Desktop mode"
                         style: "pill"
                         current: LayoutService.desktopMode
-                        options: [{ value: "widgets", label: "Widgets", icon: Icons.edit },
+                        options: [{ value: "widgets", label: "Widgets", icon: Icons.arrange },
                                   { value: "pills", label: "Bar", icon: "󰘔" },
                                   { value: "notch", label: "Notch", icon: "󱂩" }]
                         onSelected: value => { editorRoot.selection = []; editorRoot.selectBar("", -1); LayoutService.setDesktopMode(value) }
@@ -466,7 +466,7 @@ Variants {
                 }
             }
 
-            ShellText {
+            EditorCaption {
                 id: editHint
                 anchors.horizontalCenter: toolbar.horizontalCenter
                 anchors.bottom: toolbar.top
@@ -487,11 +487,6 @@ Variants {
                     : editorRoot.barMode ? "Drag or arrow keys · Tab selects · A adds · S changes the look · Del removes · Ctrl+Z undoes · Esc back"
                     : "Drag or arrow keys · Alt disables snapping · Shift+Click multi-selects · Tab selects · A adds · S changes the look · +/− resizes · G grid · Del removes · Ctrl+Z undoes · Esc back"
                 role: "small"
-                // The scrim's ink: the panel's text is dark in the light theme,
-                // and dark text in a dark outline was dark on dark.
-                color: Colors.scrimText
-                style: Text.Outline
-                styleColor: Colors.scrimStrong
             }
 
             // Widget and bar item picker

@@ -60,14 +60,18 @@ ShellCard {
         spacing: Metrics.spaceSm
         // The row's glyph, gap and two lines (TileContent), as on the tiles
         // above the chips and the rows behind them.
+        // Active, the chip is the accent tint (ShellCard's highlight), and
+        // its inks are the ones made for the tint: the blue title of an
+        // active chip was 3.4:1 on it.
         TileContent {
             Layout.fillWidth: true
             icon: root.icon
             title: root.title
             subtitle: root.subtitle
             singleLine: root.compact
-            iconColor: root.active ? Colors.accentForeground : Colors.mutedText
-            titleColor: root.active ? Colors.accentForeground : Colors.text
+            iconColor: root.active ? Colors.accentOnSoft : Colors.mutedText
+            titleColor: root.active ? Colors.accentOnSoft : Colors.text
+            subtitleColor: root.active ? Colors.mutedOnSoft : Colors.mutedText
         }
         ShellIcon { visible: root.showChevron && !root.compact; glyph: root.leavesPanel ? Icons.leavesPanel : Icons.forward; size: Metrics.iconXs; color: Colors.mutedText }
     }

@@ -14,8 +14,13 @@ WidgetBase {
     // Which device it is going to, which is the question a percentage raises.
     detail: AudioService.sink ? AudioService.label(AudioService.sink) : ""
 
-    // Scrolling over the widget changes the volume.
+    // Scrolling over the widget changes the volume. An event that turned
+    // nothing is no step: Qt ends a touchpad swipe with one (ScrollEnd, no
+    // delta), and reading it as "down" would take 5 % off after the swipe.
     WheelHandler {
-        onWheel: event => AudioService.setVolume(AudioService.sink, AudioService.volume + (event.angleDelta.y > 0 ? 0.05 : -0.05))
+        onWheel: event => {
+            if (event.angleDelta.y !== 0)
+                AudioService.setVolume(AudioService.sink, AudioService.volume + (event.angleDelta.y > 0 ? 0.05 : -0.05))
+        }
     }
 }

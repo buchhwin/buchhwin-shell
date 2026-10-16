@@ -2,6 +2,7 @@ pragma Singleton
 import Quickshell
 import QtQuick
 import qs.services
+import "../services/appearance/ContrastLogic.js" as Contrast
 
 Singleton {
     // Default panel opacity (live while the Settings slider is dragged).
@@ -43,7 +44,7 @@ Singleton {
     readonly property int elevation3Offset: 14
     // A large surface is not one flat fill: a barely visible top-to-bottom
     // gradient gives it a direction without reading as a gradient.
-    readonly property real sheenTop: Colors.dark ? 0.032 : 0
+    readonly property real sheenTop: Colors.surfaceDark ? 0.032 : 0
     readonly property real sheenBottom: 0.0
     // The lock backdrop is a tiny capture; this smooths it when scaled up.
     readonly property int lockBlurMax: 64
@@ -66,7 +67,15 @@ Singleton {
     readonly property real glowResolution: 0.5
     // Media popup: the cover, blurred and faint, tints the card behind it.
     readonly property int mediaBackdropBlur: 64
-    readonly property real mediaBackdropOpacity: 0.32
+    // As strong as the worst cover allows - white behind the light ink of a
+    // dark panel, black behind the dark ink of a light one - with the muted
+    // captions on it still at 4.5:1, and never above the 0.32 it was drawn
+    // at. At 0.32 a bright cover took them to 2.65:1 (dark) and 3.6:1
+    // (light). Comes to 0.15 on the dark theme's panel, 0.22 on black and
+    // 0.09 on the light one: a tint you see on a colourful cover, not a wash.
+    readonly property real mediaBackdropMax: 0.32
+    readonly property real mediaBackdropOpacity: Contrast.maxOverlay(String(Colors.mutedText),
+        Colors.surfaceDark ? "#ffffff" : "#000000", String(Colors.panelBase), Contrast.TEXT_RATIO, mediaBackdropMax)
     // Media popup vinyl: hole size (share of the radius), groove and sheen strength.
     readonly property real vinylHole: 0.075        // share of the disc radius
     readonly property real vinylLabel: 0.62       // label diameter / disc diameter

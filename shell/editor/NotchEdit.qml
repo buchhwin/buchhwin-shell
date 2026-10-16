@@ -165,7 +165,7 @@ Item {
         }
     }
 
-    ShellText {
+    EditorCaption {
         id: hint
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: panels.bottom
@@ -180,11 +180,6 @@ Item {
             ? "The notch sits at the top center and cannot be moved · drag an item to reorder it, the notch's right edge to set how wide the strip is · an item's arrow button sends it to the overview"
             : "Drag a tile to reorder it, its corner to size it · drag the notch's own corner to size the overview · a tile's arrow button sends it to the strip"
         role: "small"
-        // The scrim's ink: the panel's text is dark in the light theme, and
-        // dark text in a dark outline was dark on dark.
-        color: Colors.scrimText
-        style: Text.Outline
-        styleColor: Colors.scrimStrong
     }
 
     EditorPanel {

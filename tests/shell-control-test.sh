@@ -20,14 +20,42 @@ check() {
 bin="$sandbox/bin"
 calls="$sandbox/calls.log"
 mkdir -p "$bin"
+# `list` names an instance once the checkout's start-shell.sh has run, and a
+# `kill` ends it: a reload then returns after one start, and no late second
+# start lands in the next case's log.
 cat > "$bin/quickshell" <<'EOF'
 #!/bin/sh
 printf 'quickshell %s\n' "$*" >> "$CALLS"
+case "$1" in
+  kill) rm -f "$CALLS.up" ;;
+  list) [ -e "$CALLS.up" ] && echo '[{"id":"stand-in"}]' ;;
+esac
 exit 0
 EOF
+# pgrep answers from the environment: $SHELL_PIDS for a shell's command line,
+# $PACMAN_PIDS for a package manager, nothing otherwise - never the host's.
 cat > "$bin/pgrep" <<'EOF'
 #!/bin/sh
-exit 1
+case "$*" in
+  *"pacman|paru|yay"*) [ -n "${PACMAN_PIDS:-}" ] || exit 1; printf '%s\n' $PACMAN_PIDS ;;
+  *"^quickshell "*) [ -n "${SHELL_PIDS:-}" ] || exit 1; printf '%s\n' $SHELL_PIDS ;;
+  *) exit 1 ;;
+esac
+EOF
+# The user manager: the units in $ACTIVE_UNITS are running.
+cat > "$bin/systemctl" <<'EOF'
+#!/bin/sh
+printf 'systemctl %s\n' "$*" >> "$CALLS"
+case "$*" in
+  *is-active*)
+    for unit in ${ACTIVE_UNITS:-}; do case " $* " in *" $unit "*) exit 0 ;; esac; done
+    exit 3 ;;
+esac
+exit 0
+EOF
+cat > "$bin/notify-send" <<'EOF'
+#!/bin/sh
+printf 'notify-send %s\n' "$*" >> "$CALLS"
 EOF
 # reload-shell.sh starts the shell in a transient scope; the stub runs what
 # follows `--` in place, so nothing reaches the host's user manager.
@@ -57,7 +85,10 @@ for name in reload-shell.sh stop-shell.sh; do
   printf '#!/bin/sh\nprintf "redirected %s\\n" >> "$CALLS"\nexit 0\n' "$name" > "$installed/scripts/$name"
 done
 cp "$project_dir/scripts/lib/nested-guard.sh" "$checkout/scripts/lib/"
-printf '#!/bin/sh\nprintf "start-shell %%s\\n" "$*" >> "$CALLS"\nexit 0\n' > "$checkout/scripts/start-shell.sh"
+# The checkout's start-shell.sh records how it was started: its arguments,
+# its environment and its working directory.
+# Written aside and moved, so a reader never sees half of it.
+printf '#!/bin/sh\npwd > "$CALLS.pwd"; env > "$CALLS.env.part"; mv -f "$CALLS.env.part" "$CALLS.env"\nprintf "start-shell %%s\\n" "$*" >> "$CALLS"\ntouch "$CALLS.up"\nexit 0\n' > "$checkout/scripts/start-shell.sh"
 chmod +x "$checkout/scripts/"*.sh "$installed/scripts/"*.sh
 touch "$installed/shell.qml"
 
@@ -139,6 +170,141 @@ sandboxed WAYLAND_DISPLAY=wayland-0 HYPRLAND_INSTANCE_SIGNATURE=real-signature B
 for _ in {1..20}; do said "^start-shell" && break; sleep 0.1; done
 check 'said "^systemd-run --user --scope --quiet --collect --unit buchhwin-shell-[0-9]*-[0-9]* -- "' 'reload starts the shell in a scope of its own'
 check 'said "^start-shell '"$checkout"'$"' 'and that scope runs start-shell.sh for the checkout'
+
+# ---- half of a nested session's environment ----------------------------------
+# The nested signature without the nested display (the testing recipe once
+# exported just that), or the other way round: quickshell looks for the shell
+# on the display, found none on the user's screen and started a second
+# development shell there. Refused, for reload and stop alike.
+echo "wayland-9" > "$nested/wayland-display"
+echo "nested-signature" > "$nested/instance"
+for script in reload-shell.sh stop-shell.sh; do
+  for mixed in "WAYLAND_DISPLAY=wayland-0 HYPRLAND_INSTANCE_SIGNATURE=nested-signature" \
+               "WAYLAND_DISPLAY=wayland-9 HYPRLAND_INSTANCE_SIGNATURE=real-signature"; do
+    : > "$calls"
+    # shellcheck disable=SC2086
+    if sandboxed $mixed BUCHHWIN_SHELL_PATH="$checkout" bash "$checkout/scripts/$script" >"$sandbox/out.log" 2>"$sandbox/err.log"; then
+      printf 'FAIL shell-control: %s did not refuse %s\n' "$script" "$mixed"
+      failures=$((failures + 1))
+    fi
+    check '! said "^quickshell kill" && ! said "^start-shell"' "$script acts on no shell with $mixed"
+    check 'grep -q "different sessions" "$sandbox/err.log"' "$script says why ($mixed)"
+  done
+done
+rm -f -- "$nested/wayland-display" "$nested/instance"
+
+# ---- what the shell is started with --------------------------------------------
+# Not the caller's own environment: a deploy from an editor by a coding agent
+# gave the live shell - and every application it started - the agent's
+# variables and session token, ELECTRON_RUN_AS_NODE and VSCODE_*. Those go;
+# everything else stays, so nothing the session set is lost. And it starts in
+# the home directory, as from Hyprland, not in the deploying checkout.
+mkdir -p "$home"
+reload_env() {
+  : > "$calls"; rm -f "$calls.env" "$calls.pwd"
+  ( cd "$checkout" && sandboxed WAYLAND_DISPLAY=wayland-0 HYPRLAND_INSTANCE_SIGNATURE=real-signature \
+      BUCHHWIN_SHELL_PATH="$checkout" "$@" bash "$checkout/scripts/reload-shell.sh" >"$sandbox/out.log" 2>"$sandbox/err.log" ) || true
+  for _ in {1..20}; do [[ -s $calls.env ]] && break; sleep 0.1; done
+}
+started_with() { grep -qx -- "$1" "$calls.env"; }
+started_without() { ! grep -q -- "^$1=" "$calls.env"; }
+reload_env CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=s CLAUDE_CODE_MESSAGING_TOKEN=t CLAUDE_PID=7 AI_AGENT=a \
+  ELECTRON_RUN_AS_NODE=1 VSCODE_PID=9 VSCODE_GIT_IPC_HANDLE=/h GIT_ASKPASS=/vscode/askpass.sh CHROME_DESKTOP=code.desktop \
+  TERM_PROGRAM=vscode TERM_PROGRAM_VERSION=1.2 KITTY_WINDOW_ID=3 INVOCATION_ID=abc JOURNAL_STREAM=8:9 \
+  QT_QPA_PLATFORM=wayland XDG_CURRENT_DESKTOP=buchhwin-shell:Hyprland SSH_AUTH_SOCK=/agent \
+  ELECTRON_OZONE_PLATFORM_HINT=wayland SESSION_OWN=kept
+check '[[ -s $calls.env ]]' "the shell was started at all"
+for name in CLAUDECODE CLAUDE_CODE_SESSION_ID CLAUDE_CODE_MESSAGING_TOKEN CLAUDE_PID AI_AGENT ELECTRON_RUN_AS_NODE \
+    VSCODE_PID VSCODE_GIT_IPC_HANDLE GIT_ASKPASS CHROME_DESKTOP TERM_PROGRAM TERM_PROGRAM_VERSION KITTY_WINDOW_ID \
+    INVOCATION_ID JOURNAL_STREAM; do
+  check 'started_without "$name"' "the shell is started without the caller's $name"
+done
+for kept in QT_QPA_PLATFORM=wayland XDG_CURRENT_DESKTOP=buchhwin-shell:Hyprland SSH_AUTH_SOCK=/agent \
+    ELECTRON_OZONE_PLATFORM_HINT=wayland SESSION_OWN=kept WAYLAND_DISPLAY=wayland-0 HYPRLAND_INSTANCE_SIGNATURE=real-signature; do
+  check 'started_with "$kept"' "and with the session's $kept"
+done
+check '[[ $(cat "$calls.pwd" 2>/dev/null) == "$home" ]]' "in the home directory, not the caller's ($(cat "$calls.pwd" 2>/dev/null))"
+# A GIT_ASKPASS that is not VS Code's is the session's; a ZDOTDIR is the
+# window's only when it is a buchhwin checkout's (the session kitty) or VS
+# Code's in front of the user's own.
+mkdir -p "$sandbox/kitty-tree/scripts" "$sandbox/kitty-tree/zsh" "$sandbox/userzsh"
+printf '#!/bin/sh\n' > "$sandbox/kitty-tree/scripts/launch-kitty.sh"; chmod +x "$sandbox/kitty-tree/scripts/launch-kitty.sh"
+reload_env GIT_ASKPASS=/usr/bin/ksshaskpass ZDOTDIR="$sandbox/userzsh"
+check 'started_with GIT_ASKPASS=/usr/bin/ksshaskpass && started_with "ZDOTDIR=$sandbox/userzsh"' "the session's own GIT_ASKPASS and ZDOTDIR stay"
+# An agent's shell runs git without an editor (GIT_EDITOR=true): a terminal
+# opened from the launcher then could not write a commit message. Its
+# corepack setting and the editor's GTK accessibility switch go too, and the
+# extension host's own variables; a session's own values of the same names
+# stay when no agent or editor is the caller.
+reload_env CLAUDECODE=1 VSCODE_PID=9 GIT_EDITOR=true COREPACK_ENABLE_AUTO_PIN=0 NO_AT_BRIDGE=1 \
+  COPILOT_OTEL_FILE_EXPORTER_PATH=/dev/null MCP_CONNECTION_NONBLOCKING=true APPLICATION_INSIGHTS_NO_STATSBEAT=true \
+  MXC_BIN_DIR=/code/bin NoDefaultCurrentDirectoryInExePath=1
+for name in GIT_EDITOR COREPACK_ENABLE_AUTO_PIN NO_AT_BRIDGE COPILOT_OTEL_FILE_EXPORTER_PATH MCP_CONNECTION_NONBLOCKING \
+    APPLICATION_INSIGHTS_NO_STATSBEAT MXC_BIN_DIR NoDefaultCurrentDirectoryInExePath; do
+  check 'started_without "$name"' "the shell is started without the agent's or editor's $name"
+done
+# (Whoever runs this test may be an agent in an editor: its own names go first.)
+( for name in $(compgen -e); do
+    case $name in CLAUDECODE | VSCODE_*) unset "$name" ;; esac
+  done
+  reload_env GIT_EDITOR=nvim COREPACK_ENABLE_AUTO_PIN=0 NO_AT_BRIDGE=1 COPILOT_MODEL=own )
+check 'started_with GIT_EDITOR=nvim && started_with COREPACK_ENABLE_AUTO_PIN=0 && started_with NO_AT_BRIDGE=1 && started_with COPILOT_MODEL=own' \
+  "the session's own editor, corepack, accessibility and Copilot settings stay"
+reload_env ZDOTDIR="$sandbox/kitty-tree/zsh"
+check 'started_without ZDOTDIR' "the session kitty's zsh profile does not"
+reload_env ZDOTDIR=/tmp/vscode-zsh USER_ZDOTDIR="$sandbox/userzsh"
+check 'started_without ZDOTDIR && started_without USER_ZDOTDIR' "nor VS Code's shell integration"
+
+# ---- the shell found by its display ---------------------------------------------
+# A quickshell of the same path on another display (a nested session runs the
+# checkout too) is not waited for; one on this display is, until it goes.
+env WAYLAND_DISPLAY=wayland-other sleep 30 & other_display=$!
+env WAYLAND_DISPLAY=wayland-0 sleep 30 & same_display=$!
+sleep 0.2
+: > "$calls"
+SHELL_PIDS=$other_display sandboxed WAYLAND_DISPLAY=wayland-0 HYPRLAND_INSTANCE_SIGNATURE=real-signature \
+  BUCHHWIN_SHELL_PATH="$checkout" bash "$checkout/scripts/reload-shell.sh" >/dev/null 2>&1 &
+reload=$!
+for _ in {1..20}; do said "^start-shell" && break; sleep 0.1; done
+check 'said "^start-shell"' "another display's shell of the same path is not waited for"
+kill "$reload" 2>/dev/null || true; wait "$reload" 2>/dev/null || true
+: > "$calls"
+SHELL_PIDS=$same_display sandboxed WAYLAND_DISPLAY=wayland-0 HYPRLAND_INSTANCE_SIGNATURE=real-signature \
+  BUCHHWIN_SHELL_PATH="$checkout" bash "$checkout/scripts/reload-shell.sh" >/dev/null 2>&1 &
+reload=$!
+sleep 1.5
+check '! said "^start-shell"' "this display's shell is waited for"
+kill "$same_display" 2>/dev/null || true; wait "$same_display" 2>/dev/null || true
+for _ in {1..30}; do said "^start-shell" && break; sleep 0.1; done
+check 'said "^start-shell"' "and the new one starts once it is gone"
+kill "$reload" "$other_display" 2>/dev/null || true; wait "$reload" "$other_display" 2>/dev/null || true
+
+# ---- an upgrade in a terminal ----------------------------------------------------
+# The page's terminals are units of their own now: said, and the reload goes
+# ahead. A pacman below the shell being replaced (a shell from before that,
+# whose kitty is its own child) would be ended mid-transaction: refused, and
+# said in a notification, since Super+Ctrl+R has no terminal.
+: > "$calls"
+ACTIVE_UNITS=buchhwin-upgrade sandboxed WAYLAND_DISPLAY=wayland-0 HYPRLAND_INSTANCE_SIGNATURE=real-signature \
+  BUCHHWIN_SHELL_PATH="$checkout" bash "$checkout/scripts/reload-shell.sh" >"$sandbox/out.log" 2>"$sandbox/err.log" || true
+for _ in {1..20}; do said "^start-shell" && break; sleep 0.1; done
+check 'grep -q "buchhwin-upgrade.service is running" "$sandbox/err.log" && said "^start-shell"' "a running upgrade unit is named, and the reload goes ahead"
+bash -c 'sleep 30 & echo $! > "$1"; wait' sh "$sandbox/pacman.pid" & fake_shell=$!
+for _ in {1..20}; do [[ -s $sandbox/pacman.pid ]] && break; sleep 0.05; done
+fake_pacman=$(cat "$sandbox/pacman.pid")
+: > "$calls"
+status=0
+SHELL_PIDS=$fake_shell PACMAN_PIDS=$fake_pacman sandboxed WAYLAND_DISPLAY=wayland-0 HYPRLAND_INSTANCE_SIGNATURE=real-signature \
+  BUCHHWIN_SHELL_PATH="$checkout" bash "$checkout/scripts/reload-shell.sh" >"$sandbox/out.log" 2>"$sandbox/err.log" || status=$?
+check '[[ $status -ne 0 ]] && ! said "^quickshell kill" && ! said "^start-shell"' "a pacman below the shell refuses the reload (status $status)"
+check 'grep -q "package upgrade (pid $fake_pacman)" "$sandbox/err.log" && said "^notify-send .*The shell was not restarted"' "and says so, in a notification too"
+: > "$calls"
+sleep 30 & unrelated=$!
+SHELL_PIDS=$unrelated PACMAN_PIDS=$fake_pacman sandboxed WAYLAND_DISPLAY=wayland-0 HYPRLAND_INSTANCE_SIGNATURE=real-signature \
+  BUCHHWIN_SHELL_PATH="$checkout" bash "$checkout/scripts/reload-shell.sh" >/dev/null 2>&1 || true
+for _ in {1..20}; do said "^start-shell" && break; sleep 0.1; done
+check 'said "^quickshell kill" && said "^start-shell"' "a pacman elsewhere does not"
+kill "$fake_pacman" "$fake_shell" "$unrelated" 2>/dev/null || true; wait "$fake_shell" "$unrelated" 2>/dev/null || true
 
 if (( failures )); then
   printf 'shell-control: %d check(s) failed\n' "$failures" >&2

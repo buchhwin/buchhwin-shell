@@ -9,6 +9,7 @@ import "launcher/IconLogic.js" as IconLogic
 import "launcher/WebSearch.js" as Web
 import "launcher/ModeOrder.js" as ModeOrder
 import "launcher/Pinned.js" as Pinned
+import "launcher/LaunchLogic.js" as Launch
 import "settings/SettingsNavLogic.js" as Nav
 
 // Launcher providers. Prefixes: none = apps (+ calculator, commands and, for
@@ -94,12 +95,12 @@ Singleton {
         { title: "Dashboard", keywords: "calendar clock weather time kalender uhr wetter", icon: "󰃭", run: () => PanelService.open("dashboard") },
         { title: "Refresh weather", keywords: "weather refresh open-meteo wetter aktualisieren", icon: "󰖐", run: () => { WeatherService.refresh(); PanelService.open("dashboard") } },
         { title: "Open calendar in Merkuro", keywords: "calendar events google akonadi kalender termine", icon: "󰸗", run: () => CalendarService.openManager() },
-        { title: "Desktop mode: widgets", keywords: "mode widgets desktop modus", icon: Icons.edit, run: () => LayoutService.setDesktopMode("widgets") },
+        { title: "Desktop mode: widgets", keywords: "mode widgets desktop modus", icon: Icons.arrange, run: () => LayoutService.setDesktopMode("widgets") },
         { title: "Desktop mode: bar", keywords: "mode bar pills top panel modus leiste oben", icon: "󰘔", run: () => LayoutService.setDesktopMode("pills") },
         { title: "Desktop mode: notch", keywords: "mode notch island dynamic time modus kerbe insel uhr", icon: "󱂩", run: () => LayoutService.setDesktopMode("notch") },
         { title: "Notch: Island", keywords: "notch preset island pills workspaces status kerbe insel vorlage arbeitsflächen", icon: "󱂩", preset: "island", run: () => LayoutService.applyNotchPreset("island") },
         { title: "Notch: Classic", keywords: "notch preset classic time clock only kerbe klassisch vorlage uhr zeit", icon: "󱂩", preset: "classic", run: () => LayoutService.applyNotchPreset("classic") },
-        { title: "Edit layout", keywords: "widgets pills bar notch editor arrange layout bearbeiten anordnen leiste", icon: Icons.edit, run: () => { PanelService.close(); LayoutService.editMode = true } },
+        { title: "Edit layout", keywords: "widgets pills bar notch editor arrange layout bearbeiten anordnen leiste", icon: Icons.arrange, run: () => { PanelService.close(); LayoutService.editMode = true } },
         { title: "Settings", keywords: "settings appearance einstellungen darstellung", icon: Icons.settings, run: () => PanelService.open("settings") },
         { title: "Timer: 5 minutes", keywords: "timer countdown 5 minutes wecker uhr minuten", icon: "󰔛", run: () => TimerService.start(300) },
         { title: "Timer: 10 minutes", keywords: "timer countdown 10 minutes wecker uhr minuten", icon: "󰔛", run: () => TimerService.start(600) },
@@ -113,8 +114,8 @@ Singleton {
         { title: "Next wallpaper", keywords: "wallpaper next hintergrundbild nächstes", icon: "󰸉", run: () => WallpaperService.next(1) },
         // The five modes, not profiles: these called setActiveProfile with a
         // mode's name and did nothing (15.10.).
-        { title: "Mode: minimal", keywords: "mode modus profile layout profil", icon: Icons.edit, run: () => LayoutService.setActiveMode("minimal") },
-        { title: "Mode: work", keywords: "mode modus profile layout profil arbeit", icon: Icons.edit, run: () => LayoutService.setActiveMode("work") },
+        { title: "Mode: minimal", keywords: "mode modus profile layout profil", icon: Icons.arrange, run: () => LayoutService.setActiveMode("minimal") },
+        { title: "Mode: work", keywords: "mode modus profile layout profil arbeit", icon: Icons.arrange, run: () => LayoutService.setActiveMode("work") },
         { title: "Mode: gaming", keywords: "mode modus profile layout games profil spiele", icon: "󰊴", run: () => LayoutService.setActiveMode("gaming") },
         { title: "Mode: laptop", keywords: "mode modus profile layout profil", icon: "󰌢", run: () => LayoutService.setActiveMode("laptop") },
         { title: "Mode: docked", keywords: "mode modus profile layout monitor display profil", icon: "󰍹", run: () => LayoutService.setActiveMode("docked") },
@@ -123,7 +124,7 @@ Singleton {
         { title: "Toggle Night Light", keywords: "night light blue light warm nachtlicht nachtmodus blaulicht", icon: "󰖔", run: () => NightLightService.toggle() },
         { title: "Focus: on", keywords: "focus concentration quiet widgets fokus konzentration ruhe", icon: "󰽥", run: () => AdaptiveService.setFocus(true) },
         { title: "Focus: off", keywords: "focus concentration fokus konzentration", icon: "󰽥", run: () => AdaptiveService.setFocus(false) },
-        { title: "Overview", keywords: "overview windows workspaces expose übersicht fenster", icon: Icons.edit, run: () => PanelService.open("overview") },
+        { title: "Overview", keywords: "overview windows workspaces expose übersicht fenster", icon: Icons.arrange, run: () => PanelService.open("overview") },
         { title: "Clipboard", keywords: "clipboard history copy zwischenablage verlauf kopieren", icon: Icons.copy, run: () => PanelService.open("clipboard") },
         { title: "Screenshot: region", keywords: "screenshot capture region selection bildschirmfoto foto bereich auswahl", icon: "󰩭", run: () => { PanelService.close(); screenshotDelay.mode = "region"; screenshotDelay.restart() } },
         { title: "Screenshot: screen", keywords: "screenshot capture screen monitor bildschirmfoto foto bildschirm", icon: "󰹑", run: () => { PanelService.close(); screenshotDelay.mode = "screen"; screenshotDelay.restart() } },
@@ -185,14 +186,15 @@ Singleton {
 
     // recordUse: false for launches the user did not pick (autostart).
     function launchApp(app, recordUse) {
-        const script = appOverrides[app.id]
         // In a unit of its own, named after the entry (scripts/launch-app.sh):
         // the portals know the application by that name, Plasma starts it the
-        // same way, and the Secret portal keys on it. Terminal entries and
-        // entries without a parsed command keep Quickshell's own launch.
-        const argv = app.command && app.command.length ? Array.prototype.slice.call(app.command) : null
-        if (script) Quickshell.execDetached([Paths.script(script)])
-        else if (argv && !app.runInTerminal) Quickshell.execDetached([Paths.script("launch-app.sh"), app.id].concat(argv))
+        // same way, and the Secret portal keys on it - and with the session's
+        // environment, not the shell's own settings (launcher/LaunchLogic.js).
+        // A Terminal=true entry opens in the session's terminal
+        // (scripts/launch-terminal.sh). Only an entry without a parsed
+        // command keeps Quickshell's launch.
+        const context = Launch.launchContext(app, appOverrides, name => Paths.script(name))
+        if (context) Quickshell.execDetached(context)
         else app.execute()
         if (recordUse !== false && app.id) {
             usage = Usage.record(usage, app.id, Date.now())

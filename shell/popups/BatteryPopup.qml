@@ -31,6 +31,7 @@ PopupPanel {
                 Text {
                     text: PowerService.percent + "%"
                     color: Colors.text
+                    textFormat: Text.PlainText
                     font.family: Typography.family
                     font.pixelSize: Typography.batteryPercentSize
                     font.weight: Typography.light
@@ -49,7 +50,8 @@ PopupPanel {
 
             // The battery's bar is as thick here as on the control center's
             // tile (`progressTrack`, the level bars' token), and it turns red at
-            // the same level as everywhere else.
+            // the same level as everywhere else. Charging is the green or the
+            // accent (Settings > Power > Status colors).
             Rectangle {
                 Layout.fillWidth: true
                 implicitHeight: Metrics.progressTrack
@@ -59,8 +61,8 @@ PopupPanel {
                     width: parent.width * PowerService.percent / 100
                     height: parent.height
                     radius: parent.radius
-                    color: PowerService.charging ? Colors.success
-                        : PowerService.low ? Colors.danger : Colors.accent
+                    color: PowerService.charging ? Colors.positiveFill
+                        : PowerService.low ? Colors.danger : Colors.accentFill
                 }
             }
 
@@ -90,9 +92,14 @@ PopupPanel {
         CardSection {
             Layout.fillWidth: true
             title: "Power profile"
+            // Compact like the Profile popup's modes: three full labels do not
+            // fit the popup's width and were cut to "Po…", "Bal…" and "Perf…".
+            // The chosen profile keeps its name, the others their glyph and
+            // their name as a tooltip.
             SegmentedControl {
                 focusOnTab: true
                 Layout.fillWidth: true
+                compact: true
                 current: String(PowerService.profile)
                 options: [
                     { value: String(PowerProfile.PowerSaver), label: "Power saver", icon: "󰌪" },

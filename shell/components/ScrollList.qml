@@ -55,6 +55,7 @@ Item {
         contentHeight: column.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+        ScrollFeel { id: feel; view: flick }
 
         Column {
             id: column
@@ -75,7 +76,7 @@ Item {
         height: Math.max(Metrics.spaceLg, flick.visibleArea.heightRatio * flick.height)
         radius: width / 2
         color: Colors.scrollHint
-        opacity: flick.moving ? 1 : Effects.mutedOpacity
+        opacity: flick.moving || feel.scrolling ? 1 : Effects.mutedOpacity
         Behavior on opacity {
             NumberAnimation { duration: Animations.hover; easing.type: Animations.easing }
         }

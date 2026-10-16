@@ -9,7 +9,12 @@ import qs.shell.dashboard
 PopupPanel {
     id: root
     panelId: "weatherPopup"
-    cardWidth: Metrics.popupSplitWidth
+    // Two columns only once there is a place to show the weather for. Weather
+    // turned off or no place set is one line and a button, which sat alone in
+    // a card 660 px wide. Decided on the place, not on the data, so the card
+    // does not widen under the reader when a forecast arrives.
+    cardWidth: WeatherService.status === "noLocation" || WeatherService.status === "disabled"
+        ? Metrics.popupWidth : Metrics.popupSplitWidth
     heading: "Weather"
     detail: WeatherService.locationName + (WeatherService.updatedText.length
         ? (WeatherService.status === "stale" ? " · Offline, updated " : " · Updated ") + WeatherService.updatedText : "")

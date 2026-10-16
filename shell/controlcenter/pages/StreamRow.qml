@@ -29,16 +29,26 @@ ColumnLayout {
         else AudioService.untrackRouting()
     }
 
+    // One column for the three glyphs: the app's icon, the mute button under
+    // it and the output glyph under that, each centred in the button's width,
+    // with the name starting where the slider does. The icon used to sit in a
+    // slot of its own size and vanish with the picture, so a stream without
+    // one (pw-cat) put its name left of the mute glyph below it.
     RowLayout {
         Layout.fillWidth: true
-        spacing: Metrics.spaceSm
-        Image {
-            Layout.preferredWidth: Metrics.iconMd
+        spacing: Metrics.spaceXs
+        Item {
+            Layout.preferredWidth: Metrics.controlHeightSm
             Layout.preferredHeight: Metrics.iconMd
-            source: AudioService.streamIcon(root.node).length ? Quickshell.iconPath(AudioService.streamIcon(root.node), true) : ""
-            sourceSize.width: Metrics.iconMd * 2
-            sourceSize.height: Metrics.iconMd * 2
-            visible: status === Image.Ready
+            Image {
+                anchors.centerIn: parent
+                width: Metrics.iconMd
+                height: Metrics.iconMd
+                source: AudioService.streamIcon(root.node).length ? Quickshell.iconPath(AudioService.streamIcon(root.node), true) : ""
+                sourceSize.width: Metrics.iconMd * 2
+                sourceSize.height: Metrics.iconMd * 2
+                visible: status === Image.Ready
+            }
         }
         ShellText { Layout.fillWidth: true; text: AudioService.streamLabel(root.node); role: "small"; elide: Text.ElideRight }
         ShellText { text: root.node.audio ? Math.round(root.node.audio.volume * 100) + "%" : ""; role: "caption" }
@@ -54,6 +64,9 @@ ColumnLayout {
         }
         ShellSlider {
             Layout.fillWidth: true
+            // Named by the stream it sets: the name above is a sibling, and a
+            // screen reader said "slider, 40%".
+            accessibleName: AudioService.streamLabel(root.node)
             value: root.node.audio ? root.node.audio.volume : 0
             onMoved: value => AudioService.setVolume(root.node, value)
         }

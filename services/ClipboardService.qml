@@ -2,10 +2,13 @@ pragma Singleton
 import Quickshell
 import Quickshell.Io
 import QtQuick
+import "clipboard/ClipboardLogic.js" as Logic
 
 // Clipboard history through cliphist with its own database in the shell's
 // cache directory. Text and images are recorded while the setting is on;
-// entries marked sensitive by password managers are skipped by cliphist.
+// entries marked sensitive by password managers are skipped by cliphist. The
+// database and the previews are the user's alone (0600/0700, see
+// clipboard/ClipboardLogic.js).
 Singleton {
     id: root
 
@@ -56,7 +59,9 @@ Singleton {
     }
 
     function wipe() {
-        Quickshell.execDetached(["cliphist", "-db-path", dbPath, "wipe"])
+        // A wipe creates the database when there is none yet (a clear before
+        // the first copy), and the recorders set its mode only as they start.
+        Quickshell.execDetached(Logic.privately(dbPath, ["cliphist", "-db-path", dbPath, "wipe"]))
         Quickshell.execDetached(["rm", "-rf", "--", thumbDir])
         entries = []
         readyThumbs = ({})
@@ -120,9 +125,7 @@ Singleton {
         const images = entries.filter(entry => entry.image && !readyThumbs[entry.thumb]).slice(0, 24)
         if (!images.length) return
         thumbProc.pending = images.map(entry => entry.thumb)
-        thumbProc.command = ["sh", "-c",
-            "mkdir -p \"$1\" && dir=\"$1\" && db=\"$2\" && shift 2 && while [ $# -gt 1 ]; do [ -s \"$dir/$2\" ] || cliphist -db-path \"$db\" decode \"$1\" > \"$dir/$2\"; if [ -s \"$dir/$2\" ]; then echo \"$2\"; else rm -f \"$dir/$2\"; fi; shift 2; done",
-            "sh", thumbDir, dbPath].concat(images.reduce((list, entry) => list.concat([entry.id, entry.thumb]), []))
+        thumbProc.command = Logic.previewsCommand(thumbDir, dbPath, images.map(entry => [entry.id, entry.thumb]))
         thumbProc.running = true
     }
 
@@ -169,15 +172,16 @@ Singleton {
     Process {
         stderr: ErrorLog { label: "ClipboardService.process" }
         running: root.enabled && !root.recordersRestarting
-        command: Paths.bound(["wl-paste", "--type", "text", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"])
+        command: Paths.bound(Logic.privately(root.dbPath, ["wl-paste", "--type", "text", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"]))
     }
     Process {
         stderr: ErrorLog { label: "ClipboardService.process" }
         running: root.enabled && !root.recordersRestarting
-        command: Paths.bound(["wl-paste", "--type", "image", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"])
+        command: Paths.bound(Logic.privately(root.dbPath, ["wl-paste", "--type", "image", "--watch", "cliphist", "-db-path", root.dbPath, "-max-items", String(root.maxItems), "store"]))
     }
 
-    // Text an X11 program copies, handed on to the Wayland clipboard
+    // Text and pictures an X11 program copies - not what a password manager
+    // marks as a secret - handed on to the Wayland clipboard
     // (scripts/x11-clipboard-bridge.py): Hyprland mirrors an X11 clipboard
     // only while an X11 window has the focus, and Citrix's client sets it as
     // its window loses the focus - copied in Citrix, it could not be pasted

@@ -49,7 +49,7 @@ function moveWorkspaceToMonitor(id, name) { return {} }
 """
 USES = {
     "services/A.qml": "Item {\n  function f() { HyprCompat.dispatch(HyprCompat.commands.workspace(1)) }\n}\n",
-    "services/B.qml": "Item {\n  // HyprCompat.commands.inComment(1)\n  function g() { HyprCompat.dispatch(HyprCompat.commands.moveWorkspaceToMonitor(3, \"DP-8\")) }\n  function h() { HyprCompat.dispatch(HyprCompat.commands.missing(3)) }\n}\n",
+    "services/B.qml": "Item {\n  // HyprCompat.commands.inComment(1)\n  function g() { HyprCompat.dispatch(HyprCompat.commands.moveWorkspaceToMonitor(3, \"DP-1\")) }\n  function h() { HyprCompat.dispatch(HyprCompat.commands.missing(3)) }\n}\n",
 }
 problems = checks.compat_problems(COMPAT, COMMANDS, USES)
 check(len(problems) == 1, f"one problem for the one use outside the table (got {problems})")

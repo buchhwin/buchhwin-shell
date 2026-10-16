@@ -40,6 +40,17 @@ PanelWindow {
     // a step in one value rather than a gap in the picture.
     property color tint: PanelService.scrimColor
 
+    // **Not for Alt+Tab.** The switcher opens through PanelService like any
+    // panel, so this used to fade the whole screen in the moment Alt+Tab was
+    // pressed - while the switcher itself waits 110 ms (switcherShowDelay)
+    // precisely so that a quick Alt+Tab does not flash, and nearly every
+    // Alt+Tab is a quick one. Held, its own scrim lay over this one: 0.39
+    // black instead of 0.22, in whatever tint the last panel had reported.
+    // The switcher draws its own, after its delay, on its own full-screen
+    // surface, which also takes the click beside its strip; so this one
+    // neither dims nor catches for it.
+    readonly property bool forSwitcher: PanelService.active === "switcher"
+
     screen: PanelService.screen
     // Mapped for as long as the dimming is on, not only while it is drawn.
     // See `level` below for what that buys and what it costs. With the
@@ -62,7 +73,7 @@ PanelWindow {
     // size of its card (ShellPanel, `compactSurface`), so this surface - full
     // screen, below every panel and above the bar, the notch and every window
     // - takes it while a panel is open, and nothing at all otherwise.
-    readonly property bool catching: PanelService.active.length > 0 && PanelService.outsideCloses
+    readonly property bool catching: PanelService.active.length > 0 && PanelService.outsideCloses && !forSwitcher
     mask: catching ? null : noInput
     Region { id: noInput }
     MouseArea {
@@ -107,13 +118,13 @@ PanelWindow {
     // **One case still pays the round trip**: `screen` follows the panel, so
     // opening on a monitor the last panel did not use moves the surface, which
     // is a remap. A scrim per screen would answer that and costs a permanently
-    // mapped full-screen quad per monitor; on this desk that is three, and
-    // nobody has measured whether that is cheaper than one remap.
+    // mapped full-screen quad per monitor - three at a three-screen desk -
+    // and nobody has measured whether that is cheaper than one remap.
     //
     // Settings > Appearance can turn the dimming off altogether; then nothing
     // here is ever drawn and the surface is never mapped at all.
     readonly property bool dimming: SettingsService.value("appearance.panelScrim")
-    property real level: (PanelService.scrimWanted && dimming) ? 1 : 0
+    property real level: (PanelService.scrimWanted && dimming && !forSwitcher) ? 1 : 0
     Behavior on level {
         enabled: Animations.enabled
         NumberAnimation {

@@ -49,6 +49,26 @@ GridLayout {
     // falls back to this, so a surface sets the ink and never `iconColor`:
     // setting that from outside would paint over a warning.
     property color glyphInk: textColor
+    // The surface stays dark whatever the theme (the notch hands `true`):
+    // a state then wears its on-dark colour. The light theme's success,
+    // danger and accent ink are made for light panels, and on the black
+    // strip a charging battery or an active tunnel came out in a dull dark
+    // green. The widgets colour their states with these instead of the
+    // theme's tokens directly.
+    property bool onDark: false
+    // A good state (charging, a tunnel up) is the green or the accent,
+    // whichever Settings > Power says (Colors.positive); danger and warning
+    // never follow that choice.
+    readonly property color successInk: onDark ? Colors.positiveOnDark : Colors.positive
+    readonly property color dangerInk: onDark ? Colors.dangerOnDark : Colors.danger
+    readonly property color warningInk: onDark ? Colors.warningOnDark : Colors.warning
+    readonly property color accentInk: onDark ? Colors.notchAccent : Colors.accentForeground
+    // A level in the accent, and a level in a good state. On a light panel
+    // the accent as a fill is its 3:1 line (Colors.accentFill): the shipped
+    // teal itself is 1.08:1 on a light card, a level that is not there. On
+    // the notch, the accent made for black. Only the battery uses it so far.
+    readonly property color levelFill: onDark ? Colors.notchAccent : Colors.accentFill
+    readonly property color successFill: onDark ? Colors.positiveOnDark : Colors.positiveFill
     // The groove behind the meter. The theme's track is made to sit on a
     // panel; on the black notch it disappears, so the notch hands its own.
     property color trackColor: Colors.track
@@ -134,6 +154,7 @@ GridLayout {
         color: root.iconColor
         font.family: Typography.iconFamily
         font.pixelSize: Typography.titleSize * root.scaleFactor
+        textFormat: Text.PlainText
         renderType: Typography.renderType
     }
     // The name goes in front of the value, muted, so the value is still what
@@ -146,6 +167,7 @@ GridLayout {
         color: root.mutedTextColor
         font.family: Typography.family
         font.pixelSize: Typography.bodyLargeSize * root.scaleFactor
+        textFormat: Text.PlainText
         renderType: Typography.renderType
     }
     Text {
@@ -159,6 +181,11 @@ GridLayout {
         font.family: Typography.family
         font.pixelSize: Typography.bodyLargeSize * root.scaleFactor
         font.features: { "tnum": 1 }
+        // Plain, always: a label is often somebody else's string - a window
+        // title, an SSID, a device name - and the default format renders one
+        // that looks like markup, <img src=...> and all (a web page's title
+        // made the shell fetch the address it named).
+        textFormat: Text.PlainText
         renderType: Typography.renderType
     }
     Rectangle {
@@ -186,6 +213,7 @@ GridLayout {
         color: root.mutedTextColor
         font.family: Typography.family
         font.pixelSize: Typography.smallSize * root.scaleFactor
+        textFormat: Text.PlainText
         renderType: Typography.renderType
     }
 }

@@ -133,9 +133,9 @@ function enabled(mode) {
 // because a session that docks has to decide it in one place.
 //
 // One output: on. It is what an animation on an idle machine needs, measured
-// on this laptop (six panel animations, GPU at 16 % busy on its lowest clock,
-// motion still stepping) and confirmed by the user for workspace switches and
-// a terminal opening.
+// on a laptop's integrated GPU (six panel animations, GPU at 16 % busy on its
+// lowest clock, motion still stepping) and confirmed by eye for workspace
+// switches and a terminal opening.
 //
 // Several outputs: off. The same option also decides *which* output gets asked
 // for a frame, and an unfocused one stops being asked - which is exactly the

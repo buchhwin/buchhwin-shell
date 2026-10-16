@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Networking
 import QtQuick
 import "network/WireguardLogic.js" as WireguardLogic
+import "network/ScanLogic.js" as ScanLogic
 
 // Wi-Fi through Quickshell.Networking (NetworkManager). VPN connections and
 // addresses come from nmcli, refreshed only when `nmcli monitor` reports a
@@ -12,7 +13,15 @@ Singleton {
     id: root
     readonly property var wifiDevice: Networking.devices.values.find(device => device.type === DeviceType.Wifi) || null
     readonly property bool wifiAvailable: wifiDevice !== null && Networking.wifiHardwareEnabled
+    // NetworkManager's radio flag. It stays on where there is no adapter at
+    // all (its default), so on its own it is not "Wi-Fi works".
     readonly property bool wifiEnabled: Networking.wifiEnabled
+    // Wi-Fi that can find networks: the flag on and an adapter to search
+    // with. Lists, "Searching for networks …" and "Hidden network …" go by
+    // this; on a machine without an adapter they sat beside "No Wi-Fi adapter
+    // found" and searched forever.
+    readonly property bool wifiUsable: wifiEnabled && wifiAvailable
+    readonly property bool searching: wifiUsable && networks.length === 0
     readonly property var networks: {
         if (!wifiDevice) return []
         const seen = {}
@@ -28,7 +37,7 @@ Singleton {
     readonly property var activeVpns: vpns.filter(item => item.active)
     property string address: ""
 
-    readonly property string summary: !wifiEnabled && !wiredConnected ? "Off"
+    readonly property string summary: !wifiUsable && !wiredConnected ? "Off"
         : current ? current.name : wiredConnected ? "Wired" : "Not connected"
 
     function signalIcon(strength) {
@@ -40,12 +49,12 @@ Singleton {
     // many are lit. Every one when wired, none when off or not connected, and
     // never none while connected.
     function signalBars(total) {
-        if (!wifiEnabled && !wiredConnected) return 0
+        if (!wifiUsable && !wiredConnected) return 0
         if (current) return Math.max(1, Math.min(total, Math.ceil(Number(current.signalStrength || 0) * total)))
         return wiredConnected ? total : 0
     }
 
-    readonly property string icon: !wifiEnabled && !wiredConnected ? "󰤮"
+    readonly property string icon: !wifiUsable && !wiredConnected ? "󰤮"
         : wiredConnected && !current ? "󰈀"
         : current ? signalIcon(current.signalStrength) : "󰤯"
 
@@ -173,11 +182,18 @@ Singleton {
     // a hotspot up before this shell, or started outside it.
     readonly property string hotspotName: "buchhwin-hotspot"
     property bool hotspotListed: false
+    // How many views are open (ScanLogic.scanViewers): the scan and
+    // `viewOpen` stay on until the last one has gone.
+    property int scanViewers: 0
     function setScanning(enabled) {
-        viewOpen = enabled
-        if (wifiDevice) wifiDevice.scannerEnabled = enabled
+        scanViewers = ScanLogic.scanViewers(scanViewers, enabled)
+        const on = scanViewers > 0
+        viewOpen = on
+        if (wifiDevice) wifiDevice.scannerEnabled = on
         if (enabled) refreshHotspot()
     }
+    // An adapter that appears (or comes back) while a view is open scans too.
+    onWifiDeviceChanged: if (wifiDevice && scanViewers > 0) wifiDevice.scannerEnabled = true
     function refreshHotspot() { if (!hotspotStatusProc.running) hotspotStatusProc.running = true }
     function connectNetwork(network) { if (network) network.connect() }
     function disconnectNetwork(network) { if (network) network.disconnect() }
@@ -185,7 +201,9 @@ Singleton {
 
     // KDE's editor for enterprise networks and VPN profiles.
     function openSystemDialog() {
-        Quickshell.execDetached(["kcmshell6", "kcm_networkmanagement"])
+        // Through launch-app.sh: the session's environment (the Plasma look,
+        // none of the shell's own settings) and a unit of its own.
+        Quickshell.execDetached([Paths.script("launch-app.sh"), "kcm_networkmanagement", "kcmshell6", "kcm_networkmanagement"])
         PanelService.close()
     }
 
@@ -197,15 +215,33 @@ Singleton {
     // Added as the user's own NetworkManager connections, which need no
     // administrator password and which Plasma lists as well - one
     // NetworkManager, the same tunnels in both sessions. Keys go to the helper
-    // on stdin, never as arguments; the private key a "Generate" makes is held
-    // here only until the form takes it.
+    // on stdin, never as arguments. The private key a "Generate" makes is held
+    // here, in memory only, until the tunnel is added or the form is canceled:
+    // the usual order is to generate, send the public key to the server's
+    // admin and close Settings to wait, and the page is let go a minute later -
+    // the form fills itself from here again.
     property string wgState: ""          // "", "generating", "adding", "deleting"
     property string wgError: ""
     property string wgNotice: ""
     property string wgPrivate: ""
     property string wgPublic: ""
+    // Which private key wgPublic was made from (a tag, not the key): the form
+    // shows and copies the public key only while its field holds that key.
+    property string wgPublicFrom: ""
+    property string wgRequested: ""
     property string wgPending: ""
     signal wgAdded()
+
+    function wgTag(privateKey) { return Qt.md5(String(privateKey || "").trim()) }
+    // The public key that belongs to what a form's private-key field holds,
+    // or "" (WireguardLogic.publicFor).
+    function wgPublicFor(privateText) { return WireguardLogic.publicFor(privateText, wgPublic, wgPublicFrom, wgTag) }
+    // Cancel: the generated key goes, and the public key with it.
+    function wgForget() {
+        wgPrivate = ""
+        wgPublic = ""
+        wgPublicFrom = ""
+    }
 
     function wgGenerate() {
         if (wgProc.running) return
@@ -218,6 +254,7 @@ Singleton {
     function wgPublicOf(privateKey) {
         if (wgProc.running) return
         wgState = "pubkey"
+        wgRequested = wgTag(privateKey)
         wgPending = privateKey + "\n"
         wgProc.command = [Paths.script("wireguard-helper.py"), "pubkey"]
         wgProc.running = true
@@ -251,9 +288,11 @@ Singleton {
         wgProc.running = true
     }
 
+    // kdialog through launch-app.sh, for the session's environment (the
+    // Plasma look and icons); a scope keeps its stdout, which is the answer.
     Process {
         id: wgPick
-        command: ["kdialog", "--title", "Import a WireGuard tunnel", "--getopenfilename",
+        command: [Paths.script("launch-app.sh"), "org.kde.kdialog", "kdialog", "--title", "Import a WireGuard tunnel", "--getopenfilename",
                   Quickshell.env("HOME") || "/", "*.conf *.config|WireGuard tunnel\n*|All files"]
         stdout: StdioCollector {
             onStreamFinished: {
@@ -289,14 +328,16 @@ Singleton {
                 } else if (state === "generating") {
                     root.wgPrivate = answer["private"]
                     root.wgPublic = answer["public"]
+                    root.wgPublicFrom = root.wgTag(answer["private"])
                 } else if (state === "pubkey") {
                     root.wgPublic = answer["public"]
+                    root.wgPublicFrom = root.wgRequested
                 } else if (state === "adding" || state === "importing") {
                     root.wgNotice = answer.warning || "Added. It is in Plasma's network list too."
-                    root.wgPrivate = ""
-                    root.wgPublic = ""
+                    root.wgForget()
                     root.wgAdded()
                 }
+                root.wgRequested = ""
                 if (state === "importing") PanelService.open("settings", { page: "network" })
                 root.refresh()
             }

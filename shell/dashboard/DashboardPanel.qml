@@ -105,8 +105,8 @@ ShellPanel {
         spacing: Metrics.panelGap
 
         // The header every panel has, so the title sits where the control
-        // center's does; the pencil arranges the cards the way it arranges
-        // the tiles there.
+        // center's does; the arrange button arranges the cards the way it
+        // arranges the tiles there.
         PanelHeader {
             id: header
             Layout.fillWidth: true
@@ -114,7 +114,7 @@ ShellPanel {
             shortcut: "SUPER + K"
 
             ShellButton {
-                icon: Icons.edit
+                icon: Icons.arrange
                 variant: root.editing ? "accent" : "ghost"
                 iconSize: Metrics.iconMd
                 toolTip: root.editing ? "Done arranging" : "Arrange cards"
@@ -145,7 +145,10 @@ ShellPanel {
                     Layout.fillWidth: true
                     Layout.preferredHeight: implicitHeight
                     columns: Arrange.columnsFor(width, Metrics.dashboardGridCell, Metrics.dashboardGridColumns)
-                    gap: Metrics.spaceLg
+                    // The control center's gap between cards, not one of its
+                    // own: the same kind of card sat 16 px apart here, 12
+                    // there and 8 in the session menu.
+                    gap: Metrics.cardGridGap
                     unit: Metrics.dashboardGridUnit
                     editing: root.editing
                     maxRows: LayoutService.gridMaxRows
@@ -189,8 +192,8 @@ ShellPanel {
                 }
 
                 // One compact row while arranging: the cards that are off, undo
-                // and the way back. The pencil in the header is the Done
-                // button, so there is not a second one.
+                // and the way back. The arrange button in the header is the
+                // Done button, so there is not a second one.
                 CardSection {
                     Layout.fillWidth: true
                     visible: root.editing
@@ -253,10 +256,17 @@ ShellPanel {
     // handler switching the glide off would be the engine's to pick.
     property bool landing: false
     property var cardCells: []
+    // Each at its stored size, but never below its card's minimum
+    // (DashboardLogic.shownSize). Default ships the month at four rows, 292 px
+    // for a grid that needs 346, and its sixth week was cut off; it is drawn
+    // at five, and the file keeps what it says until a corner is pulled.
     function takeCells() {
         landing = true
-        cardCells = LayoutService.dashboardItems.map(item => ({ id: item.id, w: item.w, h: item.h,
-            minW: Dash.minSize(item.type).w, minH: Dash.minSize(item.type).h }))
+        cardCells = LayoutService.dashboardItems.map(item => {
+            const shown = Dash.shownSize(item.type, item.w, item.h)
+            return { id: item.id, w: shown.w, h: shown.h,
+                     minW: Dash.minSize(item.type).w, minH: Dash.minSize(item.type).h }
+        })
         Qt.callLater(root.landed)
     }
     function landed() { landing = false }
@@ -300,11 +310,14 @@ ShellPanel {
         return WidgetRegistry.isAvailable(type) ? widgetCardItem : null
     }
 
-    // Every card is an Item with its real content anchored to the top, so a
-    // cell taller than the card leaves room under it and a shorter one is cut
-    // off at its own edge (DashboardSlot clips). `shown` is the contract
-    // DashboardSlot reads: a card the chosen view has no use for holds no
-    // place, the way a quick tile with nothing to show holds none.
+    // Every card is an Item with its real content anchored to the top. The
+    // card itself fills its cell - `Math.max` of the two heights, so a cell
+    // taller than the content is card to its bottom edge instead of a gap of
+    // panel under a short card, and the column of cards ends level instead
+    // of ragged - and a shorter cell cuts it off at its own edge
+    // (DashboardSlot clips). `shown` is the contract DashboardSlot reads: a
+    // card the chosen view has no use for holds no place, the way a quick
+    // tile with nothing to show holds none.
     Component {
         id: clockCard
         Item {
@@ -320,12 +333,14 @@ ShellPanel {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
+                height: Math.max(implicitHeight, parent.height)
                 spacing: 0
                 // Raw Text, not ShellText: the clock needs tabular figures so
                 // the digits do not shift every minute.
                 Text {
                     text: TimeFormat.time(clock.date, SettingsService.twelveHourClock, " : ")
                     color: Colors.text
+                    textFormat: Text.PlainText
                     font.family: Typography.family
                     font.pixelSize: clockBody.tiny ? Typography.headlineSize
                         : clockBody.compact ? Typography.displaySize : Typography.dashboardClockSize
@@ -353,6 +368,8 @@ ShellPanel {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
+                height: Math.max(implicitHeight, parent.height)
+                fillsCell: true
                 // The card has always been able to put the seven days beside
                 // the hourly strip instead of under it; nothing ever asked it
                 // to, so a card pulled two columns wide stayed a narrow stack
@@ -374,6 +391,7 @@ ShellPanel {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
+                height: Math.max(implicitHeight, parent.height)
                 padding: Metrics.spaceMd
 
                 CalendarMonth {
@@ -452,6 +470,7 @@ ShellPanel {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
+                height: Math.max(implicitHeight, parent.height)
                 title: fitClass === "icon" ? "" : "System"
 
                 SystemMeters {
@@ -474,6 +493,7 @@ ShellPanel {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
+                height: Math.max(implicitHeight, parent.height)
 
                 RowLayout {
                     id: eventsHeader

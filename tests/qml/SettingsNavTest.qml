@@ -29,6 +29,12 @@ ShellRoot {
         T.eq(N.pageIds(N.rows("konten")), ["accounts"], "German keyword finds the accounts page")
         T.eq(N.rows("#connectivity").length, 0, "no match gives no rows")
         T.eq(N.pageIds(N.rows("devices")), ["bluetooth", "displays", "audio", "input", "power"], "group title matches its pages")
+        T.eq(N.GROUPS.map(group => group.title),
+             ["Personalization", "Desktop", "Connectivity", "Devices", "Apps", "Calendar & weather", "System"],
+             "sidebar sections in their order")
+        T.eq(N.step(all, "kdeConnect", 1), "displays", "Connectivity follows Desktop, nothing in between")
+        T.eq(N.step(all, "calendar", 1), "accounts", "Calendar sits next to Accounts, where its calendars come from")
+        T.eq(N.pageIds(N.rows("dashboard")), ["weather", "calendar"], "the old group name still finds weather and calendar")
         T.eq(N.pageIds(N.rows("lock fingerprint")), ["lockScreen"], "every word must match")
         // Page titles are sentence case, like the section titles under them,
         // and the search ignores case, so the old spelling still finds them.
@@ -47,7 +53,8 @@ ShellRoot {
         T.eq(N.step(all, "login", 1), "profiles", "down skips the heading")
         T.eq(N.step(all, "lockScreen", 1), "login",
              "the lock screen and the login screen are the same kind of thing and sit together")
-        T.eq(N.step(all, "profiles", 1), "widgets", "Widgets is its own page next to Profiles")
+        T.eq(N.step(all, "profiles", 1), "bar", "Bar & Notch comes right after Profiles: both shipped profiles run the notch")
+        T.eq(N.step(all, "bar", 1), "widgets", "Widgets follows Bar & Notch")
         T.eq(N.pageIds(N.rows("widgets")), ["widgets"], "searching for widgets finds the widget page")
         T.eq(N.step(all, "profiles", -1), "login", "up skips the heading")
         T.eq(N.step(all, "appearance", -1), "appearance", "up stops at the first page")

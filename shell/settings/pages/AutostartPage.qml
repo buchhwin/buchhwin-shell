@@ -30,7 +30,13 @@ ColumnLayout {
                 icon: app ? "" : "󰀻"
                 title: app ? app.name : modelData
                 subtitle: app ? (app.genericName || app.comment || "") : "No longer installed"
-                ShellButton { focusOnTab: true; icon: Icons.remove; variant: "ghost"; compact: true; toolTip: "Remove"; onClicked: AutostartService.remove(modelData) }
+                // Asks first, like the other removes in a list here.
+                ShellButton {
+                    focusOnTab: true
+                    icon: Icons.remove; variant: "ghost"; compact: true; toolTip: "Remove"
+                    confirm: true; confirmText: "Remove?"
+                    onClicked: AutostartService.remove(modelData)
+                }
             }
         }
         EmptyState {

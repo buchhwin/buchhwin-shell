@@ -335,13 +335,13 @@ PanelWindow {
     WlrLayershell.namespace: "buchhwin-" + panelId
     WlrLayershell.layer: WlrLayer.Overlay
     // **A click beside the panel on another monitor closes it too** (the
-    // user, 16.10.: the control center stayed open on the first screen while
-    // they clicked on the second). The scrim catches such a click only on the
-    // panel's own screen - it is one surface, there - and a catcher on every
-    // other screen would be a full-screen buffer per monitor (two 4K ones at
-    // the desk) mapped with every open. Hyprland's focus grab says the same
-    // with no surface at all: a press anywhere outside the windows it holds,
-    // on any monitor, clears it, and the press goes on to what was clicked.
+    // control center used to stay open on the first screen while the second
+    // was clicked). The scrim catches such a click only on the panel's own
+    // screen - it is one surface, there - and a catcher on every other screen
+    // would be a full-screen buffer per monitor (33 MB at 4K) mapped with
+    // every open. Hyprland's focus grab says the same with no surface at all:
+    // a press anywhere outside the windows it holds, on any monitor, clears
+    // it, and the press goes on to what was clicked.
     //
     // The grab does nothing for a layer with *exclusive* keyboard focus -
     // Hyprland keeps that one focused whatever is clicked (probed nested:

@@ -6,8 +6,8 @@ import "../../services/notch/NotchLogic.js" as NotchLogic
 
 // How the notch opens, shown the same in the layout editor and on the Bar &
 // Notch page: the mode, what a click does and the two delays - and the colour
-// of its status glyphs. Each change is an undo step (LayoutService.changeNotch),
-// wherever it was made.
+// of its status glyphs and its height. Each change is an undo step
+// (LayoutService.changeNotch), wherever it was made.
 ColumnLayout {
     id: root
     spacing: Metrics.spaceSm
@@ -48,7 +48,7 @@ ColumnLayout {
         { value: "none", label: "Nothing" }, { value: "dashboard", label: "Dashboard" },
         { value: "controlCenter", label: "Control center" }, { value: "notifications", label: "Notifications" },
         { value: "launcher", label: "Launcher" }, { value: "clipboard", label: "Clipboard" },
-        { value: "mediaPopup", label: "Media" }, { value: "playPause", label: "Play / pause" },
+        { value: "mediaPopup", label: "Media" }, { value: "playPause", label: "Play/pause" },
         { value: "overview", label: "Workspaces overview" }
     ]
     SettingRow {
@@ -159,13 +159,44 @@ ColumnLayout {
     SettingRow {
         Layout.fillWidth: true
         label: "Status icons"
-        hint: "In the accent instead of white; charging, low and unread keep their colours"
+        hint: "In the accent instead of white; charging, low and unread keep their colors"
         SegmentedControl {
             focusOnTab: true
             Layout.fillWidth: true
             current: NotchService.accentGlyphs
             options: [{ value: "off", label: "Off" }, { value: "overview", label: "Overview" }, { value: "all", label: "Everywhere" }]
             onSelected: value => root.set("accentGlyphs", value)
+        }
+    }
+    // The collapsed body's height (notch.bodyHeight), the one size of the
+    // notch a drag does not set: the editor drags the strip sideways only.
+    // Like the delays it is stored once, on release - one undo step, and one
+    // remap of the surface while space is reserved - and the value beside it
+    // follows the knob meanwhile. A pill is the same body, so it is shown for
+    // both shapes. The corners keep their number; the notch draws them at no
+    // more than half of this (NotchLogic.collapsedRadius).
+    SettingRow {
+        Layout.fillWidth: true
+        label: "Height"
+        hint: "How tall the collapsed notch or pill is; a preset brings its own"
+        ShellSlider {
+            id: heightSlider
+            focusOnTab: true
+            Layout.fillWidth: true
+            from: NotchLogic.BODY_HEIGHT.min; to: NotchLogic.BODY_HEIGHT.max
+            value: NotchService.bodyHeight
+            onReleased: value => {
+                const next = NotchLogic.bodyChange("bodyHeight", value, NotchService.bodyHeight)
+                if (next !== null) root.set("bodyHeight", next)
+            }
+        }
+        ShellText {
+            text: Math.round(heightSlider.pressed ? heightSlider.liveValue : NotchService.bodyHeight) + " px"
+            role: "small"
+            muted: true
+            horizontalAlignment: Text.AlignRight
+            // The delays' width, so the three sliders end in the same place.
+            Layout.minimumWidth: Math.ceil(delayWidth.advanceWidth)
         }
     }
 }

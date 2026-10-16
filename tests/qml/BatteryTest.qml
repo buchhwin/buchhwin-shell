@@ -47,6 +47,18 @@ ShellRoot {
         T.ok(critical.urgency === "critical" && critical.body.indexOf("Plug in") >= 0, "critical asks to plug in")
         T.ok(B.TITLES.indexOf(low.title) >= 0 && B.TITLES.indexOf(veryLow.title) >= 0 && B.TITLES.indexOf(critical.title) >= 0,
              "titles are known for dismissing")
+
+        // A battery held at its charge threshold on the charger (PendingCharge)
+        // is not charging, and says so.
+        const label = extra => B.stateLabel(Object.assign({ hasBattery: true, full: false, charging: false,
+                                                             onBattery: false, pendingCharge: false }, extra))
+        T.eq(label({ pendingCharge: true }), "Not charging", "at the charge threshold")
+        T.eq(label({}), "Plugged in", "on the charger, neither charging nor waiting")
+        T.eq(label({ charging: true }), "Charging", "charging")
+        T.eq(label({ onBattery: true }), "On battery", "on battery")
+        T.eq(label({ full: true, pendingCharge: true }), "Fully charged", "full wins")
+        T.eq(label({ hasBattery: false, charging: true }), "AC power", "no battery")
+        T.eq(B.stateLabel(undefined), "AC power", "nothing known yet")
         T.finish("BatteryTest")
     }
 }

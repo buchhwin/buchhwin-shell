@@ -28,6 +28,10 @@ ColumnLayout {
     // widget placed there is handed its colours instead of the theme's.
     property color textColor: Colors.text
     property color mutedTextColor: Colors.mutedText
+    // A surface that stays dark in both themes (the notch): a running event
+    // takes the accent made for black, not the light theme's darker one.
+    property bool onDark: false
+    readonly property color accentInk: onDark ? Colors.notchAccent : Colors.accentForeground
     readonly property var remaining: CalendarService.remainingToday(clock.date)
         .filter(event => !event.allDay)
     readonly property var shown: remaining.slice(0,
@@ -58,9 +62,10 @@ ColumnLayout {
                 visible: row.index === 0
                 Layout.alignment: root.vertical ? Qt.AlignHCenter : Qt.AlignVCenter
                 text: "󰃭"
-                color: row.running ? Colors.accentForeground : root.textColor
+                color: row.running ? root.accentInk : root.textColor
                 font.family: Typography.iconFamily
                 font.pixelSize: Typography.titleSize * root.scaleFactor
+                textFormat: Text.PlainText
                 renderType: Typography.renderType
             }
             Text {
@@ -75,20 +80,25 @@ ColumnLayout {
                         ? TimeFormat.hour(row.modelData.start, SettingsService.twelveHourClock) + "\n"
                             + TimeFormat.minute(row.modelData.start)
                     : TimeFormat.time(row.modelData.start, SettingsService.twelveHourClock, ":")
-                color: row.running ? Colors.accentForeground : root.mutedTextColor
+                color: row.running ? root.accentInk : root.mutedTextColor
                 font.family: Typography.family
                 font.pixelSize: Typography.bodySize * root.scaleFactor
                 font.features: { "tnum": 1 }
+                textFormat: Text.PlainText
                 renderType: Typography.renderType
             }
             Text {
                 visible: root.sizeClass !== "icon" && !root.vertical
                 Layout.maximumWidth: 220 * root.scaleFactor
+                // Plain: an event title can come from whoever sent the
+                // invitation, and the default format renders markup
+                // (WidgetBase).
                 text: row.modelData.title
                 elide: Text.ElideRight
                 color: root.textColor
                 font.family: Typography.family
                 font.pixelSize: Typography.bodyLargeSize * root.scaleFactor
+                textFormat: Text.PlainText
                 renderType: Typography.renderType
             }
         }

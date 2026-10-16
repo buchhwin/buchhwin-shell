@@ -143,3 +143,22 @@ function sameSequence(a, b) {
         if (left[index] !== right[index]) return false
     return true
 }
+
+// Do Not Disturb at `now` (ms since the epoch): "manual" until it is switched
+// off, "1h" and "tomorrow" until `until`. Unit tested.
+var TIMED_DND = ["1h", "tomorrow"]
+
+function dndActive(mode, until, now) {
+    if (mode === "manual") return true
+    return TIMED_DND.indexOf(mode) >= 0 && Number(until) > Number(now)
+}
+
+// The mode to keep at `now`: a timed one that has run out is "off". The
+// service asks at its expiry *and* once a minute while a timed mode is on,
+// because the expiry is a Qt timer on the monotonic clock, which stands still
+// in suspend: "until 07:00" slept through from 23:00 to 07:30 fired at about
+// 15:30, and the indicator, the tile and the clock showed Do Not Disturb all
+// morning. Unit tested.
+function dndAfter(mode, until, now) {
+    return TIMED_DND.indexOf(mode) >= 0 && !dndActive(mode, until, now) ? "off" : mode
+}

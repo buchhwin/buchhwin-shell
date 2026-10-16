@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../services/bluetooth/BluetoothLogic.js" as Logic
 
 // Bluetooth pairing requests from the shell's BlueZ agent: compare a code,
 // enter a PIN or passkey, allow a connection or a service, or show a code to
@@ -21,11 +22,18 @@ ShellPanel {
     readonly property string kind: request ? request.kind : display ? "display" : ""
     readonly property string deviceName: request ? request.name : display ? display.name : ""
     readonly property bool needsInput: kind === "pin" || kind === "passkey"
+    // What Confirm sends. A passkey is six digits, spaces left out - the
+    // dialog prints codes as "482 913" - and nothing else: the agent turns
+    // anything that is not a number into a silent rejection, which closed
+    // the dialog without a word and the pairing had to start over. A PIN is
+    // the device's own text and goes as typed.
+    readonly property string answer: kind === "passkey" ? Logic.passkey(codeField.text) : codeField.text
+    readonly property bool answerReady: !needsInput || answer.length > 0
 
     function accept() {
         if (kind === "display") { BluetoothService.displayCode = null; PanelService.close("pairing"); return }
-        if (needsInput && !codeField.text.length) return
-        BluetoothService.respond(true, codeField.text)
+        if (!answerReady) return
+        BluetoothService.respond(true, answer)
     }
 
     onWantedChanged: {
@@ -81,6 +89,7 @@ ShellPanel {
                     return code.length === 6 ? code.slice(0, 3) + " " + code.slice(3) : code
                 }
                 color: Colors.text
+                textFormat: Text.PlainText
                 font.family: Typography.monoFamily
                 font.pixelSize: Typography.pairingCodeSize
                 font.weight: Typography.light
@@ -94,7 +103,9 @@ ShellPanel {
                 Layout.fillWidth: true
                 visible: root.needsInput
                 icon: "󰌆"
-                placeholder: root.kind === "passkey" ? "Code" : "PIN"
+                placeholder: root.kind === "passkey" ? "Six-digit code" : "PIN"
+                // A letter, or a seventh digit, is marked as it is typed.
+                error: root.kind === "passkey" && !Logic.passkeyPossible(text)
                 onAccepted: root.accept()
             }
         }
@@ -118,7 +129,7 @@ ShellPanel {
                 focusOnTab: true
                 text: root.kind === "display" ? "Done" : root.kind === "confirm" ? "Pair" : root.kind === "authorize" || root.kind === "service" ? "Allow" : "Confirm"
                 variant: "accent"
-                enabledState: !root.needsInput || codeField.text.length > 0
+                enabledState: root.answerReady
                 onClicked: root.accept()
             }
         }

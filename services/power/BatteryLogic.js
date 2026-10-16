@@ -60,3 +60,17 @@ function message(kind, percent, remaining) {
 }
 
 var TITLES = ["Battery low", "Battery very low", "Battery critically low"]
+
+// The battery's state in words (PowerService.stateLabel).
+// state: { hasBattery, full, charging, onBattery, pendingCharge }
+// `charging` is UPower's Charging alone. PendingCharge on the charger is a
+// battery held at its charge threshold, which BAT0 itself reports as "Not
+// charging" - and so does Plasma.
+function stateLabel(state) {
+    const s = state || {}
+    if (!s.hasBattery) return "AC power"
+    if (s.full) return "Fully charged"
+    if (s.charging) return "Charging"
+    if (s.onBattery) return "On battery"
+    return s.pendingCharge ? "Not charging" : "Plugged in"
+}

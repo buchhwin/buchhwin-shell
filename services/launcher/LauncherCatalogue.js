@@ -26,10 +26,10 @@
 //
 // The launcher had stacked blocks and two hand-written pairing rules before
 // this, on the reasoning that a free grid is one in which you can build
-// yourself a result list two rows high. The user asked for the grid anyway,
-// twice, and the second time named the reason: the rest of the shell works
-// like that, and a surface that does not is the odd one out. A result list two
-// rows high is now possible and is theirs to make.
+// yourself a result list two rows high. The grid won anyway, for the reason
+// that decided it: the rest of the shell works like that, and a surface that
+// does not is the odd one out. A result list two rows high is now possible
+// and is theirs to make.
 
 var columns = 4
 var rows = 8
@@ -37,8 +37,8 @@ var rows = 8
 // `maxW`/`maxH` is a ceiling of the block's own, under the grid's; the file
 // is lowered to it on load, the way the result list is raised to its floor.
 // Nobody names one at the moment: the search field had one of a single row
-// for a day (a field is one line of text) and lost it again on the user's
-// word (2026-10-13) - how tall the search block is, is theirs to drag.
+// for a day (a field is one line of text) and lost it again - how tall the
+// search block is, is theirs to drag.
 var catalogue = [
     { type: "search", label: "Search field", icon: "", w: 3, h: 1, minW: 1, minH: 1 },
     { type: "modes", label: "Modes", icon: "", w: 1, h: 1, minW: 1, minH: 1 },

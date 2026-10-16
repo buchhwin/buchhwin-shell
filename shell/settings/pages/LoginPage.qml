@@ -103,17 +103,36 @@ ColumnLayout {
                 onSelected: value => SettingsService.set("login.accent", value === "shell" ? "shell" : SettingsService.accent)
             }
         }
+        // The installer copies only #rrggbb into the theme and dropped
+        // anything else without a word, the greeter keeping its default: the
+        // field takes a hex color (a short one is written out), says so
+        // otherwise, and stores nothing it would drop.
         SettingRow {
             label: "Accent color"
             visible: root.accent !== "shell"
-            ShellTextField {
+            StoredTextField {
+                id: accentField
                 focusOnTab: true
                 Layout.fillWidth: true
                 icon: "󰏘"
                 placeholder: "#4f8ff7" // style: an example in a placeholder, not a colour the shell uses
-                text: root.accent === "shell" ? "" : root.accent
-                onAccepted: SettingsService.set("login.accent", text)
+                storedText: root.accent === "shell" ? "" : root.accent
+                error: text.trim().length > 0 && !PanelStyleService.normalizeHex(text).length
+                onCommit: value => {
+                    const hex = PanelStyleService.normalizeHex(value)
+                    if (hex.length) SettingsService.set("login.accent", hex)
+                }
             }
+        }
+        // Also for a value stored before the field checked it ("teal", "#4f8",
+        // an empty one), which the installer drops just the same.
+        ShellText {
+            Layout.fillWidth: true
+            visible: root.accent !== "shell" && (accentField.error || !/^#[0-9a-fA-F]{6}$/.test(root.accent))
+            text: "Enter a hex color like #4f8ff7 or #48f; the login screen takes nothing else."
+            role: "small"
+            color: Colors.danger
+            wrapMode: Text.Wrap
         }
         SettingRow {
             label: "Font"

@@ -10,7 +10,7 @@ import "power/KbdBacklightLogic.js" as Logic
 //
 // Two things differ, and both are the hardware's doing rather than a choice.
 //
-// It is a *stepped* light. `max_brightness` is 2 on this ThinkPad, so three
+// It is a *stepped* light. `max_brightness` is 2 on ThinkPads, so three
 // levels; a percentage would read 0/50/100 on a track that looks like a
 // hundred. `KbdBacklightLogic` names the step and says how many boxes the OSD
 // should draw, out of `maximum` and never out of a three written in the code.

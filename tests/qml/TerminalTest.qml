@@ -65,6 +65,16 @@ ShellRoot {
              && cava.indexOf("gradient_color_8") >= 0, "cava config has the full gradient")
         T.eq(cava.split("\n").filter(line => line.indexOf("gradient_color_") === 0).length, 8, "eight gradient stops")
         T.ok(/gradient_color_4 = '#[0-9a-f]{6}'/.test(cava), "stops are hex colours")
+        // The login's logo check (V12): only an image logo has columns to fit.
+        // The buchhwin profile's Saturn is a text file and keeps no width.
+        T.eq(L.logoNeedsFit('{"logo": {"type": "kitty-direct", "source": "/x.png", "width": 20}}', 30), true, "an image of another width is fitted")
+        T.eq(L.logoNeedsFit('{"logo": {"source": "/x.png", "width": 30, "height": 15}}', 30), true, "a stretching height is fitted")
+        T.eq(L.logoNeedsFit('{"logo": {"type": "kitty-direct", "source": "/x.png", "width": 30}}', 30), false, "a fitted image is left alone")
+        T.eq(L.logoNeedsFit('{"logo": {"type": "file", "source": "~/.config/buchhwin-shell/saturn.txt"}}', 30), false, "a text logo has no columns")
+        T.eq(L.logoNeedsFit('{"logo": {"type": "builtin", "source": "arch"}}', 30), false, "nor has one of fastfetch's own")
+        T.eq(L.logoNeedsFit('{"logo": {"padding": {"right": 3}}}', 30), false, "the system logo has nothing to fit")
+        T.eq([L.logoNeedsFit('{"display": {}}', 30), L.logoNeedsFit("[]", 30)], [false, false], "no logo object, nothing to write")
+        T.eq(L.logoNeedsFit("{ // comments\n}", 30), true, "a commented file is left to the script")
         T.finish("TerminalTest")
     }
 }

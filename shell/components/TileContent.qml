@@ -18,6 +18,9 @@ RowLayout {
     property string subtitle: ""
     property color iconColor: Colors.mutedText
     property color titleColor: Colors.text
+    // The muted second line; on a highlight (a selected row, an active chip)
+    // the frame hands in Colors.mutedOnSoft, which keeps 4.5:1 on the tint.
+    property color subtitleColor: Colors.mutedText
     // The title alone: a chip one grid row tall has no room for the second
     // line, and half of it cut off is worse than none.
     property bool singleLine: false
@@ -46,6 +49,6 @@ RowLayout {
         Layout.fillWidth: true
         spacing: 0
         ShellText { Layout.fillWidth: true; text: root.title; color: root.titleColor }
-        ShellText { Layout.fillWidth: true; text: root.subtitle; role: "small"; muted: true; visible: text.length > 0 && !root.singleLine }
+        ShellText { Layout.fillWidth: true; text: root.subtitle; role: "small"; color: root.subtitleColor; visible: text.length > 0 && !root.singleLine }
     }
 }

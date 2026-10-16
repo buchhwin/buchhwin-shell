@@ -135,6 +135,57 @@ if [[ ${1:-} == --nested && ${BUCHHWIN_SMOKE_POINTER:-1} == 1 ]]; then
       printf 'failed   pointer click outside the dashboard (open: %s)\n' "$active"
       status=1
     fi
+    # A click on another monitor closes it too (cd1e136). The scrim covers
+    # only the panel's own screen, so that is HyprlandFocusGrab's doing, and
+    # Hyprland ignores the grab of a layer with exclusive keyboard focus
+    # (testing.md, pitfall 83) - a change back to Exclusive passed the click
+    # above. The virtual pointer only reaches BUCHTEST, so the dashboard opens
+    # on the nested window's own output and the click lands on BUCHTEST, away
+    # from both its card and its scrim.
+    other=$(hyprctl -j monitors | jq -r '[.[] | select(.name != "BUCHTEST") | .name][0] // empty')
+    if [[ -z $other ]]; then
+      printf 'failed   no second output for the click on another monitor\n'
+      status=1
+    else
+      # Both dialects, as for the keys below; each ignores the other's line.
+      hyprctl dispatch focusmonitor "$other" >/dev/null 2>&1 || true
+      hyprctl dispatch "hl.dsp.focus({ monitor = \"$other\" })" >/dev/null 2>&1 || true
+      for _ in {1..20}; do
+        [[ $(hyprctl -j monitors | jq -r '.[] | select(.focused) | .name') == "$other" ]] && break
+        sleep 0.1
+      done
+      quickshell ipc --path "$config_path" call dashboard open >/dev/null
+      active=""
+      for _ in {1..20}; do
+        active=$(popup_state)
+        [[ $active == dashboard ]] && break
+        sleep 0.1
+      done
+      # Where it opened, from the compositor's layer list: on BUCHTEST the
+      # click below would land on its own scrim and prove nothing.
+      panel_output=$(hyprctl -j layers | jq -r '[to_entries[] | select([.value.levels[][]?.namespace] | index("buchhwin-dashboard")) | .key][0] // empty')
+      sleep 0.3
+      # Moved twice before the click (pitfall 56): a surface under a still
+      # pointer gets no enter, and the button would go nowhere.
+      "$project_dir/scripts/nested-pointer" move 200 150 sleep 40 move 204 154 || true
+      sleep 0.2
+      before_click=$(popup_state)
+      "$project_dir/scripts/nested-pointer" click 200 150 || true
+      closed=$(popup_state)
+      for _ in {1..20}; do
+        [[ -z $closed ]] && break
+        sleep 0.1
+        closed=$(popup_state)
+      done
+      if [[ $active == dashboard && $panel_output == "$other" && $before_click == dashboard && -z $closed ]]; then
+        printf 'ok       a click on another monitor closes the dashboard\n'
+      else
+        printf 'failed   click on another monitor (open: %s on %s, before the click: %s, after: %s)\n' \
+          "${active:-none}" "${panel_output:-?}" "${before_click:-none}" "${closed:-none}"
+        status=1
+        [[ -n $closed ]] && quickshell ipc --path "$config_path" call dashboard close >/dev/null 2>&1 || true
+      fi
+    fi
     # A key: Super+D through Hyprland's bind - a global shortcut in the Lua
     # dialect, the IPC client in the conf one - opens the launcher, and
     # Escape closes it again.

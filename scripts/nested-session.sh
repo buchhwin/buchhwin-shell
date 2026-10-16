@@ -183,4 +183,7 @@ printf '%s\n' "$display" > "$base/wayland-display"
 printf 'HYPRLAND_INSTANCE_SIGNATURE=%s\n' "$signature"
 printf 'NESTED_OUTPUT=%s\n' "$output"
 printf 'NESTED_WAYLAND_DISPLAY=%s\n' "$display"
+# The pair to export together: reload-shell.sh and stop-shell.sh refuse a
+# nested signature with the session's display (or the other way round).
+printf 'WAYLAND_DISPLAY=%s\n' "$display"
 printf 'NESTED_DIR=%s\n' "$base"

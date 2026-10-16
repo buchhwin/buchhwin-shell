@@ -64,22 +64,18 @@ ColumnLayout {
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: Metrics.spaceSm
-                        ShellTextField {
+                        // The label is edited where it is shown. A dialog for
+                        // one word is a dialog too many. Escape never leaves
+                        // it blank: an emptied field gets the label back
+                        // (StoredTextField). The guard that was meant to do
+                        // that here never ran - Keys.onEscapePressed in the
+                        // field takes the key before Keys.onPressed sees it.
+                        StoredTextField {
                             id: nameField
                             Layout.fillWidth: true
                             focusOnTab: true
-                            // The label is edited where it is shown. A dialog
-                            // for one word is a dialog too many.
-                            text: LayoutService.profileLabelOf(card.modelData)
-                            onAccepted: LayoutService.renameProfile(card.modelData, text)
-                            // Escape puts the label back, before the field
-                            // clears it: escapePressed only fires for an
-                            // empty field, and a blank label is not "back".
-                            onKeyPressed: event => {
-                                if (event.key !== Qt.Key_Escape) return
-                                text = LayoutService.profileLabelOf(card.modelData)
-                                event.accepted = true
-                            }
+                            storedText: LayoutService.profileLabelOf(card.modelData)
+                            onCommit: value => LayoutService.renameProfile(card.modelData, value)
                         }
                         // A label, not a chip: a chip is a button, and there is
                         // nothing here to press.
@@ -237,7 +233,7 @@ ColumnLayout {
                 text: "Desktop mode: " + LayoutService.desktopModeLabel
                 muted: true; wrapMode: Text.Wrap
             }
-            ShellButton { focusOnTab: true; icon: Icons.edit; text: "Widgets"; compact: true; onClicked: PanelService.open("settings", { page: "widgets" }) }
+            ShellButton { focusOnTab: true; icon: Icons.arrange; text: "Widgets"; compact: true; onClicked: PanelService.open("settings", { page: "widgets" }) }
             ShellButton { focusOnTab: true; icon: "󰘔"; text: "Bar & Notch"; compact: true; onClicked: PanelService.open("settings", { page: "bar" }) }
         }
 

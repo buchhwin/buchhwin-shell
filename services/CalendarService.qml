@@ -140,7 +140,13 @@ Singleton {
     // read it for anything but a new event, so the dialog shows the request
     // that would be sent instead.
     property bool editorPreview: false
-    readonly property bool writeAllowed: AppearanceService.realSession && !editorPreview && !previewEvents
+    // The same test as AppearanceService.realSession, read here rather than
+    // there: the lock face shows events, and asking AppearanceService would
+    // create it in the lock process, which then applies Hyprland options,
+    // the cursor and the X11 scale from there.
+    readonly property bool realSession: (Quickshell.env("BUCHHWIN_SHELL_PATH") || "").length > 0
+        && Quickshell.env("BUCHHWIN_NESTED") !== "1"
+    readonly property bool writeAllowed: realSession && !editorPreview && !previewEvents
     // "" | saving | saved | error | preview
     property string saveState: ""
     property string saveMessage: ""
@@ -215,7 +221,7 @@ Singleton {
         if (!writeAllowed) {
             previewText = previewFor(command, request)
             saveState = "preview"
-            saveMessage = AppearanceService.realSession ? "Preview: this is what would be written. Nothing was saved."
+            saveMessage = root.realSession ? "Preview: this is what would be written. Nothing was saved."
                 : "Test session: this is what would be written. Nothing was saved."
             return true
         }
@@ -386,7 +392,10 @@ Singleton {
     }
 
     function openManager() {
-        Quickshell.execDetached(["merkuro-calendar"])
+        // Through launch-app.sh, so Merkuro gets the session's environment
+        // (the Plasma look, none of the shell's own settings) and a unit of
+        // its own.
+        Quickshell.execDetached([Paths.script("launch-app.sh"), "org.kde.merkuro.calendar", "merkuro-calendar"])
         PanelService.close()
     }
 

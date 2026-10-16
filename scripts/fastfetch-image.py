@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """Read or set the logo image of the session's Fastfetch configuration.
 
-  fastfetch-image.py get          print {"kind": "builtin"|"image", "source": …, "width": …}
+  fastfetch-image.py get          print {"kind": "builtin"|"image"|"text", "source": …, "width": …}
   fastfetch-image.py set IMAGE    use IMAGE (PNG, JPEG, WebP or BMP) as logo
   fastfetch-image.py builtin      go back to the distribution's own ASCII logo
   fastfetch-image.py size COLS    logo width in terminal columns (8-60)
 
 Only the width is written: with kitty-direct a fixed height stretches the image
-to that many rows (preserveAspectRatio only applies to iTerm), so Kitty keeps
+to that many rows (preserveAspectRatio only applies to iTerm), so kitty keeps
 the aspect ratio when the height is left out.
+
+A text logo of one's own (fastfetch's "file" type, like the Saturn the
+buchhwin profile ships) is a third kind: it is neither the distribution's logo
+nor an image, `size` leaves it alone, and only `builtin` or `set` replace it.
 
 The configuration is ${XDG_CONFIG_HOME:-~/.config}/buchhwin-shell/fastfetch.jsonc
 (JSON with comments). It is written atomically; comments are not preserved.
@@ -21,6 +25,12 @@ import sys
 import tempfile
 
 SIGNATURES = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"BM")
+# fastfetch's logo types by what they draw. "auto" (or no type) decides by the
+# source, and so does `logo_kind` below.
+IMAGE_TYPES = ("kitty", "kitty-direct", "kitty-icat", "sixel", "iterm", "chafa", "raw")
+TEXT_TYPES = ("file", "file-raw", "data", "data-raw")
+NAMED_TYPES = ("builtin", "small", "none")
+IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif")
 
 
 def config_path():
@@ -104,17 +114,46 @@ def write_atomic(path, data):
         raise
 
 
+def logo_kind(logo):
+    """"builtin", "image" or "text": what the logo object draws.
+
+    A text logo used to count as an image because it has a source, and the
+    settings page then tried to decode saturn.txt as a picture and called it
+    "Image" - with "System logo" one click away from dropping it unasked.
+    """
+    source = logo.get("source", "")
+    source = source if isinstance(source, str) else ""
+    kind = logo.get("type")
+    kind = kind.lower() if isinstance(kind, str) and kind else "auto"
+    if not source or kind in NAMED_TYPES:
+        return "builtin"
+    if kind in TEXT_TYPES:
+        return "text"
+    if kind in IMAGE_TYPES:
+        return "image"
+    # "auto": a file is drawn as what it is, a path that is gone by its name
+    # (a chosen image that was deleted is still the image setting), and a bare
+    # word is the name of one of fastfetch's own logos.
+    file = os.path.expanduser(source)
+    if os.path.isfile(file):
+        return "image" if is_image(file) else "text"
+    if source.lower().endswith(IMAGE_SUFFIXES):
+        return "image"
+    return "text" if "/" in source else "builtin"
+
+
 def get(path):
     logo = load(path).get("logo")
     logo = logo if isinstance(logo, dict) else {}
     source = logo.get("source", "")
     source = source if isinstance(source, str) else ""
     width = logo.get("width")
-    # Which of the two states the configuration is in. Without this the caller
-    # could only guess from an empty source, and "no source" and "an image that
-    # was deleted" are not the same thing to a settings page.
-    return {"kind": "image" if source else "builtin",
-            "source": source,
+    # Which state the configuration is in. Without this the caller could only
+    # guess from an empty source, and "no source", "an image that was deleted"
+    # and "a text logo" are not the same thing to a settings page.
+    kind = logo_kind(logo)
+    return {"kind": kind,
+            "source": source if kind != "builtin" else "",
             "width": width if isinstance(width, int) else 0}
 
 
@@ -135,7 +174,8 @@ def set_size(path, columns):
         raise ValueError("width must be between 8 and 60 columns")
     data = load(path)
     logo = data.get("logo")
-    if not isinstance(logo, dict):
+    # Columns are an image's width; a text logo is as wide as its lines.
+    if not isinstance(logo, dict) or logo_kind(logo) != "image":
         return {"changed": False}
     changed = fit_logo(logo, columns)
     if changed:

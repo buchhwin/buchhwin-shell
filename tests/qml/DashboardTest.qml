@@ -87,14 +87,14 @@ ShellRoot {
              "and its ids are its own")
 
         // A card that names a floor cannot be pulled below it, and one that
-        // does not goes down to a single step. A month grid below four rows
-        // is a strip of numbers with no month in it.
-        T.eq(D.minSize("calendar"), { w: 1, h: 4 }, "the month grid names its own floor")
+        // does not goes down to a single step. A month grid below five rows
+        // loses its sixth week (DashboardCardTest measures it).
+        T.eq(D.minSize("calendar"), { w: 1, h: 5 }, "the month grid names its own floor")
         T.eq(D.minSize("clock"), { w: 1, h: 1 }, "the clock is happy at a single step")
         T.eq(D.minSize("nothing at all"), { w: 1, h: 1 }, "and an unknown card has no floor to keep")
         const month = L.dashboardItems(L.setDashboardCardSize(d, "dashboard-3", 1, 1))
             .find(card => card.type === "calendar")
-        T.eq([month.w, month.h], [1, 4], "squashing the month grid stops at the floor")
+        T.eq([month.w, month.h], [1, 5], "squashing the month grid stops at the floor")
         // Every start size is still inside the grid, and not below its own
         // floor either - a start size that is clamped on the first write is
         // not a start size.

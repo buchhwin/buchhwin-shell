@@ -38,16 +38,16 @@ ShellPanel {
         },
         {
             icon: "󰕾", title: "Turn things on and off",
-            text: "Wi-Fi, Bluetooth, brightness, sound, battery. The pencil in its header arranges the tiles the way you want them.",
+            text: "Wi-Fi, Bluetooth, brightness, sound, battery. “Arrange tiles” in its header puts them where you want them.",
             keys: ShortcutService.keyHintParts("SUPER + O"), action: "controlCenter"
         },
         {
             icon: "󰃭", title: "Time and weather",
             text: "The dashboard has the month, the weather and the events of your KDE calendars. “+” creates an event, and a series can be changed one occurrence at a time.",
-            keys: ShortcutService.keyHintParts("SUPER + K"), action: "dashboard"
+            keys: ShortcutService.keyHintParts("SUPER + K"), action: "dashboard", asksPlace: true
         },
         {
-            icon: Icons.edit, title: "Make it yours",
+            icon: Icons.arrange, title: "Make it yours",
             text: "The layout editor arranges the desktop: widgets on the wallpaper, a bar of pills at the top, or a notch. Drag what you see, where you see it.",
             keys: ShortcutService.keyHintParts("SUPER + ALT + E"), action: "editor"
         },
@@ -93,6 +93,32 @@ ShellPanel {
             return
         }
         step += 1
+    }
+
+    // The weather needs a place, and finding it from the connection asks a
+    // third party (ipinfo.io), which sees this computer's address. That is
+    // the user's call: the tour asks, where the shell used to ask ipinfo.io
+    // by itself at the first start. A place already set is never asked about.
+    readonly property bool asksPlace: current.asksPlace === true && WeatherService.enabled
+        && (!WeatherService.hasLocation || placeFound)
+    // Found or chosen during this tour: the step says so rather than going
+    // quiet.
+    property bool placeFound: false
+    Connections {
+        target: WeatherService
+        function onHasLocationChanged() {
+            if (WeatherService.hasLocation && (root.wanted || root.steppingAside)) root.placeFound = true
+        }
+    }
+    // Asked from here, so a failure is this step's to show.
+    property bool locating: false
+    function findPlace() {
+        locating = true
+        LocationService.detectByIp()
+    }
+    function chooseCity() {
+        steppingAside = true
+        PanelService.openOver("settings", { page: "weather" }, { step: root.step })
     }
 
     function tryIt() {
@@ -154,6 +180,47 @@ ShellPanel {
                 }
                 Item { Layout.fillWidth: true }
             }
+
+            ShellText {
+                Layout.fillWidth: true
+                visible: root.asksPlace
+                text: WeatherService.hasLocation ? "Weather for " + WeatherService.locationName + "."
+                    : LocationService.detecting ? "Asking ipinfo.io …"
+                    : "The weather needs a place. Find it from this connection? That asks ipinfo.io once, which sees this computer's IP address. Or choose a city yourself."
+                role: "small"
+                muted: true
+                wrapMode: Text.Wrap
+            }
+            ShellText {
+                Layout.fillWidth: true
+                visible: root.asksPlace && !WeatherService.hasLocation && !LocationService.detecting
+                    && LocationService.detectError.length > 0 && root.locating
+                text: LocationService.detectError
+                role: "small"
+                color: Colors.warning
+                wrapMode: Text.Wrap
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                visible: root.asksPlace && !WeatherService.hasLocation
+                spacing: Metrics.spaceSm
+                ShellButton {
+                    focusOnTab: true
+                    icon: Icons.location
+                    text: "Find my place"
+                    compact: true
+                    enabledState: !LocationService.detecting
+                    onClicked: root.findPlace()
+                }
+                ShellButton {
+                    focusOnTab: true
+                    text: "Choose a city …"
+                    variant: "ghost"
+                    compact: true
+                    onClicked: root.chooseCity()
+                }
+                Item { Layout.fillWidth: true }
+            }
         }
 
         RowLayout {
@@ -170,7 +237,7 @@ ShellPanel {
                     radius: width / 2
                     // The track, as a slider's groove: a hairline's border colour
                     // left the other steps all but invisible.
-                    color: index === root.step ? Colors.accent : Colors.track
+                    color: index === root.step ? Colors.accentFill : Colors.track
                 }
             }
 

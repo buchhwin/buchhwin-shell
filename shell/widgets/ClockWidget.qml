@@ -24,6 +24,15 @@ Item {
     // widget placed there is handed its colours instead of the theme's.
     property color textColor: Colors.text
     property color mutedTextColor: Colors.mutedText
+    // A surface that stays dark in both themes (the notch): the hints take
+    // their on-dark colours, as WidgetBase's states do. The charging hint is
+    // the green or the accent (Settings > Power > Status colors), a low
+    // battery red in both.
+    property bool onDark: false
+    readonly property color successInk: onDark ? Colors.positiveOnDark : Colors.positive
+    readonly property color dangerInk: onDark ? Colors.dangerOnDark : Colors.danger
+    readonly property color warningInk: onDark ? Colors.warningOnDark : Colors.warning
+    readonly property color accentInk: onDark ? Colors.notchAccent : Colors.accentForeground
 
     readonly property int textAlign: alignment === "left" ? Text.AlignLeft : alignment === "center" ? Text.AlignHCenter : Text.AlignRight
     readonly property bool showHoverDate: sizeClass === "small" && hovered && !inGroup
@@ -38,35 +47,43 @@ Item {
         if (!showIndicators) return []
         const result = []
         if (CalendarService.hintActive && CalendarService.upcoming(clock.date) !== null)
-            result.push({ icon: "󰃰", color: Colors.accentForeground })
-        if (HyprlandService.screencastActive) result.push({ icon: "󰹑", color: Colors.danger })
-        if (AudioService.micInUse) result.push({ icon: "󰍬", color: Colors.warning })
+            result.push({ icon: "󰃰", color: root.accentInk })
+        if (HyprlandService.screencastActive) result.push({ icon: "󰹑", color: root.dangerInk })
+        if (AudioService.micInUse) result.push({ icon: "󰍬", color: root.warningInk })
         if (NotificationService.dndActive) result.push({ icon: "󰂛", color: root.mutedTextColor })
-        else if (NotificationService.unread > 0) result.push({ icon: "󰂞", color: Colors.accentForeground })
+        else if (NotificationService.unread > 0) result.push({ icon: "󰂞", color: root.accentInk })
         // A low battery is PowerService's low, in the danger colour every
         // other battery uses. It had its own two steps here (amber from 20 %,
         // red from 10 %) that no other surface drew; the escalation lives in
         // the warnings, which grow more urgent at 10 % and 5 %.
-        if (PowerService.hasBattery && PowerService.charging && !PowerService.full) result.push({ icon: "󰂄", color: Colors.success })
-        else if (PowerService.low) result.push({ icon: PowerService.icon, color: Colors.danger })
+        if (PowerService.hasBattery && PowerService.charging && !PowerService.full) result.push({ icon: "󰂄", color: root.successInk })
+        else if (PowerService.low) result.push({ icon: PowerService.icon, color: root.dangerInk })
         return result
     }
     // Screen recording: red dot with the elapsed time, a click stops it. Shown
     // even with the hints switched off.
     readonly property bool showRecording: !inGroup && RecordingService.active
-    readonly property real indicatorWidth: indicatorRow.visible ? indicatorRow.implicitWidth + Metrics.spaceSm * scaleFactor : 0
+    // Which lines are there, as their own conditions rather than read back
+    // from `visible`: that is false under any hidden parent too, and the bar
+    // hides its content while a fullscreen window covers it (PillBar) - the
+    // clock's size then shrank behind the hidden bar and its pill sprang
+    // back to width on the way out of fullscreen.
+    readonly property bool indicatorsShown: indicators.length > 0 || showRecording
+    readonly property bool detailShown: sizeClass !== "small" || detail.opacity > 0
+    readonly property bool secondaryShown: sizeClass === "large"
+    readonly property real indicatorWidth: indicatorsShown ? indicatorRow.implicitWidth + Metrics.spaceSm * scaleFactor : 0
 
-    implicitWidth: Math.max(time.implicitWidth + indicatorWidth, detail.visible ? detail.implicitWidth : 0,
-                            secondary.visible ? secondary.implicitWidth : 0)
+    implicitWidth: Math.max(time.implicitWidth + indicatorWidth, detailShown ? detail.implicitWidth : 0,
+                            secondaryShown ? secondary.implicitWidth : 0)
     implicitHeight: time.implicitHeight
-        + (detail.visible ? detail.implicitHeight + Metrics.spaceXxs * scaleFactor : 0)
-        + (secondary.visible ? secondary.implicitHeight : 0)
+        + (detailShown ? detail.implicitHeight + Metrics.spaceXxs * scaleFactor : 0)
+        + (secondaryShown ? secondary.implicitHeight : 0)
 
     SystemClock { id: clock; precision: SystemClock.Minutes }
 
     Row {
         id: indicatorRow
-        visible: root.indicators.length > 0 || root.showRecording
+        visible: root.indicatorsShown
         spacing: Metrics.spaceXs * root.scaleFactor
         anchors.verticalCenter: time.verticalCenter
         x: root.alignment === "left" ? time.x + time.contentWidth + Metrics.spaceSm * root.scaleFactor
@@ -91,16 +108,20 @@ Item {
                     color: Colors.recordingText
                     font.family: Typography.iconFamily
                     font.pixelSize: Typography.bodyLargeSize * root.scaleFactor
+                    textFormat: Text.PlainText
                     renderType: Typography.renderType
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: RecordingService.elapsedText
+                    // Only asked while the chip shows: a clock in a pill or a
+                    // test never starts the recorder's service for it.
+                    text: root.showRecording ? RecordingService.elapsedText : ""
                     color: Colors.recordingText
                     font.family: Typography.family
                     font.pixelSize: Typography.bodySize * root.scaleFactor
                     font.weight: Typography.semibold
                     font.features: { "tnum": 1 }
+                    textFormat: Text.PlainText
                     renderType: Typography.renderType
                 }
             }
@@ -121,6 +142,7 @@ Item {
                 color: modelData.color
                 font.family: Typography.iconFamily
                 font.pixelSize: Typography.titleSize * root.scaleFactor
+                textFormat: Text.PlainText
                 renderType: Typography.renderType
             }
         }
@@ -147,6 +169,7 @@ Item {
         font.weight: root.inGroup ? Typography.semibold : Typography.clockWeight
         font.letterSpacing: root.inGroup ? Typography.pillClockTracking : 0
         font.features: { "tnum": 1 }
+        textFormat: Text.PlainText
         renderType: Typography.renderType
     }
 
@@ -156,7 +179,7 @@ Item {
         anchors.topMargin: Metrics.spaceXxs * root.scaleFactor
         width: root.width
         horizontalAlignment: root.textAlign
-        visible: root.sizeClass !== "small" || opacity > 0
+        visible: root.detailShown
         opacity: root.sizeClass !== "small" || root.showHoverDate ? 1 : 0
         text: root.sizeClass === "medium"
             ? SettingsService.locale.toString(clock.date, "ddd, MMM d")
@@ -166,6 +189,7 @@ Item {
         font.family: Typography.family
         font.pixelSize: (root.sizeClass === "large" ? Typography.headlineSize : Typography.bodySize) * root.scaleFactor
         font.weight: Typography.light
+        textFormat: Text.PlainText
         renderType: Typography.renderType
         Behavior on opacity { NumberAnimation { duration: Animations.hover; easing.type: Animations.easing } }
     }
@@ -175,12 +199,13 @@ Item {
         anchors.top: detail.bottom
         width: root.width
         horizontalAlignment: root.textAlign
-        visible: root.sizeClass === "large"
+        visible: root.secondaryShown
         text: SettingsService.locale.toString(clock.date, "MMMM d")
         color: root.mutedTextColor
         font.family: Typography.family
         font.pixelSize: Typography.titleSize * root.scaleFactor
         font.weight: Typography.light
+        textFormat: Text.PlainText
         renderType: Typography.renderType
     }
 }

@@ -41,7 +41,7 @@ dbus-update-activation-environment --systemd "XCURSOR_THEME=$theme" "XCURSOR_SIZ
 # XWayland client (Electron with --ozone-platform=x11, for example) draws its
 # own cursor from the X resource, and GTK apps read their own setting. Both
 # used to keep saying breeze_cursors while everything Wayland-native followed
-# the shell, so the ChatGPT app showed a Breeze cursor next to a macOS one.
+# the shell, so an XWayland app showed a Breeze cursor next to the new one.
 if [[ -n ${DISPLAY:-} ]] && command -v xrdb >/dev/null 2>&1; then
   xrdb_merge "Xcursor.theme: $theme" "Xcursor.size: $x11size"
 fi
@@ -49,8 +49,8 @@ fi
 # Flatpak applications (GTK, Electron, Chromium) ask the Settings portal, and
 # its gtk backend answers org.gnome.desktop.interface from dconf - which kept
 # saying breeze_cursors while the session, the X resources and the GTK files
-# said macOS: Discord, Spotify and Steam showed Breeze (Arch, 14.10.). The
-# portal announces the change, so running applications follow too.
+# named the new theme: Flatpak and Electron applications kept showing Breeze.
+# The portal announces the change, so running applications follow too.
 if command -v gsettings >/dev/null 2>&1; then
   gsettings set org.gnome.desktop.interface cursor-theme "$theme" 2>/dev/null || true
   gsettings set org.gnome.desktop.interface cursor-size "$size" 2>/dev/null || true

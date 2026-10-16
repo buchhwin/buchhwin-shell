@@ -77,15 +77,15 @@ ShellRoot {
         // twenty-seven cards. The rows follow the monitor order the Displays
         // page uses, with the screen the overview opened on first.
         const three = [
-            { id: 0, name: "DP-8", x: 0, y: 0, width: 3840, height: 2160, scale: 1.5, transform: 0, focused: false, activeWorkspace: { id: 1 } },
-            { id: 1, name: "DP-10", x: 2560, y: 0, width: 3840, height: 2160, scale: 1.5, transform: 0, focused: true, activeWorkspace: { id: 11 } },
-            { id: 2, name: "DP-13", x: 5120, y: 0, width: 1920, height: 1080, scale: 1, transform: 3, focused: false, activeWorkspace: { id: 21 } }
+            { id: 0, name: "DP-3", x: 0, y: 0, width: 3840, height: 2160, scale: 1.5, transform: 0, focused: false, activeWorkspace: { id: 1 } },
+            { id: 1, name: "DP-1", x: 2560, y: 0, width: 3840, height: 2160, scale: 1.5, transform: 0, focused: true, activeWorkspace: { id: 11 } },
+            { id: 2, name: "DP-2", x: 5120, y: 0, width: 1920, height: 1080, scale: 1, transform: 3, focused: false, activeWorkspace: { id: 21 } }
         ]
         const spread = O.build([], three,
             [{ id: 1, name: "1", monitorID: 0 }, { id: 11, name: "11", monitorID: 1 }, { id: 21, name: "21", monitorID: 2 }],
             "fixed", 2, true)
         T.eq(spread.map(w => w.id), [1, 2, 11, 12, 21, 22], "each monitor's own block is filled in, on that monitor")
-        T.eq(spread.map(w => w.monitor), ["DP-8", "DP-8", "DP-10", "DP-10", "DP-13", "DP-13"],
+        T.eq(spread.map(w => w.monitor), ["DP-3", "DP-3", "DP-1", "DP-1", "DP-2", "DP-2"],
              "and the filled-in ones do not all land on the focused screen")
         T.eq(spread.map(w => w.label), ["1", "2", "1", "2", "1", "2"], "labelled as each monitor's own")
 
@@ -95,7 +95,7 @@ ShellRoot {
         // time it was opened, which is the opposite of what a row per monitor
         // is for; the row says which monitor it is and draws it in the accent
         // colour when it is the focused one.
-        T.eq(rows.map(row => row.monitor), ["DP-8", "DP-10", "DP-13"], "the rows are the monitors, left to right")
+        T.eq(rows.map(row => row.monitor), ["DP-3", "DP-1", "DP-2"], "the rows are the monitors, left to right")
         T.eq(rows.map(row => row.number), [1, 2, 3], "numbered the way they stand")
         T.eq(rows.map(row => row.focused), [false, true, false], "and the focused one is marked, not moved")
         T.eq(rows.map(row => row.workspaces.map(w => w.id)), [[1, 2], [11, 12], [21, 22]], "each row its own")
@@ -107,7 +107,7 @@ ShellRoot {
         const stray = O.build([], three, [{ id: 5, name: "5", monitorID: 9 }], "open", 2, true)
         T.eq(O.groups(stray, three).length >= 1, true, "an unknown monitor still produces rows")
         T.eq(O.groups([{ id: 5, monitor: "GONE", windows: [] }], three).map(row => row.monitor),
-             ["DP-8", "DP-10", "DP-13", ""], "and the homeless one is last, not lost")
+             ["DP-3", "DP-1", "DP-2", ""], "and the homeless one is last, not lost")
 
         // Without blocks nothing changes: one row per monitor, global numbers.
         const flat = O.build([], three, [{ id: 1, name: "1", monitorID: 0 }, { id: 3, name: "3", monitorID: 1 }], "open", 2, false)

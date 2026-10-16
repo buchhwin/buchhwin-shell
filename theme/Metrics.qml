@@ -31,7 +31,7 @@ Singleton {
     // only run parallel when the outer radius is the inset plus the inner one.
     // At the old 20 with a 20 px inset and a 16 px card the gap between the
     // two edges was 20 px down the straight sides and **26.6** into the
-    // corner - `20 + 0.414 * cardRadius` - which is the swell the user saw at
+    // corner - `20 + 0.414 * cardRadius` - which is the swell visible at
     // the bottom right of the launcher's result list. 36 makes it 20 all the
     // way round.
     //
@@ -116,6 +116,23 @@ Singleton {
     readonly property int scrollHintWidth: 3
     readonly property int scrollEdge: 48
     readonly property int scrollStep: 6
+    // How far the shell's lists scroll (ScrollFeel): a browser's distances,
+    // not Qt's. Measured 16.10. with the same virtual input to each client:
+    // one wheel notch moved Qt's Flickable 72 px (three lines of 24), Chrome
+    // 120 and Firefox 132; a 300-unit two-finger swipe moved the Flickable
+    // 510-611 px and both browsers 2100-2640.
+    readonly property int scrollNotch: 120
+    // A touchpad's pixels are multiplied by this (after the compositor's own
+    // scroll factor, Settings > Input > Touchpad). Real swipes on this kind of
+    // touchpad send 180-350 px in 100-280 ms (recorded live 16.10.): one to one
+    // that moved Settings a fifth of a page; doubled, with the short fling
+    // below, a swipe lands at 800-1300 px, where a browser's kinetic scroll
+    // does. Four - read from a virtual pointer without phases - threw a page.
+    readonly property real scrollFingerFactor: 2
+    // The fastest a fling after the fingers lift may start, in px/s. It keeps
+    // a hard throw at a fling of a page or so (with Animations.scrollFling)
+    // instead of flinging the list to its end.
+    readonly property int scrollFlingMax: 4800
     // One UI buttons carry a lot of air around their label.
     readonly property int controlPadding: 20
     readonly property int controlPaddingSm: 14
@@ -186,6 +203,12 @@ Singleton {
     // the control center's grid is measured in it (quickGridUnit) and the
     // pages behind its tiles should not open looser than the grid itself.
     readonly property int pageGap: spaceMd
+    // The gap between the cards of a grid of cards: the control center's
+    // tiles, the dashboard's cards, the session menu's buttons. They had 12,
+    // 16 and 8, so the same kind of card sat at three distances. The control
+    // center's, because its grid unit is measured in it (quickGridUnit) and
+    // because it is the panels' one step (panelGap, pageGap).
+    readonly property int cardGridGap: spaceMd
     readonly property int controlCenterWidth: 640
     // How narrow and how wide the control center may be dragged.
     readonly property int controlCenterMinWidth: 360
@@ -327,10 +350,14 @@ Singleton {
     // Notch (desktop mode "notch"): collapsed like a MacBook notch, expanded
     // on hover into a small overview. The surface is sized for the expanded
     // shape; input only reaches the shape.
-    // Measured against the reference island (docs/system.md, Notch): the
-    // body is about three clock heights tall, its bottom corners round at
+    // The Island body, which a notch without stored values gets too
+    // (notch.bodyHeight / bodyRadius / bodyPadding fall back to these): twice
+    // the clock's line at the default text size, its bottom corners round at
     // two fifths of that, and the strip keeps a clear margin at both ends.
-    readonly property int notchHeight: 40
+    // The reference island's 40 read as too thick for a strip of one line;
+    // 34 still leaves the tallest strip glyph (a status icon at the largest
+    // text size, a 26 px line) room above and below.
+    readonly property int notchHeight: 34
     readonly property int notchMinWidth: 164
     readonly property int notchPadding: 22
     // The notch while it *is* the display: how wide a level track is, and how
@@ -339,7 +366,8 @@ Singleton {
     // screen.
     readonly property int notchLevelWidth: 96
     // The ring a level is drawn as instead (notch.osdStyle "ring"): about
-    // half the body tall, with a stroke that still reads at that size.
+    // two thirds of the body tall, with a stroke that still reads at that
+    // size.
     readonly property int notchRingSize: 22
     readonly property int notchRingStroke: 3
     // The countdown's ring in the strip, the size of the recording dot's row.
@@ -357,9 +385,10 @@ Singleton {
     // corner (7 and 14 at the designed 20): a square shell with a round notch
     // read as two themes. The collapsed body's own radius is a setting of the
     // notch (a preset's bodyRadius, `notchRadius` its fallback); NotchService
-    // scales it on the way to the screen, so a preset keeps its number.
+    // scales it on the way to the screen, so a preset keeps its number, and
+    // the notch draws it at no more than half the body's height.
     readonly property int notchEar: Math.round(7 * cornerScale)
-    readonly property int notchRadius: 16
+    readonly property int notchRadius: 14
     // Workspace style "pills": narrow standing capsules, the active one
     // wider, in a slot narrower than a dot's so five of them stay a short
     // row (a pitch of slot + spaceXs). The island's strip.

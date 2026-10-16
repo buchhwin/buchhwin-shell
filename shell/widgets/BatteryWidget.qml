@@ -17,14 +17,18 @@ WidgetBase {
     glyph: lying && PowerService.hasBattery ? batteryGlyph : null
     icon: PowerService.icon
     // Low is PowerService's, the level set in Settings > Power, so the glyph
-    // turns red where the warning comes and nowhere else.
-    iconColor: PowerService.charging ? Colors.success
-        : PowerService.low ? Colors.danger : root.glyphInk
+    // turns red where the warning comes and nowhere else. Charging is the
+    // green or the accent (Settings > Power > Status colors); low is red in
+    // both.
+    iconColor: PowerService.charging ? root.successInk
+        : PowerService.low ? root.dangerInk : root.glyphInk
     label: PowerService.percent + "%"
     name: PowerService.hasBattery ? "Battery" : "Power"
     meter: PowerService.hasBattery ? PowerService.percent / 100 : -1
-    meterColor: PowerService.charging ? Colors.success
-        : PowerService.low ? Colors.danger : Colors.accent
+    // The plain level is the accent as a fill, which a charging level in
+    // the accent is too: the same bar on and off the charger.
+    meterColor: PowerService.charging ? root.successFill
+        : PowerService.low ? root.dangerInk : root.levelFill
     detail: PowerService.remainingLabel.length ? PowerService.remainingLabel : PowerService.stateLabel
 
     Component {

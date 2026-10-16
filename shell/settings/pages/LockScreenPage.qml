@@ -320,7 +320,7 @@ ColumnLayout {
             }
             ShellText {
                 Layout.fillWidth: true
-                text: "Your password may be asked for before the reader starts. Place the finger on the reader several times, moving it slightly each time."
+                text: "Settings steps aside while the system asks for your password, and comes back once the reader is ready. Place the finger on the reader several times, moving it slightly each time."
                 role: "caption"
                 wrapMode: Text.Wrap
             }
@@ -394,7 +394,7 @@ ColumnLayout {
                         anchors.bottom: parent.bottom
                         radius: height / 2
                         width: parent.width * (root.enrollment ? FingerprintService.progress() : 0)
-                        color: root.enrollment && root.enrollment.success ? Colors.success : Colors.accent
+                        color: root.enrollment && root.enrollment.success ? Colors.positive : Colors.accent
                         Behavior on width { NumberAnimation { duration: Animations.move(Animations.fingerprintFill); easing.type: Animations.easing } }
                     }
                 }
@@ -404,7 +404,7 @@ ColumnLayout {
                     ShellButton {
                         focusOnTab: true
                         visible: FingerprintService.enrolling
-                        text: FingerprintService.cancelling ? "Cancelling …" : "Cancel"
+                        text: FingerprintService.cancelling ? "Canceling …" : "Cancel"
                         compact: true
                         onClicked: FingerprintService.cancel()
                     }

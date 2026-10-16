@@ -80,8 +80,8 @@
     "openDelay": 120,
     "closeDelay": 350,
     "clickAction": "dashboard",
-    "bodyHeight": 40,
-    "bodyRadius": 16,
+    "bodyHeight": 34,
+    "bodyRadius": 14,
     "bodyPadding": 22
   }
 }

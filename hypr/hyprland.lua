@@ -61,8 +61,8 @@ hl.config({
     render = {
         new_render_scheduling = false,
         -- Colour management is a shader pass per surface, on every output,
-        -- and nothing on this desk is HDR or wide gamut (two SDR 4K panels
-        -- and a Full HD one). Off since 2026-10-13; takes effect at the next
+        -- and only HDR or wide-gamut screens need it; on SDR panels it is
+        -- work for nothing. Off since 2026-10-13; takes effect at the next
         -- compositor start.
         cm_enabled = false,
     },
@@ -114,10 +114,10 @@ hl.config({
     -- Without this, XWayland tells its clients the *logical* size of a scaled
     -- monitor - `xrandr` reported 2560x1440 for a 3840x2160 screen at 1.5 - so an
     -- X11 application renders 2560x1440 pixels and the compositor stretches them
-    -- over 3840x2160. Reported as "the font in Citrix is almost unreadably
-    -- pixelated on the 4K screen, and fine on the Full HD one", which is exactly
-    -- the shape of it: the Full HD screen runs at scale 1, where logical and
-    -- physical are the same size and nothing is stretched.
+    -- over 3840x2160. Text in an X11 client (Citrix Workspace, say) then looks
+    -- pixelated on a scaled 4K screen and sharp on an unscaled Full HD one,
+    -- which is exactly the shape of it: at scale 1 logical and physical are
+    -- the same size and nothing is stretched.
     --
     -- The price is that an X11 application now draws at its own idea of 1x on a
     -- 1.5x screen, which is a third smaller. So the shell tells X11 the real
@@ -372,7 +372,7 @@ hl.bind(keyFor("XF86AudioMicMute"), exec("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 
 hl.bind(keyFor("XF86MonBrightnessUp"), shellOr("brightness up", exec("brightnessctl -e4 -n2 set 5%+")), { locked = true, repeating = true, description = "Brightness up" })
 hl.bind(keyFor("XF86MonBrightnessDown"), shellOr("brightness down", exec("brightnessctl -e4 -n2 set 5%-")), { locked = true, repeating = true, description = "Brightness down" })
 -- The keyboard light goes through the shell rather than running brightnessctl
--- here: the LED's name carries its driver's prefix (tpacpi on this ThinkPad,
+-- here: the LED's name carries its driver's prefix (tpacpi on ThinkPads,
 -- asus or dell elsewhere) and a key binding cannot know it.
 hl.bind(keyFor("XF86KbdBrightnessUp"), shell("kbdBacklight up"), { locked = true, repeating = true, description = "Keyboard light up" })
 hl.bind(keyFor("XF86KbdBrightnessDown"), shell("kbdBacklight down"), { locked = true, repeating = true, description = "Keyboard light down" })
@@ -423,8 +423,8 @@ hl.layer_rule({ name = "buchhwin-scrim-noblur", match = { namespace = "^(buchhwi
 -- scripts/lib/checks.py splits a layerrule at its first comma.
 hl.layer_rule({ name = "buchhwin-self-animated", match = { namespace = "^(buchhwin-(batteryPopup|bluetoothPopup|clipboard|controlCenter|dashboard|driveUnlock|emoji|eventEditor|eventsPopup|launcher|mediaPopup|networkPopup|notifications|overview|pairing|powerMenu|privacyPopup|profilePopup|settings|shortcutSheet|systemPopup|volumePopup|vpnPopup|wallpaperPicker|weatherPopup|welcome|wifiPassword|switcher|osd))$" }, no_anim = true })
 -- Citrix opens its own dialogs ("disconnect / log off", class Wfica, title
--- exactly "wfica") on a workspace of its choosing: on 14.10. on 1 while the
--- session sat on 2, which looked like a hung session. Floating, centred and
+-- exactly "wfica") on a workspace of its choosing, such as 1 while the
+-- session sits on 2, which looks like a hung session. Floating, centred and
 -- pinned, the dialog shows on whatever workspace its monitor has in view, also
 -- over a full-screen session. The session window carries its desktop's name as
 -- its title ("RDS-... (SSL/TLS Secured, ...)") and is not matched.

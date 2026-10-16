@@ -48,7 +48,7 @@ ColumnLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceXs
             readonly property color barColor: modelData.usage > 0.9 ? Colors.danger
-                : modelData.usage > 0.75 ? Colors.warning : Colors.accent
+                : modelData.usage > 0.75 ? Colors.warning : Colors.accentFill
 
             RowLayout {
                 Layout.fillWidth: true

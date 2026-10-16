@@ -189,7 +189,7 @@ ColumnLayout {
                 spacing: Metrics.spaceSm
                 ShellButton {
                     focusOnTab: true
-                    icon: Icons.edit; text: "Choose folder …"; compact: true
+                    icon: Icons.modify; text: "Choose folder …"; compact: true
                     onClicked: { PanelService.close(); WallpaperService.chooseFolder() }
                 }
                 ShellButton {

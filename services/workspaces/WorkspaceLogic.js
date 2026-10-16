@@ -146,7 +146,7 @@ function entries(mode, count, workspaces, screen, activeId, offset, focusedId) {
 //
 // Hyprland has one global set of workspaces and gives each of them a monitor.
 // That makes `Super+3` mean "go to whichever screen is holding 3", which is
-// what the user called blöd: with three monitors a workspace *is* a monitor.
+// the wrong question: with three monitors a workspace *is* a monitor.
 //
 // Per-monitor sets, without a plugin: give each monitor a block of ten ids and
 // let the keys act on the monitor under the focus. Monitor 1 keeps 1-10, so a
@@ -239,6 +239,13 @@ function misplaced(order, workspaces) {
 // 2 on the third screen after a reboot (2026-10-13) - which no monitor change
 // ever came back to look at. `actives` is `[{ monitor, id }]`, `placed` the
 // workspaces as `misplaced` takes them, after its moves. Unit tested.
+//
+// A screen showing a workspace from beyond the blocks (a monitor that is
+// gone: undock, and Hyprland hands 11-20 to the laptop with their ids) is
+// left alone, the same rule `misplaced` keeps. Those are the stray pips
+// `entries` draws to be visited, and sending the screen home sent it away
+// 400 ms after the next workspace came or went - leaving an emptied one is
+// enough - so the undocked monitor's windows could not be stayed with.
 function homes(order, placed, actives) {
     const monitors = Array.isArray(order) ? order : []
     const result = []
@@ -248,6 +255,7 @@ function homes(order, placed, actives) {
         if (index < 0) continue
         const id = Math.round(Number(active.id))
         if (isFinite(id) && id >= 1 && monitorIndexOf(id) === index) continue
+        if (isFinite(id) && id >= 1 && monitorIndexOf(id) >= monitors.length) continue
         const own = (Array.isArray(placed) ? placed : [])
             .map(item => Math.round(Number(item && item.id)))
             .filter(other => other >= 1 && monitorIndexOf(other) === index)
@@ -255,4 +263,15 @@ function homes(order, placed, actives) {
         result.push({ monitor: monitors[index], id: own.length ? own[0] : globalId(1, index) })
     }
     return result
+}
+
+// The ids the per-monitor rules were sent for: every block up to the
+// highest one sent since the last config reload (HyprlandService.ruledUpTo).
+// The highest, not the current monitors': a monitor unplugged since keeps
+// its block's rules, and they would bind 11-20 to it when it returns.
+function ruledIds(upTo) {
+    const count = Math.round(Number(upTo))
+    const ids = []
+    for (let id = 1; isFinite(count) && id <= count; ++id) ids.push(id)
+    return ids
 }

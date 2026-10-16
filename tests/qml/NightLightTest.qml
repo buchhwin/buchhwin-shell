@@ -17,6 +17,15 @@ ShellRoot {
         T.eq(N.command("sun", 4000, 52.5, 13.4, false).slice(-4), ["-l", "52.50:13.40", "-t", "6500:4000"], "sun mode uses the location")
         T.eq(N.command("sun", 4000, 0, 0, false), [], "sun mode without a location")
         T.eq(N.command("off", 4000, 52.5, 13.4, true), [], "off")
+
+        // Crashes and restarts: the exit of a run the service stopped for a new
+        // command (gammastep fades for ~4 s at night) is no crash.
+        T.eq(N.exitIsFailure(true, false, false), true, "an exit while night light should be on is a failure")
+        T.eq(N.exitIsFailure(true, false, true), false, "the late exit of a replaced run is not")
+        T.eq(N.exitIsFailure(true, true, false), false, "nor one inside the restart gap")
+        T.eq(N.exitIsFailure(false, false, false), false, "nor one after night light went off")
+        T.eq([N.crashBackoff(1), N.crashBackoff(2), N.crashBackoff(5)], [10000, 20000, 160000], "the pause doubles")
+        T.eq([N.crashBackoff(6), N.crashBackoff(0), N.crashBackoff("x")], [0, 0, 0], "and stops after five")
         T.finish("NightLightTest")
     }
 }

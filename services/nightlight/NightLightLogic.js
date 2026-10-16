@@ -30,3 +30,24 @@ function command(mode, temperature, lat, lon, scheduled) {
         return ["gammastep", "-m", "wayland", "-P", "-l", lat.toFixed(2) + ":" + lon.toFixed(2), "-t", "6500:" + temp]
     return []
 }
+
+// Whether gammastep's exit counts as a failure to back off from: only while
+// night light should be on, not inside the short gap of a restart, and not
+// when the exit is the end of a run the service stopped itself (`stopping`).
+// At night gammastep fades back to 6500 K for about four seconds after its
+// SIGTERM, so the exit of the run a new command replaced came long after the
+// new start was queued, and every temperature change in sun mode counted as a
+// crash (16.10. review). Unit tested.
+function exitIsFailure(active, restartPending, stopping) {
+    return active === true && restartPending !== true && stopping !== true
+}
+
+// Pause before restarting after the n-th failure in a row: 10 s, 20 s, 40 s,
+// … and 0 (no restart) past MAX_FAILURES, e.g. while another tool holds the
+// gamma control. Unit tested.
+var MAX_FAILURES = 5
+
+function crashBackoff(failures) {
+    const n = Math.floor(Number(failures) || 0)
+    return n >= 1 && n <= MAX_FAILURES ? 10000 * Math.pow(2, n - 1) : 0
+}

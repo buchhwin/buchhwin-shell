@@ -53,7 +53,7 @@ ColumnLayout {
         description: "Widgets mode shows the widgets on the wallpaper instead of the bar. The pills below are kept and come back with the Bar mode."
         ShellButton {
             focusOnTab: true
-            icon: Icons.edit; text: "Open widgets"
+            icon: Icons.arrange; text: "Open widgets"
             onClicked: PanelService.open("settings", { page: "widgets" })
         }
     }
@@ -76,7 +76,7 @@ ColumnLayout {
             ShellButton {
                 focusOnTab: true
                 text: "Open the editor"
-                icon: Icons.edit
+                icon: Icons.arrange
                 onClicked: { PanelService.close("settings"); LayoutService.editMode = true }
             }
         }
@@ -319,7 +319,7 @@ ColumnLayout {
             spacing: Metrics.spaceSm
             ShellButton {
                 focusOnTab: true
-                icon: Icons.edit; text: "Edit layout"; variant: "accent"
+                icon: Icons.arrange; text: "Edit layout"; variant: "accent"
                 onClicked: { PanelService.close(); LayoutService.editMode = true }
             }
             ShellButton { focusOnTab: true; icon: Icons.undo; text: "Undo"; enabledState: LayoutService.undoStack.length > 0; onClicked: LayoutService.undo() }
@@ -482,9 +482,11 @@ ColumnLayout {
                                 icon: "󰘞"; variant: "ghost"; compact: true; toolTip: "Merge with next " + page.unit
                                 onClicked: LayoutService.barMergeWithNext(pillCard.pill.id)
                             }
+                            // A whole pill with everything in it: it asks first.
                             ShellButton {
                                 focusOnTab: true
                                 icon: Icons.remove; variant: "ghost"; compact: true; toolTip: "Remove " + page.unit
+                                confirm: true; confirmText: "Remove?"
                                 onClicked: { page.select("", -1); LayoutService.barRemovePill(pillCard.pill.id) }
                             }
                         }

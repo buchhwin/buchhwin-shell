@@ -1,5 +1,6 @@
 import Quickshell
 import QtQuick
+import QtQuick.Layouts
 import qs.theme
 import qs.shell.components
 import "Harness.js" as T
@@ -8,14 +9,19 @@ import "Harness.js" as T
 // without a window: the select's filter (opening clears it, a filter that
 // matches nothing says so, Enter on nothing takes nothing), the field's error
 // outline, and the disabled look of the chip, the segments, the select and
-// the field - dimmed, and then nothing answers. Last, the segments that draw
-// only a glyph: their label is their name and their tooltip. Where the focus
-// goes as a select opens and closes needs a window, which these tests do not
-// open.
+// the field - dimmed, and then nothing answers. Then the segments that draw
+// only a glyph: their label is their name and their tooltip. Then the
+// slider's keys (a whole gesture, `moved` and `released`) and its fill from a
+// middle, Escape in a field (back to what it had, not empty), and the inks of
+// a selected row. Where the focus goes as a select opens and closes needs a
+// window, which these tests do not open; one small window lays out the
+// editor toolbar's two segment controls at their own width, which is where a
+// label used to be cut.
 ShellRoot {
     id: root
     property int chipFired: 0
     property var chosen: []
+    property var slid: []
 
     function find(item, test) {
         if (!item) return null
@@ -75,8 +81,81 @@ ShellRoot {
                 options: [{ value: "x", label: "Ex" }, { value: "y", label: "Why" }]
                 current: "x"
             }
+            // Only `moved`, like the volume and brightness sliders.
+            ShellSlider {
+                id: level
+                width: 220
+                value: 0.5
+                onMoved: value => root.slid.push("moved " + value.toFixed(2))
+                onReleased: value => root.slid.push("released " + value.toFixed(2))
+            }
+            ShellSlider { id: speed; width: 220; from: -1; to: 1; origin: 0; value: 0.5 }
+            ShellTextField { id: stored; width: 300; text: "https://search.example/?q=%s" }
+            ShellTextField {
+                id: entry
+                width: 300
+                // Like Add shortcut: Return hands the text on and empties the
+                // field for the next one.
+                onAccepted: text = ""
+            }
+            ListRow { id: chosenRow; width: 300; title: "Row"; subtitle: "Second line"; trailingText: "Now"; selected: true }
+            ChipButton { id: onChip; title: "Dark mode"; subtitle: "On"; active: true }
         }
         ToolTipLayer { id: layer }
+    }
+
+    // The layout editor's toolbar: both controls at their own width.
+    FloatingWindow {
+        visible: true
+        implicitWidth: 720
+        implicitHeight: 120
+        Row {
+            SegmentedControl {
+                id: profileModes
+                options: ["Minimal", "Work", "Gaming", "Laptop", "Docked"].map(name => ({ value: name, label: name }))
+                current: "Minimal"
+            }
+            SegmentedControl {
+                id: desktopModes
+                options: [{ value: "widgets", label: "Widgets", icon: Icons.arrange },
+                          { value: "pills", label: "Bar", icon: Icons.grid },
+                          { value: "notch", label: "Notch", icon: Icons.window }]
+                current: "widgets"
+            }
+        }
+        // A passphrase field and somewhere else for the focus to go: what
+        // Escape goes back to lives only as long as the focus.
+        Row {
+            y: Metrics.controlHeightLg * 2
+            ShellTextField { id: secret; width: 300; echoMode: TextInput.Password; onAccepted: {} }
+            ShellButton { id: elsewhere; text: "Elsewhere"; focusOnTab: true }
+        }
+    }
+    Timer {
+        id: laidOut
+        interval: 300
+        onTriggered: {
+            const labels = root.findAll(profileModes, child => child.truncated !== undefined && child.role !== undefined && child.visible)
+                .concat(root.findAll(desktopModes, child => child.truncated !== undefined && child.role !== undefined && child.visible))
+            T.eq(labels.map(label => label.text), ["Minimal", "Work", "Gaming", "Laptop", "Docked", "Widgets", "Bar", "Notch"], "the toolbar's labels")
+            T.eq(labels.filter(label => label.truncated).map(label => label.text), [],
+                 "at its own width a pill control cuts no label (the trough's inset is asked for)")
+            const row = root.find(profileModes, child => child instanceof RowLayout)
+            T.eq(profileModes.implicitWidth, row.implicitWidth + Metrics.spaceXs * 2, "the inset on both sides")
+
+            // ---- field: no passphrase kept past the focus ----------------
+            const secretInput = root.find(secret, child => child instanceof TextInput)
+            secret.focusInput(Qt.TabFocusReason)
+            T.eq([secret.inputActiveFocus, secret.savedText], [true, ""], "focused empty, Escape would clear")
+            secretInput.text = "hunter2"
+            secretInput.accepted()
+            T.eq(secret.savedText, "hunter2", "Return kept with the focus: Escape keeps what was handed on")
+            elsewhere.forceActiveFocus()
+            T.eq([secret.inputActiveFocus, secret.savedText], [false, ""], "the focus gone, no copy of the passphrase is left")
+            secret.text = ""
+            T.eq(secret.revert(), false, "and nothing can put it back once the dialog has emptied the field")
+            T.finish("ControlsTest")
+        }
     }
 
     Component.onCompleted: {
@@ -168,7 +247,61 @@ ShellRoot {
         T.eq(tabSegs.map(segment => segment.iconOnly), [false, false], "full width draws every label")
         const line = root.findAll(tabs, child => child instanceof Rectangle && child.parent === tabs)[2]
         T.ok(Qt.colorEqual(line.color, Colors.accentLine), "the underline is the readable accent line")
+        const capsule = root.findAll(segments, child => child instanceof Rectangle && child.parent === segments)[2]
+        T.ok(Qt.colorEqual(capsule.border.color, Colors.segmentBorder), "the selected capsule has the segment's own edge")
 
-        T.finish("ControlsTest")
+        // ---- slider -----------------------------------------------------
+        level.Keys.rightPressed(null)
+        level.Keys.leftPressed(null)
+        T.eq(root.slid, ["moved 0.55", "released 0.55", "moved 0.45", "released 0.45"],
+             "an arrow is a whole gesture: moved, then released")
+        level.commit(1)
+        T.eq(root.slid.slice(4), ["moved 1.00", "released 1.00"], "and so is the end a key goes to")
+        level.enabledState = false
+        level.Keys.rightPressed(null)
+        T.eq(root.slid.length, 6, "a disabled slider moves nothing")
+        level.enabledState = true
+        level.value = 0.5
+        T.eq([level.wheelTarget(120), level.wheelTarget(-120)], [0.55, 0.45], "a wheel step is a twentieth either way")
+        T.ok(isNaN(level.wheelTarget(0)), "an event that turned nothing (a swipe's start or end) is no step")
+        level.value = 1
+        T.eq(level.wheelTarget(120), 1, "and none past the end")
+        level.value = 0.5
+        const fillOf = slider => root.find(slider, child => child instanceof Rectangle && child.parent !== slider)
+        const levelTrack = fillOf(level).parent
+        T.eq([fillOf(level).x, fillOf(level).width], [0, levelTrack.width * 0.5], "a level fills from the left end")
+        const speedTrack = fillOf(speed).parent
+        T.eq([fillOf(speed).x, fillOf(speed).width], [speedTrack.width * 0.5, speedTrack.width * 0.25],
+             "a value with a middle fills from the middle to the knob")
+        T.ok(Qt.colorEqual(fillOf(level).color, Colors.accentFill), "the fill is the accent made for fills")
+
+        // ---- field: Escape ----------------------------------------------
+        const storedInput = root.find(stored, child => child instanceof TextInput)
+        stored.savedText = stored.text   // what focusing the field does
+        storedInput.text = "https://search.example/?q="
+        stored.edited = true
+        storedInput.Keys.escapePressed(null)
+        T.eq([stored.text, stored.edited], ["https://search.example/?q=%s", false],
+             "Escape puts the stored value back instead of an empty field")
+        T.eq(stored.revert(), false, "and the next Escape has nothing to put back: it is the owner's")
+        const searchInput = root.find(field, child => child instanceof TextInput)
+        field.savedText = ""
+        searchInput.text = "vol"
+        T.eq([field.revert(), field.text], [true, ""], "a field that got the focus empty is cleared, as a search is")
+        const entryInput = root.find(entry, child => child instanceof TextInput)
+        entryInput.text = "kitty"
+        entryInput.accepted()
+        T.eq([entry.text, entry.savedText], ["", ""], "Return hands on; what the owner leaves is what Escape keeps")
+
+        // ---- inks on a highlight -----------------------------------------
+        const rowContent = root.find(chosenRow, child => child.subtitleColor !== undefined)
+        T.ok(Qt.colorEqual(rowContent.subtitleColor, Colors.mutedOnSoft), "a selected row's second line is the muted ink made for the tint")
+        T.ok(Qt.colorEqual(rowContent.iconColor, Colors.accentOnSoft), "its glyph the accent made for the tint")
+        T.ok(Qt.colorEqual(root.textItem(chosenRow, "Now").color, Colors.mutedOnSoft), "and its trailing text too")
+        const chipContent = root.find(onChip, child => child.subtitleColor !== undefined)
+        T.ok(Qt.colorEqual(chipContent.titleColor, Colors.accentOnSoft) && Qt.colorEqual(chipContent.subtitleColor, Colors.mutedOnSoft),
+             "an active chip's title and second line likewise")
+
+        laidOut.start()
     }
 }

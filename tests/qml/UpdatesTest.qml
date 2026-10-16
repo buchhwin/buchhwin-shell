@@ -203,11 +203,28 @@ ShellRoot {
         T.eq(U.checkCommand("/s/updates-check.sh", false, false), ["/s/updates-check.sh"], "normal check")
         T.eq(U.checkCommand("/s/updates-check.sh", true, false), ["/s/updates-check.sh", "--refresh"], "forced refresh")
         T.eq(U.checkCommand("/s/updates-check.sh", true, true), ["/s/updates-check.sh", "--cache-only"], "cache only never refreshes")
-        T.eq(U.discoverCommand(), ["plasma-discover", "--mode", "update"], "Discover update mode")
-        const upgrade = U.terminalUpgradeCommand("/k/launch-kitty.sh")
-        T.eq(upgrade.slice(0, 4), ["/k/launch-kitty.sh", "--hold", "sh", "-c"], "Arch: the upgrade runs in a held terminal")
-        T.ok(/exec paru -Syu/.test(upgrade[4]) && /exec sudo pacman -Syu/.test(upgrade[4]), "an AUR helper first, pacman without one")
-        T.eq(U.flatpakUpdateCommand("/s/launch-kitty.sh"), ["/s/launch-kitty.sh", "--hold", "flatpak", "update", "--user", "-y"], "user flatpak update")
+        T.eq(U.discoverCommand("/s/launch-app.sh"), ["/s/launch-app.sh", "org.kde.discover", "plasma-discover", "--mode", "update"],
+             "Discover update mode, through launch-app.sh (the session's environment, not the shell's)")
+        // The terminals are user services of their own, not the shell's
+        // children: a reload or deploy ended the kitty and the pacman in it.
+        // They open in the terminal Default apps names (launch-terminal.sh);
+        // they used to be kitty whatever it said.
+        const upgrade = U.terminalUpgradeCommand("/s/launch-terminal.sh")
+        T.eq(upgrade.slice(0, 9), ["/s/launch-terminal.sh", "--unit", "buchhwin-upgrade", "--hold", "--title", "System upgrade", "--", "sh", "-c"],
+             "Arch: the upgrade runs in the session's terminal, held, titled, as a unit of its own")
+        T.eq(upgrade.length, 10, "the upgrade is one script for sh -c")
+        T.ok(/exec paru -Syu/.test(upgrade[9]) && /exec sudo pacman -Syu/.test(upgrade[9]), "an AUR helper first, pacman without one")
+        T.eq(U.flatpakUpdateCommand("/s/launch-terminal.sh"),
+             ["/s/launch-terminal.sh", "--unit", "buchhwin-flatpak-update", "--hold", "--title", "Flatpak update", "--", "flatpak", "update", "--user", "-y"],
+             "user flatpak update in the session's terminal, as a unit")
+        T.eq([U.UPGRADE_UNIT, U.FLATPAK_UNIT], ["buchhwin-upgrade", "buchhwin-flatpak-update"], "the units the page watches")
+        const watch = U.unitWatchCommand("buchhwin-upgrade")
+        T.eq([watch[0], watch[1], watch[3], watch[4]], ["sh", "-c", "sh", "buchhwin-upgrade"], "the unit name is an argument, not part of the script")
+        T.ok(/is-active "\$1" \|\| exit 0; echo active;/.test(watch[2]) && /while systemctl --user -q is-active "\$1"; do sleep 2; done/.test(watch[2]),
+             "the watcher says 'active' once and returns when the unit is gone")
+        // The shell's own update restarts the shell: not while a terminal works.
+        T.ok(U.shellUpdateAllowed(false, false), "nothing in a terminal: the shell may update")
+        T.ok(!U.shellUpdateAllowed(true, false) && !U.shellUpdateAllowed(false, true), "an upgrade or a Flatpak update holds it back")
         T.finish("UpdatesTest")
     }
 }

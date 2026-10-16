@@ -67,6 +67,9 @@ ColumnLayout {
         }
         ShellTextField {
             focusOnTab: true
+            // A test line, not a value: what is typed here keeps no page
+            // loaded (SettingsPanel.pendingEdits).
+            property bool scratch: true
             Layout.fillWidth: true
             icon: "󰌌"
             placeholder: "Type here to test layout and repeat"
@@ -82,10 +85,13 @@ ColumnLayout {
             // Written on release like the Appearance sliders - every tick of a
             // drag used to be a settings write and a Hyprland option apply.
             // The number beside the slider follows the handle meanwhile.
+            // Slow through 0 to fast: the fill runs from the middle, which
+            // is libinput's own speed, to the knob on either side.
             ShellSlider {
                 id: speedSlider
                 focusOnTab: true
                 Layout.fillWidth: true
+                origin: 0.5
                 value: (SettingsService.value("input.sensitivity") + 1) / 2
                 onReleased: value => SettingsService.set("input.sensitivity", Math.round((value * 2 - 1) * 20) / 20)
             }

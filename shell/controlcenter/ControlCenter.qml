@@ -9,7 +9,8 @@ import "../../services/arrange/ArrangeLogic.js" as Arrange
 
 // Super+O control center: quick tiles, sliders, media, audio and status chips
 // with detail pages for network, Bluetooth, audio, DND, power, drives and tray.
-// The pencil in the header arranges the tiles in place (see OverviewPage).
+// The arrange button in the header arranges the tiles in place (see
+// OverviewPage).
 ShellPanel {
     id: root
     keyNavigation: true
@@ -105,7 +106,7 @@ ShellPanel {
             }
             ShellButton {
                 visible: root.page.length === 0
-                icon: Icons.edit
+                icon: Icons.arrange
                 variant: LayoutService.quickEditing ? "accent" : "ghost"
                 iconSize: Metrics.iconMd
                 toolTip: LayoutService.quickEditing ? "Done arranging" : "Arrange tiles"

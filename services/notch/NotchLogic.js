@@ -90,6 +90,28 @@ function statusItems(state) {
     return items
 }
 
+// What an overview cell with nothing to show says: what is missing, rather
+// than the bare name of the block ("Weather", "Events", "Active window"),
+// which read like a label someone forgot to fill in. Still one muted line
+// beside the block's glyph, so it is no louder than the name was; hiding the
+// cell instead would leave a hole in a grid the user arranged, and an empty
+// field that reads as broken. `facts`: `weather` (WeatherService.status) and
+// `workspaceEmpty` (no window on the focused workspace). Anything else keeps
+// `fallback`, its name.
+function emptyText(type, facts, fallback) {
+    const f = facts || {}
+    if (type === "weather") {
+        return f.weather === "disabled" ? "Weather off"
+            : f.weather === "noLocation" ? "No location"
+            : f.weather === "error" ? "No forecast"
+            : "Loading …"
+    }
+    if (type === "events" || type === "calendarSummary") return "No events"
+    if (type === "media" || type === "nowPlaying") return "Nothing playing"
+    if (type === "activeWindow") return f.workspaceEmpty === true ? "Empty workspace" : "No window"
+    return String(fallback || type || "")
+}
+
 // Width of the collapsed notch: room for the strip the user arranged plus
 // padding on both sides, never below the minimum and never wider than the
 // expanded shape - a strip that outgrew the surface would be cut off by it.
@@ -302,6 +324,28 @@ function delay(value, range) {
     return Math.round(Math.max(range.min, Math.min(range.max, number)))
 }
 
+// The ranges a number the IPC sets is checked against, by its key: the same
+// ones the notch clamps to when it reads them. One rule for all five - the
+// open delay used to be accepted up to 2000 ms and stored, while the notch
+// clamped it to 1000 and `notch get` said 1000, so a preset saved afterwards
+// carried a number the notch never used.
+function optionRange(key) {
+    if (key === "openDelay") return OPEN_DELAY
+    if (key === "closeDelay") return CLOSE_DELAY
+    return Object.prototype.hasOwnProperty.call(BODY_RANGES, key) ? BODY_RANGES[key] : null
+}
+
+// The whole number to store for `key`, or null when the key takes no number
+// or the value is not one inside its range: refused, not clamped.
+function optionNumber(key, value) {
+    const range = optionRange(key)
+    if (range === null) return null
+    const text = String(value === undefined || value === null ? "" : value).trim()
+    const number = Number(text)
+    if (!text.length || !isFinite(number) || number < range.min || number > range.max) return null
+    return Math.round(number)
+}
+
 // ---- status glyphs in the accent ---------------------------------------------
 // notch.accentGlyphs: the neutral status glyphs (network, Bluetooth, battery,
 // volume, the bell) in the accent instead of the notch's white - nowhere, only
@@ -325,10 +369,11 @@ function glyphsInAccent(setting, where) {
 // ---- the collapsed body ------------------------------------------------------
 // How tall the collapsed shape is, how round its bottom corners are and how
 // much air the strip keeps at both ends (notch.bodyHeight / bodyRadius /
-// bodyPadding). The theme's tokens are the defaults; a preset carries all
-// three, which is how Classic gets back the 32 / 11 / 16 body the notch had
-// before Island without the tokens changing. `BODY_RANGES` names them by their
-// setting, for the IPC and the preset files' checks.
+// bodyPadding). The theme's tokens are the defaults (Island's 34 / 14 / 22); a
+// preset carries all three, which is how Classic gets back the 32 / 11 / 16
+// body the notch had before Island without the tokens changing. The height
+// is also a slider (NotchHoverRows). `BODY_RANGES` names them by their
+// setting, for the IPC, the slider and the preset files' checks.
 var BODY_HEIGHT = { min: 24, max: 64 }
 var BODY_RADIUS = { min: 0, max: 32 }
 var BODY_PADDING = { min: 0, max: 48 }
@@ -341,6 +386,31 @@ function bodySize(value, range, fallback) {
     const number = Number(value)
     if (!isFinite(number)) return fallback
     return Math.round(Math.max(range.min, Math.min(range.max, number)))
+}
+
+// The radius the collapsed body is drawn with: the setting (already under the
+// shell corner scale), never more than half the body's height. The height is
+// a slider now and the radius a separate number, so a low body with large
+// corners is a pair anyone can set; past half the height the bottom corners
+// would run up into the ears. Clamped rather than scaled with the height: the
+// corners stay the number chosen while the height moves, and only a body too
+// low for them rounds off at its ends, as a pill's do. The stored radius is
+// untouched, so a preset saved afterwards keeps it.
+function collapsedRadius(radius, height) {
+    const r = Math.max(0, Number(radius) || 0)
+    const h = Math.max(0, Number(height) || 0)
+    return Math.min(r, h / 2)
+}
+
+// What a release of a body slider stores for `key`: whole pixels inside the
+// key's range, or null when that is the number stored already - a click on
+// the knob that moved nothing is no change, and takes no undo step.
+function bodyChange(key, value, stored) {
+    const range = Object.prototype.hasOwnProperty.call(BODY_RANGES, key) ? BODY_RANGES[key] : null
+    // Number(null) and Number("") are 0, which would clamp to the minimum.
+    const size = v => v === null || v === undefined || v === "" ? null : bodySize(v, range, null)
+    const number = range === null ? null : size(value)
+    return number === null || number === size(stored) ? null : number
 }
 
 // settings.json from before hoverMode: expandOnHover false meant "a click

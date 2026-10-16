@@ -96,7 +96,7 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.preferredHeight: implicitHeight
         columns: root.columns
-        gap: Metrics.panelGap
+        gap: Metrics.cardGridGap
         unit: Metrics.quickGridUnit
         editing: root.editing
         // The same ceiling the layout file clamps a stored size to, so a
@@ -130,9 +130,10 @@ ColumnLayout {
     // ---- arranging -------------------------------------------------------
 
     // One compact row: the tiles that are off, a reset and the way out. The
-    // pencil in the header is the Done button, so there is not a second one,
-    // and there is no sentence explaining the drag either - the wiggling tiles
-    // and the handles on them say it, and the row is read on every visit.
+    // arrange button in the header is the Done button, so there is not a
+    // second one, and there is no sentence explaining the drag either - the
+    // wiggling tiles and the handles on them say it, and the row is read on
+    // every visit.
     CardSection {
         Layout.fillWidth: true
         visible: root.editing
@@ -182,7 +183,13 @@ ColumnLayout {
         QuickTile {
             shape: fitClass
             readonly property bool shown: true
-            icon: NetworkService.icon
+            // The switch is Wi-Fi's, so the glyph is too: off, on and
+            // searching, or the signal of the network it is on. It drew the
+            // Ethernet plug while the wire carried the connection - a Wi-Fi
+            // switch with a cable on it. The wire is still named, in the line
+            // under the title ("Wired"), which says what carries the traffic.
+            icon: !NetworkService.wifiUsable ? "󰤮"
+                : NetworkService.current ? NetworkService.signalIcon(NetworkService.current.signalStrength) : "󰤯"
             title: "Wi-Fi"
             subtitle: NetworkService.summary
             checked: NetworkService.wifiEnabled
@@ -315,6 +322,9 @@ ColumnLayout {
                     ShellSlider {
                         Layout.fillWidth: true
                         visible: compact
+                        // Named on the slider: the label beside it is a
+                        // sibling, and a screen reader said "slider, 40%".
+                        accessibleName: "Brightness"
                         value: BrightnessService.value
                         onMoved: value => BrightnessService.set(value)
                     }
@@ -339,6 +349,7 @@ ColumnLayout {
                 ShellSlider {
                     Layout.fillWidth: true
                     visible: !compact
+                    accessibleName: "Brightness"
                     value: BrightnessService.value
                     onMoved: value => BrightnessService.set(value)
                 }
@@ -392,12 +403,16 @@ ColumnLayout {
                 // this tile drew the same level 6 and 8 px thick.
                 // Charging, low (PowerService's, the level from Settings) and
                 // otherwise the tile's muted ink, like the brightness glyph.
+                // Charging is the green or the accent (Settings > Power >
+                // Status colors), and the bar's plain level is the accent as
+                // a fill, as in the battery popup: the teal itself on a light
+                // card was a bar that was not there.
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: Metrics.spaceMd
                     ShellIcon {
                         glyph: PowerService.icon; size: Metrics.iconLg
-                        color: PowerService.charging ? Colors.success : PowerService.low ? Colors.danger : Colors.mutedText
+                        color: PowerService.charging ? Colors.positive : PowerService.low ? Colors.danger : Colors.mutedText
                     }
                     ShellText {
                         text: PowerService.hasBattery ? "Battery" : "Power supply"
@@ -426,8 +441,8 @@ ColumnLayout {
                                 width: parent.width * PowerService.percent / 100
                                 height: parent.height
                                 radius: parent.radius
-                                color: PowerService.charging ? Colors.success
-                                    : PowerService.low ? Colors.danger : Colors.accent
+                                color: PowerService.charging ? Colors.positiveFill
+                                    : PowerService.low ? Colors.danger : Colors.accentFill
                             }
                         }
                     }
@@ -452,8 +467,8 @@ ColumnLayout {
                             width: parent.width * PowerService.percent / 100
                             height: parent.height
                             radius: parent.radius
-                            color: PowerService.charging ? Colors.success
-                                : PowerService.low ? Colors.danger : Colors.accent
+                            color: PowerService.charging ? Colors.positiveFill
+                                : PowerService.low ? Colors.danger : Colors.accentFill
                         }
                     }
                 }

@@ -3,6 +3,7 @@ import QtQuick
 import "Harness.js" as T
 import "../../services/calendar/EventEditLogic.js" as E
 import "../../services/calendar/RecurrenceLogic.js" as R
+import "../../services/calendar/EventDraftLogic.js" as D
 
 // The CSV fixtures are gone with konsolekalendar: an event is now resolved by
 // scripts/calendar-helper.py, which answers with one JSON object. What is
@@ -143,6 +144,44 @@ ShellRoot {
         // ---- the panel copies its arguments ----------------------------------
         T.eq(E.sameEvent(event, Object.assign({}, event)), true, "a copy is the same event")
         T.eq(E.sameEvent(event, timed("Review \"Q1\", draft", 10, 14, 0, 16, 0)), false, "a different end is not")
+
+        // ---- a form that outlives a close (an outside click) -----------------
+        const day = new Date(2026, 2, 10)
+        const fresh = D.defaultDraft(day, new Date(2026, 2, 9, 8, 0), "")
+        const freshRule = R.emptyDraft(day)
+        const newArgs = { mode: "new", day: "2026-03-10" }
+        const newState = draft => ({ editing: false, opened: fresh, openedRule: freshRule, draft: draft,
+                                     rule: freshRule, original: null, originalRule: null, scope: "single" })
+        T.eq(E.keptDraft(newArgs, newState(fresh)), null,
+             "an untouched form is not kept: it would start at a time long past")
+        T.eq(E.keptDraft(newArgs, newState(Object.assign({}, fresh, { calendarId: "8" }))), null,
+             "nor one the calendar list filled in by itself")
+        const typed = Object.assign({}, fresh, { title: "Planning", notes: "https://meet.example.invalid/x" })
+        const keptNew = E.keptDraft(newArgs, newState(typed))
+        T.eq([keptNew.mode, keptNew.day, keptNew.state.draft.title], ["new", "2026-03-10", "Planning"],
+             "a typed one is kept with the day it was opened for")
+        T.ok(E.keptDraft(newArgs, Object.assign(newState(fresh), {
+                 rule: Object.assign({}, freshRule, { repeat: "weekly" }) })) !== null,
+             "and so is one that only chose to repeat")
+        T.eq(E.resumes(keptNew, newArgs), true, "it comes back on the same day")
+        T.eq(E.resumes(keptNew, { mode: "new", day: "2026-03-11" }), false, "not on another")
+        T.eq(E.resumes(keptNew, { mode: "details", event: event }), false, "nor for an event's details")
+        T.eq(E.resumes(null, newArgs), false, "nothing kept, nothing back")
+
+        const before = E.draftFor(event, "Room 2")
+        const detailsArgs = { mode: "details", event: event }
+        const editState = (editing, draft) => ({ editing: editing, opened: before, openedRule: R.emptyDraft(day),
+                                                 draft: draft, rule: R.emptyDraft(day), original: before,
+                                                 originalRule: R.emptyDraft(day), scope: "single" })
+        T.eq(E.keptDraft(detailsArgs, editState(false, before)), null, "details that were only read keep nothing")
+        T.eq(E.keptDraft(detailsArgs, editState(true, before)), null, "nor an edit that changed nothing")
+        const keptEdit = E.keptDraft(detailsArgs, editState(true, Object.assign({}, before, { title: "Review, moved" })))
+        T.eq(keptEdit.mode, "details", "a changed edit is kept")
+        T.eq(E.resumes(keptEdit, { mode: "details", event: Object.assign({}, event) }), true,
+             "and comes back for the same event")
+        T.eq(E.resumes(keptEdit, { mode: "details", event: timed("Other", 11, 9, 0, 10, 0) }), false,
+             "not for another one")
+        T.eq(E.keptDraft(null, newState(typed)), null, "no arguments, nothing to key it by")
 
         T.finish("EventEditTest")
     }

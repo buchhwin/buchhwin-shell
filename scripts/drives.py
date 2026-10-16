@@ -18,7 +18,9 @@ which UDisks2 does not see. Every line on stdout is one JSON object:
   {"kind": "error", "message": "..."}
 
 `monitor` prints the list at start and again (followed by events) whenever
-UDisks2 or the gvfs volume monitor adds, removes or changes an object.
+UDisks2 or the gvfs volume monitor adds, removes or changes an object. A read
+that fails prints the error and is tried again (RETRY_MS) until one succeeds,
+which prints the list once more.
 Internal disks, loop devices, swap, optical media, system partitions and
 devices without a filesystem are left out; encrypted (LUKS) volumes stay in
 the list while they are locked. "mtp" is false when gvfs-mtp is missing, so
@@ -47,6 +49,9 @@ HOTPLUG_BUSES = {"usb", "sdio", "ieee1394"}
 # Never offered even if a hint is wrong (e.g. a system on an external disk).
 SYSTEM_MOUNTS = {"/", "/boot", "/boot/efi", "/efi", "/home", "/usr", "/var", "/sysroot", "/etc", "/opt", "/srv"}
 DEBOUNCE_MS = 400
+# After a failed read of UDisks2 (udisksd restarting, a call that timed out
+# while a disk hung): the next tries, the last one repeating.
+RETRY_MS = (2000, 5000, 15000, 30000, 60000)
 # gvfs' MTP backend; without it phones cannot be listed or mounted at all.
 # Arch builds with libexecdir=/usr/lib, so its backend sits there directly.
 MTP_BACKENDS = ("/usr/libexec/gvfsd-mtp", "/usr/libexec/gvfs/gvfsd-mtp", "/usr/lib/gvfs/gvfsd-mtp",
@@ -398,6 +403,37 @@ def emit_state(state):
     emit(kind="drives", drives=state["drives"], phones=state["phones"], mtp=mtp_available())
 
 
+def settle(state, current, error):
+    """What one read of UDisks2 means, given the monitor's state: ("error",
+    []) when it failed, ("drives", events) when the shell has to hear the
+    list, (None, []) when nothing changed. Updates the state.
+
+    The shell shows the drives as unavailable from an error until it hears
+    the list again, and the list after a failed read is mostly the one from
+    before - which, unchanged, used to go unsaid, so "Drives are unavailable"
+    stayed until something was plugged in. `stale` marks a list the shell has
+    not heard: at start, and after every error. What is there at the first
+    read that succeeds was not plugged in just now: no events for it (they
+    would notify and open every drive the session starts with).
+    """
+    if error:
+        state["stale"] = True
+        state["retries"] = state.get("retries", 0) + 1
+        return "error", []
+    first = state.get("first", False)
+    events = [] if first else diff(state["drives"], current["drives"]) + diff_phones(state["phones"], current["phones"])
+    changed = bool(events) or current["drives"] != state["drives"] or current["phones"] != state["phones"]
+    say = changed or state.get("stale", False)
+    state.update(current)
+    state.update(stale=False, first=False, retries=0)
+    return ("drives" if say else None), events
+
+
+def retry_delay(retries):
+    """Milliseconds until the next try after this many failed reads in a row."""
+    return RETRY_MS[min(max(retries, 1), len(RETRY_MS)) - 1]
+
+
 def command_list():
     import dbus  # noqa: PLC0415
     state, error = snapshot(dbus.SystemBus(), volume_monitor())
@@ -429,20 +465,20 @@ def command_monitor():
     bus = dbus.SystemBus()
     loop = GLib.MainLoop()
     monitor = volume_monitor()
-    state = {"drives": [], "phones": [], "timer": 0}
+    state = {"drives": [], "phones": [], "timer": 0, "stale": True, "first": True, "retries": 0}
 
     def refresh():
         state["timer"] = 0
         current, error = snapshot(bus, monitor)
-        if error:
+        said, events = settle(state, current, error)
+        if said == "error":
             emit(kind="error", message=error)
-            return False
-        events = diff(state["drives"], current["drives"]) + diff_phones(state["phones"], current["phones"])
-        if events or current["drives"] != state["drives"] or current["phones"] != state["phones"]:
-            emit_state(current)
+            # A change signal reschedules sooner (schedule replaces this).
+            state["timer"] = GLib.timeout_add(retry_delay(state["retries"]), refresh)
+        elif said == "drives":
+            emit_state(state)
             for event in events:
                 emit(**event)
-        state.update(current)
         return False
 
     def schedule(*_args, **_kwargs):
@@ -463,11 +499,8 @@ def command_monitor():
                      "mount-added", "mount-removed", "mount-changed"):
             monitor.connect(name, schedule)
 
-    current, error = snapshot(bus, monitor)
-    if error:
-        emit(kind="error", message=error)
-    state.update(current or {"drives": [], "phones": []})
-    emit_state(state)
+    # The first read: the list (or the error, then the tries after it).
+    refresh()
 
     # SIGTERM from the shell ends the process with the default action.
     try:

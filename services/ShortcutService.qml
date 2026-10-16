@@ -173,9 +173,14 @@ Singleton {
         say(Logic.comboOf(entry) + " removed", false)
     }
 
+    // The store as last read or written, so the watch reading this shell's
+    // own write back is not taken for a change (storeFile's onLoaded).
+    property string storeText: ""
+
     function save(list) {
         custom = list
-        storeFile.setText(Logic.serializeStore(list))
+        storeText = Logic.serializeStore(list)
+        storeFile.setText(storeText)
         sync()
     }
 
@@ -278,8 +283,10 @@ Singleton {
         watchChanges: true
         printErrors: false
         onLoaded: {
-            if (root.storeLoaded && !text().trim().length) return
-            root.custom = Logic.parseStore(text())
+            const read = storeFile.text()
+            if (!Logic.storeReadIsNews(root.storeLoaded, read, root.storeText)) return
+            root.storeText = read
+            root.custom = Logic.parseStore(read)
             root.storeLoaded = true
             root.sync()
         }

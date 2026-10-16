@@ -19,16 +19,16 @@ const PAGES = [
     { id: "notifications", subtitle: "Popups, history and Do Not Disturb", title: "Notifications", icon: "󰂚", keywords: "dnd do not disturb popup benachrichtigungen nicht stören" },
     { id: "launcher", subtitle: "Web search and file search in the launcher", title: "Launcher", icon: "󰍉", keywords: "launcher search web engine duckduckgo google startpage wikipedia url address files plocate suche suchmaschine web adresse dateien starter" },
     { id: "shortcuts", subtitle: "Key combinations for the shell, windows and your own apps and commands", title: "Shortcuts", icon: "󰥻", keywords: "shortcuts keyboard shortcuts hotkeys keybindings key bindings keys custom command super tastenkürzel tastenkombination kurzbefehle tastatur" },
-    { id: "weather", subtitle: "Location and display for the dashboard and weather widget", title: "Weather", icon: "󰖐", keywords: "place city location temperature open-meteo wetter ort stadt standort temperatur" },
-    { id: "calendar", subtitle: "Events from the KDE calendars in the dashboard and next to the clock", title: "Calendar", icon: "󰸗", keywords: "events google akonadi merkuro kalender termine" },
+    { id: "weather", subtitle: "Location and display for the dashboard and weather widget", title: "Weather", icon: "󰖐", keywords: "place city location temperature open-meteo dashboard wetter ort stadt standort temperatur" },
+    { id: "calendar", subtitle: "Events from the KDE calendars in the dashboard and next to the clock", title: "Calendar", icon: "󰸗", keywords: "events google akonadi merkuro dashboard kalender termine" },
     { id: "network", subtitle: "Wi-Fi, hotspot and VPN connections", title: "Network", icon: "󰤨", keywords: "wi-fi wifi vpn netzwerk wlan" },
     { id: "bluetooth", subtitle: "Pair and manage Bluetooth devices", title: "Bluetooth", icon: "󰂯", keywords: "devices pair geräte koppeln" },
     { id: "kdeConnect", subtitle: "Pair your phone with KDE Connect to share files, the clipboard and notifications", title: "Phone", icon: "󰄜", keywords: "kde connect phone android iphone smartphone tablet pair ping find my phone ring send files share clipboard battery handy telefon koppeln dateien senden zwischenablage akku" },
     { id: "displays", subtitle: "Arrangement, resolution, refresh rate and scaling", title: "Displays", icon: "󰍹", keywords: "display monitor resolution hz scaling monitore auflösung skalierung" },
     { id: "audio", subtitle: "Output, input and the volume of each app", title: "Audio", icon: "󰕾", keywords: "sound volume microphone ton lautstärke mikrofon" },
     { id: "input", subtitle: "Keyboard, touchpad, mouse and touchpad gestures", title: "Input", icon: "󰌌", keywords: "keyboard layout touchpad mouse pointer scrolling repeat rate gestures swipe pinch eingabe tastatur maus zeiger scrollen wiederholrate gesten wischen" },
-    { id: "power", subtitle: "Battery and mains behavior, idle, sleep and the lid", title: "Power", icon: "󰁹", keywords: "battery charger plugged in ac profile screen off lock sleep lid close stay awake energie akku netzteil profil bildschirm aus sperren bereitschaft deckel zuklappen wach" },
-    { id: "terminal", subtitle: "Kitty, Starship prompt and Fastfetch for terminals in this session", title: "Terminal", icon: "󰆍", keywords: "kitty starship prompt zsh fastfetch font cursor transparency schrift transparenz" },
+    { id: "power", subtitle: "Battery and mains behavior, idle, sleep and the lid", title: "Power", icon: "󰁹", keywords: "battery charger plugged in ac profile screen off lock sleep lid close stay awake energie akku netzteil profil bildschirm aus sperren bereitschaft deckel zuklappen wach status colors colours green accent charging vpn statusfarben grün akzent laden" },
+    { id: "terminal", subtitle: "Starship prompt, Fastfetch and the look of kitty", title: "Terminal", icon: "󰆍", keywords: "kitty starship prompt zsh fastfetch font cursor transparency schrift transparenz" },
     { id: "defaultApps", subtitle: "Apps for links, files and the app hotkeys", title: "Default apps", icon: "󰀻", keywords: "default applications browser email file manager terminal text editor images pdf video music archives open with mime standard anwendungen standardprogramme öffnen mit" },
     { id: "autostart", subtitle: "Apps and services that start when you log in", title: "Autostart", icon: "󰒲", keywords: "startup login apps kde connect start anmelden" },
     { id: "accounts", subtitle: "Online accounts for calendars, contacts and mail", title: "Accounts", icon: "󰀉", keywords: "accounts account online google nextcloud caldav carddav dav groupware ical file imap pop3 mail email contacts calendar akonadi kde pim sync add remove wizard konten konto zugang hinzufügen entfernen synchronisieren kalender kontakte e-mail postfach" },
@@ -43,11 +43,18 @@ const GROUPS = [
     // looks before you are in - so they sit together rather than one here and
     // one under System.
     { key: "personalization", title: "Personalization", pages: ["appearance", "wallpaper", "lockScreen", "login"] },
-    { key: "desktop", title: "Desktop", pages: ["profiles", "widgets", "bar", "desktop", "notifications", "launcher", "shortcuts"] },
-    { key: "dashboard", title: "Dashboard", pages: ["weather", "calendar"] },
+    // Bar & Notch before Widgets: both shipped profiles run the notch, so the
+    // bar page is the one in use and Widgets mostly says "hidden" there.
+    { key: "desktop", title: "Desktop", pages: ["profiles", "bar", "widgets", "desktop", "notifications", "launcher", "shortcuts"] },
     { key: "connectivity", title: "Connectivity", pages: ["network", "bluetooth", "kdeConnect"] },
     { key: "devices", title: "Devices", pages: ["displays", "audio", "input", "power"] },
     { key: "apps", title: "Apps", pages: ["terminal", "defaultApps", "autostart"] },
+    // Weather and calendar are set once and feed more than the dashboard (the
+    // notch, widgets, the clock's hints), so they sit low and are not called
+    // "Dashboard"; the word stays in their keywords. Calendar ends up next to
+    // Accounts, where its calendars come from. The key stays for anything
+    // that remembered it.
+    { key: "dashboard", title: "Calendar & weather", pages: ["weather", "calendar"] },
     { key: "system", title: "System", pages: ["accounts", "updates", "about"] }
 ]
 

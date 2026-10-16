@@ -21,7 +21,7 @@ WidgetBase {
     label: root.count > 0 ? String(root.count) : ""
     // A security update is the one case worth colouring for: everything else
     // can wait for a convenient moment and this cannot.
-    iconColor: root.security > 0 ? Colors.danger : root.glyphInk
+    iconColor: root.security > 0 ? root.dangerInk : root.glyphInk
 
     // Nothing waiting is still worth a place - an empty slot where a readout
     // used to be reads as broken - so the name and the state fill a larger

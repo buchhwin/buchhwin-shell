@@ -24,7 +24,11 @@ Singleton {
     property bool stayAwake: false
     property bool screenOff: false
 
-    readonly property bool realSession: Quickshell.env("BUCHHWIN_NESTED") !== "1"
+    // The lock screen's process (lock.qml) is never the session: everything
+    // below is the shell's, and a second copy there disabled the laptop panel
+    // when the lock started with the lid shut (LockLogic.lockProcess).
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool realSession: !lockProcess && Quickshell.env("BUCHHWIN_NESTED") !== "1"
         && ((Quickshell.env("XDG_CONFIG_HOME") || "").length === 0
             || Quickshell.env("XDG_CONFIG_HOME") === Quickshell.env("HOME") + "/.config")
 
@@ -105,15 +109,20 @@ Singleton {
         property int exitCode: -1
         function finish() {
             if (!outputDone || exitCode < 0) return
+            // Open, or no answer: DisplayService stops holding the laptop
+            // panel off for the startup apply (DisplayService.lidKnown).
             if (LockLogic.parseLidClosed(output, exitCode)) DisplayService.setLidClosed(true)
+            else DisplayService.lidChecked()
         }
         onStarted: { output = ""; outputDone = false; exitCode = -1 }
         stdout: StdioCollector { onStreamFinished: { lidAtStart.output = text; lidAtStart.outputDone = true; lidAtStart.finish() } }
         onExited: code => { exitCode = code; finish() }
     }
 
+    // Screen off and lock also run in nested test sessions, but never in the
+    // lock process: the shell's own monitors keep working while it is locked.
     IdleMonitor {
-        enabled: !root.stayAwake && root.screenOffMinutes > 0
+        enabled: !root.lockProcess && !root.stayAwake && root.screenOffMinutes > 0
         timeout: Math.max(1, root.screenOffMinutes) * 60
         respectInhibitors: true
         onIsIdleChanged: root.setScreen(!isIdle)
@@ -142,7 +151,7 @@ Singleton {
     }
 
     IdleMonitor {
-        enabled: !root.stayAwake && root.lockMinutes > 0
+        enabled: !root.lockProcess && !root.stayAwake && root.lockMinutes > 0
         timeout: Math.max(1, root.lockMinutes) * 60
         respectInhibitors: true
         onIsIdleChanged: if (isIdle) SessionService.run("lock")

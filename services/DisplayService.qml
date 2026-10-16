@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import QtQuick
 import "display/DisplayLogic.js" as Logic
+import "lock/LockLogic.js" as LockLogic
 
 // Monitor configuration: edit a draft, apply it as Hyprland monitor rules
 // (HyprCompat: keyword or Lua), then keep it within 15 seconds or it reverts
@@ -32,7 +33,18 @@ Singleton {
     readonly property var transforms: Logic.TRANSFORMS
     readonly property var vrrModes: Logic.VRR
 
-    // Lid "screen off" (Settings > Power): runtime only, never saved.
+    // The lock screen's process (lock.qml) can create this service too - its
+    // calendar reaches AppearanceService, whose X11 scale reads `monitors` -
+    // and there it only reads. The saved layout and the lid are the shell's:
+    // a copy in the lock is never told the lid is shut, so applying the file
+    // from there would switch the laptop panel back on behind the shell's
+    // back (16.10. review, with the lock's own IdleService).
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+
+    // Lid "screen off" (Settings > Power): runtime only, never saved - a
+    // Keep with the lid shut saves the panel as it is without the lid
+    // (Logic.kept), and a saved "off" for it counts only when it was kept
+    // with the lid open (Logic.withEntry).
     property bool lidClosed: false
     property bool lidDpms: false          // internal panel switched off with dpms
     property var lidRestore: null         // internal panel before it was disabled
@@ -43,8 +55,36 @@ Singleton {
         return panel ? panel.name : ""
     }
 
+    // Whether the lid is known: IdleService's check at start has answered (or
+    // failed), a lid switch has been seen, or 3 s have passed (busctl gives
+    // up after 2). Until then a startup apply leaves a panel that is off now
+    // off (Logic.lidPending), and `lidHeld` says one was held back.
+    property bool lidKnown: false
+    property bool lidHeld: false
+    function lidChecked() {
+        if (lockProcess || lidKnown) return
+        lidKnown = true
+        lidWait.stop()
+        if (lidHeld) {
+            lidHeld = false
+            applySavedIfNeeded()
+        }
+    }
+    Timer { id: lidWait; interval: 3000; running: !root.lockProcess; onTriggered: root.lidChecked() }
+
     function setLidClosed(closed) {
-        if (closed === lidClosed) return
+        if (lockProcess) return
+        // A lid event is an answer too. A panel held back while the lid was
+        // believed open gets the saved layout again; for a shut lid the
+        // plan below decides.
+        const held = lidHeld
+        lidKnown = true
+        lidHeld = false
+        lidWait.stop()
+        if (closed === lidClosed) {
+            if (held) savedDelay.restart()
+            return
+        }
         lidClosed = closed
         const name = internalName
         if (!name.length) return
@@ -67,7 +107,10 @@ Singleton {
         refreshSoon.restart()
     }
 
+    // Only setLidClosed and reassertLid lead here, and neither does anything
+    // in the lock process; the guard keeps it that way for a new caller.
     function setPanelPower(on) {
+        if (lockProcess) return
         lidDpms = !on
         HyprCompat.dispatch(HyprCompat.commands.dpms(on, internalName))
     }
@@ -153,11 +196,17 @@ Singleton {
         return true
     }
 
+    // Merged into the file, so the screens of a desk that is not connected
+    // now keep their entries; see Logic.kept for the lid. A repair still
+    // waiting was made from the file before this one and would write it
+    // back over the Keep.
     function keep() {
         if (!confirming) return false
         countdown = 0
         countdownTimer.stop()
-        saved = Logic.toSaved(draft)
+        repaired = null
+        repairWrite.stop()
+        saved = Logic.kept(saved, draft, internalName, lidClosed, lidRestore)
         savedFile.setText(JSON.stringify(saved, null, 2) + "\n")
         return true
     }
@@ -173,9 +222,16 @@ Singleton {
     }
 
     function applySavedIfNeeded() {
-        if (!savedLoaded || !monitors.length || (!saved && !lidClosed)) return
-        const base = saved ? Logic.applySaved(monitors, saved) : monitors
-        const target = Logic.lidAdjusted(base, internalName, lidClosed)
+        if (lockProcess || !savedLoaded || !monitors.length || (!saved && !lidClosed)) return
+        const base = saved ? Logic.applySaved(monitors, saved, internalName) : monitors
+        let target = Logic.lidAdjusted(base, internalName, lidClosed)
+        if (!lidKnown && !lidClosed) {
+            const held = Logic.lidPending(target, monitors, internalName)
+            if (held !== target) {
+                lidHeld = true
+                target = held
+            }
+        }
         if (lidClosed && internalName.length) {
             const panel = target.find(item => item.name === internalName)
             const live = monitors.find(item => item.name === internalName)
@@ -195,7 +251,7 @@ Singleton {
         // be running inside the file's own `loaded` handler: one FileView
         // write per turn, or the read is dropped.
         if (saved && !confirming) {
-            const corrected = Logic.repairSaved(saved, base)
+            const corrected = Logic.repairSaved(saved, base, internalName)
             if (corrected) { repaired = corrected; repairWrite.restart() }
         }
     }

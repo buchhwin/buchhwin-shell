@@ -8,8 +8,9 @@ import qs.theme
 import "wallpaper/WallpaperLogic.js" as Logic
 
 // Wallpaper selection and slideshow. The folder is watched by
-// FolderListModel, so no polling is needed. Per-monitor choices and
-// favourites live in ~/.config/buchhwin-shell/wallpapers.json.
+// FolderListModel, so no polling is needed. Per-monitor choices, favourites,
+// the slideshow's own list and the picker's last chip live in
+// ~/.config/buchhwin-shell/wallpapers.json.
 Singleton {
     id: root
     readonly property string configuredFolder: SettingsService.value("wallpaper.folder")
@@ -41,31 +42,37 @@ Singleton {
     property var images: []
     readonly property var pool: Logic.pool(images, state, slideshowSource, folder, slideshowFolder)
     readonly property var favourites: state.favourites
+    // The picker's last chip ("" everything, Logic.FAVOURITES or a subfolder's
+    // name), kept here with the favourites so it is the same in every profile
+    // (WallpaperLogic, "the picker's last chip").
+    readonly property string pickerFilter: state.pickerFilter || ""
     property string slideshowPath: ""
-    readonly property string current: slideshow && slideshowPath.length ? slideshowPath
-        : configuredPath.length && !configuredMissing ? configuredPath
-        : images.length ? images[0] : ""
+    readonly property string current: Logic.currentPath(slideshow ? slideshowPath : "", configuredPath, images,
+                                                        checkedPath, missingPath)
 
     // The configured image when it is not there (a profile from another
     // machine, a file moved away): handed to the desktop as it was, it drew
     // nothing, and after a restart only the background colour showed. Then the
     // folder's first image is the wallpaper, or none.
     //
-    // Taken to be there until it is shown not to be, so a start does not wait
-    // for the answer before the first picture. An image the folder lists is
-    // there; any other is asked once with `test -f` - when the path changes,
-    // and when the folder's list does (an image added or moved away) - never
-    // per frame.
+    // An image the folder lists is there; any other is asked once with
+    // `test -f` - when the path changes, and when the folder's list does (an
+    // image added or moved away) - never per frame. Until it answers the
+    // desktop shows nothing rather than a path that may not exist
+    // (Logic.currentPath): a new path is asked about at once, so a start or a
+    // profile switch waits milliseconds.
     property string missingPath: ""
+    property string checkedPath: ""
     readonly property bool configuredMissing: configuredPath.length > 0 && missingPath === configuredPath
-    onConfiguredPathChanged: existsDelay.restart()
-    // Debounced: at a start the path and the folder's list arrive a moment
-    // apart, and the list alone often answers.
+    onConfiguredPathChanged: checkConfigured()
+    // The folder's list is debounced: it changes in bursts while files move,
+    // and the path is already known meanwhile.
     Timer { id: existsDelay; interval: 1000; onTriggered: root.checkConfigured() }
 
     function checkConfigured() {
         if (!configuredPath.length || images.indexOf(configuredPath) >= 0) {
             missingPath = ""
+            checkedPath = configuredPath
             return
         }
         if (existsProc.running) { existsProc.again = true; return }
@@ -81,7 +88,10 @@ Singleton {
         property bool again: false
         // 1 is test's "no"; anything else (it could not run) keeps the path.
         onExited: code => {
-            if (path === root.configuredPath) root.missingPath = code === 1 ? path : ""
+            if (path === root.configuredPath) {
+                root.missingPath = code === 1 ? path : ""
+                root.checkedPath = path
+            }
             if (again) {
                 again = false
                 Qt.callLater(root.checkConfigured)
@@ -111,10 +121,39 @@ Singleton {
     function toggleFavourite(path) { saveState(Logic.toggleFavourite(state, path)) }
     function isInSlideshow(path) { return state.slideshow.indexOf(path) >= 0 }
     function toggleSlideshow(path) { saveState(Logic.toggleSlideshow(state, path)) }
+    // Written only when it changes: a click on the chip already shown is no
+    // reason to rewrite the file.
+    function setPickerFilter(key) {
+        const next = Logic.withPickerFilter(state, key)
+        if (next.pickerFilter !== pickerFilter) saveState(next)
+    }
 
     function saveState(next) {
         state = next
-        stateFile.setText(JSON.stringify(next, null, 2) + "\n")
+        fileText = JSON.stringify(next, null, 2) + "\n"
+        stateFile.setText(fileText)
+    }
+
+    // wallpapers.json as last read or written. The watch reads back every
+    // write of our own (docs/testing.md, pitfall 77), and that text is what
+    // `state` already holds: parsed again, a new `state` re-ran the pool, the
+    // favourites, every tile's marks and every screen's currentFor() once
+    // more per click. Another program's write is a different text and loads.
+    property string fileText: ""
+
+    function load() {
+        const text = stateFile.text()
+        // Our own write coming back (see fileText), also before the first
+        // read: without a file at start, the first read is of that write.
+        if (fileText.length && text === fileText) {
+            stateLoaded = true
+            return
+        }
+        // An empty read during a file replacement keeps the current state.
+        if (stateLoaded && !text.trim().length) return
+        fileText = text
+        state = Logic.parseState(text)
+        stateLoaded = true
     }
 
     // Copies chosen images into the wallpaper folder (KDE file dialog).
@@ -160,8 +199,7 @@ Singleton {
         atomicWrites: true
         watchChanges: true
         printErrors: false
-        // An empty read during a file replacement keeps the current state.
-        onLoaded: if (text().trim().length || !root.stateLoaded) { root.state = Logic.parseState(text()); root.stateLoaded = true }
+        onLoaded: root.load()
         onFileChanged: reload()
     }
 
@@ -177,7 +215,9 @@ Singleton {
     Process {
         id: chooseProc
         stderr: ErrorLog { label: "WallpaperService.chooseProc" }
-        command: ["kdialog", "--title", "Wallpaper folder", "--getexistingdirectory", root.folder]
+        // kdialog through launch-app.sh, for the session's environment (the
+        // Plasma look and icons); a scope keeps its stdout, which is the answer.
+        command: [Paths.script("launch-app.sh"), "org.kde.kdialog", "kdialog", "--title", "Wallpaper folder", "--getexistingdirectory", root.folder]
         stdout: StdioCollector {
             onStreamFinished: { const path = text.trim(); if (path.length) root.setFolder(path) }
         }
@@ -186,7 +226,7 @@ Singleton {
     Process {
         id: importProc
         stderr: ErrorLog { label: "WallpaperService.importProc" }
-        command: ["sh", "-c", "mkdir -p \"$1\" && kdialog --title 'Add wallpapers' --multiple --separate-output --getopenfilename \"$HOME\" 'Images (*.png *.jpg *.jpeg *.webp)' | while IFS= read -r file; do [ -f \"$file\" ] && cp -n -- \"$file\" \"$1\"/; done", "sh", root.folder]
+        command: ["sh", "-c", "mkdir -p \"$1\" && \"$2\" org.kde.kdialog kdialog --title 'Add wallpapers' --multiple --separate-output --getopenfilename \"$HOME\" 'Images (*.png *.jpg *.jpeg *.webp)' | while IFS= read -r file; do [ -f \"$file\" ] && cp -n -- \"$file\" \"$1\"/; done", "sh", root.folder, Paths.script("launch-app.sh")]
     }
 
     readonly property var imageFilters: ["*.png", "*.jpg", "*.jpeg", "*.webp", "*.PNG", "*.JPG", "*.JPEG", "*.WEBP"]

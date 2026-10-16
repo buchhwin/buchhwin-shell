@@ -17,7 +17,8 @@ import "../../services/wallpaper/WallpaperLogic.js" as Logic
 //
 // Favourites come first, then the rest of the folder. Type to filter, left and
 // right to move, Ctrl+F marks a favourite. With several displays a segment
-// chooses which one the choice applies to.
+// chooses which one the choice applies to. It opens on the chip (subfolder or
+// favourites) chosen last.
 ShellPanel {
     id: root
     keyForward: search
@@ -43,19 +44,32 @@ ShellPanel {
                                                    query, filter, WallpaperService.folder)
     property string query: ""
     // Which chip is chosen: "" for everything, Logic.FAVOURITES for the
-    // starred ones, otherwise a subfolder's name. Not stored - it is where you
-    // are looking, not a preference, and the picker opens on everything.
+    // starred ones, otherwise a subfolder's name. The picker opens on the chip
+    // clicked last (WallpaperService.pickerFilter, kept in wallpapers.json and
+    // the same in every profile): a folder of wallpapers is a place one goes
+    // back to, and opening on everything each time meant clicking the same
+    // chip again after every open.
     property string filter: ""
+    // The remembered chip while this open could not show it yet: at a start
+    // the folder and its subfolders are read in steps after the first open.
+    // Empty once it is shown, a chip is clicked or the picker closes.
+    property string awaitedFilter: ""
     readonly property var filters: Logic.pickerFilters(WallpaperService.images, WallpaperService.favourites,
                                                        WallpaperService.folder)
     // A folder can empty out, be renamed or stop being a folder while the
     // picker is open, and the wallpaper folder itself can change in Settings.
     // A chip that is no longer offered would leave the grid empty with nothing
     // highlighted to click back out of - so the filter falls back to
-    // everything rather than to a place that is not there.
-    onFiltersChanged: if (filter.length && !filters.some(entry => entry.key === filter)) {
-        filter = ""
-        select(0)
+    // everything rather than to a place that is not there. The remembered
+    // chip stays as it is: a folder that comes back (a drive plugged in
+    // again) is where the next open goes.
+    onFiltersChanged: {
+        const next = Logic.filterAfterChange(filter, filters, awaitedFilter)
+        if (awaitedFilter.length && next === awaitedFilter) awaitedFilter = ""
+        if (next !== filter) {
+            filter = next
+            select(0)
+        }
     }
     // How many thumbnails fit across the card, which is also how far up and
     // down move.
@@ -82,11 +96,18 @@ ShellPanel {
     onCurrentIndexChanged: grid.positionViewAtIndex(currentIndex, GridView.Contain)
     onWantedChanged: {
         if (wanted) {
-            query = ""
-            filter = ""
+            // The field, not the query: the panel's body lives on between
+            // opens, and a field that kept its text over an unfiltered grid
+            // filtered for "beachx" on the next key. The query follows it.
+            search.text = ""
+            const remembered = WallpaperService.pickerFilter
+            filter = Logic.openingFilter(remembered, filters)
+            awaitedFilter = filter === remembered ? "" : remembered
             select(0)
             if (Quickshell.screens.length <= 1) target = ""
             WallpaperService.refresh()
+        } else {
+            awaitedFilter = ""
         }
     }
     // The folder is read asynchronously, so the list is usually still empty
@@ -128,7 +149,7 @@ ShellPanel {
             // The KDE folder dialog is a window of its own; the picker holds
             // the keyboard, so it steps aside rather than sit on top of it.
             ShellButton {
-                icon: Icons.edit; text: "Change"; compact: true
+                icon: Icons.modify; text: "Change"; compact: true
                 onClicked: { PanelService.close("wallpaperPicker"); WallpaperService.chooseFolder() }
             }
         }
@@ -156,6 +177,9 @@ ShellPanel {
                     active: root.filter === modelData.key
                     onClicked: {
                         root.filter = modelData.key
+                        root.awaitedFilter = ""
+                        // Remembered for the next open, "All" included.
+                        WallpaperService.setPickerFilter(modelData.key)
                         // The index is a place in the old list; after a filter
                         // it means nothing, and leaving it behind would open
                         // the grid part-way down for no reason.
@@ -210,6 +234,7 @@ ShellPanel {
             // the open selects (ShellPanel sets it first).
             model: root.shown ? root.items : []
             boundsBehavior: Flickable.StopAtBounds
+            ScrollFeel { view: grid }
             // One direction only: the view is the owner, `root.currentIndex`
             // is what everything else reads.
             onCurrentIndexChanged: root.currentIndex = currentIndex
@@ -264,6 +289,23 @@ ShellPanel {
                             sourceWidth: Metrics.wallpaperPickerTile
                         }
 
+                        // The whole tile, under the marks: declared before
+                        // them, so the slideshow tick's own area stacks above
+                        // this one. Declared after, it took the tick's click
+                        // too, and toggling the slideshow set the wallpaper.
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            cursorShape: Qt.PointingHandCursor
+                            onEntered: root.select(tile.index)
+                            onClicked: mouse => {
+                                root.select(tile.index)
+                                if (mouse.button === Qt.RightButton) WallpaperService.toggleFavourite(tile.modelData.path)
+                                else root.apply(tile.modelData)
+                            }
+                        }
+
                         // Marks the image this display already shows.
                         Rectangle {
                             visible: tile.active
@@ -310,19 +352,6 @@ ShellPanel {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: WallpaperService.toggleSlideshow(tile.modelData.path)
-                            }
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            acceptedButtons: Qt.LeftButton | Qt.RightButton
-                            cursorShape: Qt.PointingHandCursor
-                            onEntered: root.select(tile.index)
-                            onClicked: mouse => {
-                                root.select(tile.index)
-                                if (mouse.button === Qt.RightButton) WallpaperService.toggleFavourite(tile.modelData.path)
-                                else root.apply(tile.modelData)
                             }
                         }
                     }

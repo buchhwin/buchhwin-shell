@@ -41,6 +41,32 @@ function lockoutNotice(messages) {
         .filter(function (m) { return /lock/i.test(m) }).join(" ")
 }
 
+// The typed password is drawn on one screen only. Every screen's lock surface
+// shares one buffer and one PAM conversation (LockScreen), and the field used
+// to draw that buffer everywhere: typing on one monitor put the password's
+// length on all of them. The screen that draws it is the one whose surface has
+// the keyboard, since that is where the keys arrive. `inputScreenAfter`
+// follows the surfaces as they gain the keyboard or receive a key (`gained`
+// true for both). Losing the keyboard moves nothing - the next surface to gain
+// it does - so a moment in which no surface holds it neither hides the dots
+// nor spreads them to every screen again.
+function inputScreenAfter(current, screenName, gained) {
+    var name = String(screenName || "")
+    return gained === true && name.length ? name : String(current || "")
+}
+
+// Whether `screenName` draws what is typed: the dots, the submit arrow and the
+// shake. Every other screen shows the empty field ("Enter password", or
+// "Checking …" while PAM works), the calmer of the two choices: a hint naming
+// the screen that takes the input would put words on every other monitor,
+// where the empty field already says enough. Until a surface has reported the
+// keyboard every screen draws, as before - with nothing typed yet that is the
+// empty field.
+function showsInput(screenName, inputScreen) {
+    var input = String(inputScreen || "")
+    return !input.length || String(screenName || "") === input
+}
+
 // Caps Lock and the active keyboard layout from `hyprctl -j devices`.
 function keyboardState(json) {
     var data
@@ -62,6 +88,21 @@ function shortLayout(keymap) {
     var first = text.split(/[\s(,]/)[0].toLowerCase()
     if (known[first]) return known[first]
     return text.length <= 3 ? text.toUpperCase() : text.slice(0, 2).toUpperCase()
+}
+
+// The lock screen's own process: lock.qml names itself with
+// `//@ pragma ShellId buchhwin-shell-lock` (LockTest checks that the two
+// agree). The lock face reads PowerService, and PowerService used to ask
+// IdleService whether this is the real session - which started a second
+// IdleService in the lock process, with its own before-sleep swayidle, lid
+// inhibitor and lid-at-start check. That check disabled or blanked the laptop
+// panel when the lock started with the lid shut, and the shell's own
+// DisplayService never knew to turn it back on (16.10. review). The session's
+// services stay inert in this process; the lock only displays.
+var LOCK_SHELL_ID = "buchhwin-shell-lock"
+
+function lockProcess(shellId) {
+    return String(shellId || "") === LOCK_SHELL_ID
 }
 
 // Only nested test sessions may use the test PAM services (tests/fixtures/pam).

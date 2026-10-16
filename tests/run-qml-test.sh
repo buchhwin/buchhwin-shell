@@ -28,13 +28,20 @@ pid=$!
 # session log (scripts/smoke-session.sh): a binding loop or a recursive
 # rearrange in a component under test is a defect whether or not every
 # assertion passed, and the unit test is where it is cheapest to see.
+# The complaints are read first and once more after PASSED has settled: most
+# tests finish in Component.onCompleted, so a warning logged while the
+# component loaded is in the same poll as PASSED, and one from a binding that
+# re-runs right after it lands a moment later. Checking PASSED first let both
+# through.
+failures='TESTS FAILED|TypeError|ReferenceError|SyntaxError|is not a type|failed to load|Binding loop|recursive rearrange|Unable to assign|Cannot assign'
 status=2
 for _ in {1..150}; do
-  if grep -q 'TESTS PASSED' "$output"; then status=0; break; fi
-  if grep -qE 'TESTS FAILED|TypeError|ReferenceError|SyntaxError|is not a type|failed to load|Binding loop|recursive rearrange|Unable to assign|Cannot assign' "$output"; then
-    status=1; sleep 0.2; break
+  if grep -qE "$failures" "$output"; then status=1; sleep 0.2; break; fi
+  if grep -q 'TESTS PASSED' "$output" || ! kill -0 "$pid" 2>/dev/null; then
+    sleep 0.3
+    if grep -qE "$failures" "$output" || ! grep -q 'TESTS PASSED' "$output"; then status=1; else status=0; fi
+    break
   fi
-  if ! kill -0 "$pid" 2>/dev/null; then status=1; break; fi
   sleep 0.1
 done
 kill "$pid" 2>/dev/null || true

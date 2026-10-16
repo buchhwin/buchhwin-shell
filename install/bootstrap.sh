@@ -22,11 +22,13 @@
 # called for the steps that need it, so expect a password prompt.
 #
 # Re-running it is safe: dnf, zypper and pacman skip what is installed, the
-# repositories are only added when missing, and a default application is only
-# set when the category has none. On openSUSE the package step first asks
-# zypper what it would do and stops if that removes, downgrades or switches the
-# vendor of anything already installed - this runs next to a working desktop.
-# On Arch it first lets pacman resolve every name, then pacman asks itself.
+# repositories are only added when missing, a default application is only
+# set when the category has none, and a session that runs from the stable
+# worktree scripts/deploy.sh keeps stays there. On openSUSE the package step
+# first asks zypper what it would do and stops if that removes, downgrades or
+# switches the vendor of anything already installed - this runs next to a
+# working desktop. On Arch it first lets pacman resolve every name, then
+# pacman asks itself.
 set -euo pipefail
 
 project_dir=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
@@ -44,7 +46,7 @@ while (( $# )); do
     --skip-apps) apps=false; shift ;;
     --list-packages) list_packages=true; shift ;;
     --distro) export BUCHHWIN_DISTRO=${2:?--distro needs a name}; shift 2 ;;
-    -h|--help) sed -n '2,29p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
   esac
 done

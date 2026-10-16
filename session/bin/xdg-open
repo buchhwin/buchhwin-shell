@@ -46,4 +46,12 @@ esac
 if [[ -n $handler ]]; then
   exec "$project_dir/scripts/launch-app.sh" "$handler" "$real" "$@"
 fi
+# No handler known: the system xdg-open finds one and starts it from here, so
+# it gets the session's environment back first, as launch-app.sh gives it
+# (scripts/lib/app-env.sh) - not the shell's malloc and Mesa settings, and
+# with the Plasma platform theme. Without the file it runs as it did.
+if [[ -r $project_dir/scripts/lib/app-env.sh ]] && source "$project_dir/scripts/lib/app-env.sh" \
+    && declare -F app_env_restore >/dev/null; then
+  app_env_restore || true
+fi
 exec "$real" "$@"

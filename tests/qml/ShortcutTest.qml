@@ -71,6 +71,22 @@ ShellRoot {
             "and the six surfaces that had no pattern at all")
         T.eq(S.describeExec("quickshell --path /opt/b ipc call shortcuts toggleSheet").group, "panels",
             "the sheet is a panel, not Other")
+        // scripts/launch-terminal.sh: the session's terminal, with or without
+        // a command in it; the script's options are not the command.
+        T.eq(S.describeExec("/opt/b/scripts/launch-terminal.sh"), { title: "Terminal", group: "apps" },
+            "the terminal script alone opens the terminal")
+        T.eq(S.describeExec("/opt/b/scripts/launch-terminal.sh -- htop"), { title: "htop in the terminal", group: "apps" },
+            "a command in it is named by its program")
+        T.eq(S.describeExec("/opt/b/scripts/launch-terminal.sh --hold --title 'Disk usage' --unit du-job -- /usr/bin/ncdu -x /").title,
+            "ncdu in the terminal", "past --hold, --title and --unit, by the program's file name")
+        T.eq(S.describeExec("'/opt/my shell/scripts/launch-terminal.sh' --hold btop").title, "btop in the terminal",
+            "a quoted script path, and a command without --")
+        T.eq(S.describeExec("/opt/b/scripts/launch-terminal.sh \"/opt/my tools/top\" -d 1").title, "top in the terminal",
+            "a quoted program path")
+        T.eq(S.describeExec("/opt/b/scripts/launch-terminal.sh --hold").title, "Terminal", "options alone: still the terminal")
+        T.eq([S.describeExec("/opt/b/scripts/launch-alacritty.sh").title, S.describeExec("/opt/b/scripts/launch-kitty.sh").title],
+            ["Alacritty", "Kitty"], "the two terminals' own launchers by name")
+        T.eq(S.describeExec("/opt/b/scripts/launch-default.sh terminal").title, "Terminal", "Super+Enter is still the terminal")
 
         T.eq([S.describeExec("quickshell --path /opt/b ipc call kbdBacklight up").title,
               S.describeExec("quickshell --path /opt/b ipc call kbdBacklight down").title,
@@ -138,6 +154,15 @@ ShellRoot {
         ], "store validated and deduplicated")
         T.eq(S.parseStore("{"), [], "broken store")
         T.eq(S.parseStore(S.serializeStore(store)), store, "store round trip")
+        // The watch reads back every save of the service's own (pitfall 77):
+        // that text is the list it holds, and parsed again it rebuilt every
+        // row and ran one more `hyprctl -j binds`.
+        const saved = S.serializeStore(store)
+        T.eq(S.storeReadIsNews(true, saved, saved), false, "the store's own write read back is no news")
+        T.eq(S.storeReadIsNews(true, S.serializeStore([]), saved), true, "another program's write is")
+        T.eq(S.storeReadIsNews(true, "  \n", saved), false, "an empty read while the file is replaced is not")
+        T.eq(S.storeReadIsNews(false, "", ""), true, "and before the first read every answer is")
+        T.eq(S.storeReadIsNews(false, saved, saved), true, "even one that matches")
         T.eq(S.comboError(["SHIFT"], "A"), "Add Super, Ctrl or Alt to this key", "letters need a real modifier")
         T.eq(S.comboError([], "XF86Calculator"), "", "media keys alone")
         T.eq(S.commandError("echo a; echo b"), "Use && instead of ; or put the commands in a script", "semicolon refused")

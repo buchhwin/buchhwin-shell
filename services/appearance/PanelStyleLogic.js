@@ -8,6 +8,18 @@
 // (hypr/windowrules.conf), so the minimum keeps a margin above it.
 var MIN_OPACITY = 0.4
 var MAX_OPACITY = 1
+// A light panel is dark ink on a light glass, and what shows through a dark
+// wallpaper pulls the glass towards the ink: at the default 0.74 over black a
+// light card is #aeafb0, and the muted text tuned for an opaque one fell to
+// 2.8:1 (3.5:1 over a dark teal wallpaper). A dark panel over a
+// bright wallpaper has the same problem the other way round, but the light
+// side is the one the ink cannot win back: no grey reads at 4.5:1 on a light
+// glass at 0.4 over black. So a light surface never goes below this, and the
+// light inks (theme/Colors.qml) are measured on a card at exactly this over
+// black - the darkest a light card can get. 0.9 keeps muted text at a grey
+// (#505662, 5:1 on that card) rather than near black, and the glass still
+// shows the wallpaper's colour.
+var LIGHT_MIN_OPACITY = 0.9
 // WCAG relative luminance where black and white text have equal contrast.
 var LIGHT_LUMINANCE = 0.179
 
@@ -65,6 +77,14 @@ function effectiveOpacity(id, stored, defaultOpacity) {
     return clampOpacity(isOverride(stored) ? stored : defaultOpacity)
 }
 
+// The opacity a surface is drawn with: the chosen one, but a light surface
+// not below LIGHT_MIN_OPACITY. The setting keeps what was chosen, so a
+// dark panel colour later gets it back.
+function surfaceOpacity(alpha, light) {
+    const value = clampOpacity(alpha)
+    return light ? Math.max(LIGHT_MIN_OPACITY, value) : value
+}
+
 // "#rgb", "rgb", "#rrggbb" or "rrggbb" (surrounding spaces allowed) →
 // lower-case "#rrggbb"; anything else → "".
 function normalizeHex(text) {
@@ -114,15 +134,18 @@ function isLight(text) {
     return luminance(text) > LIGHT_LUMINANCE
 }
 
-// Text colours follow the theme, so a light panel colour needs the light
-// theme and a dark one the dark theme.
+// Whether a panel colour is of the theme's brightness: a light colour with
+// the light theme, a dark one with the dark theme. The panels' own ink
+// follows the colour (Colors.surfaceDark); the theme is what the desktop and
+// the apps follow.
 function matchesTheme(text, dark) {
     const hex = colorSetting(text)
     return hex === "auto" || isLight(hex) !== !!dark
 }
 
-// Theme to switch to after choosing a colour so text stays readable:
-// "light" or "dark" when the colour does not fit the current brightness, else "".
+// Theme to switch to after choosing a colour, so the desktop and the apps go
+// along with the panels: "light" or "dark" when the colour does not fit the
+// current brightness, else "".
 function themeForColor(text, dark) {
     if (matchesTheme(text, dark)) return ""
     return isLight(colorSetting(text)) ? "light" : "dark"

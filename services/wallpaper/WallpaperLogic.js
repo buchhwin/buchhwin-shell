@@ -11,7 +11,8 @@
 // The file stays at version 1. `parseState` throws away anything with another
 // version, so a bump to carry a new key would discard every existing user's
 // favourites and per-screen choices; a key that is simply absent reads as an
-// empty list, which is what a new key should do.
+// empty list, which is what a new key should do. The picker's last chip
+// (`pickerFilter`) came that way and reads as "" - everything - when absent.
 // "folder" is the fourth, and the reason subfolders exist at all: a rotation
 // that stays inside one group rather than wandering through everything.
 var SOURCES = ["all", "favourites", "chosen", "folder"]
@@ -40,7 +41,7 @@ function migrate(document) {
 }
 
 function emptyState() {
-    return { version: 1, screens: {}, favourites: [], slideshow: [] }
+    return { version: 1, screens: {}, favourites: [], slideshow: [], pickerFilter: "" }
 }
 
 function isImagePath(path) {
@@ -63,6 +64,7 @@ function parseState(text) {
         const seen = {}
         state.slideshow = data.slideshow.filter(path => isImagePath(path) && !seen[path] && (seen[path] = true))
     }
+    state.pickerFilter = pickerFilterKey(data.pickerFilter)
     return state
 }
 
@@ -96,6 +98,24 @@ function toggleSlideshow(state, path) {
 function slideshowCount(images, state) {
     const list = state && Array.isArray(state.slideshow) ? state.slideshow : []
     return (images || []).filter(path => list.indexOf(path) >= 0).length
+}
+
+// The shared wallpaper. The slideshow's image wins; then the configured one -
+// but only once it is known to be there: an image the folder lists is, any
+// other waits for its `test -f` (checkedPath) and shows nothing meanwhile, a
+// few milliseconds at a start. Handed to the desktop before the answer, a
+// configured file that is not there (a profile from another machine) drew
+// nothing for the debounce's second and logged "Cannot open". A missing one
+// gives way to the folder's first image.
+function currentPath(slideshowPath, configuredPath, images, checkedPath, missingPath) {
+    if (slideshowPath) return slideshowPath
+    const list = images || []
+    if (configuredPath) {
+        if (list.indexOf(configuredPath) >= 0) return configuredPath
+        if (checkedPath !== configuredPath) return ""
+        if (missingPath !== configuredPath) return configuredPath
+    }
+    return list.length ? list[0] : ""
 }
 
 // Wallpaper for one screen: its own choice if the file is still available.
@@ -215,6 +235,53 @@ function pickerFilters(images, favourites, folder) {
     if ((favourites || []).length) result.push({ key: FAVOURITES, label: "Favorites" })
     for (const name of groups(images, folder)) result.push({ key: name, label: name })
     return result
+}
+
+// ---- the picker's last chip --------------------------------------------------
+// The picker opens on the chip chosen last: a folder of wallpapers one keeps
+// going back to is where it opens, not one click away again after every open.
+// It is kept in wallpapers.json beside the favourites, not in settings.json:
+// it is the same in every profile - a profile switch saves and restores
+// settings.json, and must not move the picker to another folder - and a chip
+// click is not a settings change for the undo history.
+
+// A stored chip: "", FAVOURITES or one folder name (no "/", no NUL - nothing
+// a subfolder's name can hold); anything else reads as everything.
+function pickerFilterKey(value) {
+    const key = typeof value === "string" ? value : ""
+    if (key === FAVOURITES) return key
+    return key.length <= 255 && !/[\/\x00]/.test(key) && key !== "." && key !== ".." ? key : ""
+}
+
+function withPickerFilter(state, key) {
+    const next = parseState(JSON.stringify(state))
+    next.pickerFilter = pickerFilterKey(key)
+    return next
+}
+
+// Whether the picker offers a chip right now; everything ("") always is.
+function offersFilter(filters, key) {
+    const want = String(key || "")
+    return !want.length || (filters || []).some(entry => !!entry && entry.key === want)
+}
+
+// The chip the picker opens on: the remembered one while it is offered,
+// everything otherwise - a folder that emptied out or went with the wallpaper
+// folder is not a place to open on.
+function openingFilter(remembered, filters) {
+    return offersFilter(filters, remembered) ? String(remembered || "") : ""
+}
+
+// The chip once the chips have changed while the picker is open. `awaited` is
+// a remembered chip the open could not show yet (at a start the folder and its
+// subfolders are read in steps, after the first open): it is taken as soon as
+// it is offered. Otherwise the chip shown stays while it is offered, and one
+// that went (a folder emptied, renamed, or the wallpaper folder changed in
+// Settings) falls back to everything rather than to an empty grid.
+function filterAfterChange(current, filters, awaited) {
+    const waiting = String(awaited || "")
+    if (waiting.length && offersFilter(filters, waiting)) return waiting
+    return offersFilter(filters, current) ? String(current || "") : ""
 }
 
 // Index after moving `delta` places in a grid of `columns`. Left and right walk

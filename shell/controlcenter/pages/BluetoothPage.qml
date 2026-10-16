@@ -23,9 +23,18 @@ ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 0
                 ShellText { text: "Bluetooth"; role: "bodyLarge" }
-                ShellText { text: BluetoothService.discovering ? "Searching for devices …" : BluetoothService.summary; role: "small"; muted: true }
+                // Filling like the Wi-Fi page's line. With no child that fills,
+                // this column could not grow, the row spread its spare width
+                // between its items, and the switch stood in the middle of
+                // the card rather than at its edge, where Wi-Fi's stands.
+                ShellText {
+                    Layout.fillWidth: true
+                    text: BluetoothService.discovering ? "Searching for devices …" : BluetoothService.summary
+                    role: "small"; muted: true
+                }
             }
             ShellToggle {
+                accessibleName: "Bluetooth"
                 checked: BluetoothService.enabled
                 enabledState: BluetoothService.available
                 onToggled: value => BluetoothService.setEnabled(value)

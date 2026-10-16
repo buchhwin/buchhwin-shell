@@ -61,6 +61,7 @@ GridLayout {
         color: root.textColor
         font.family: Typography.iconFamily
         font.pixelSize: Typography.titleSize * root.scaleFactor
+        textFormat: Text.PlainText
         renderType: Typography.renderType
     }
 
@@ -68,6 +69,8 @@ GridLayout {
         id: titles
         visible: root.showTitle
         spacing: 0
+        // Plain, both lines: a title and an artist are the player's strings,
+        // and a web page's can be markup (WidgetBase).
         Text {
             Layout.maximumWidth: (root.inGroup ? (root.expanded ? 180 : 200) : 260) * root.scaleFactor
             text: root.sizeClass === "medium" && !root.inGroup || root.expanded ? MprisService.title
@@ -77,6 +80,7 @@ GridLayout {
             font.family: Typography.family
             font.pixelSize: (root.expanded ? Typography.smallSize : root.inGroup ? Typography.bodySize : Typography.bodyLargeSize) * root.scaleFactor
             font.weight: root.expanded ? Typography.medium : Typography.regular
+            textFormat: Text.PlainText
             renderType: Typography.renderType
         }
         Text {
@@ -87,6 +91,7 @@ GridLayout {
             color: root.mutedTextColor
             font.family: Typography.family
             font.pixelSize: (root.expanded ? Typography.captionSize : Typography.smallSize) * root.scaleFactor
+            textFormat: Text.PlainText
             renderType: Typography.renderType
         }
     }
@@ -97,6 +102,7 @@ GridLayout {
         color: root.textColor
         font.family: Typography.iconFamily
         font.pixelSize: Typography.headlineSize * root.scaleFactor
+        textFormat: Text.PlainText
         renderType: Typography.renderType
         MouseArea { anchors.fill: parent; anchors.margins: -Metrics.spaceXs; cursorShape: Qt.PointingHandCursor; onClicked: MprisService.togglePlaying() }
     }
@@ -117,6 +123,7 @@ GridLayout {
             color: controlMouse.containsMouse ? root.textColor : root.mutedTextColor
             font.family: Typography.iconFamily
             font.pixelSize: (modelData.action === "toggle" ? Typography.titleSize : Typography.bodyLargeSize) * root.scaleFactor
+            textFormat: Text.PlainText
             renderType: Typography.renderType
             MouseArea {
                 id: controlMouse

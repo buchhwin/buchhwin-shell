@@ -52,6 +52,28 @@ instance_running() {
   list=$(quickshell list --path "$config_dir" --json 2>/dev/null) || return 1
   [[ $list == *'"id"'* ]]
 }
+# The session launcher asks for --reap with no WAYLAND_DISPLAY, and `quickshell
+# list --path` only lists the instances on its own display: the wait below for
+# a shell still on its way out never waited. `--all` lists every display's;
+# the configuration is then told by its path. The JSON carries the path the
+# shell was started with, a symlink or not, so both sides are resolved.
+instance_listed_anywhere() {
+  local list paths path want
+  list=$(quickshell list --all --json 2>/dev/null) || return 1
+  if ! command -v jq >/dev/null 2>&1; then
+    [[ $list == *"\"$config_dir/shell.qml\""* || $list == *"\"$real_dir/shell.qml\""* ]]
+    return
+  fi
+  want=$(readlink -f -- "$config_dir/shell.qml" 2>/dev/null) || want="$config_dir/shell.qml"
+  paths=$(jq -r '.[]?.config_path // empty' <<<"$list" 2>/dev/null) || paths=""
+  while IFS= read -r path; do
+    [[ -n $path ]] || continue
+    if [[ $path == "$config_dir/shell.qml" || $(readlink -f -- "$path" 2>/dev/null) == "$want" ]]; then
+      return 0
+    fi
+  done <<<"$paths"
+  return 1
+}
 note() { printf '%s start-shell: %s\n' "$(date -Is)" "$1" >>"$log_file"; }
 
 # ---- the helpers a dead shell leaves behind ---------------------------------
@@ -66,10 +88,12 @@ note() { printf '%s start-shell: %s\n' "$(date -Is)" "$1" >>"$log_file"; }
 # more when the session ends (`--reap`, from the session launcher).
 #
 # Only this user's processes (`-u`), only whole command lines (anchored, the
-# paths escaped), and never one whose parent is a living quickshell: a nested
-# test session runs beside the real one with helpers that look the same, and
-# ending the real session's lid inhibitor or clipboard watcher from a test's
-# restart would be exactly the kind of damage this is meant to prevent.
+# paths escaped), and only real orphans: a helper whose parent is PID 1, or
+# the user manager that adopts what is orphaned below it (a shell restarted
+# by the shell update's service). A living quickshell's helpers are its own -
+# a nested test session runs beside the real one with helpers that look the
+# same - and "any parent but a quickshell" also took the user's own `nmcli
+# monitor` in a terminal (parent zsh) on every reload and deploy (16.10.).
 #
 # pgrep -f takes a regular expression; the path is a literal, so every
 # character that means something to an ERE is escaped first (reload-shell.sh
@@ -91,6 +115,10 @@ helper_patterns=(
   '^(\S*/)?udevadm monitor --udev --subsystem-match=backlight$'
   '^(\S*/)?systemd-inhibit --what=handle-lid-switch --who=buchhwin-shell .* sleep infinity$'
 )
+orphan_parent() {
+  [[ $1 == 1 ]] && return 0
+  [[ $(cat "/proc/$1/comm" 2>/dev/null || true) == systemd ]]
+}
 reap_helpers() {
   local uid pattern pid parent parents reaped=0
   uid=$(id -u)
@@ -99,7 +127,7 @@ reap_helpers() {
     for pid in $(pgrep -u "$uid" -f "$pattern" 2>/dev/null || true); do
       parent=$(awk '/^PPid:/ { print $2 }' "/proc/$pid/status" 2>/dev/null || true)
       [[ -n $parent ]] || continue
-      [[ $(cat "/proc/$parent/comm" 2>/dev/null || true) == quickshell ]] && continue
+      orphan_parent "$parent" || continue
       [[ ,$parents, == *,"$parent",* ]] || parents+=${parents:+,}$parent
       reaped=$(( reaped + 1 ))
     done
@@ -117,10 +145,10 @@ if (( reap_only )); then
   # to go, up to 5 s, rather than end helpers it still owns, and leave them
   # alone if it never goes.
   for _ in {1..100}; do
-    instance_running || break
+    instance_listed_anywhere || break
     sleep 0.05
   done
-  if instance_running; then
+  if instance_listed_anywhere; then
     note "asked to reap, but an instance of this configuration is still listed - leaving its helpers alone"
   else
     reap_helpers
@@ -189,6 +217,17 @@ on_stop() {
 }
 trap on_stop TERM INT HUP
 
+# A caller that itself came from a shell - a terminal or an editor the shell
+# started, running a reload or a deploy - carries that shell's own settings
+# below. They are undone first (scripts/lib/app-env.sh), so the shell starts
+# from the session's values and its record of them stays right. This is the
+# session's start: a missing or broken file costs the undoing, not the shell.
+app_env="$project_dir/scripts/lib/app-env.sh"
+# shellcheck source=lib/app-env.sh
+if [[ -r $app_env ]] && source "$app_env" && declare -F app_env_restore >/dev/null; then
+  app_env_restore || true
+fi
+
 # The session exports QT_QPA_PLATFORMTHEME=kde for the applications; the shell
 # itself runs without it (2026-10-13). The KDE platform theme plugin pulled
 # KConfig, KIconThemes and KColorScheme into quickshell and watched kdeglobals
@@ -231,13 +270,25 @@ malloc_arenas=${MALLOC_ARENA_MAX:-2}
 # exported value wins (A/B).
 mesa_glthread_value=${mesa_glthread:-false}
 gallium_thread=${GALLIUM_THREAD:-0}
+# All of the above is the shell's alone, and quickshell's environment is what
+# every process it starts inherits: applications opened from the launcher
+# ran with two arenas, without Mesa's threads and without the Plasma look. What this script changes is written down for
+# scripts/launch-app.sh, which undoes it before it runs an application: the
+# settings set here that the session did not have, and the platform theme
+# the shell goes without. An exported value is the session's, and stays.
+app_unset=()
+for name in MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME; do
+  [[ -n ${!name:-} ]] || app_unset+=("$name")
+done
+app_qpa_theme=${QT_QPA_PLATFORMTHEME:-}
 # Transparent huge pages: with the kernel set to `always` (Arch's default)
 # the shell's heaps sit in mostly empty 2 MB pages - on 15.10. RssAnon was
 # 340-349 MB with them and 178-182 MB without (nested, the screen the same).
 # That is a setting of the machine, `madvise` on most desktops, and doctor.sh
 # says so; it is not switched off from here any more. A prctl in front of
 # quickshell did it for one day and every application the shell started -
-# a browser from the launcher, Citrix from that browser - inherited it.
+# a browser from the launcher, a remote-desktop client from that browser -
+# inherited it.
 
 # The tray is the shell's: it is org.kde.StatusNotifierWatcher in this
 # session. A kded6 that something D-Bus-activated (all 29 Plasma modules,
@@ -266,6 +317,7 @@ while true; do
   release_tray
   env -u QT_QPA_PLATFORMTHEME QS_ICON_THEME="$icon_theme" MALLOC_ARENA_MAX="$malloc_arenas" \
     mesa_glthread="$mesa_glthread_value" GALLIUM_THREAD="$gallium_thread" \
+    BUCHHWIN_APP_ENV_UNSET="${app_unset[*]}" BUCHHWIN_APP_QPA_THEME="$app_qpa_theme" \
     quickshell --no-duplicate --path "$config_dir" >>"$log_file" 2>&1 &
   child=$!
   # `wait` returns as soon as a trapped signal arrives, before the shell has

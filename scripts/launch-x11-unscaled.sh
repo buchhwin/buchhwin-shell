@@ -5,8 +5,8 @@ set -euo pipefail
 #
 # With Settings > Displays > "Sharp X11 applications" on, `Xft.dpi` carries
 # the scale of the big screens, and every X11 window is sized for them. A
-# window that lives on a screen at scale 1 - the Citrix Workspace window on
-# the Full HD screen beside two 4K ones - is then too large by that scale.
+# window that lives on a screen at scale 1 - a Citrix Workspace window on a
+# Full HD screen next to scaled 4K ones - is then too large by that scale.
 # This undoes it for one GTK application: it reads the DPI X11 is being told
 # right now and hands the application the reciprocal as GDK_DPI_SCALE, so the
 # window is 1x whatever the scale setting says, today and after it changes.

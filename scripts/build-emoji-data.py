@@ -77,6 +77,9 @@ RANGES = [
     (0x1F3F3, 0x1F3F4, "flags"),
 ]
 
+# The group tabs' icons. Airplane, heart and white flag are text characters
+# unless asked to be emoji: without U+FE0F their tabs drew a grey outline
+# from the text font beside seven coloured ones (tests/qml/EmojiTest.qml).
 GROUPS = [
     {"key": "recent", "label": "Recent", "icon": "\U0001F552"},
     {"key": "smileys", "label": "Smileys", "icon": "\U0001F600"},
@@ -84,10 +87,10 @@ GROUPS = [
     {"key": "nature", "label": "Nature", "icon": "\U0001F436"},
     {"key": "food", "label": "Food", "icon": "\U0001F34E"},
     {"key": "activities", "label": "Activities", "icon": "\U000026BD"},
-    {"key": "travel", "label": "Travel", "icon": "\U00002708"},
+    {"key": "travel", "label": "Travel", "icon": "\U00002708\uFE0F"},
     {"key": "objects", "label": "Objects", "icon": "\U0001F4A1"},
-    {"key": "symbols", "label": "Symbols", "icon": "\U00002764"},
-    {"key": "flags", "label": "Flags", "icon": "\U0001F3F3"},
+    {"key": "symbols", "label": "Symbols", "icon": "\U00002764\uFE0F"},
+    {"key": "flags", "label": "Flags", "icon": "\U0001F3F3\uFE0F"},
 ]
 
 SKIN_TONES = set(range(0x1F3FB, 0x1F400))
@@ -141,6 +144,17 @@ def read_annotations(path):
     return rows
 
 
+def qualified(text, presentation):
+    """A sequence joined with U+200D whose first character is text by default
+    (heart on fire, mending heart, broken chain) asks for its emoji form after
+    that character, the way Unicode spells the fully qualified sequence.
+    Without it the heart was drawn from the text font beside a coloured
+    flame."""
+    if "\u200d" not in text or ord(text[0]) in presentation or text[1:2] == "\ufe0f":
+        return text
+    return text[0] + "\ufe0f" + text[1:]
+
+
 def build(rows, presentation, tonable):
     emoji = []
     for text, fields in rows.items():
@@ -156,7 +170,7 @@ def build(rows, presentation, tonable):
             continue
         words = [word.strip() for word in fields.get("keywords", "").split("|")]
         words = sorted({word for word in words if word and word != name})
-        entry = {"e": text, "n": name, "k": words, "g": group}
+        entry = {"e": qualified(text, presentation), "n": name, "k": words, "g": group}
         # A skin tone is written after the emoji, but only where Unicode says
         # one belongs; the picker offers it for those and no others.
         if ord(text[0]) in tonable and len(text) == 1:

@@ -17,8 +17,8 @@ function speed(value) {
     return Math.min(SPEED_MAX, Math.max(SPEED_MIN, pace))
 }
 
-// What "1x" plays at. The session was tuned at 1.5x and that is the pace the
-// user wants to call normal (2026-10-13), so the slider's 1 now means the
+// What "1x" plays at. The session was tuned at 1.5x and that is the pace
+// that feels normal, so the slider's 1 now means the
 // designed durations played 1.5 times as fast, on both sides of the session.
 // The tables keep their designed numbers; this is the one place that moves
 // them, and 1 here is the way back.

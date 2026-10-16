@@ -87,6 +87,9 @@ Singleton {
     // back. The rules are re-emitted after a config reload as well, because
     // that resets everything the shell set at runtime.
     property string appliedRules: ""
+    // The highest workspace id a rule was sent for since the last config
+    // reload, for taking them back (releaseWorkspaceRules).
+    property int ruledUpTo: 0
     function applyWorkspaceRules() {
         if (!perMonitor || !HyprCompat.detected) return
         const order = Workspaces.monitorOrder(monitorList)
@@ -101,6 +104,7 @@ Singleton {
         const ruleKey = order.join(",")
         if (ruleKey !== appliedRules) {
             appliedRules = ruleKey
+            ruledUpTo = Math.max(ruledUpTo, order.length * Workspaces.perMonitorBlock)
             HyprCompat.configure(HyprCompat.commands.combine(rules))
         }
         // A rule binds a workspace when it is *created*, and the compositor
@@ -139,10 +143,24 @@ Singleton {
         target: Hyprland.workspaces
         function onValuesChanged() { if (root.perMonitor) ruleTimer.restart() }
     }
-    onPerMonitorChanged: ruleTimer.restart()
+    // Turned off, the rules that were sent are taken back (Lua config; see
+    // HyprCommands.releaseWorkspaceRule), or a workspace created later still opens
+    // on the monitor its old block named. Turned on again, they are sent
+    // anew: `appliedRules` is cleared either way.
+    onPerMonitorChanged: {
+        if (!perMonitor) releaseWorkspaceRules()
+        ruleTimer.restart()
+    }
+    function releaseWorkspaceRules() {
+        const ids = Workspaces.ruledIds(ruledUpTo)
+        appliedRules = ""
+        ruledUpTo = 0
+        if (ids.length && HyprCompat.detected && HyprCompat.lua)
+            HyprCompat.configure(HyprCompat.commands.combine(ids.map(id => HyprCompat.commands.releaseWorkspaceRule(id))))
+    }
     Connections {
         target: root
-        function onConfigReloaded() { root.appliedRules = ""; ruleTimer.restart() }
+        function onConfigReloaded() { root.appliedRules = ""; root.ruledUpTo = 0; ruleTimer.restart() }
     }
     // The rules wait for the dialect, and at login the monitors and the
     // first workspaces have usually settled before the probe answers -

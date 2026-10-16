@@ -24,12 +24,20 @@ ColumnLayout {
     // that are the point of the card.
     property bool showHourly: true
     property bool showDaily: true
+    // The dashboard sizes the card to its cell; the last card of it then
+    // runs to the cell's bottom edge (the empty state's, or the seven days),
+    // so the cards beside it do not end on a ragged line. The popup grows
+    // with its content and leaves this off. Something always takes the spare
+    // height - the spacer at the end when no card can - or the column spread
+    // it between its blocks and the conditions slid down the cell.
+    property bool fillsCell: false
     readonly property var current: WeatherService.current
     readonly property string status: WeatherService.status
 
     // The one empty state, not a card that draws one by hand.
     CardSection {
         Layout.fillWidth: true
+        Layout.fillHeight: root.fillsCell
         visible: root.current === null
 
         EmptyState {
@@ -67,11 +75,13 @@ ColumnLayout {
 
     ColumnLayout {
         Layout.fillWidth: true
+        Layout.fillHeight: root.fillsCell && root.showDaily
         visible: root.current !== null
         spacing: Metrics.spaceLg
 
         GridLayout {
             Layout.fillWidth: true
+            Layout.fillHeight: root.fillsCell && root.showDaily
             columns: root.wide ? 2 : 1
             columnSpacing: Metrics.spaceLg
             rowSpacing: Metrics.spaceLg
@@ -98,6 +108,7 @@ ColumnLayout {
                     Text {
                         text: root.current ? WeatherService.formatTemperature(root.current.temperature) : ""
                         color: Colors.text
+                        textFormat: Text.PlainText
                         font.family: Typography.family
                         font.pixelSize: Typography.displaySize
                         font.weight: Typography.light
@@ -145,6 +156,7 @@ ColumnLayout {
             DailyForecast {
                 visible: root.showDaily
                 Layout.fillWidth: true
+                Layout.fillHeight: root.fillsCell
                 Layout.preferredWidth: root.columnWidth
                 Layout.maximumWidth: root.columnWidth
                 Layout.alignment: Qt.AlignTop
@@ -163,5 +175,10 @@ ColumnLayout {
                 color: WeatherService.status === "stale" ? Colors.warning : Colors.mutedText
             }
         }
+    }
+
+    Item {
+        visible: root.fillsCell && root.current !== null && !root.showDaily
+        Layout.fillHeight: true
     }
 }

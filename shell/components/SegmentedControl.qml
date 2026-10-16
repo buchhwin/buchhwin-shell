@@ -63,7 +63,11 @@ Item {
     }
 
     implicitHeight: style === "underline" ? Metrics.controlHeight + Metrics.spaceXs : Metrics.controlHeightLg
-    implicitWidth: row.implicitWidth
+    // The row sits inside the trough's inset, so the control asks for the
+    // inset as well: without it the row got 8 px less than its labels, and
+    // the widest one gave them up ("Mini…", "Widg…" in the editor's toolbar,
+    // which leaves both controls at their own width).
+    implicitWidth: row.implicitWidth + row.anchors.leftMargin + row.anchors.rightMargin
 
     Rectangle {
         anchors.fill: parent
@@ -102,7 +106,7 @@ Item {
         // the surface (3:1), as every other accent line is.
         color: root.style === "underline" ? Colors.accentLine : Colors.segmentSelected
         border.width: root.style === "underline" ? 0 : Metrics.borderWidth
-        border.color: Colors.border
+        border.color: Colors.segmentBorder
         Behavior on x { enabled: Animations.motionEnabled; SpringMotion { kind: "fast" } }
         Behavior on width { enabled: Animations.motionEnabled; SpringMotion { kind: "fast" } }
     }

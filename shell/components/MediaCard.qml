@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import qs.theme
 import qs.services
+import "../../services/media/MediaLogic.js" as MediaLogic
 
 // What is playing, as a card sized by the cell it is given: the control
 // center's media tile and the dashboard's "Playing" card are this file at two
@@ -11,7 +12,8 @@ import qs.services
 // meaning anything.
 ShellCard {
     id: root
-    implicitHeight: column.implicitHeight + Metrics.spaceLg * 2
+    implicitHeight: coreHeight + (chipsWanted ? chipsHeight : 0) + (seekWanted ? seekHeight : 0)
+        + Metrics.spaceLg * 2
 
     // The shape of the cell it was given, as FitLogic names it. Four blocks
     // stacked need five rows of the grid; below that the card keeps the one
@@ -23,6 +25,29 @@ ShellCard {
     // Three transport buttons only fit beside the text when the cell has
     // columns to spare; one column gets play and pause alone.
     readonly property bool roomForTransport: shape === "wide" || shape === "large"
+
+    // What fits, in the height the cell really has. The shape is a step of
+    // the grid, and a tall cell is not tall enough for everything: the
+    // control center's five-row tile is 198 px, and with two players the
+    // cover, the seek bar, the transport and a second row of chips needed
+    // 230 - centred, the cover and the chips were cut at both edges.
+    // So each optional part asks for its room, and the seek bar is the first
+    // to give it up: with several players, which one this card is about is
+    // the question a small card has to answer; where in the track can wait
+    // for the popup. Measured from the parts' own implicit heights, which do
+    // not change with whether they are shown, so none of this depends on
+    // itself - and the card's natural height is all of it at once.
+    readonly property real coreHeight: topRow.implicitHeight
+        + (tight ? 0 : column.spacing + transport.implicitHeight)
+    readonly property real seekHeight: column.spacing + seek.implicitHeight
+    readonly property real chipsHeight: column.spacing + chips.implicitHeight
+    // A live stream has no length (MprisService.trackLength), so no bar.
+    readonly property bool seekWanted: !tight && MprisService.hasLength
+    readonly property bool chipsWanted: !tight && MprisService.players.length > 1
+    readonly property real room: height - Metrics.spaceLg * 2
+    readonly property bool chipsShown: chipsWanted && coreHeight + chipsHeight <= room
+    readonly property bool seekShown: seekWanted
+        && coreHeight + seekHeight + (chipsShown ? chipsHeight : 0) <= room
 
     // A click anywhere the card is not already a control. The transport
     // buttons, the seek bar and the player chips are declared after this, so
@@ -61,6 +86,7 @@ ShellCard {
         spacing: Metrics.spaceMd
 
         RowLayout {
+            id: topRow
             Layout.fillWidth: true
             spacing: Metrics.spaceMd
 
@@ -141,14 +167,19 @@ ShellCard {
         }
 
         ShellSlider {
+            id: seek
             Layout.fillWidth: true
-            visible: !root.tight && MprisService.active !== null && MprisService.active.lengthSupported && MprisService.active.length > 0
+            // Named on the slider, as everywhere outside a SettingRow: the
+            // times beside it are siblings, and a screen reader said "slider".
+            accessibleName: "Position"
+            visible: root.seekShown
             enabledState: MprisService.active !== null && MprisService.active.canSeek
-            value: MprisService.active && MprisService.active.length > 0 ? MprisService.active.position / MprisService.active.length : 0
+            value: MprisService.hasLength ? Math.min(1, MprisService.active.position / MprisService.trackLength) : 0
             onReleased: value => MprisService.seekTo(value)
         }
 
         RowLayout {
+            id: transport
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignHCenter
             spacing: Metrics.spaceLg
@@ -160,18 +191,62 @@ ShellCard {
             Item { Layout.fillWidth: true }
         }
 
-        Flow {
+        // The players, in one row. A Flow wrapped them onto a second row the
+        // cell had no room for; now the chips that fit are shown and the rest
+        // fold into a "+N" chip, which picks the next of them on each press
+        // (and is lit while the playing one is among them). The media popup,
+        // which the card opens, lists every player.
+        Item {
+            id: chips
             Layout.fillWidth: true
-            visible: !root.tight && MprisService.players.length > 1
-            spacing: Metrics.spaceXs
-            Repeater {
-                model: MprisService.players
+            implicitHeight: Metrics.controlHeightSm
+            visible: root.chipsShown
+            readonly property var players: MprisService.players
+            readonly property int activeIndex: players.indexOf(MprisService.active)
+            // From each chip's implicit width, which a hidden chip keeps, and
+            // the "+N" chip at its widest count (`moreProbe`), so the answer
+            // cannot change what it was measured from. Against the column's
+            // width rather than this row's own: a layout leaves a hidden
+            // child's width where it was, and the row's first frame would
+            // have been measured against nothing.
+            readonly property int fitting: {
+                const widths = []
+                for (let index = 0; index < chipRepeater.count; ++index) {
+                    const chip = chipRepeater.itemAt(index)
+                    widths.push(chip ? chip.implicitWidth : 0)
+                }
+                return MediaLogic.chipsThatFit(widths, column.width, chipRow.spacing, moreProbe.implicitWidth)
+            }
+            readonly property int hiddenCount: Math.max(0, players.length - fitting)
+
+            ShellButton { id: moreProbe; visible: false; compact: true; text: "+" + chips.players.length }
+
+            Row {
+                id: chipRow
+                spacing: Metrics.spaceXs
+                Repeater {
+                    id: chipRepeater
+                    model: chips.players
+                    ShellButton {
+                        required property var modelData
+                        required property int index
+                        visible: index < chips.fitting
+                        compact: true
+                        text: modelData.identity
+                        variant: modelData === MprisService.active ? "accent" : "surface"
+                        onClicked: MprisService.select(modelData)
+                    }
+                }
                 ShellButton {
-                    required property var modelData
+                    visible: chips.hiddenCount > 0
                     compact: true
-                    text: modelData.identity
-                    variant: modelData === MprisService.active ? "accent" : "surface"
-                    onClicked: MprisService.select(modelData)
+                    text: "+" + chips.hiddenCount
+                    variant: chips.activeIndex >= chips.fitting ? "accent" : "surface"
+                    toolTip: chips.players.slice(chips.fitting).map(player => player.identity).join(", ")
+                    onClicked: {
+                        const index = MediaLogic.nextHiddenIndex(chips.players.length, chips.fitting, chips.activeIndex)
+                        if (index >= 0) MprisService.select(chips.players[index])
+                    }
                 }
             }
         }

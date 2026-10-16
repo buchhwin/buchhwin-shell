@@ -235,6 +235,60 @@ check '! grep -v "^#" "$arch_root/etc/pam.d/buchhwin-lock" | grep -q pam_fprintd
 check '! grep -v "^#" "$arch_root/etc/pam.d/buchhwin-lock-password" | grep -q "include\|pam_fprintd"' \
   "Arch: password only, no password-auth and no other stack"
 check 'grep -q "pam_unix.so *try_first_pass" "$arch_root/etc/pam.d/buchhwin-lock-password"' "Arch: the password is pam_unix's"
+# And it counts wrong passwords like system-auth: the faillock bracket around
+# pam_unix, in system-auth's order. Without it the lid-shut lock (password
+# only) took guesses without limit and unlocked an account faillock had locked.
+auth_lines() {
+  sed -nE 's/^auth[[:space:]]+(\[[^]]*\]|[a-z]+)[[:space:]]+([^[:space:]]+)[[:space:]]*([^[:space:]]*).*/\1 \2 \3/p' "$1" | sed 's/ *$//'
+}
+faillock_bracket=$'required pam_faillock.so preauth\n[success=1 default=bad] pam_unix.so try_first_pass\n[default=die] pam_faillock.so authfail\nrequired pam_env.so\nrequired pam_faillock.so authsucc'
+check '[[ $(auth_lines "$arch_root/etc/pam.d/buchhwin-lock-password") == "$faillock_bracket" ]]' \
+  "Arch: the password-only service has system-auth's faillock bracket (preauth, pam_unix, authfail, pam_env, authsucc)"
+
+# session-check.sh names an installed password-only file that lacks it
+# (system-install.sh never replaces one). Its decision, `faillock_gap`, is
+# taken out of the script and run against PAM files in the sandbox.
+eval "$(sed -n '/^faillock_gap() {$/,/^}$/p' "$project_dir/scripts/session-check.sh")"
+check 'declare -F faillock_gap >/dev/null' "session-check: faillock_gap found"
+if declare -F faillock_gap >/dev/null; then
+  pam_etc="$sandbox/faillock/etc/pam.d"
+  pam_lib="$sandbox/faillock/usr/lib/pam.d"
+  mkdir -p "$pam_etc" "$pam_lib"
+  # Arch's system-auth auth lines (pambase), and a stack without faillock.
+  printf '%s\n' 'auth required pam_faillock.so preauth' '-auth [success=2 default=ignore] pam_systemd_home.so' \
+    'auth [success=1 default=bad] pam_unix.so try_first_pass nullok' 'auth [default=die] pam_faillock.so authfail' \
+    'auth optional pam_permit.so' 'auth required pam_env.so' 'auth required pam_faillock.so authsucc' > "$sandbox/faillock/counting"
+  printf '%s\n' 'auth required pam_env.so' 'auth required pam_unix.so try_first_pass' > "$sandbox/faillock/plain"
+  # The password-only file every Arch install had before 16.10.
+  printf '%s\n' '#%PAM-1.0' 'auth required pam_env.so' 'auth required pam_unix.so try_first_pass' 'account required pam_permit.so' \
+    > "$sandbox/faillock/password-old"
+  gap() { faillock_gap "$pam_etc/buchhwin-lock-password" "$pam_etc/buchhwin-lock" "$pam_etc" "$pam_lib"; }
+  cp "$project_dir/session/pam/buchhwin-lock.arch" "$pam_etc/buchhwin-lock"
+  cp "$sandbox/faillock/counting" "$pam_etc/system-auth"
+  cp "$sandbox/faillock/password-old" "$pam_etc/buchhwin-lock-password"
+  check '[[ $(gap) == system-auth ]]' "session-check: Arch with the old password-only file is a gap, named after system-auth"
+  cp "$project_dir/session/pam/buchhwin-lock-password.arch" "$pam_etc/buchhwin-lock-password"
+  check '! gap >/dev/null' "session-check: Arch with the shipped password-only file is none"
+  cp "$sandbox/faillock/password-old" "$pam_etc/buchhwin-lock-password"
+  mv "$pam_etc/system-auth" "$pam_lib/system-auth"
+  check '[[ $(gap) == system-auth ]]' "session-check: the stack is found under /usr/lib/pam.d too"
+  rm "$pam_lib/system-auth"
+  check '! gap >/dev/null' "session-check: a missing stack is not a gap (the include check reports it)"
+  cp "$sandbox/faillock/plain" "$pam_etc/system-auth"
+  check '! gap >/dev/null' "session-check: a stack without pam_faillock leaves nothing to miss"
+  cp "$sandbox/faillock/counting" "$pam_etc/system-auth"
+  rm "$pam_etc/buchhwin-lock-password"
+  check '! gap >/dev/null' "session-check: no password-only file is not a gap (it has a warning of its own)"
+  cp "$project_dir/session/pam/buchhwin-lock" "$pam_etc/buchhwin-lock"
+  cp "$project_dir/session/pam/buchhwin-lock-password" "$pam_etc/buchhwin-lock-password"
+  check '! gap >/dev/null' "session-check: Fedora's password-auth counts like system-auth"
+  cp "$project_dir/session/pam/buchhwin-lock.suse" "$pam_etc/buchhwin-lock"
+  cp "$project_dir/session/pam/buchhwin-lock-password.suse" "$pam_etc/buchhwin-lock-password"
+  cp "$sandbox/faillock/plain" "$pam_etc/common-auth"
+  check '! gap >/dev/null' "session-check: openSUSE as shipped has no pam_faillock anywhere"
+  cp "$sandbox/faillock/counting" "$pam_etc/common-auth"
+  check '[[ $(gap) == common-auth ]]' "session-check: openSUSE with pam_faillock added to common-auth is a gap"
+fi
 # A derivative under sudo: no BUCHHWIN_DISTRO (sudo drops it), an os-release
 # distro_detect refuses, so the name says "fedora" - the stack has to decide.
 derivative_root="$sandbox/derivative-root"
@@ -253,6 +307,21 @@ status=0; env -u BUCHHWIN_SHELL_PATH -u BUCHHWIN_HYPR_CONFIG -u XDG_CONFIG_HOME 
 check '[[ $status -eq 0 && $(configs) == hyprland.lua ]]' "wrapper runs the launcher from the home directory"
 status=0; env -u BUCHHWIN_SHELL_PATH HOME="$sandbox/nobody" "$wrapper" 2>"$sandbox/stderr.log" || status=$?
 check '[[ $status -eq 1 ]] && grep -q "is missing" "$sandbox/stderr.log"' "wrapper explains a missing launcher"
+
+# Plasma's kdedefaults (icon theme, colour scheme name) ahead of the config
+# dirs, once, and only when the directory exists.
+stub start-hyprland 'printf "dirs %s\n" "${XDG_CONFIG_DIRS:-unset}" >> "'"$calls"'"'
+dirs() { sed -n 's/^dirs //p' "$calls" | tail -n1; }
+launch env -u XDG_CONFIG_DIRS
+check '[[ $(dirs) == unset ]]' "no kdedefaults directory: XDG_CONFIG_DIRS untouched"
+mkdir -p "$home/.config/kdedefaults"
+launch env -u XDG_CONFIG_DIRS
+check '[[ $(dirs) == "$home/.config/kdedefaults:/etc/xdg" ]]' "kdedefaults in front of the default config dirs"
+launch XDG_CONFIG_DIRS="/etc/xdg/custom:/etc/xdg"
+check '[[ $(dirs) == "$home/.config/kdedefaults:/etc/xdg/custom:/etc/xdg" ]]' "kdedefaults in front of existing config dirs"
+launch XDG_CONFIG_DIRS="$home/.config/kdedefaults:/etc/xdg"
+check '[[ $(dirs) == "$home/.config/kdedefaults:/etc/xdg" ]]' "kdedefaults not added twice"
+check 'grep -q "XDG_CONFIG_DIRS" "$project_dir/scripts/session-init.sh"' "the config dirs reach the user manager"
 
 if (( failures )); then
   printf 'TESTS FAILED session-launcher (%d failed)\n' "$failures"

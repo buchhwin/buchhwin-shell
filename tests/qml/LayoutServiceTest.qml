@@ -3,6 +3,7 @@ import Quickshell.Io
 import QtQuick
 import qs.services
 import "Harness.js" as T
+import "../../services/LayoutLogic.js" as L
 
 // LayoutService itself, against the runner's sandboxed XDG_CONFIG_HOME: a
 // missing layout.json loads as an empty, writable layout; two edits in one
@@ -12,10 +13,11 @@ import "Harness.js" as T
 // for rather than assumed - and so is the write, which is a zero-interval
 // Timer and an asynchronous file operation away. Then the placement reports:
 // a widget window reports its rectangle on every change of its geometry, and
-// the same rectangle twice must not announce itself twice. Last, the notch
+// the same rectangle twice must not announce itself twice. Then the notch
 // options: settings, but changed where an undo is within reach (the editor,
 // Bar & Notch), so `changeNotch` takes an undo step and `undo` brings them
 // back. And its own write, read back by the file's watch, is not loaded again.
+// Last, a mode switch undone, and an automatic one that is no undo step.
 ShellRoot {
     id: root
     property int waits: 0
@@ -143,6 +145,49 @@ ShellRoot {
             }
             T.eq(LayoutService.changeNotch("notch.displayOsd", false), false,
                  "a notch setting that is not a layout option is refused")
+            modeUndo.start()
+        }
+    }
+
+    // A mode switch undone is a switch back, with the mode's own appearance:
+    // it used to restore the name only, and the gaps, blur and animations of
+    // the mode undone stayed. An automatic switch (a monitor plugged in)
+    // takes no step, and undoing the edit before it keeps the mode the
+    // machine chose. Not into gaming: its template turns Do Not Disturb on,
+    // and the notification server is the session's (pitfall 82).
+    Timer {
+        id: modeUndo
+        interval: 50
+        onTriggered: {
+            const first = LayoutService.activeMode
+            const others = LayoutService.modeNames.filter(name => name !== first && name !== "gaming")
+            SettingsService.set("appearance.gapsOut", 7)
+            T.eq(L.modeConfig(LayoutService.config, LayoutService.activeProfile, first).appearance.gapsOut, 7,
+                 "a mode-scoped setting belongs to the mode in use")
+            T.eq(LayoutService.setActiveMode(others[0]), true, "into a second mode")
+            SettingsService.set("appearance.gapsOut", 3)
+            const depth = LayoutService.undoStack.length
+            LayoutService.undo()
+            T.eq(LayoutService.activeMode, first, "undo of the switch switches back")
+            T.eq(SettingsService.value("appearance.gapsOut"), 7, "with that mode's own appearance")
+            T.eq(LayoutService.undoStack.length, depth - 1, "in one step")
+
+            const edge = L.modeConfig(LayoutService.config, LayoutService.activeProfile, first).bar.edge
+            const steps = LayoutService.undoStack.length
+            T.eq(LayoutService.setBarOption("edge", edge === "top" ? "bottom" : "top"), true, "an edit")
+            T.eq(LayoutService.setActiveMode(others[1], true), true, "then an automatic switch")
+            T.eq(LayoutService.undoStack.length, steps + 1, "which takes no step of its own")
+            LayoutService.undo()
+            T.eq(LayoutService.activeMode, others[1], "undo takes the edit back and keeps the mode the machine chose")
+            T.eq(L.modeConfig(LayoutService.config, LayoutService.activeProfile, first).bar.edge, edge,
+                 "the edit is undone in the mode it was made in")
+
+            // The user's switch, then the machine's: undoing the user's must
+            // not take the machine's mode away again.
+            T.eq(LayoutService.setActiveMode(first), true, "a switch of the user's")
+            T.eq(LayoutService.setActiveMode(others[2], true), true, "then the machine's")
+            LayoutService.undo()
+            T.eq(LayoutService.activeMode, others[2], "undoing the user's switch keeps the mode the machine chose since")
             T.finish("LayoutService")
         }
     }

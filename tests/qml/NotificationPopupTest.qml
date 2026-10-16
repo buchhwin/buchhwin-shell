@@ -102,6 +102,22 @@ ShellRoot {
         T.eq(N.overflow(aged, 5, [{ id: 1 }]).map(item => item === aged[0]), [true],
              "the popups are told apart by identity, like the queue")
 
+        // Do Not Disturb against the wall clock. "Until 07:00 tomorrow" set at
+        // 22:00 and slept through to 07:30 has run out at 07:30, whatever the
+        // monotonic expiry timer still believes.
+        const evening = new Date(2026, 9, 16, 22, 0).getTime()
+        const seven = new Date(2026, 9, 17, 7, 0).getTime()
+        const halfPast = new Date(2026, 9, 17, 7, 30).getTime()
+        T.eq([N.dndActive("tomorrow", seven, evening), N.dndActive("tomorrow", seven, halfPast)], [true, false],
+             "a timed mode is on until its end and off after it")
+        T.eq([N.dndAfter("tomorrow", seven, evening), N.dndAfter("tomorrow", seven, halfPast)], ["tomorrow", "off"],
+             "and the mode is set off once the clock says so")
+        T.eq(N.dndAfter("1h", evening + 3600000, evening + 3600000), "off", "the end itself is off")
+        T.eq([N.dndActive("manual", 0, halfPast), N.dndAfter("manual", 0, halfPast)], [true, "manual"],
+             "manual has no end")
+        T.eq([N.dndActive("off", seven, evening), N.dndAfter("off", seven, evening)], [false, "off"], "off stays off")
+        T.eq(N.dndActive("bogus", seven, evening), false, "an unknown mode is not on")
+
         T.finish("NotificationPopupTest")
     }
 }

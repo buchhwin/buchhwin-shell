@@ -189,6 +189,7 @@ Item {
             font.weight: Typography.semibold
             font.letterSpacing: Typography.pillClockTracking
             font.features: { "tnum": 1 }
+            textFormat: Text.PlainText
             renderType: Typography.renderType
         }
     }
@@ -219,6 +220,7 @@ Item {
                     font.pixelSize: Typography.notchTimeSize * root.scaleFactor
                     font.weight: Typography.semibold
                     font.features: { "tnum": 1 }
+                    textFormat: Text.PlainText
                     renderType: Typography.renderType
                 }
             }
@@ -275,6 +277,7 @@ Item {
                     font.pixelSize: Typography.notchTimeSize * root.scaleFactor
                     font.weight: Typography.semibold
                     font.features: { "tnum": 1 }
+                    textFormat: Text.PlainText
                     renderType: Typography.renderType
                 }
             }
@@ -322,6 +325,10 @@ Item {
                 if (item.glyphInk !== undefined)
                     item.glyphInk = Qt.binding(() => NotchService.stripGlyphsInAccent ? Colors.notchAccent : Colors.notchText)
                 if (item.trackColor !== undefined) item.trackColor = Colors.notchTrack
+                // The strip is black in both themes, so a state colour
+                // (charging, low, a tunnel up, unread) is its on-dark variant:
+                // the light theme's green and red are made for light panels.
+                if (item.onDark !== undefined) item.onDark = true
             }
         }
     }

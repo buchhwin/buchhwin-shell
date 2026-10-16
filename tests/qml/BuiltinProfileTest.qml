@@ -28,6 +28,13 @@ ShellRoot {
         path: Qt.resolvedUrl("../../config/builtin-profiles/buchhwin/profile.json").toString().replace("file://", "")
         blockLoading: true
     }
+    // The body the shipped profile's notch should have: Island's, which the
+    // profile's notch is.
+    FileView {
+        id: islandFile
+        path: Qt.resolvedUrl("../../config/notch-presets/island.json").toString().replace("file://", "")
+        blockLoading: true
+    }
     FileView {
         id: fastfetchFile
         path: Paths.configDir + "/fastfetch.jsonc"
@@ -65,6 +72,10 @@ ShellRoot {
              "nothing of the machine's: no power settings, no fingerprint reader")
         T.eq([raw.settings.appearance.accentFromWallpaper, raw.settings.appearance.accent], [false, "#50e2cb"],
              "the measured accent, not one from a wallpaper another machine does not have")
+        const islandBody = JSON.parse(islandFile.text()).options
+        T.eq(["bodyHeight", "bodyRadius", "bodyPadding"].map(key => raw.settings.notch[key]),
+             [islandBody.bodyHeight, islandBody.bodyRadius, islandBody.bodyPadding],
+             "its notch has the Island preset's body, so applying Island changes nothing about it")
         T.eq(L.sanitizeBuiltinProfile({ label: "x" }, "x"), null, "a file without modes is nothing to add")
         T.eq(L.sanitizeBuiltinProfile(raw, "Not A Slug"), null, "nor is one under an id that is not a profile name")
         T.eq(L.sanitizeBuiltinProfile({ modes: {}, defaultApps: { terminal: "../evil.desktop", files: "x" } }, "y").defaultApps,
@@ -379,11 +390,21 @@ ShellRoot {
             // modes, and its state forgotten.
             LayoutService.config = L.withState(LayoutService.config, "buchhwin",
                                                L.stateOf(LayoutService.config, "default"))
+            const customised = L.stateOf(LayoutService.config, "buchhwin")
             T.eq(LayoutService.resetProfile("buchhwin", ""), true, "Reset of the built-in profile not in use")
             T.eq(L.stateOf(LayoutService.config, "buchhwin"), null, "forgets its state, so it comes back shipped")
             T.eq(LayoutService.builtinApplying, "", "and applies nothing while it is not in use")
             T.eq(Object.keys(L.modesOf(LayoutService.config, "buchhwin")).sort(),
                  Object.keys(LayoutService.builtinProfiles.buchhwin.modes).sort(), "its modes are the shipped ones")
+            // The steps hold no states, so the Reset hands the one it forgot
+            // to its own: Undo brings it back with the modes, and the next
+            // entry keeps the user's setup rather than applying the shipped one.
+            const resetStep = JSON.parse(LayoutService.undoStack[LayoutService.undoStack.length - 1])
+            T.eq(Object.keys(resetStep.states || {}), ["buchhwin"], "its step carries that state and no other")
+            LayoutService.undo()
+            T.eq(L.stateOf(LayoutService.config, "buchhwin"), customised, "undo of the Reset brings the state back")
+            T.eq(LayoutService.resetProfile("buchhwin", ""), true, "and Reset again")
+            T.eq(L.stateOf(LayoutService.config, "buchhwin"), null, "forgets it again")
             // The Default profile is the shipped one once its file is there,
             // and the user's own until then.
             if (LayoutService.builtinProfiles["default"] !== undefined)

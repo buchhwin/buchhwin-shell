@@ -16,10 +16,15 @@ Item {
     property bool focusOnTab: false
     readonly property bool pressed: mouse.pressed
     property real liveValue: value
+    // Where the fill starts. `from` fills from the left end, as a level does;
+    // a value with a middle (pointer speed from slow through 0 to fast) sets
+    // its middle, and the fill runs from there to the knob on either side.
+    property real origin: from
     signal moved(real value)
     signal released(real value)
 
     readonly property real ratio: to > from ? Math.max(0, Math.min(1, ((pressed ? liveValue : value) - from) / (to - from))) : 0
+    readonly property real originRatio: to > from ? Math.max(0, Math.min(1, (origin - from) / (to - from))) : 0
     // What is drawn. The *value* springs, not the pixels: animating the fill's
     // width and the knob's x also animated every resize of the slider, so a
     // page that relaid itself left knobs gliding after the track. Under the
@@ -31,8 +36,33 @@ Item {
     }
 
     activeFocusOnTab: focusOnTab && enabledState
-    Keys.onLeftPressed: if (enabledState) root.released(Math.max(from, value - (to - from) / 20))
-    Keys.onRightPressed: if (enabledState) root.released(Math.min(to, value + (to - from) / 20))
+    // A key is a whole gesture: `moved` and then `released`, as a wheel step
+    // is. Only `released` used to come, and the volume and brightness
+    // sliders, which apply on `moved`, did nothing at all - while the key
+    // was still taken, so it did not move on either.
+    function commit(target) {
+        root.moved(target)
+        root.released(target)
+    }
+    // Where one wheel event takes the value: a twentieth of the range, the
+    // way the wheel turned. NaN for an event that turned nothing: Qt starts
+    // and ends a touchpad swipe with one (ScrollBegin, ScrollEnd), and reading
+    // it as "down" moved a focused slider a step at each end of the swipe.
+    // Handed on, those reach the list around it (ScrollFeel).
+    function wheelTarget(angle) {
+        if (!angle) return NaN
+        const step = (to - from) / 20
+        return Math.max(from, Math.min(to, value + (angle > 0 ? step : -step)))
+    }
+    // Disabled, the keys are not the slider's: they go on to the panel.
+    Keys.onLeftPressed: event => {
+        if (enabledState) root.commit(Math.max(from, value - (to - from) / 20))
+        else if (event) event.accepted = false
+    }
+    Keys.onRightPressed: event => {
+        if (enabledState) root.commit(Math.min(to, value + (to - from) / 20))
+        else if (event) event.accepted = false
+    }
     // Up and Down are left to the panel, which moves between controls with
     // them; the bigger steps and the ends are here.
     Keys.onPressed: event => {
@@ -45,11 +75,13 @@ Item {
             : NaN
         if (isNaN(target)) return
         event.accepted = true
-        root.released(target)
+        root.commit(target)
     }
-    // Named by the row it sits in (SettingRow hands its label over) or by
-    // the caller; the value is the item's own `value`, which Qt's slider
-    // role reads. The text says it as a share of the range.
+    // Named by the row it sits in (SettingRow and ListRow hand their label
+    // over) or by the caller - a slider anywhere else ("Output volume",
+    // "Brightness") says what it moves here, or a screen reader announces
+    // "slider, 40%" and nothing more. The value is the item's own `value`,
+    // which Qt's slider role reads; the text says it as a share of the range.
     property string accessibleName: ""
     Accessible.role: Accessible.Slider
     Accessible.name: root.accessibleName
@@ -70,10 +102,11 @@ Item {
 
         Rectangle {
             id: fill
-            width: parent.width * root.shownRatio
+            x: parent.width * Math.min(root.originRatio, root.shownRatio)
+            width: parent.width * Math.abs(root.shownRatio - root.originRatio)
             height: parent.height
             radius: parent.radius
-            color: mouse.containsMouse && root.enabledState ? Colors.accentHover : Colors.accent
+            color: mouse.containsMouse && root.enabledState ? Colors.accentFillHover : Colors.accentFill
             Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
         }
     }
@@ -121,14 +154,12 @@ Item {
         // only moves a slider that was used before (it has focus) or with Ctrl
         // held. Otherwise the event goes on to the scrolling view.
         onWheel: event => {
-            if (!root.activeFocus && !(event.modifiers & Qt.ControlModifier)) {
+            const next = root.wheelTarget(event.angleDelta.y)
+            if (isNaN(next) || (!root.activeFocus && !(event.modifiers & Qt.ControlModifier))) {
                 event.accepted = false
                 return
             }
-            const step = (root.to - root.from) / 20
-            const next = Math.max(root.from, Math.min(root.to, root.value + (event.angleDelta.y > 0 ? step : -step)))
-            root.moved(next)
-            root.released(next)
+            root.commit(next)
         }
     }
 }

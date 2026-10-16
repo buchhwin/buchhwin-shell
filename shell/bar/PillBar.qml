@@ -51,7 +51,14 @@ Variants {
         readonly property bool fullscreenOn: HyprlandService.fullscreenOn(modelData)
         readonly property bool hiddenForFullscreen: bar.fullscreen === "hide" && fullscreenOn
         readonly property bool fullscreenShown: bar.fullscreen === "show" && fullscreenOn
-        readonly property bool active: LayoutService.loaded && LayoutService.barShown && !hiddenForFullscreen
+        // Mapped while the mode shows the bar; drawn and taking input only
+        // while no fullscreen window hides it. The notch's reasoning
+        // (Notch.qml): unmapping destroyed the window and its GL context on
+        // every fullscreen toggle and dropped the reserved zone, so the app
+        // was laid out twice on its way out. The surface stays now, with
+        // nothing drawn, an empty input mask and its zone kept.
+        readonly property bool mapped: LayoutService.loaded && LayoutService.barShown
+        readonly property bool active: mapped && !hiddenForFullscreen
         readonly property real barRadius: Metrics.barRadius * scaleFactor
         readonly property bool attached: flat && bar.position === "attached"
         readonly property string edge: BarLogic.edge(bar.edge)
@@ -131,7 +138,7 @@ Variants {
         }
 
         screen: modelData
-        visible: active && !remapping
+        visible: mapped && !remapping
         color: "transparent"
         // Anchored to its own edge for the whole life of the surface. A
         // mapped layer surface does not reliably take a new anchor, which is
@@ -176,11 +183,13 @@ Variants {
             height: box ? box.height : 0
         }
 
+        // Empty while hidden for a fullscreen window: every click goes
+        // through to it.
         mask: Region {
-            Region { item: window.flat ? barArea : null }
-            Region { item: window.flat ? null : leftZone }
-            Region { item: window.flat ? null : centerZone }
-            Region { item: window.flat ? null : rightZone }
+            Region { item: window.active && window.flat ? barArea : null }
+            Region { item: window.active && !window.flat ? leftZone : null }
+            Region { item: window.active && !window.flat ? centerZone : null }
+            Region { item: window.active && !window.flat ? rightZone : null }
         }
 
         // How far into the screen the bar reaches, and from which edge. The
@@ -299,7 +308,7 @@ Variants {
         // has to happen before the transpose moves them.
         Shape {
             id: attachedBackground
-            visible: window.attached
+            visible: window.attached && window.active
             anchors.fill: parent
             transform: [
                 Scale {
@@ -370,7 +379,7 @@ Variants {
         // The floating bar: one rounded capsule inset by the margin.
         Rectangle {
             id: background
-            visible: window.flat && !window.attached
+            visible: window.flat && !window.attached && window.active
             x: window.geometry.background ? window.geometry.background.x : 0
             y: window.geometry.background ? window.geometry.background.y : 0
             width: window.geometry.background ? window.geometry.background.width : 0
@@ -396,6 +405,7 @@ Variants {
         // a stored key to make a label read better is how a file stops loading.
         Grid {
             id: leftZone
+            visible: window.active
             onXChanged: Qt.callLater(window.reportZones)
             onYChanged: Qt.callLater(window.reportZones)
             onWidthChanged: Qt.callLater(window.reportZones)
@@ -424,6 +434,7 @@ Variants {
 
         Grid {
             id: centerZone
+            visible: window.active
             onXChanged: Qt.callLater(window.reportZones)
             onYChanged: Qt.callLater(window.reportZones)
             onWidthChanged: Qt.callLater(window.reportZones)
@@ -464,6 +475,7 @@ Variants {
 
         Grid {
             id: rightZone
+            visible: window.active
             onXChanged: Qt.callLater(window.reportZones)
             onYChanged: Qt.callLater(window.reportZones)
             onWidthChanged: Qt.callLater(window.reportZones)

@@ -17,12 +17,14 @@ ColumnLayout {
     signal toggled(bool checked)
     spacing: Metrics.panelGap
 
-    // The panels' header at its dialog size (PanelHeader's "title" role):
-    // the same title, subtitle and spacing as the control center and the
-    // dialogs, instead of a second header that had drifted to its own.
+    // The panels' header, instead of a second header that had drifted to
+    // its own. At the size of a panel that is one page (the control center,
+    // the notification centre), one step above the titles of the cards in
+    // the popup: at the dialog size, "Audio" was "Output" and "Applications"
+    // again, same size and weight.
     PanelHeader {
         Layout.fillWidth: true
-        role: "title"
+        role: "headline"
         icon: root.glyph
         iconTile: true
         iconActive: root.active

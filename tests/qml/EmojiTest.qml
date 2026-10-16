@@ -26,6 +26,20 @@ ShellRoot {
         T.ok(list.every(entry => groups.indexOf(entry.g) > 0), "every emoji is in a group that exists")
         T.ok(list.some(entry => entry.m === 1), "some emoji take a skin tone")
         T.ok(!list.some(entry => entry.e.indexOf("\u{1F3FB}") >= 0), "no skin-tone copies are in the list")
+        // Airplane, heart and white flag are text characters unless asked to
+        // be emoji: without U+FE0F their group tabs drew a grey outline from
+        // the text font beside seven coloured ones.
+        const textByDefault = [0x2708, 0x2764, 0x1F3F3]
+        T.ok(data.groups.every(entry => textByDefault.indexOf(entry.icon.codePointAt(0)) < 0
+                                        || entry.icon.endsWith("\uFE0F")),
+             "a group icon that is text by default asks for its emoji form")
+        // The same for a joined sequence that starts with one (heart on
+        // fire, mending heart, broken chain): the heart came out of the text
+        // font beside a coloured flame (scripts/build-emoji-data.py qualified).
+        const joined = list.filter(entry => entry.e.indexOf("\u200D") > 0
+                                            && [0x2764, 0x26D3].indexOf(entry.e.codePointAt(0)) >= 0)
+        T.ok(joined.length >= 3 && joined.every(entry => entry.e.charAt(1) === "\uFE0F"),
+             "a joined sequence that starts as text asks for its emoji form (" + joined.length + ")")
 
         // ---- searching -----------------------------------------------------
         const smile = E.search(list, "grinning face", "", 10)

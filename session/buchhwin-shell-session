@@ -64,6 +64,17 @@ export XDG_SESSION_DESKTOP=buchhwin-shell
 export DESKTOP_SESSION=buchhwin-shell
 export QT_QPA_PLATFORM=wayland
 
+# Plasma keeps the look chosen in System Settings - the colour scheme's name,
+# the icon theme - in ~/.config/kdedefaults and puts that directory in front
+# of XDG_CONFIG_DIRS when it starts. kdeglobals itself only holds the colours,
+# so without it KDE applications here got Breeze Dark colours with the light
+# Breeze icons. Only KConfig's defaults come from there; the user's own files
+# still win.
+kdedefaults="${XDG_CONFIG_HOME:-$HOME/.config}/kdedefaults"
+if [[ -d $kdedefaults && :${XDG_CONFIG_DIRS:-}: != *":$kdedefaults:"* ]]; then
+  export XDG_CONFIG_DIRS="$kdedefaults:${XDG_CONFIG_DIRS:-/etc/xdg}"
+fi
+
 run_hyprland() {
   local started=$SECONDS
   set +e

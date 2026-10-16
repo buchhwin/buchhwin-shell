@@ -35,6 +35,3 @@ dist/
 __pycache__/
 *.swp
 *.tmp
-
-# Agent worktrees
-.claude/worktrees/

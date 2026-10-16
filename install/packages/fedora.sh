@@ -36,6 +36,13 @@ packages=(
   python3-dbus python3-gobject python3-pillow
   # KDE pieces the session reuses instead of carrying its own
   xdg-desktop-portal-kde polkit-kde kf6-kwallet
+  # services/CalendarService.qml imports org.kde.akonadi (akonadi-server
+  # ships it) and org.kde.plasma.PimCalendars (kdepim-addons); without either
+  # the service fails to load and takes the shell with it, so neither is an
+  # extra: nothing else here pulls them in, and --minimal left both out.
+  # merkuro is where the shell sends you to set calendars up (Settings >
+  # Calendar, "Open in Merkuro").
+  akonadi-server kdepim-addons merkuro
   # interface and monospace faces; the icon font is fetched below
   rsms-inter-fonts jetbrains-mono-fonts
   # what the font step itself needs: fc-cache/fc-list and an unpacker.
@@ -55,7 +62,7 @@ extras=(
   sddm                        # the login screen theme (the display manager is
                               # NOT switched; system-install.sh --use-sddm does
                               # that, on purpose and separately)
-  merkuro kdepim-addons python3-kf6-kcoreaddons python3-kf6-kcalendarcore
+  python3-kf6-kcoreaddons python3-kf6-kcalendarcore  # writing calendar events
   cmatrix cava                # terminal extras that follow the shell accent
 )
 

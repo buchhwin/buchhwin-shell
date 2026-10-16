@@ -90,7 +90,8 @@ ShellCard {
         visible: root.iconOnly
         glyph: root.icon
         size: Metrics.iconLg
-        color: root.checked ? Colors.accentForeground : Colors.mutedText
+        // On, the tile is the accent tint: the accent made for it.
+        color: root.highlighted ? Colors.accentOnSoft : root.checked ? Colors.accentForeground : Colors.mutedText
     }
 
     // ---- stacked: the glyph over the title ------------------------------
@@ -126,6 +127,8 @@ ShellCard {
         }
         ShellToggle {
             Layout.alignment: Qt.AlignHCenter
+            // The tile's title is what the switch turns on and off.
+            accessibleName: root.title
             visible: root.showToggle
             checked: root.checked
             enabledState: root.available
@@ -162,6 +165,7 @@ ShellCard {
         ColumnLayout {
             spacing: Metrics.spaceXxs
             ShellToggle {
+                accessibleName: root.title
                 visible: root.showToggle
                 checked: root.checked
                 enabledState: root.available

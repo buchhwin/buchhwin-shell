@@ -19,12 +19,19 @@ Singleton {
     readonly property string settings: "󰒓"
     readonly property string location: "󰍎"
     readonly property string folder: "󰉋"
-    readonly property string edit: "󰕰"
+    // Arranging tiles, cards and widgets: the 2x2 grid of the arrange button
+    // in the control center's and the launcher's header. (It was `edit`,
+    // which also stood for renaming and changing things; those are `modify`.)
+    readonly property string arrange: "󰕰"
+    // Changing something that is already there - renaming a preset, editing
+    // an event, another folder or wallpaper: a pencil. The grid stood for
+    // these too and read as "layout" there.
+    readonly property string modify: "󰏫"
     // Showing a password and hiding it again: the open eye and the closed one.
     readonly property string reveal: "󰈈"
     readonly property string conceal: "󰈉"
     // Snapping to the grid in the layout editor. Its own glyph: the toolbar
-    // already shows `edit` on the mode switch beside it, and one glyph for
+    // already shows `arrange` on the mode switch beside it, and one glyph for
     // two buttons in one row read as one button twice.
     readonly property string grid: "󰋁"
 

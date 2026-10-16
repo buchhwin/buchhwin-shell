@@ -35,9 +35,10 @@ packages=(
   # KDE pieces the session reuses instead of carrying its own
   xdg-desktop-portal-kde6 polkit-kde-agent-6 kf6-kwallet
   # services/CalendarService.qml imports org.kde.akonadi, and on Leap only
-  # merkuro ships that QML module. Without it the service fails to load and
-  # takes the shell with it, so this is not an extra here.
-  merkuro
+  # merkuro ships that QML module, and org.kde.plasma.PimCalendars, which
+  # kdepim-addons ships. Without either the service fails to load and takes
+  # the shell with it, so neither is an extra here.
+  merkuro kdepim-addons
   # interface and monospace faces; the icon font is fetched below
   inter-variable-fonts jetbrains-mono-fonts
   fontconfig unzip
@@ -54,7 +55,6 @@ extras=(
   sddm-qt6                    # the login screen theme (the display manager is
                               # NOT switched); Leap's plain "sddm" is the Qt 5
                               # build and conflicts with it
-  kdepim-addons
   cava
 )
 

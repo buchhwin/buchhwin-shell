@@ -279,16 +279,14 @@ Item {
             border.width: target ? Metrics.focusBorderWidth : Metrics.borderWidth
             border.color: target ? Colors.accent : Colors.border
 
-            SectionLabel {
+            // Below the notch, over the wallpaper: on a plate, as the hint
+            // lines are.
+            EditorCaption {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.top: parent.bottom
                 anchors.topMargin: Metrics.spaceXs
                 text: modelData === "collapsed" ? "Always visible" : "On hover"
-                // Below the notch, on the scrim: its ink with the editor's
-                // outline, as the hint lines have.
-                color: Colors.scrimText
-                style: Text.Outline
-                styleColor: Colors.scrimStrong
+                role: "label"
             }
         }
     }
@@ -423,7 +421,11 @@ Item {
                     anchors.fill: parent
                     radius: dropButton.radius
                     scale: dropButton.scale
-                    color: Colors.background
+                    // The button's ink follows the panel colour, so its
+                    // backing does too (Colors.background follows the theme:
+                    // a black panel in the light theme put light glyphs on
+                    // a light disc).
+                    color: Colors.solidSurface
                 }
                 ShellButton {
                     id: dropButton
@@ -457,7 +459,7 @@ Item {
                     anchors.fill: parent
                     radius: hopButton.radius
                     scale: hopButton.scale
-                    color: Colors.background
+                    color: Colors.solidSurface
                 }
                 ShellButton {
                     id: hopButton

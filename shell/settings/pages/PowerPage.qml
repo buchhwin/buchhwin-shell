@@ -31,7 +31,7 @@ ColumnLayout {
             spacing: Metrics.spaceMd
             ShellIcon {
                 glyph: PowerService.icon; size: Metrics.iconXl
-                color: PowerService.charging ? Colors.success : PowerService.low ? Colors.danger : Colors.text
+                color: PowerService.charging ? Colors.positive : PowerService.low ? Colors.danger : Colors.text
             }
             ColumnLayout {
                 Layout.fillWidth: true
@@ -43,6 +43,24 @@ ColumnLayout {
                 visible: PowerService.device !== null && PowerService.device.healthPercentage > 0
                 text: PowerService.device ? "Health " + Math.round(PowerService.device.healthPercentage) + "%" : ""
                 role: "small"; muted: true
+            }
+        }
+
+        // What every good state in the shell wears (Colors.positive): the
+        // battery on the bar, the notch, the popup, the control center and
+        // the lock screen, the clock's charging hint and a VPN that is up.
+        // Here because the battery is where the green shows most. Shown
+        // without a battery too: the tunnel follows it as well. The bad
+        // states are not part of the choice - they keep red and amber.
+        SettingRow {
+            label: "Status colors"
+            hint: "Charging and a connected VPN in green or in the accent; a low battery stays red"
+            SegmentedControl {
+                focusOnTab: true
+                Layout.fillWidth: true
+                current: SettingsService.value("appearance.statusColors")
+                options: [{ value: "status", label: "Green" }, { value: "accent", label: "Accent" }]
+                onSelected: value => SettingsService.set("appearance.statusColors", value)
             }
         }
     }

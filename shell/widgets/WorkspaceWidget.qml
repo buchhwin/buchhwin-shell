@@ -127,7 +127,7 @@ Grid {
                 // rebuilt on every switch, and once they were kept it did -
                 // and redrawing the notch for every frame of a workspace
                 // slide cost 8-9 dropped frames in eight switches against
-                // 0-5 without it (measured on DP-10, 2026-10-13). The pip
+                // 0-5 without it (measured on a 4K monitor). The pip
                 // changes with the slide, which is the motion already on
                 // screen.
                 Text {
@@ -143,6 +143,7 @@ Grid {
                     color: slot.current ? Colors.accentText : slot.modelData.occupied ? root.textColor : root.mutedTextColor
                     font.family: Typography.family
                     font.pixelSize: Typography.smallSize * root.scaleFactor
+                    textFormat: Text.PlainText
                     renderType: Typography.renderType
                 }
             }

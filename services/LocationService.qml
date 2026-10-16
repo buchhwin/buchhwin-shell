@@ -11,12 +11,22 @@ Singleton {
     id: root
     property string query: ""
     property var results: []
+    // The query `results` answer, which lags `query` by the debounce and the
+    // request.
+    property string resultsQuery: ""
+    // Enter pressed before the current query's results were in: the first of
+    // them is taken when they come (acceptFirst).
+    property string acceptPending: ""
+    // A place was chosen from the search (the field clears itself on it).
+    signal placeChosen()
     property bool busy: false
     property string error: ""
 
-    // By IP: on request, and by itself when weather.autoLocate is on and no
-    // place is set yet - never over one the user chose, and never in a nested
-    // test session, which must not reach the network for this.
+    // By IP: on request (Settings > Weather, the welcome tour's "Find my
+    // place"), and by itself when weather.autoLocate is on and no place is set
+    // yet - never over one the user chose, and never in a nested test
+    // session, which must not reach the network for this. ipinfo.io sees the
+    // address it is asked from, so asking it is the user's choice.
     //
     // Only once the network is up: the session starts before the Wi-Fi is
     // connected, and a request at that moment failed and was never repeated.
@@ -68,8 +78,10 @@ Singleton {
     function search(text) {
         query = String(text || "").trim()
         error = ""
+        if (acceptPending !== query) acceptPending = ""
         if (query.length < 2) {
             results = []
+            resultsQuery = ""
             debounce.stop()
             return
         }
@@ -81,9 +93,24 @@ Singleton {
         const ok = WeatherService.setLocation(result.name, result.lat, result.lon)
         if (ok) {
             results = []
+            resultsQuery = ""
             query = ""
+            acceptPending = ""
+            placeChosen()
         }
         return ok
+    }
+
+    // Enter in the search field: the first place found for what it says now.
+    // While that search is still waiting or out, it runs at once and the
+    // place is taken when it lands.
+    function acceptFirst() {
+        const first = Logic.firstResultFor(query, resultsQuery, results)
+        if (first) return select(first)
+        if (query.length < 2) return false
+        acceptPending = query
+        if (debounce.running) { debounce.stop(); runSearch() }
+        return false
     }
 
     Timer {
@@ -141,15 +168,24 @@ Singleton {
             if (requestQuery !== root.query) return
             if (exitCode !== 0) {
                 root.results = []
+                root.resultsQuery = requestQuery
+                root.acceptPending = ""
                 root.error = "Location search unavailable"
                 return
             }
             try {
                 root.results = Logic.parseGeocode(output)
+                root.resultsQuery = requestQuery
                 root.error = root.results.length ? "" : "No location found"
             } catch (parseError) {
                 root.results = []
+                root.resultsQuery = requestQuery
                 root.error = "Unreadable response"
+            }
+            if (root.acceptPending === requestQuery) {
+                root.acceptPending = ""
+                const first = Logic.firstResultFor(root.query, root.resultsQuery, root.results)
+                if (first) root.select(first)
             }
         }
         stdout: StdioCollector { onStreamFinished: { searchProc.output = text; searchProc.outputDone = true; searchProc.done() } }

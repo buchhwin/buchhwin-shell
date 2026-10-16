@@ -261,6 +261,9 @@ ColumnLayout {
                     preferredHighlightBegin: 0
                     preferredHighlightEnd: height
                     highlightRangeMode: ListView.ApplyRange
+                    // Its own wheel while it has rows to scroll, the page's
+                    // once it is at an end.
+                    ScrollFeel { view: list }
                     delegate: ListRow {
                         required property var modelData
                         required property int index

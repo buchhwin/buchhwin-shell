@@ -10,6 +10,13 @@ Rectangle {
     // Typed into since the last Return: a value the field has not handed on
     // yet. Settings keeps a page loaded while one of its fields says so.
     property bool edited: false
+    // What Escape goes back to while the field has the focus: the text it
+    // had when it got it, or when Return last handed it on. A search field
+    // gets the focus empty, so Escape still clears it; a settings field gets
+    // its stored value back. Escape used to clear every field, and a field
+    // that writes as it changes (the custom search address) or as it loses
+    // the focus (the recordings folder) stored the empty text.
+    property string savedText: ""
     objectName: "shellTextField"
     property alias echoMode: input.echoMode
     readonly property alias inputActiveFocus: input.activeFocus
@@ -44,6 +51,15 @@ Rectangle {
     // that drives a list from its search field (the launcher) needs Return and
     // the arrows before TextInput takes them.
     signal keyPressed(var event)
+
+    // Back to `savedText`; false when the text is there already, and the
+    // Escape is then the owner's.
+    function revert() {
+        if (input.text === root.savedText) return false
+        input.text = root.savedText
+        root.edited = false
+        return true
+    }
 
     // Focus a panel hands the field as it opens is quiet: no ring (below).
     property bool quietFocus: false
@@ -97,22 +113,41 @@ Rectangle {
             Accessible.role: Accessible.EditableText
             Accessible.name: root.accessibleName || root.placeholder
             onActiveFocusChanged: {
-                if (!activeFocus) root.quietFocus = false
-                else if (root.selectAllOnFocus) selectAll()
+                if (!activeFocus) {
+                    root.quietFocus = false
+                    // Escape only comes with the focus, so the copy goes with
+                    // it: the field may hold a passphrase, and the dialogs that
+                    // empty theirs as they close (drive unlock, Wi-Fi) would
+                    // otherwise leave it here.
+                    root.savedText = ""
+                    return
+                }
+                root.savedText = text
+                if (root.selectAllOnFocus) selectAll()
             }
-            onAccepted: { root.edited = false; root.accepted() }
+            onAccepted: {
+                // Taken first: the owner's handler can close the panel and
+                // the field with it (pitfall 20).
+                const field = root
+                field.edited = false
+                field.accepted()
+                // After the handler, which may have emptied the field for the
+                // next entry (Add shortcut): Escape keeps what is there now.
+                // Not when the handler took the focus away (above).
+                if (field && field.inputActiveFocus) field.savedText = field.text
+            }
             onTextEdited: root.edited = true
             Keys.onPressed: event => root.keyPressed(event)
             Keys.onDeletePressed: event => {
                 if (text.length) { event.accepted = false; return }
                 root.deleteOnEmpty()
             }
-            // Escape clears what is typed; only an Escape with nothing to
-            // clear is the field's owner's. Both used to happen in one press,
-            // so a dialog that closes "when the field is empty" closed on the
-            // draft it had just cleared.
+            // Escape puts back what was there (savedText); only an Escape
+            // with nothing to put back is the field's owner's, and goes on.
+            // Both used to happen in one press, so a dialog that closes "when
+            // the field is empty" closed on the draft it had just cleared.
             Keys.onEscapePressed: event => {
-                if (text.length) { text = ""; return }
+                if (root.revert()) return
                 event.accepted = false
                 root.escapePressed()
             }

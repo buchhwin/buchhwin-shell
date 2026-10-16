@@ -184,6 +184,17 @@ function parseGeocode(json) {
         }))
 }
 
+// The place Enter in the city search takes: the first result of the search
+// for what the field says now, or null while that search is still out. Enter
+// used to take the first result of whatever had come back last - "Ber"
+// arrives, "n" is typed, Enter within the debounce, and it was Berlin, not
+// Bern.
+function firstResultFor(query, resultsQuery, results) {
+    const wanted = String(query || "").trim()
+    if (wanted.length < 2 || String(resultsQuery || "") !== wanted) return null
+    return results && results.length ? results[0] : null
+}
+
 // The approximate place for an IP address (ipinfo.io, no account): city and
 // coordinates, rounded like a searched place before anything stores them.
 var IP_LOCATION_URL = "https://ipinfo.io/json"

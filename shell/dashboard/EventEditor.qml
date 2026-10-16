@@ -88,6 +88,8 @@ ShellPanel {
         original = Edit.draftFor(event, CalendarService.identityLocation)
         originalRule = Rec.ruleDraft(CalendarService.identity, event.start)
         rule = Object.assign({}, originalRule)
+        opened = original
+        openedRule = originalRule
         editing = true
         fill(Object.assign({}, original))
         Qt.callLater(() => titleField.focusInput())
@@ -98,6 +100,49 @@ ShellPanel {
         CalendarService.resetSave()
     }
 
+    // ---- a form that outlives a close ----------------------------------------
+    // Since the editor closes on a click on any monitor, a typed event was
+    // lost to the click that went to copy its meeting link. What the form held
+    // is kept when the editor closes for any reason but Save, Cancel or
+    // Escape, and handed back when it opens on the same day or the same event
+    // again (EventEditLogic.keptDraft / resumes); any other open starts fresh.
+    //
+    // What the form was filled with, to tell a typed form from an untouched
+    // one, and the arguments it was opened with.
+    property var opened: null
+    property var openedRule: null
+    property var openedArgs: null
+    property var kept: null
+    // An edit to hand back once the event is known to be editable: the
+    // details are matched to the calendar entry after the editor opens.
+    property var pendingResume: null
+    // Set by the three ways out that mean "throw it away".
+    property bool discard: false
+
+    function closeAndDiscard() {
+        discard = true
+        PanelService.close("eventEditor")
+    }
+
+    function resumeEdit() {
+        if (!pendingResume || !wanted || !details || !canChange) return
+        const state = pendingResume.state
+        pendingResume = null
+        CalendarService.resetSave()
+        deleteButton.disarmNow()
+        original = state.original
+        originalRule = state.originalRule
+        opened = state.opened
+        openedRule = state.openedRule
+        rule = Object.assign({}, state.rule)
+        scope = state.scope
+        editing = true
+        fill(Object.assign({}, state.draft))
+        Qt.callLater(() => titleField.focusInput())
+    }
+    onCanChangeChanged: resumeEdit()
+    onEscapePressed: discard = true
+
     // The second click of the delete button: the first only arms it
     // (ShellButton's `confirm`, the "click again" this editor started).
     function deleteEvent() {
@@ -106,16 +151,54 @@ ShellPanel {
     }
 
     onWantedChanged: {
+        if (!wanted) {
+            // Read before `editing` is reset below. An edit still waiting for
+            // its event to be matched is kept as it was.
+            kept = discard ? null
+                : Edit.keptDraft(openedArgs, { editing: editing, opened: opened, openedRule: openedRule,
+                                               draft: draft, rule: rule, original: original,
+                                               originalRule: originalRule, scope: scope })
+                  || pendingResume
+            discard = false
+            pendingResume = null
+        }
         editing = false
         deleteButton.disarmNow()
         scope = "single"
         if (wanted) {
-            if (PanelService.args.mode === "details") return
-            const day = Draft.parseDate(PanelService.args.day || "") || new Date()
+            // An Escape in an empty field closes the editor and then reaches
+            // the panel as well, after the close: its mark must not carry
+            // over to the next one.
+            discard = false
+            const args = PanelService.args
+            openedArgs = args
+            const resume = Edit.resumes(kept, args) ? kept : null
+            kept = null
+            if (args.mode === "details") {
+                // Once `details` reads the new arguments (the panel takes
+                // them in its own handler of this change) - and again when
+                // the event is matched, if it is not yet.
+                pendingResume = resume
+                Qt.callLater(root.resumeEdit)
+                return
+            }
+            if (resume) {
+                const state = resume.state
+                originalRule = state.openedRule
+                opened = state.opened
+                openedRule = state.openedRule
+                rule = Object.assign({}, state.rule)
+                fill(Object.assign({}, state.draft))
+                Qt.callLater(() => titleField.focusInput())
+                return
+            }
+            const day = Draft.parseDate(args.day || "") || new Date()
             const calendar = Draft.chooseCalendar(CalendarService.newEventCalendars, SettingsService.value("calendar.newEventCalendar"))
             originalRule = Rec.emptyDraft(day)
             rule = Object.assign({}, originalRule)
-            fill(Draft.defaultDraft(day, new Date(), calendar))
+            opened = Draft.defaultDraft(day, new Date(), calendar)
+            openedRule = originalRule
+            fill(opened)
             Qt.callLater(() => titleField.focusInput())
         } else {
             CalendarService.editorPreview = false
@@ -130,7 +213,13 @@ ShellPanel {
                 root.update({ calendarId: Draft.chooseCalendar(CalendarService.newEventCalendars, SettingsService.value("calendar.newEventCalendar")) })
         }
         function onSaveStateChanged() {
-            if (CalendarService.saveState === "saved" && root.wanted) PanelService.close("eventEditor")
+            if (CalendarService.saveState !== "saved") return
+            // A save that lands after the editor closed (a click elsewhere
+            // while the helper was still writing) is in the calendar now:
+            // what was kept of it is no draft any more, and handed back it
+            // would be saved a second time.
+            if (root.wanted) root.closeAndDiscard()
+            else root.kept = null
         }
     }
 
@@ -204,11 +293,11 @@ ShellPanel {
                 id: titleField
                 Layout.fillWidth: true
                 focusOnTab: true
-                icon: Icons.edit
+                icon: Icons.modify
                 placeholder: "Title"
                 onTextChanged: root.update({ title: text })
                 onAccepted: root.submit()
-                onEscapePressed: if (!text.length && !root.editing) PanelService.close("eventEditor")
+                onEscapePressed: if (!text.length && !root.editing) root.closeAndDiscard()
             }
 
             ShellText {
@@ -604,7 +693,7 @@ ShellPanel {
             Item { Layout.fillWidth: true }
             ShellButton { icon: Icons.leavesPanel; text: root.canChange ? "Merkuro" : "Open in Merkuro"; variant: root.canChange ? "ghost" : "accent"; focusOnTab: true; onClicked: CalendarService.openManager() }
             ShellButton {
-                icon: Icons.edit
+                icon: Icons.modify
                 text: "Edit"
                 variant: "accent"
                 visible: root.canChange
@@ -637,7 +726,7 @@ ShellPanel {
                 variant: "ghost"
                 enabledState: !root.saving
                 focusOnTab: true
-                onClicked: root.editing ? root.stopEdit() : PanelService.close("eventEditor")
+                onClicked: root.editing ? root.stopEdit() : root.closeAndDiscard()
             }
             ShellButton {
                 text: CalendarService.writeAllowed ? "Save" : "Show request"

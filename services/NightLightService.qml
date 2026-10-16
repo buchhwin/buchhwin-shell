@@ -37,7 +37,11 @@ Singleton {
 
     // Restart when the command changes (mode, temperature, location). `active`
     // may not be re-evaluated yet inside this handler, so the timer decides.
+    // A new command starts the crash count afresh, and the run it replaces
+    // ends as `stopping`: its exit is no crash (Logic.exitIsFailure).
     onCommandChanged: {
+        failures = 0
+        stopping = gammastep.running
         gammastep.running = false
         restartTimer.restart()
     }
@@ -50,15 +54,19 @@ Singleton {
     // Crash restarts back off (10 s, 20 s, …) and stop after five failures,
     // e.g. when another tool holds the gamma control. A new command resets it.
     property int failures: 0
+    property bool stopping: false
     onModeChanged: failures = 0
     Process {
         id: gammastep
         stderr: ErrorLog { label: "NightLightService.gammastep" }
         onRunningChanged: {
-            if (running || !root.active || restartTimer.running) return
+            const stopped = root.stopping
+            root.stopping = false
+            if (running || !Logic.exitIsFailure(root.active, restartTimer.running, stopped)) return
             root.failures += 1
-            if (root.failures > 5) return
-            crashTimer.interval = 10000 * Math.pow(2, root.failures - 1)
+            const pause = Logic.crashBackoff(root.failures)
+            if (pause <= 0) return
+            crashTimer.interval = pause
             crashTimer.restart()
         }
     }

@@ -27,9 +27,11 @@ ColumnLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Use Wi-Fi"
+            // Without an adapter it is off and cannot be turned on, rather
+            // than on and grayed out beside "No Wi-Fi adapter found".
             ShellToggle {
                 focusOnTab: true
-                checked: NetworkService.wifiEnabled
+                checked: NetworkService.wifiUsable
                 enabledState: NetworkService.wifiAvailable
                 onToggled: value => NetworkService.setWifiEnabled(value)
             }
@@ -48,7 +50,7 @@ ColumnLayout {
         }
         EmptyState {
             Layout.fillWidth: true
-            visible: NetworkService.wifiEnabled && NetworkService.networks.length === 0
+            visible: NetworkService.searching
             row: true
             icon: Icons.busy
             title: "Searching for networks …"
@@ -56,7 +58,7 @@ ColumnLayout {
 
         Repeater {
             // Kept rows, not rebuilt ones; see NetworkPopup.
-            model: ScriptModel { values: NetworkService.wifiEnabled ? NetworkService.networks : [] }
+            model: ScriptModel { values: NetworkService.wifiUsable ? NetworkService.networks : [] }
             ListRow {
                 focusOnTab: true
                 level: 1
@@ -102,6 +104,7 @@ ColumnLayout {
             spacing: Metrics.spaceSm
             ShellButton {
                 focusOnTab: true
+                visible: NetworkService.wifiUsable
                 icon: "󰖩"
                 text: "Hidden network …"
                 compact: true
@@ -195,7 +198,10 @@ ColumnLayout {
         Loader {
             id: wireguardForm
             Layout.fillWidth: true
+            // A key generated and not yet used brings the form back with it
+            // when the page is built again (NetworkService.wgPrivate).
             active: false
+            Component.onCompleted: if (NetworkService.wgPrivate.length) active = true
             visible: active
             sourceComponent: WireguardForm { onDone: wireguardForm.active = false }
         }

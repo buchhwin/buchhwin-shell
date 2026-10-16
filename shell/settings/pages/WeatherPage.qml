@@ -38,12 +38,21 @@ ColumnLayout {
         ShellTextField {
             focusOnTab: true
             id: searchField
+            // A search, not a value: text left in it does not keep the page
+            // from being let go (SettingsPanel.pendingEdits).
+            property bool scratch: true
             Layout.fillWidth: true
             icon: Icons.search
             placeholder: "Search city …"
             busy: LocationService.busy
             onTextChanged: LocationService.search(text)
-            onAccepted: if (LocationService.results.length) { LocationService.select(LocationService.results[0]); text = "" }
+            // The first place found for what the field says now - waiting for
+            // that search if it is still out, never the previous one's.
+            onAccepted: LocationService.acceptFirst()
+        }
+        Connections {
+            target: LocationService
+            function onPlaceChosen() { searchField.text = "" }
         }
 
         ShellText {
@@ -78,7 +87,7 @@ ColumnLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Detect when no location is set"
-            hint: "Once, at startup; a place you chose is never replaced"
+            hint: "Asks ipinfo.io once at startup; a place you chose is never replaced"
             ShellToggle { focusOnTab: true; checked: SettingsService.value("weather.autoLocate"); onToggled: value => SettingsService.set("weather.autoLocate", value) }
         }
 

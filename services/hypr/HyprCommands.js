@@ -158,8 +158,8 @@ function moveActiveSilent(id) {
 // This is what makes docking survivable. Unplug a screen and Hyprland moves
 // its workspaces onto a survivor; plug it back in and, without a rule, they
 // stay where they were dumped - so the blocks stop meaning anything after the
-// first undock, which on this machine is daily. With the rule the returning
-// monitor takes its own block back.
+// first undock, which on a docked laptop happens daily. With the rule the
+// returning monitor takes its own block back.
 //
 // Deliberately **not** `persistent`: that would call every id in every block
 // into existence, thirty workspaces for three monitors, whether or not
@@ -173,6 +173,29 @@ function workspaceRule(id, monitorName) {
         legacyEmpty: [],
         lua: "hl.workspace_rule({ workspace = " + luaString(String(number))
             + ", monitor = " + luaString(name) + " })"
+    }
+}
+
+// Taking a rule back when "Workspaces per monitor" is turned off. A rule
+// binds a workspace to its monitor whenever the workspace is *created*, so
+// with the setting off but the rules still in, Super+3 on the second screen
+// created 3 on the first and the focus jumped there, until the next config
+// reload. Hyprland 0.56 has no way to delete a rule, and an empty `monitor`
+// is ignored when rules merge; in the Lua config `hl.workspace_rule`
+// returns the rule it merged into, and a disabled rule binds nothing. The
+// legacy `keyword workspace` has neither, so its rules stay until the next
+// reload (`legacy` is empty; HyprlandService sends this to a Lua config only).
+//
+// A rule of the user's own config for the same workspace is the same rule
+// (Hyprland merges them), and goes with it until the next reload. An id that
+// is no workspace number sends nothing.
+function releaseWorkspaceRule(id) {
+    const number = Math.round(Number(id))
+    const valid = isFinite(number) && number >= 1
+    return {
+        legacy: "",
+        legacyEmpty: [],
+        lua: valid ? "hl.workspace_rule({ workspace = " + luaString(String(number)) + " }):set_enabled(false)" : ""
     }
 }
 

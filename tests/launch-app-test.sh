@@ -18,7 +18,13 @@ stub() {
 }
 # systemd-run records its arguments and runs what follows `--`.
 stub systemd-run 'while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do shift; done; shift; exec "$@"'
-stub systemctl
+# The user manager's environment is the session's: $sandbox/session-env.
+stub systemctl "case \"\$*\" in *show-environment*) cat \"$sandbox/session-env\" 2>/dev/null ;; esac; exit 0"
+: > "$sandbox/session-env"
+# The shell's own settings and its record of them (scripts/lib/app-env.sh)
+# come from whoever runs this test - a terminal or an editor the shell
+# started has them - and would change what every launch below runs with.
+unset MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME
 # systemd-escape: the last argument with its dashes escaped.
 stub systemd-escape 'for a in "$@"; do last=$a; done; printf "%s\n" "$last" | sed "s/-/\\\\x2d/g"'
 stub xdg-settings 'echo com.brave.Browser.desktop'
@@ -52,6 +58,84 @@ mkdir -p "$sandbox/min"; ln -s /usr/bin/printf "$sandbox/min/printf" 2>/dev/null
 : > "$calls"
 out=$(PATH="$sandbox/min" /bin/bash "$project_dir/scripts/launch-app.sh" kitty printf plain)
 check '[[ $out == plain && ! -s $calls ]]' "without systemd-run the command simply runs"
+
+# ---- the application's environment ---------------------------------------------
+# What start-shell.sh sets for the shell alone is undone before the
+# application runs: the settings it recorded as its own go, the platform theme
+# the shell runs without comes back, and the record itself goes too. A value
+# the session had (not in the record) stays, and nothing outside the shell's
+# own names is ever unset.
+appenv() { tr '\0' '\n' < /proc/self/environ; }
+shell_env=(QS_ICON_THEME=breeze-dark MALLOC_ARENA_MAX=2 mesa_glthread=false GALLIUM_THREAD=0
+           BUCHHWIN_APP_ENV_UNSET="MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME PATH"
+           BUCHHWIN_APP_QPA_THEME=kde)
+out=$(env -u QT_QPA_PLATFORMTHEME "${shell_env[@]}" "$project_dir/scripts/launch-app.sh" org.kde.dolphin env)
+check '! grep -qE "^(MALLOC_ARENA_MAX|mesa_glthread|GALLIUM_THREAD|QS_ICON_THEME)=" <<<"$out"' \
+  "the shell's own settings do not reach the application ($(grep -E "^(MALLOC|mesa|GALLIUM|QS_)" <<<"$out" | tr '\n' ' '))"
+check 'grep -qx "QT_QPA_PLATFORMTHEME=kde" <<<"$out"' "the session's platform theme is back"
+check '! grep -q "^BUCHHWIN_APP_" <<<"$out"' "and the record goes with them"
+check 'grep -q "^PATH=" <<<"$out"' "a name outside the shell's own is never unset"
+out=$(env MALLOC_ARENA_MAX=4 BUCHHWIN_APP_ENV_UNSET="mesa_glthread" BUCHHWIN_APP_QPA_THEME= mesa_glthread=false \
+  "$project_dir/scripts/launch-app.sh" org.kde.dolphin env)
+check 'grep -qx "MALLOC_ARENA_MAX=4" <<<"$out" && ! grep -q "^mesa_glthread=" <<<"$out"' "a value the session exported stays"
+check '! grep -q "^QT_QPA_PLATFORMTHEME=" <<<"$out"' "no platform theme where the session had none"
+# A caller from a shell older than the record (an editor opened from the
+# launcher before it) has the settings without it: the user manager's
+# environment is the session's, so what it lacks goes and its theme comes back.
+printf 'QT_QPA_PLATFORMTHEME=kde\nGALLIUM_THREAD=0\n' > "$sandbox/session-env"
+out=$(env -u QT_QPA_PLATFORMTHEME QS_ICON_THEME=breeze-dark MALLOC_ARENA_MAX=2 mesa_glthread=false GALLIUM_THREAD=0 \
+  "$project_dir/scripts/launch-app.sh" org.kde.dolphin env)
+check '! grep -qE "^(MALLOC_ARENA_MAX|mesa_glthread|QS_ICON_THEME)=" <<<"$out" && grep -qx "GALLIUM_THREAD=0" <<<"$out"' \
+  "an old shell's settings go unless the session has them ($(grep -E "^(MALLOC|mesa|GALLIUM|QS_)" <<<"$out" | tr '\n' ' '))"
+check 'grep -qx "QT_QPA_PLATFORMTHEME=kde" <<<"$out"' "and the session's platform theme comes back from the user manager"
+: > "$sandbox/session-env"
+# And end to end, as /proc sees it: the environ of the process launch-app.sh
+# runs, with the record start-shell.sh writes.
+env -u QT_QPA_PLATFORMTHEME "${shell_env[@]}" "$project_dir/scripts/launch-app.sh" org.kde.dolphin \
+  sh -c 'tr "\0" "\n" < /proc/$$/environ > "$1"' sh "$sandbox/environ"
+check 'grep -qx "QT_QPA_PLATFORMTHEME=kde" "$sandbox/environ" && ! grep -qE "^(MALLOC_ARENA_MAX|mesa_glthread|GALLIUM_THREAD)=" "$sandbox/environ"' \
+  "the launched process's own environ is the session's"
+
+# ---- launch-app.sh --unit ------------------------------------------------------
+# The terminals of Settings > Updates: a transient service of the given name,
+# not a scope - a scope keeps the application in the caller's process tree,
+# and a shell that stops cleanly ended the pacman in it. The service gets the
+# caller's display, XDG dirs and zsh profile on top of the manager's
+# environment, and never the shell's own settings.
+: > "$calls"
+env -u QT_QPA_PLATFORMTHEME "${shell_env[@]}" WAYLAND_DISPLAY=wayland-7 ZDOTDIR=/z XDG_CONFIG_HOME=/c \
+  LANG=en_US.UTF-8 LC_TIME=de_DE.UTF-8 \
+  "$project_dir/scripts/launch-app.sh" --unit buchhwin-upgrade kitty printf 'ran %s' unit > "$sandbox/out.txt"
+run_line=$(grep "^systemd-run" "$calls" | head -1)
+check '[[ $(cat "$sandbox/out.txt") == "ran unit" ]]' "the command runs as the service"
+check '[[ $run_line == "systemd-run --user --quiet --collect --slice=app.slice --unit=buchhwin-upgrade --description=kitty (buchhwin-shell) "* ]] && [[ $run_line != *--scope* ]]' \
+  "a transient service of that name, not a scope ($run_line)"
+check '[[ $run_line == *"--setenv=WAYLAND_DISPLAY=wayland-7 "* && $run_line == *"--setenv=ZDOTDIR=/z "* && $run_line == *"--setenv=XDG_CONFIG_HOME=/c "* ]]' \
+  "with the caller's display, zsh profile and XDG dirs"
+check '[[ $run_line == *"--setenv=LANG=en_US.UTF-8 "* && $run_line == *"--setenv=LC_TIME=de_DE.UTF-8 "* ]]' \
+  "and the caller's locale"
+check '[[ $run_line == *"--setenv=QT_QPA_PLATFORMTHEME=kde "* && $run_line != *MALLOC_ARENA_MAX* && $run_line != *QS_ICON_THEME* ]]' \
+  "the session's platform theme, none of the shell's settings"
+check '[[ $run_line == *" -- printf ran %s unit" ]]' "and the command after --"
+# launch-kitty.sh hands --unit on, with its own configuration intact.
+stub kitty
+: > "$calls"
+XDG_CONFIG_HOME="$sandbox/kitty-cfg" "$project_dir/scripts/launch-kitty.sh" --unit buchhwin-flatpak-update --hold flatpak update
+run_line=$(grep "^systemd-run" "$calls" | head -1)
+check '[[ $run_line == *"--unit=buchhwin-flatpak-update "* && $run_line == *" -- kitty --config $project_dir/kitty/kitty.conf "*"-o shell=zsh --hold flatpak update" ]]' \
+  "launch-kitty.sh --unit runs kitty as that unit ($run_line)"
+check '[[ $run_line == *"--setenv=ZDOTDIR=$project_dir/zsh "* ]]' "with the session's zsh profile"
+: > "$calls"
+XDG_CONFIG_HOME="$sandbox/kitty-cfg" "$project_dir/scripts/launch-kitty.sh" --hold true
+check 'grep -qE "^systemd-run --user --scope .*--unit=app-buchhwin-kitty-[0-9]+\.scope -- kitty " "$calls"' "without --unit kitty keeps its scope"
+# No user manager: still out of the caller's tree (setsid), and nothing waits.
+mkdir -p "$sandbox/min2"
+for tool in sh setsid; do ln -sf "$(command -v "$tool")" "$sandbox/min2/$tool"; done
+rm -f "$sandbox/unit-ran"
+status=0; PATH="$sandbox/min2" /bin/bash "$project_dir/scripts/launch-app.sh" --unit buchhwin-upgrade kitty \
+  sh -c 'echo ran > "$1"' sh "$sandbox/unit-ran" || status=$?
+for _ in {1..20}; do [[ -s $sandbox/unit-ran ]] && break; sleep 0.05; done
+check '[[ $status -eq 0 && -s $sandbox/unit-ran ]]' "without a user manager --unit still runs the command (status $status)"
 
 # ---- scripts/launch-brave.sh ----------------------------------------------------
 # Plasma's password store, in its own scope, only with the wallet open. Every
@@ -176,6 +260,17 @@ check '! grep -q systemd-run "$calls" && grep -q "^real-xdg-open $sandbox/does-n
 : > "$calls"
 xdg-open
 check '! grep -q systemd-run "$calls" && grep -q "^real-xdg-open $" "$calls"' "no argument: handed on untouched"
+# Without a known handler the system xdg-open starts one from here, so the
+# shell's own settings are undone first (scripts/lib/app-env.sh), as
+# launch-app.sh does for the rest.
+cp "$sys/xdg-open" "$sandbox/xdg-open.kept"
+printf '#!/bin/sh\nenv > "%s"\n' "$sandbox/xdg-environ" > "$sys/xdg-open"
+env QS_ICON_THEME=breeze-dark MALLOC_ARENA_MAX=2 mesa_glthread=false GALLIUM_THREAD=0 \
+  BUCHHWIN_APP_ENV_UNSET="MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME" BUCHHWIN_APP_QPA_THEME=kde \
+  xdg-open "$sandbox/does-not-exist"
+check 'grep -qx "QT_QPA_PLATFORMTHEME=kde" "$sandbox/xdg-environ" && ! grep -qE "^(MALLOC_ARENA_MAX|mesa_glthread|GALLIUM_THREAD|QS_ICON_THEME|BUCHHWIN_APP_ENV_UNSET)=" "$sandbox/xdg-environ"' \
+  "no handler known: the system xdg-open gets the session's environment ($(grep -E "^(MALLOC|mesa|GALLIUM|QS_|QT_QPA)" "$sandbox/xdg-environ" | tr '\n' ' '))"
+mv "$sandbox/xdg-open.kept" "$sys/xdg-open"
 
 # ---- scripts/launch-alacritty.sh -------------------------------------------------
 # The account's Alacritty with Settings > Terminal's opacity on top (for every
@@ -199,6 +294,13 @@ if command -v jq >/dev/null 2>&1; then
 fi
 check 'grep -q "Alacritty.desktop) exec \"\$project_dir/scripts/launch-alacritty.sh\"" "$project_dir/scripts/launch-default.sh"' \
   "the session's default terminal goes through it"
+# --unit first, as for kitty: Settings > Updates' terminal when Alacritty is
+# the session's (scripts/launch-terminal.sh, tests/launch-terminal-test.sh).
+: > "$calls"
+XDG_CONFIG_HOME="$sandbox/alacritty-none" "$project_dir/scripts/launch-alacritty.sh" --unit buchhwin-upgrade --hold -e true
+run_line=$(grep "^systemd-run" "$calls" | head -1)
+check '[[ $run_line == *"--unit=buchhwin-upgrade "*" -- alacritty -o window.opacity=0.8 -o colors.transparent_background_colors=true --hold -e true" && $run_line != *--scope* ]]' \
+  "launch-alacritty.sh --unit runs Alacritty as that unit ($run_line)"
 
 if (( failures )); then printf 'TESTS FAILED launch-app (%d failed)\n' "$failures"; exit 1; fi
 printf 'TESTS PASSED launch-app\n'

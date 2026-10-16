@@ -24,7 +24,7 @@ def check(condition, message):
 
 repos = "core linux 6.17.3.arch1-1 [installed: 6.17.2.arch1-1]\nextra mesa 1:26.2.5-1 [installed: 1:26.2.4-1]\nextra kitty 0.49.3-1\n"
 pacman = "linux 6.17.2.arch1-1 -> 6.17.3.arch1-1\nmesa 1:26.2.4-1 -> 1:26.2.5-1\n"
-aur = ":: Searching AUR for updates...\nbrave-bin 1:1.97.56-1 -> 1:1.97.60-1\nicaclient 26.04.10.1-1 -> 26.08.0.153-1 [ignored]\n"
+aur = ":: Searching AUR for updates...\nbrave-bin 1:1.97.56-1 -> 1:1.97.60-1\npinned-app 26.04.10.1-1 -> 26.08.0.153-1 [ignored]\n"
 
 result = module.convert(repos, pacman, aur, arch="x86_64")
 upgrades = result["upgrades"]

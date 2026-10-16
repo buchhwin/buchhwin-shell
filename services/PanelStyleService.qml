@@ -11,6 +11,9 @@ Singleton {
 
     readonly property var groups: Logic.GROUPS
     readonly property real minOpacity: Logic.MIN_OPACITY
+    // The least a light surface is drawn with, whatever the slider says
+    // (PanelStyleLogic.LIGHT_MIN_OPACITY says why).
+    readonly property real lightMinOpacity: Logic.LIGHT_MIN_OPACITY
     // "auto" (theme colours) or "#rrggbb".
     readonly property string color: Logic.colorSetting(SettingsService.value("appearance.panelColor"))
     readonly property bool customColor: color !== "auto"
@@ -36,6 +39,7 @@ Singleton {
     function hoverRgb(hex) { return Logic.hoverRgb(hex) }
     function normalizeHex(text) { return Logic.normalizeHex(text) }
     function isLight(hex) { return Logic.isLight(hex) }
+    function surfaceOpacity(alpha, light) { return Logic.surfaceOpacity(alpha, light) }
     function matchesTheme(dark) { return Logic.matchesTheme(color, dark) }
 
     function setPreview(group, value) {
@@ -72,9 +76,10 @@ Singleton {
         preview = {}
     }
     // "auto" or any colour Logic.normalizeHex accepts; returns false when invalid.
-    // Text colours come from the theme (every component reads Colors.text), so
-    // a colour of the other brightness also switches the theme (`dark` is the
-    // current theme brightness). The Appearance page hints when they disagree later.
+    // The panels' ink follows the panel colour itself (Colors.surfaceDark), so
+    // any colour reads; a colour of the other brightness still switches the
+    // theme (`dark` is the current theme brightness), so the desktop, the apps
+    // and the widgets on the wallpaper go along with the panels.
     function setColor(value, dark) {
         const next = value === "auto" ? "auto" : Logic.normalizeHex(value)
         if (!next.length || !SettingsService.set("appearance.panelColor", next)) return false

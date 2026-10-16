@@ -225,6 +225,23 @@ function enrollExited(state, exitCode, cancelled) {
     return next
 }
 
+// Where an enrollment stands for Settings, which steps aside while polkit asks
+// for the password (FingerprintService.stepAside): "waiting" before the tool
+// has said anything, "asking" once it has announced the finger and the
+// password question may be up, "answered" once the reader has spoken or the
+// run is over - from then on nothing is asked any more.
+function authPhase(state) {
+    if (!state) return "answered"
+    if (state.finished || state.stage > 0 || state.retries > 0) return "answered"
+    return state.phase === "scanning" ? "asking" : "waiting"
+}
+
+// Whether a window is the polkit agent's password dialog, by its app id
+// (Wayland) - KDE's agent, which the session starts, and the usual others.
+function isPasswordAgent(appId) {
+    return /polkit|policykit/i.test(String(appId || ""))
+}
+
 // 0…1 for progress bars.
 function progress(state) {
     if (!state) return 0

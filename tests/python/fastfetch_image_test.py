@@ -93,6 +93,34 @@ with tempfile.TemporaryDirectory() as directory:
     check(round_trip == {"source": str(png)}, "an image can be chosen again afterwards")
     check(module.get(back)["kind"] == "image", "and get says so")
 
+    # A text logo of one's own (the Saturn the buchhwin profile ships) is its
+    # own kind (V12): not an image to decode, not the system logo, and `size`
+    # does not write an image width into it.
+    saturn = base / "saturn.txt"
+    saturn.write_text("  .-.\n ( o )\n  '-'\n", encoding="utf-8")
+    text_logo = base / "text.jsonc"
+    text_logo.write_text('{"logo": {"type": "file", "source": "%s", "color": {"1": "38;5;75"},'
+                         ' "padding": {"right": 3}}}' % saturn, encoding="utf-8")
+    check(module.get(text_logo) == {"kind": "text", "source": str(saturn), "width": 0}, "a file logo is a text logo")
+    before = text_logo.read_text(encoding="utf-8")
+    check(module.set_size(text_logo, "30") == {"changed": False} and text_logo.read_text(encoding="utf-8") == before,
+          "size leaves a text logo alone")
+    check(module.logo_kind({"type": "file", "source": "~/gone.txt"}) == "text", "a missing text file is still the text setting")
+    check(module.logo_kind({"type": "data-raw", "source": "$1>_<"}) == "text", "inline text is a text logo")
+    check(module.logo_kind({"source": str(saturn)}) == "text", "auto with a text file is a text logo")
+    check(module.logo_kind({"source": str(png)}) == "image", "auto with an image is an image")
+    check(module.logo_kind({"source": "/gone/logo.png"}) == "image", "auto with a deleted image is still the image setting")
+    check(module.logo_kind({"source": "arch_small"}) == "builtin", "auto with a logo name is one of fastfetch's own")
+    check(module.logo_kind({"type": "small", "source": "arch"}) == "builtin", "a named builtin logo is fastfetch's own")
+    check(module.logo_kind({"type": "kitty-direct", "source": str(saturn)}) == "image", "an image type stays an image")
+    check(module.logo_kind({"padding": {"right": 3}}) == "builtin", "no source is the system logo")
+    check(module.get(config)["kind"] == "image", "the kitty-direct config is still an image")
+    check(module.set_builtin(text_logo) == {"kind": "builtin", "changed": True}, "builtin replaces a text logo when asked")
+    replaced = json.loads(text_logo.read_text(encoding="utf-8"))["logo"]
+    check("source" not in replaced and "type" not in replaced and replaced["padding"] == {"right": 3},
+          "the text logo's keys go, the padding stays")
+    check(saturn.exists(), "the text file itself is never touched")
+
 if failures:
     for failure in failures:
         print("FAIL", failure)

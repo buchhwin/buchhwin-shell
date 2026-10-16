@@ -166,7 +166,7 @@ Singleton {
     // A list, not one name: the editor sits on every monitor at once, and
     // each of its notches has to be the expanded one it arranges - with a
     // single name the last editor to ask won, and the others arranged a
-    // collapsed notch under an expanded outline (2026-10-09, three monitors).
+    // collapsed notch under an expanded outline (seen with three monitors).
     property var forcedScreens: []
     // Synthetic now-playing data (IPC `notch previewMedia`); controls stay disabled.
     property bool mediaPreview: false

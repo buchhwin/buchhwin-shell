@@ -113,6 +113,9 @@ ShellRoot {
         T.eq(A.addCommand("accountwizard"), ["accountwizard"], "mail and groupware wizard")
         T.eq(A.addCommand("hasOwnProperty"), null, "inherited names are not wizards")
         T.eq(A.addCommand("rm"), null, "unknown wizard")
+        T.eq([A.appId("kaccounts"), A.appId("systemsettings"), A.appId("accountwizard")],
+             ["kcm_kaccounts", "systemsettings", "org.kde.accountwizard"], "each wizard starts under its desktop entry")
+        T.eq([A.appId("rm"), A.appId("hasOwnProperty")], ["", ""], "and nothing else has one")
 
         // Results
         T.eq(A.parseResult("ok\n@exit 0\n"), { code: 0, output: "ok" }, "exit code split off")

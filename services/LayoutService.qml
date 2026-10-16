@@ -832,9 +832,10 @@ Singleton {
     // at hand when a step is undone (see undo), and the states - each
     // profile's settings, notch and lock screen - were a third of every step
     // with two profiles (10 of 30 KB, 15.10.), more with each profile, thirty
-    // steps deep. The one state undo reads from a step is that of a profile
-    // gone by then, which it brings back; only removeProfile takes one away
-    // with the steps kept, and it hands that state to its own step (`states`).
+    // steps deep. The one state undo reads from a step is one the step's own
+    // change took away with the steps kept, and that change hands it to its
+    // step (`states`): removeProfile the removed profile's, resetProfile that
+    // of a built-in one not in use (LayoutLogic.withUndoStates).
     function undoConfig() {
         const kept = Object.assign({}, config)
         delete kept.notchPresets
@@ -849,11 +850,14 @@ Singleton {
         return kept
     }
 
-    function beginChange(states) {
+    // `modeSwitch` marks the step of a mode switch the user made, the only
+    // step whose undo takes the mode back (LayoutLogic.modeAfterUndo).
+    function beginChange(states, modeSwitch) {
         if (readOnly) return
         const next = undoStack.slice()
         const step = { config: undoConfig(), notch: notchSnapshot() }
         if (states) step.states = states
+        if (modeSwitch) step.modeSwitch = modeSwitch
         next.push(JSON.stringify(step))
         if (next.length > 30) next.shift()
         undoStack = next
@@ -880,23 +884,36 @@ Singleton {
         // state is what a profile was left with, or what entering a built-in
         // one applied: Ctrl+Z right after that took the applied state away,
         // and the next switch stored nothing for it. A marker says a
-        // migration has run, and an older list would run it again. A profile
-        // the step brings back (a removal undone) keeps the state it had,
-        // which removeProfile handed to the step (the steps hold no others).
-        for (const name of Object.keys(step.config.profiles || {})) {
-            const now = config.profiles[name]
-            if (!now) {
-                if (step.states && step.states[name]) step.config.profiles[name].state = step.states[name]
-                continue
-            }
-            if (now.state) step.config.profiles[name].state = now.state
-            else delete step.config.profiles[name].state
-        }
+        // migration has run, and an older list would run it again. A state
+        // the step's change took away (a removal, a Reset of a built-in one
+        // not in use) comes back from the step, which was handed it.
+        Logic.withUndoStates(step.config, config, step.states)
         step.config.adopted = config.adopted || []
+        // Nor is the mode, unless the step is the switch itself and its mode
+        // still in use: an automatic switch takes no step, and undoing an
+        // edit or a switch from before it keeps the mode the machine chose.
+        const modeBefore = activeMode
+        step.config.activeMode = Logic.modeAfterUndo(step, modeBefore)
         // Nor are the built-in profiles: a step taken before one was added
         // must not take it away again.
         config = Logic.addBuiltinProfiles(Logic.sanitize(step.config),
                                           builtinProfileNames.map(id => builtinProfiles[id]).filter(data => !!data)).config
+        // A switch undone is a switch back, with all that entering the mode
+        // does: its widgets on every monitor, its appearance (gaps, blur,
+        // animations) and, from its template, Do Not Disturb. Without it the
+        // settings stayed those of the mode undone, and the next mode-scoped
+        // edit was stored in the mode restored.
+        if (activeMode !== modeBefore) {
+            ensureScreens()
+            applyModeSettings(activeMode)
+            // The mode undone turned Do Not Disturb on, from off.
+            const switched = step.modeSwitch
+            if (switched && switched.dnd && typeof NotificationService !== "undefined" && NotificationService.setDnd) {
+                const effects = (templates[activeMode] || {}).effects || {}
+                const dnd = Logic.dndAfterUndo(switched, NotificationService.dndMode, effects)
+                if (dnd.length) NotificationService.setDnd(dnd)
+            }
+        }
         const restored = {}
         for (const key of undoKeys)
             if (step.notch && step.notch[key] !== undefined) restored[key] = step.notch[key]
@@ -949,9 +966,21 @@ Singleton {
     // (ProfileLogic.MODE_SCOPED) are applied here, from the mode's own stored
     // block or, for a mode nobody has customized, from its template's
     // `effects`.
-    function setActiveMode(name) {
+    //
+    // A switch the user makes is an undo step, and undoing it switches back
+    // (see undo). `automatic` is one the machine makes (AdaptiveService, a
+    // monitor plugged in or taken away): it takes no step, so Ctrl+Z after
+    // docking undoes the last edit rather than the dock, and keeps the mode.
+    function setActiveMode(name, automatic) {
         if (modeNames.indexOf(name) < 0 || readOnly) return false
-        beginChange()
+        if (automatic !== true) {
+            // Entering a mode that turns Do Not Disturb on (gaming) from off:
+            // the step says so, so undoing the switch turns it off again. And
+            // the mode it goes to, so an automatic switch since keeps its own.
+            const effects = (templates[name] || {}).effects || {}
+            const dndWasOff = !!effects.dnd && typeof NotificationService !== "undefined" && !NotificationService.dndActive
+            beginChange(null, { dnd: dndWasOff ? String(effects.dnd) : "", to: name })
+        }
         const next = JSON.parse(JSON.stringify(config))
         next.activeMode = name
         config = Logic.sanitize(next)
@@ -1343,7 +1372,13 @@ Singleton {
         // in flight is refused a second start (startBuiltin), and the reset
         // would bring back the modes without the rest.
         if (id.length && all && name === activeProfile && (applyProc.running || builtinApplying.length)) return false
-        beginChange()
+        // A built-in one not in use forgets its state below, which the steps
+        // do not hold: its step is handed it, so Undo brings back the user's
+        // settings, notch and lock screen with the modes. And the day's backup
+        // first, as Restore takes one for the same forgetting (applyBuiltin).
+        const dropped = id.length && all && name !== activeProfile ? Logic.stateOf(config, name) : null
+        if (dropped) backupToday()
+        beginChange(dropped ? { [name]: dropped } : null)
         config = Logic.resetProfile(config, name, modeName || "", shipped)
         if (id.length && all && name !== activeProfile) config = Logic.withState(config, name, null)
         revision++

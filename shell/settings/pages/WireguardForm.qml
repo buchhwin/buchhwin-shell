@@ -9,7 +9,10 @@ import "../../../services/network/WireguardLogic.js" as Logic
 // A new WireGuard tunnel by hand (Settings > Network > VPN): the fields of a
 // wg-quick file, checked as they are typed (WireguardLogic.errors), and sent
 // to scripts/wireguard-helper.py as that file. "Generate" makes a key pair;
-// the public half is what the server needs, and it can be copied from here.
+// the public half is what the server needs, and it can be copied from here -
+// only while the field holds the private key it was made from. A generated key
+// stays with NetworkService until the tunnel is added or the form canceled, so
+// the form built again after Settings let the page go has it back.
 ColumnLayout {
     id: form
     spacing: Metrics.spaceSm
@@ -22,6 +25,7 @@ ColumnLayout {
     })
     readonly property var problems: Logic.errors(values)
     readonly property bool complete: Object.keys(problems).length === 0
+    readonly property string publicKey: NetworkService.wgPublicFor(privateField.text)
     // Errors only once something was typed into the field, not on an empty form.
     function problem(key, field) { return field.text.length && problems[key] ? problems[key] : "" }
 
@@ -30,6 +34,7 @@ ColumnLayout {
         function onWgPrivateChanged() { if (NetworkService.wgPrivate.length) privateField.text = NetworkService.wgPrivate }
         function onWgAdded() { form.done() }
     }
+    Component.onCompleted: if (NetworkService.wgPrivate.length) privateField.text = NetworkService.wgPrivate
 
     SettingRow {
         Layout.fillWidth: true
@@ -53,7 +58,8 @@ ColumnLayout {
         Layout.fillWidth: true
         label: "Private key"
         hint: form.problem("privateKey", privateField)
-            || (NetworkService.wgPublic.length ? "Public key: " + NetworkService.wgPublic : "Stays on this computer")
+            || (form.publicKey.length ? "Public key: " + form.publicKey
+                : Logic.isKey(privateField.text) ? "Press Enter for its public key" : "Stays on this computer")
         ShellTextField {
             id: privateField
             focusOnTab: true
@@ -62,10 +68,14 @@ ColumnLayout {
             placeholder: "Generate one, or paste yours"
             onAccepted: if (Logic.isKey(text)) NetworkService.wgPublicOf(text.trim())
         }
+        // A key in the field may be the one whose public half the server's
+        // admin already has: replacing it asks first.
         ShellButton {
             focusOnTab: true
             compact: true
             text: "Generate"
+            confirm: privateField.text.length > 0
+            confirmText: "Replace key?"
             enabledState: NetworkService.wgState.length === 0
             onClicked: NetworkService.wgGenerate()
         }
@@ -74,8 +84,8 @@ ColumnLayout {
             compact: true
             icon: Icons.copy
             toolTip: "Copy the public key for the server"
-            enabledState: NetworkService.wgPublic.length > 0
-            onClicked: Quickshell.clipboardText = NetworkService.wgPublic
+            enabledState: form.publicKey.length > 0
+            onClicked: Quickshell.clipboardText = form.publicKey
         }
     }
     SettingRow {
@@ -125,7 +135,16 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: Metrics.spaceSm
         Item { Layout.fillWidth: true }
-        ShellButton { focusOnTab: true; compact: true; text: "Cancel"; variant: "ghost"; onClicked: form.done() }
+        // Cancel lets a generated key go, which the server may know by now.
+        ShellButton {
+            focusOnTab: true
+            compact: true
+            text: "Cancel"
+            variant: "ghost"
+            confirm: NetworkService.wgPrivate.length > 0
+            confirmText: "Discard key?"
+            onClicked: { NetworkService.wgForget(); form.done() }
+        }
         ShellButton {
             focusOnTab: true
             compact: true

@@ -38,8 +38,10 @@ Rectangle {
 
     readonly property bool hovered: mouse.containsMouse
     readonly property bool down: mouse.pressed && mouse.containsMouse
+    // A danger button's label sits on its own red wash, so it takes the red
+    // made for that wash (Colors.dangerOnSoft): the plain one was under 4:1.
     readonly property color foreground: shownVariant === "accent" ? Colors.accentText
-        : shownVariant === "danger" ? Colors.danger : Colors.text
+        : shownVariant === "danger" ? Colors.dangerOnSoft : Colors.text
 
     activeFocusOnTab: focusOnTab && enabledState
     implicitHeight: compact ? Metrics.controlHeightSm : Metrics.controlHeight

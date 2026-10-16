@@ -6,6 +6,7 @@ import qs.services
 import qs.shell.components
 import "pages"
 import "../../services/settings/SettingsNavLogic.js" as Nav
+import "../../services/settings/SettingsFieldLogic.js" as Fields
 
 // Settings app (Super+I): sidebar with search, content pages on the right.
 ShellPanel {
@@ -29,21 +30,30 @@ ShellPanel {
     // Once a page has been shown it stays while the panel comes and goes: see
     // the page Loader below. A minute after it closed for good it is let go,
     // which is the memory a page holds - unless it still has something the
-    // user typed and did not hand on (a field edited and not confirmed, a
-    // display change waiting for its answer), which a reload would throw away.
+    // user typed and did not hand on (a field with a draft, a display change
+    // waiting for its answer), which a reload would throw away. A draft holds
+    // it for half an hour at most (SettingsFieldLogic): it used to hold it for
+    // the session, and any text did - a search, a test line, a field emptied.
     property bool pageKept: false
+    property real closedAt: 0
     onShownChanged: {
         if (shown) { releaseTimer.stop(); pageKept = true }
-        else releaseTimer.restart()
+        else { closedAt = Date.now(); releaseTimer.restart() }
     }
     Timer {
         id: releaseTimer
-        interval: 60000
-        onTriggered: if (!root.shown && !DisplayService.confirming && !root.pendingEdits(pageLoader.item)) root.pageKept = false
+        interval: Fields.CHECK_MS
+        repeat: true
+        onTriggered: {
+            if (root.shown || !root.pageKept) { stop(); return }
+            if (!Fields.releaseNow(Date.now() - root.closedAt, DisplayService.confirming, root.pendingEdits(pageLoader.item))) return
+            root.pageKept = false
+            stop()
+        }
     }
     function pendingEdits(item) {
         if (!item) return false
-        if (item.objectName === "shellTextField" && item.edited === true) return true
+        if (item.objectName === "shellTextField" && Fields.holdsDraft(item)) return true
         for (const child of item.children) if (pendingEdits(child)) return true
         return false
     }
@@ -52,7 +62,16 @@ ShellPanel {
     readonly property var visiblePageIds: Nav.pageIds(rows)
     readonly property var current: Nav.pageById(page) || Nav.PAGES[0]
 
+    // The search starts empty on every open, as in the launcher, the overview
+    // and the other searchable panels: a kept one reopened Settings on a
+    // filtered sidebar, and Escape (ShellTextField: back to the text at
+    // focus) then closed Settings instead of clearing it. The page stays -
+    // the selection the cleared text would make is not wanted.
     onWantedChanged: if (wanted) {
+        if (searchInput.text.length) {
+            searchInput.text = ""
+            selectTimer.stop()
+        }
         page = PanelService.args.page || page
         Qt.callLater(revealPage)
     }
@@ -161,6 +180,7 @@ ShellPanel {
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 onHeightChanged: root.revealPage()
+                ScrollFeel { view: sidebarFlick }
 
                 ColumnLayout {
                     id: sidebarColumn
@@ -242,6 +262,7 @@ ShellPanel {
                 contentHeight: pageColumn.implicitHeight
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
+                ScrollFeel { view: contentFlick }
 
                 ColumnLayout {
                     id: pageColumn

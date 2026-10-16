@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Bluetooth
 import Quickshell.Io
 import QtQuick
+import "bluetooth/BluetoothLogic.js" as Logic
 
 // BlueZ adapter and devices. Discovery only runs while a page requests it.
 Singleton {
@@ -128,7 +129,34 @@ Singleton {
     }
 
     function setEnabled(value) { if (available) adapter.enabled = value }
-    function setDiscovering(value) { if (enabled) adapter.discovering = value }
+
+    // ---- discovery ----------------------------------------------------------
+    // **Counted, not switched** (BluetoothLogic.discoveryStep). Every view
+    // that lists nearby devices - the popup, the control center's page,
+    // Settings - asks for discovery while it is on screen and lets go when it
+    // leaves: `setDiscovering(true)` and `setDiscovering(false)` are one view
+    // arriving and leaving, in pairs, as every caller already made them. A
+    // plain switch let the last one out win, and the popup's "Bluetooth
+    // settings" link ended the search under the page meant for pairing.
+    // Settings' "Stop searching" is a false of its own; with the page as the
+    // only viewer it ends the search as before, and the page's own false when
+    // it closes finds nobody left to count down.
+    property int discoveryViewers: 0
+
+    function setDiscovering(value) {
+        const step = Logic.discoveryStep(discoveryViewers, value, enabled,
+                                         available && adapter.discovering)
+        discoveryViewers = step.viewers
+        if (step.start !== null) adapter.discovering = step.start
+    }
+
+    // An adapter switched on, or one that appears, while a view is open
+    // starts searching then - the popup used to ask for that itself, with a
+    // `setDiscovering(true)` that nothing ever paired. Only ever a start: an
+    // adapter that comes up already searching for someone else (bluetoothctl)
+    // is not this shell's to stop.
+    onEnabledChanged: if (enabled && discoveryViewers > 0 && !adapter.discovering) adapter.discovering = true
+
     function setDiscoverable(value) { if (enabled) adapter.discoverable = value }
     function toggleConnection(device) {
         if (!device) return

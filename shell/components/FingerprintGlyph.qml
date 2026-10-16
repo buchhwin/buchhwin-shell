@@ -13,7 +13,7 @@ Item {
     property int size: Metrics.fingerprintGlyph
     property color color: Colors.accentForeground
     property color trackColor: Colors.subtleText
-    property color successColor: Colors.success
+    property color successColor: Colors.positive
     property color errorColor: Colors.danger
     property color badgeTextColor: Colors.accentText
 
@@ -103,8 +103,13 @@ Item {
         }
     }
 
-    // Check mark or cross when finished.
+    // Check mark or cross when finished. It pops (scale with an overshoot)
+    // only in Full; Reduced is "timed, no movement", so there it fades in
+    // place, and Off shows it at once - the way the OSD and the switcher gate
+    // their scale.
     Rectangle {
+        id: badge
+        readonly property bool wanted: root.mode === "done" || root.mode === "failed"
         anchors.right: glyphBox.right
         anchors.bottom: glyphBox.bottom
         anchors.rightMargin: -width / 4
@@ -112,9 +117,11 @@ Item {
         height: width
         radius: width / 2
         color: root.activeColor
-        visible: scale > 0
-        scale: root.mode === "done" || root.mode === "failed" ? 1 : 0
-        Behavior on scale { NumberAnimation { duration: Animations.lockPop * 2; easing.type: Animations.easingControl; easing.overshoot: Animations.overshootStrong } }
+        visible: scale > 0 && opacity > 0
+        scale: Animations.motionEnabled ? (wanted ? 1 : 0) : 1
+        opacity: Animations.motionEnabled || wanted ? 1 : 0
+        Behavior on scale { enabled: Animations.motionEnabled; NumberAnimation { duration: Animations.lockPop * 2; easing.type: Animations.easingControl; easing.overshoot: Animations.overshootStrong } }
+        Behavior on opacity { enabled: !Animations.motionEnabled; NumberAnimation { duration: Animations.lockPop * 2; easing.type: badge.wanted ? Animations.easingEnter : Animations.easingExit } }
         ShellIcon {
             anchors.centerIn: parent
             glyph: root.mode === "failed" ? Icons.close : Icons.check

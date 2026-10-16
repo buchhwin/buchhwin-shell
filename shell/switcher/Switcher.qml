@@ -1,6 +1,7 @@
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Hyprland
+import Quickshell.Widgets as QsWidgets
 import QtQuick
 import QtQuick.Effects
 import qs.theme
@@ -155,6 +156,9 @@ PanelWindow {
             preferredHighlightBegin: Metrics.switcherCardWidth
             preferredHighlightEnd: width - Metrics.switcherCardWidth
             highlightMoveDuration: Animations.navigation
+            // A row: a sideways wheel or swipe scrolls it, an up-and-down
+            // wheel stays Qt's (which leaves a horizontal list alone).
+            ScrollFeel { view: list }
 
             delegate: ShellCard {
                 id: card
@@ -187,13 +191,24 @@ PanelWindow {
                     border.color: Colors.border
                     clip: true
 
-                    ScreencopyView {
-                        id: preview
+                    // The capture inside the frame's rounding: a Rectangle
+                    // clips to its box, not its radius (pitfall 4), and the
+                    // capture's square corners stood out past the border at
+                    // all four corners of every preview - the overview's
+                    // thumbnails had the same and got the same fix.
+                    QsWidgets.ClippingRectangle {
                         anchors.fill: parent
                         anchors.margins: Metrics.borderWidth
-                        captureSource: card.toplevel ? card.toplevel.wayland : null
-                        constraintSize: Qt.size(width, height)
-                        live: window.wanted
+                        radius: Math.max(0, frame.radius - Metrics.borderWidth)
+                        color: "transparent"
+
+                        ScreencopyView {
+                            id: preview
+                            anchors.fill: parent
+                            captureSource: card.toplevel ? card.toplevel.wayland : null
+                            constraintSize: Qt.size(width, height)
+                            live: window.wanted
+                        }
                     }
                 }
 

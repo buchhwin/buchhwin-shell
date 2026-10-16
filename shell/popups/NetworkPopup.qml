@@ -12,8 +12,11 @@ PopupPanel {
     panelId: "networkPopup"
     heading: "Wi-Fi"
     detail: NetworkService.summary + (NetworkService.connected && NetworkService.address.length ? " · " + NetworkService.address : "")
-    glyph: NetworkService.icon
-    glyphActive: NetworkService.connected
+    // Wi-Fi's own glyph under a "Wi-Fi" heading, as on the control center's
+    // tile: the wire is in the line beside it and in its own card below.
+    glyph: !root.wifiUsable ? "󰤮" : NetworkService.current
+        ? NetworkService.signalIcon(NetworkService.current.signalStrength) : "󰤯"
+    glyphActive: NetworkService.current !== null
     hasToggle: true
     toggleChecked: NetworkService.wifiEnabled
     toggleEnabled: NetworkService.wifiAvailable
@@ -21,6 +24,12 @@ PopupPanel {
     footerText: "Network settings"
     onFooterClicked: PanelService.open("settings", { page: "network" })
     onWantedChanged: if (wanted) NetworkService.refresh()
+    // Wi-Fi that can find networks: the radio flag on and an adapter to
+    // search with. NetworkManager keeps the flag on where there is no adapter
+    // at all, and the popup said "Searching for networks …" for good there,
+    // while the card that says why was only reachable with the flag off.
+    // (NetworkService.wifiUsable)
+    readonly property bool wifiUsable: NetworkService.wifiUsable
 
     body: ColumnLayout {
         spacing: Metrics.pageGap
@@ -45,7 +54,7 @@ PopupPanel {
 
         CardSection {
             Layout.fillWidth: true
-            visible: !NetworkService.wifiEnabled
+            visible: !root.wifiUsable
             EmptyState {
                 Layout.fillWidth: true
                 icon: "󰤮"
@@ -55,7 +64,7 @@ PopupPanel {
 
         ColumnLayout {
             Layout.fillWidth: true
-            visible: NetworkService.wifiEnabled
+            visible: root.wifiUsable
             spacing: Metrics.spaceXxs
             ScrollList {
                 Layout.fillWidth: true

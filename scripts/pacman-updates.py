@@ -34,7 +34,7 @@ def updates(text):
     """"name old -> new" lines → [(name, old, new)]; anything else is skipped
     (warnings, the helper's chatter). A package held back with IgnorePkg is
     marked "[ignored]" and is not an update anyone is going to install, so it
-    is left out too - Citrix pinned to a version that works, for one."""
+    is left out too - a client pinned to a version that works, say."""
     result = []
     for line in str(text or "").splitlines():
         match = LINE.match(line.strip())

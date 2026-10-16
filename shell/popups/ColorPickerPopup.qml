@@ -17,9 +17,9 @@ PopupPanel {
         : ShortcutService.keyHint("SUPER + SHIFT + C", true) + " picks one off the screen"
     glyph: "󰈊"
     glyphActive: ColorPickerService.history.length > 0
-    footerText: "Clear the list"
-    footerGlyph: Icons.remove
-    onFooterClicked: ColorPickerService.clearHistory()
+    // No footer. "Clear the list" sat there, drawn exactly like the "X
+    // settings" links of the other popups, forward chevron and all, and
+    // wiped the history on one click; it is a button in the body now.
 
     body: ColumnLayout {
         spacing: Metrics.pageGap
@@ -91,7 +91,9 @@ PopupPanel {
                         text: swatch.modelData.slice(1).toUpperCase()
                         role: "small"
                         font.features: { "tnum": 1 }
-                        color: Colors.textOn(swatch.modelData)
+                        // Small words, so 4.5:1 (labelOn); textOn's 3:1 is
+                        // for marks.
+                        color: Colors.labelOn(swatch.modelData)
                     }
 
                     MouseArea {
@@ -103,6 +105,21 @@ PopupPanel {
                     }
                 }
             }
+        }
+
+        // The whole history, for good: it asks twice, as the clipboard's
+        // "Clear" does, and is only there while there is something to clear.
+        ShellButton {
+            focusOnTab: true
+            Layout.alignment: Qt.AlignRight
+            visible: ColorPickerService.history.length > 0
+            icon: Icons.remove
+            text: "Clear the list"
+            variant: "ghost"
+            compact: true
+            confirm: true
+            confirmText: "Clear all?"
+            onClicked: ColorPickerService.clearHistory()
         }
     }
 }

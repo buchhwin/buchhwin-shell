@@ -22,7 +22,9 @@ Item {
         id: track
         anchors.fill: parent
         radius: Metrics.pillRadius(height)
-        color: root.checked ? (root.down ? Colors.accentPressed : mouse.containsMouse ? Colors.accentHover : Colors.accent)
+        // On is the accent as a fill that has to stand off the card
+        // (Colors.accentFill): the light teal on a light card was 1.08:1.
+        color: root.checked ? (root.down ? Colors.accentFillPressed : mouse.containsMouse ? Colors.accentFillHover : Colors.accentFill)
             : mouse.containsMouse ? Colors.trackHover : Colors.track
         Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
 
@@ -51,7 +53,9 @@ Item {
     Keys.onEnterPressed: root.flip()
     Keys.onSpacePressed: root.flip()
 
-    // The row's label names it; set `accessibleName` where there is none.
+    // The row's label names it (SettingRow, ListRow); a switch outside a row
+    // gets `accessibleName` from its caller, or a screen reader has only
+    // "check box, checked" to say.
     property string accessibleName: ""
     Accessible.role: Accessible.CheckBox
     Accessible.name: root.accessibleName

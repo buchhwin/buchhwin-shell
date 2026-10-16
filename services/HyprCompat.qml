@@ -40,6 +40,7 @@ Singleton {
         options: Commands.options, monitor: Commands.monitor, env: Commands.env, combine: Commands.combine,
         workspace: Commands.workspace, focusMonitor: Commands.focusMonitor, focusWindow: Commands.focusWindow, moveWindowSilent: Commands.moveWindowSilent,
         moveActiveSilent: Commands.moveActiveSilent, workspaceRule: Commands.workspaceRule,
+        releaseWorkspaceRule: Commands.releaseWorkspaceRule,
         moveWorkspaceToMonitor: Commands.moveWorkspaceToMonitor,
         closeWindow: Commands.closeWindow, dpms: Commands.dpms, exit: Commands.exit,
         bindExec: Commands.bindExec, unbind: Commands.unbind, gestures: Commands.gestures

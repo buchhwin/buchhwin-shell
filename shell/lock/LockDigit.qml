@@ -35,6 +35,7 @@ Item {
         text: root.previous
         font: root.font
         color: root.color
+        textFormat: Text.PlainText
         renderType: Typography.renderType
         opacity: 0
     }
@@ -45,6 +46,7 @@ Item {
         text: root.value
         font: root.font
         color: root.color
+        textFormat: Text.PlainText
         renderType: Typography.renderType
     }
 

@@ -58,9 +58,9 @@ Singleton {
     // `with-fingerprint` on Fedora, pam-config's pam_fprintd line in
     // common-auth on openSUSE, a hand-made line in system-auth on Arch): null
     // while unknown. With the shell's own mode off but this true, the login
-    // screen, sudo and polkit still ask for a finger, which is exactly the
-    // "the off button does not work" the user reported - the button works, it
-    // just governs the lock screen.
+    // screen, sudo and polkit still ask for a finger, which makes the off
+    // button look broken - the button works, it just governs the lock
+    // screen.
     property var systemEnabled: null
     readonly property bool systemOnly: systemEnabled === true && mode === "off"
     // Whether the PAM stack the lock goes through offers it: the same answer
@@ -165,6 +165,71 @@ Singleton {
         }
         enrollProc.command = Logic.enrollCommand(finger)
         enrollProc.running = true
+        stepAside("enroll")
+    }
+
+    // ---- the password dialog ----------------------------------------------
+    // fprintd asks polkit before every enrollment and deletion - the
+    // authorization it keeps belongs to the process that asked, and each run
+    // of a tool is a new one - and the agent's dialog is an ordinary window.
+    // Settings is a panel above every window and holds the keyboard, so the
+    // dialog opened under it, unseen, while the card said "scanning"
+    // (testing.md pitfall 6). Settings steps aside when such a run starts and
+    // comes back on its page once the question is out of the way: the agent's
+    // window came and went, the reader answered or the run ended, or no
+    // dialog came at all within a moment of the finger being announced.
+    // Never over a panel opened in the meantime.
+    property string asideFor: ""
+    property bool passwordAsked: false
+    // Read only while stepping aside, so nothing follows the focus otherwise.
+    readonly property string activeAppId: asideFor.length && HyprlandService.activeToplevel
+        ? (HyprlandService.activeToplevel.appId || "") : ""
+    onActiveAppIdChanged: {
+        if (!asideFor.length) return
+        if (Logic.isPasswordAgent(activeAppId)) { passwordAsked = true; asideTimer.stop() }
+        else if (passwordAsked) comeBack()
+    }
+    function stepAside(kind) {
+        if (preview || !PanelService.isOpen("settings")) return
+        asideFor = kind
+        passwordAsked = false
+        PanelService.close("settings")
+        // A deletion is over in a moment once allowed, so it simply comes
+        // back with its answer; an enrollment waits for the finger instead
+        // and gets the grace below - a long one while fprintd starts, a short
+        // one from the moment the tool announces the finger.
+        if (kind === "enroll") { asideTimer.interval = asideTimer.startGrace; asideTimer.restart() }
+    }
+    function comeBack() {
+        if (!asideFor.length) return
+        asideFor = ""
+        passwordAsked = false
+        asideTimer.stop()
+        if (!PanelService.active.length) PanelService.open("settings", { page: "lockScreen" })
+    }
+    // The enrollment as it advances: the announced finger is when polkit may
+    // ask, and the reader's first word is past the question.
+    function enrollAdvanced() {
+        if (asideFor !== "enroll") return
+        const phase = Logic.authPhase(enrollment)
+        if (phase === "answered") comeBack()
+        else if (phase === "asking" && !passwordAsked && !announcedOnce) {
+            announcedOnce = true
+            asideTimer.interval = asideTimer.askGrace
+            asideTimer.restart()
+        }
+    }
+    property bool announcedOnce: false
+    onAsideForChanged: if (!asideFor.length) announcedOnce = false
+    // Long enough for fprintd to start (it is started on demand) and for
+    // polkit to put its dialog up; the timer only brings Settings back when
+    // no dialog came.
+    Timer {
+        id: asideTimer
+        readonly property int startGrace: 8000
+        readonly property int askGrace: 3000
+        interval: startGrace
+        onTriggered: if (!root.passwordAsked) root.comeBack()
     }
 
     // Stops the scan; fprintd releases the reader when the tool exits.
@@ -201,6 +266,7 @@ Singleton {
         say("", false)
         deleteProc.command = argv
         deleteProc.running = true
+        stepAside("delete")
     }
 
     // IPC `fingerprint preview` / `previewDenied`: a synthetic reader with two
@@ -289,12 +355,13 @@ Singleton {
 
     Process {
         id: enrollProc
-        stdout: SplitParser { onRead: data => root.enrollment = Logic.enrollLine(root.enrollment, data) }
-        stderr: SplitParser { onRead: data => root.enrollment = Logic.enrollLine(root.enrollment, data) }
+        stdout: SplitParser { onRead: data => { root.enrollment = Logic.enrollLine(root.enrollment, data); root.enrollAdvanced() } }
+        stderr: SplitParser { onRead: data => { root.enrollment = Logic.enrollLine(root.enrollment, data); root.enrollAdvanced() } }
         onExited: code => {
             killTimer.stop()
             root.enrollment = Logic.enrollExited(root.enrollment, code, root.cancelling)
             root.cancelling = false
+            root.enrollAdvanced()
             root.refresh()
         }
     }
@@ -319,6 +386,7 @@ Singleton {
             const result = Logic.parseDelete(deleteProc.output, deleteProc.exitCode, root.deleting)
             root.say(result.message, !result.ok)
             root.deleting = ""
+            if (root.asideFor === "delete") root.comeBack()
             root.refresh()
         }
     }

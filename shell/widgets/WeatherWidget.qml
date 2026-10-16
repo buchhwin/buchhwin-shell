@@ -45,6 +45,7 @@ GridLayout {
         color: root.textColor
         font.family: Typography.iconFamily
         font.pixelSize: (root.detailed ? Typography.headlineSize : Typography.titleSize) * root.scaleFactor
+        textFormat: Text.PlainText
         renderType: Typography.renderType
     }
 
@@ -58,6 +59,7 @@ GridLayout {
             font.pixelSize: (root.detailed ? Typography.headlineSize : Typography.bodyLargeSize) * root.scaleFactor
             font.weight: root.detailed ? Typography.light : Typography.regular
             font.features: { "tnum": 1 }
+            textFormat: Text.PlainText
             renderType: Typography.renderType
         }
         Text {
@@ -70,6 +72,7 @@ GridLayout {
             font.family: Typography.family
             font.pixelSize: Typography.smallSize * root.scaleFactor
             font.features: { "tnum": 1 }
+            textFormat: Text.PlainText
             renderType: Typography.renderType
         }
     }

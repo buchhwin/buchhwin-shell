@@ -39,6 +39,7 @@ Item {
         font.pixelSize: (root.sizeClass === "large" ? Typography.headlineSize
             : root.sizeClass === "medium" ? Typography.titleSize : Typography.bodyLargeSize) * root.scaleFactor
         font.weight: Typography.light
+        textFormat: Text.PlainText
         renderType: Typography.renderType
     }
 
@@ -55,6 +56,7 @@ Item {
             color: root.mutedTextColor
             font.family: Typography.family
             font.pixelSize: Typography.smallSize * root.scaleFactor
+            textFormat: Text.PlainText
             renderType: Typography.renderType
         }
         Text {
@@ -65,6 +67,7 @@ Item {
             font.pixelSize: Typography.bodyLargeSize * root.scaleFactor
             font.weight: Typography.semibold
             font.features: { "tnum": 1 }
+            textFormat: Text.PlainText
             renderType: Typography.renderType
         }
     }

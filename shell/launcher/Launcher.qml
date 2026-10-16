@@ -63,9 +63,9 @@ ShellPanel {
     // Every block is a cell of the grid, always, in use and while arranging.
     // The launcher used to stack them and keep two hand-written pairings - the
     // mode switch riding in the search field's row, the categories standing
-    // beside the result list - and the user asked for the grid the rest of the
-    // shell has instead, twice. A block goes where it is put and is the size
-    // it is dragged to; nothing here decides that for it any more.
+    // beside the result list - and gave way to the grid the rest of the shell
+    // has. A block goes where it is put and is the size it is dragged to;
+    // nothing here decides that for it any more.
     readonly property var blocks: LayoutService.launcherItems
     // The slots' blocks by id (their Repeater runs on the ids alone).
     readonly property var blockById: {
@@ -226,9 +226,10 @@ ShellPanel {
         }
 
         // One compact row while arranging: the blocks that are off, undo, the
-        // way back, and Done. The pencil sits in the search field's row, which
-        // wiggles and dims while arranging - so unlike the dashboard's, it
-        // cannot be the way out and there is a button here for it.
+        // way back, and Done. The arrange button sits in the search field's
+        // row, which wiggles and dims while arranging - so unlike the
+        // dashboard's, it cannot be the way out and there is a button here
+        // for it.
         CardSection {
             id: editBar
             Layout.fillWidth: true
@@ -362,7 +363,7 @@ ShellPanel {
             ShellButton {
                 Layout.alignment: Qt.AlignVCenter
                 visible: !root.editing
-                icon: Icons.edit
+                icon: Icons.arrange
                 variant: "ghost"
                 compact: true
                 toolTip: "Arrange the launcher"
@@ -392,26 +393,52 @@ ShellPanel {
                 onSelected: value => root.setMode(LauncherService.modes.find(item => item.id === value).prefix)
             }
             RowLayout {
+                id: stepper
                 visible: !modesCell.fits
                 anchors.fill: parent
                 spacing: Metrics.spaceXs
+                // The mode's name whole or not at all. Elided to the room
+                // between the arrows of the launcher's narrowest card (520
+                // px, one column of four) it read "A…", which names nothing;
+                // there the glyph stands alone, centred, and the name is its
+                // tooltip. Measured from the cell and the arrows, never from
+                // the label the answer hides.
+                readonly property bool named: modeName.implicitWidth <= modesCell.width
+                    - previousMode.implicitWidth - nextMode.implicitWidth - modeGlyph.implicitWidth
+                    - Metrics.spaceXs * 3
                 ShellButton {
+                    id: previousMode
                     icon: Icons.back
                     compact: true
                     toolTip: "Previous mode"
                     onClicked: root.cycleMode(-1)
                 }
+                Item { Layout.fillWidth: true; visible: !stepper.named }
                 ShellIcon {
+                    id: modeGlyph
                     glyph: root.mode.icon
                     size: Metrics.iconSm
                     color: Colors.accentForeground
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: root.mode.label
+                    ToolTipHost {
+                        id: modeTip
+                        anchorItem: modeGlyph
+                        text: stepper.named ? "" : root.mode.label
+                        onTextChanged: if (!text.length) release()
+                    }
+                    HoverHandler { onHoveredChanged: hovered ? modeTip.arm() : modeTip.release() }
                 }
                 ShellText {
+                    id: modeName
                     Layout.fillWidth: true
+                    visible: stepper.named
                     text: root.mode.label
                     elide: Text.ElideRight
                 }
+                Item { Layout.fillWidth: true; visible: !stepper.named }
                 ShellButton {
+                    id: nextMode
                     icon: Icons.forward
                     compact: true
                     toolTip: "Next mode"
@@ -515,7 +542,28 @@ ShellPanel {
     Component {
         id: categorySidebar
         ShellCard {
+            id: sidebar
             level: 1
+            // Hidden, no rows; see the pinned row.
+            readonly property var categories: root.shown ? LauncherService.availableCategories : []
+            // **Names only where they can be read.** In the launcher's
+            // narrowest card (520 px, the categories one column of four) a
+            // row had seven pixels left for its name, between the glyph and
+            // the count: every name was "…" or nothing. There the rows are a
+            // glyph and a count, and the name is the row's tooltip and its
+            // accessible name; from a form label's width up they say it.
+            // The room is what a compact ListRow leaves its title: the
+            // insets, the glyph slot, the two gaps and the widest count.
+            readonly property real nameRoom: categoryFlick.width - Metrics.spaceMd * 4
+                - Metrics.iconLg - widestCount.implicitWidth
+            readonly property bool named: nameRoom >= Metrics.formLabelWidth
+
+            ShellText {
+                id: widestCount
+                visible: false
+                role: "small"
+                text: String(sidebar.categories.reduce((most, item) => Math.max(most, item.count), 0))
+            }
 
             Flickable {
                 id: categoryFlick
@@ -524,24 +572,51 @@ ShellPanel {
                 contentHeight: categoryColumn.implicitHeight
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
+                ScrollFeel { view: categoryFlick }
 
                 ColumnLayout {
                     id: categoryColumn
                     width: categoryFlick.width
                     spacing: Metrics.spaceXxs
                     Repeater {
-                        // Hidden, no rows; see the pinned row.
-                        model: root.shown ? LauncherService.availableCategories : []
-                        ListRow {
+                        model: sidebar.categories
+                        Item {
+                            id: categoryEntry
                             required property var modelData
                             Layout.fillWidth: true
-                            compact: true
-                            level: 1
-                            icon: modelData.icon
-                            title: modelData.name
-                            trailingText: String(modelData.count)
-                            selected: root.category === modelData.name
-                            onClicked: { root.category = modelData.name; root.selectedIndex = 0 }
+                            implicitHeight: categoryRow.implicitHeight
+
+                            ListRow {
+                                id: categoryRow
+                                anchors.fill: parent
+                                compact: true
+                                level: 1
+                                icon: categoryEntry.modelData.icon
+                                title: sidebar.named ? categoryEntry.modelData.name : ""
+                                Accessible.name: categoryEntry.modelData.name
+                                trailingText: String(categoryEntry.modelData.count)
+                                selected: root.category === categoryEntry.modelData.name
+                                onClicked: {
+                                    nameTip.release()
+                                    root.category = categoryEntry.modelData.name
+                                    root.selectedIndex = 0
+                                }
+                            }
+                            // Over the row rather than in it: what a ListRow
+                            // holds goes to its trailing slot, and a parent's
+                            // hover is not a promise once the row's own
+                            // MouseArea takes it. A HoverHandler does not block
+                            // what is under it, so the row keeps its hover.
+                            Item {
+                                anchors.fill: parent
+                                HoverHandler { onHoveredChanged: hovered ? nameTip.arm() : nameTip.release() }
+                                ToolTipHost {
+                                    id: nameTip
+                                    anchorItem: categoryRow
+                                    text: sidebar.named ? "" : categoryEntry.modelData.name
+                                    onTextChanged: if (!text.length) release()
+                                }
+                            }
                         }
                     }
                 }
@@ -616,6 +691,7 @@ ShellPanel {
                     onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
                     boundsBehavior: Flickable.StopAtBounds
                     interactive: !root.editing
+                    ScrollFeel { view: list }
 
                     delegate: ListRow {
                         required property var modelData

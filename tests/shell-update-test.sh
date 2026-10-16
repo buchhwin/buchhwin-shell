@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # scripts/shell-update.sh against a bare "remote" and a clone that follows it,
-# in a fake HOME with stub systemctl, hyprctl, quickshell and notify-send: a
+# in a fake HOME with stub systemctl, hyprctl, quickshell, notify-send and
+# everything the shell's start reaches (systemd-run, setsid, busctl, pgrep,
+# pkill), so nothing reaches the real session: a
 # check names the commits the remote has, an apply fast-forwards, re-links and
 # restarts the shell, and a checkout with local changes or local commits is
 # refused - nothing of the user's is ever merged over. A checkout that follows
@@ -14,15 +16,66 @@ trap cleanup EXIT
 fail=0
 check() { if eval "$1"; then :; else printf 'FAIL shell-update: %s\n' "$2"; fail=1; fi; }
 
-mkdir -p "$work/bin" "$work/home"
-for tool in systemctl hyprctl quickshell notify-send; do
+mkdir -p "$work/home"
+# Every tool that would reach the host's session is a stand-in that records
+# its call. reload-shell.sh starts the clone's real start-shell.sh, and that
+# would otherwise run in a scope of the real user manager (systemd-run,
+# setsid), end a real kded6 holding the tray (busctl) and reap real helpers
+# of the user's on its way out (pgrep, pkill) - the header's promise did not
+# hold for those (16.10.). systemd-run and setsid run what they are given in
+# place; `quickshell list` names an instance once one was started and until
+# a `kill`, so a reload returns after one start; systemctl knows no unit as
+# running; pgrep finds nothing.
+mkdir -p "$work/bin"
+for tool in hyprctl busctl pkill notify-send; do
   printf '#!/bin/sh\necho "%s $*" >> "%s/calls.log"\n' "$tool" "$work" > "$work/bin/$tool"
-  chmod +x "$work/bin/$tool"
 done
+cat > "$work/bin/systemctl" <<EOF
+#!/bin/sh
+echo "systemctl \$*" >> "$work/calls.log"
+case "\$*" in *is-active*) exit 3 ;; esac
+exit 0
+EOF
+cat > "$work/bin/pgrep" <<EOF
+#!/bin/sh
+echo "pgrep \$*" >> "$work/calls.log"
+exit 1
+EOF
+cat > "$work/bin/quickshell" <<EOF
+#!/bin/sh
+echo "quickshell \$*" >> "$work/calls.log"
+case "\$1" in
+  kill) rm -f "$work/up" ;;
+  list) [ -e "$work/up" ] && echo '[{"id":"stand-in"}]' ;;
+  *) touch "$work/up" ;;
+esac
+exit 0
+EOF
+cat > "$work/bin/systemd-run" <<EOF
+#!/bin/sh
+echo "systemd-run \$*" >> "$work/calls.log"
+while [ \$# -gt 0 ] && [ "\$1" != "--" ] && [ "\$1" != "true" ]; do shift; done
+[ "\$1" = "--" ] && shift
+exec "\$@"
+EOF
+cat > "$work/bin/setsid" <<EOF
+#!/bin/sh
+echo "setsid \$*" >> "$work/calls.log"
+[ "\$1" = "-f" ] && shift
+exec "\$@"
+EOF
+chmod +x "$work/bin"/*
 export PATH="$work/bin:$PATH" HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" XDG_STATE_HOME="$work/home/.local/state"
 export HYPRLAND_INSTANCE_SIGNATURE=shell-update-test
 unset BUCHHWIN_NESTED BUCHHWIN_NESTED_DIR WAYLAND_DISPLAY
 unset BUCHHWIN_SHELL_PATH
+unset MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME
+for tool in systemctl hyprctl quickshell notify-send systemd-run setsid busctl pgrep pkill; do
+  if [[ $(command -v "$tool") != "$work/bin/$tool" ]]; then
+    printf 'shell-update test: the %s stub is not first in PATH, refusing to run\n' "$tool" >&2
+    exit 1
+  fi
+done
 gitc() { git -c user.email=test@example.invalid -c user.name=test "$@"; }
 
 # the remote, and a clone the session runs from
@@ -39,8 +92,9 @@ gitc -C "$src" branch --quiet --set-upstream-to=origin/main main 2>/dev/null \
   || { gitc -C "$src" push --quiet origin main:main && gitc -C "$src" branch --quiet --set-upstream-to=origin/main main; }
 # the scripts under test are the working-tree ones
 mkdir -p "$src/scripts/lib"
-cp "$project_dir/scripts/shell-update.sh" "$project_dir/scripts/reload-shell.sh" "$project_dir/scripts/stop-shell.sh" "$src/scripts/"
-cp "$project_dir/scripts/lib/reload.sh" "$project_dir/scripts/lib/nested-guard.sh" "$src/scripts/lib/"
+cp "$project_dir/scripts/shell-update.sh" "$project_dir/scripts/reload-shell.sh" "$project_dir/scripts/stop-shell.sh" \
+  "$project_dir/scripts/start-shell.sh" "$src/scripts/"
+cp "$project_dir/scripts/lib/reload.sh" "$project_dir/scripts/lib/nested-guard.sh" "$project_dir/scripts/lib/app-env.sh" "$src/scripts/lib/"
 gitc -C "$src" add -A && gitc -C "$src" commit --quiet -m "test: current scripts" && gitc -C "$src" push --quiet origin main
 mkdir -p "$HOME/.local/share" && ln -s "$src" "$HOME/.local/share/buchhwin-shell"
 update() { "$src/scripts/shell-update.sh" "$@"; }
@@ -86,6 +140,8 @@ out=$(update apply 2>&1)
 check '[[ $(git -C "$src" rev-parse HEAD) == $(git -C "$other" rev-parse HEAD) ]]' "apply fast-forwarded ($out)"
 check 'grep -q "Updated " <<<"$out"' 'and said so'
 check 'grep -q "quickshell kill" "$work/calls.log"' 'a shell change restarted the shell'
+check 'grep -q "^setsid -f env .*systemd-run --user --scope " "$work/calls.log" && [[ $(grep -c "^quickshell --no-duplicate" "$work/calls.log") == 1 ]]' \
+  'once, through the stand-in scope'
 check '! grep -q "hyprctl reload" "$work/calls.log"' 'and did not reload Hyprland for it'
 check 'grep -q "notify-send" "$work/calls.log"' 'the user was told'
 check '! grep -q "update failed" "$work/calls.log"' 'and not that it failed'

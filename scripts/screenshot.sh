@@ -7,8 +7,9 @@ set -euo pipefail
 #   screenshot.sh region | screen | window
 # A nested test session keeps its screenshots in its own state directory: the
 # user's Pictures folder is the host's, and a test must not fill it.
+here=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
 # shellcheck source=lib/nested-guard.sh
-source "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/lib/nested-guard.sh"
+source "$here/lib/nested-guard.sh"
 mode=${1:-region}
 # One screenshot at a time: Super+S (or Print) pressed again while the
 # selection is up stacked another selection overlay on top of it, as often as
@@ -66,12 +67,19 @@ exec 9>&-
 # its history: unbounded, every screenshot left this subshell and its
 # notify-send behind for good (15.10.). Ten minutes is time enough to click;
 # after that the notice stays in the history and its buttons do nothing.
+#
+# The editor is an application, and this script also runs from the shell (the
+# launcher's "Screenshot: …"), whose environment is the shell's own
+# (scripts/lib/app-env.sh): swappy goes through launch-app.sh for the
+# session's environment and a unit of its own, like everything the launcher
+# starts. The folder already does: xdg-open is the session's
+# (session/bin/xdg-open, first on PATH), which ends in launch-app.sh too.
 (
   action=$(timeout 10m notify-send --app-name=Screenshot --icon="$file" \
     --action=edit=Edit --action=folder="Open folder" \
     "Screenshot saved" "Copied to the clipboard · ${file##*/}" 2>/dev/null || true)
   case "$action" in
-    edit) swappy -f "$file" ;;
+    edit) "$here/launch-app.sh" swappy swappy -f "$file" ;;
     folder) xdg-open "$target_dir" ;;
   esac
 ) >/dev/null 2>&1 &

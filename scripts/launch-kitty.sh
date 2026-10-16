@@ -5,6 +5,15 @@ set -euo pipefail
 # Fastfetch and history stay independent from other desktop sessions. The
 # palette follows the shell theme (dark, light or automatic).
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+# `--unit NAME` first: the window runs as a transient user service of that
+# name, outside the caller's process tree (scripts/launch-app.sh) - for the
+# terminals of Settings > Updates (through scripts/launch-terminal.sh when
+# kitty is the terminal), whose pacman must outlive a shell restart.
+unit_args=()
+if [[ ${1:-} == --unit ]]; then
+  unit_args=(--unit "${2:?launch-kitty: --unit needs a name}")
+  shift 2
+fi
 settings="${XDG_CONFIG_HOME:-$HOME/.config}/buchhwin-shell/settings.json"
 theme=dark
 if command -v jq >/dev/null 2>&1 && [[ -r $settings ]]; then
@@ -35,4 +44,4 @@ else
   export ZDOTDIR="$project_dir/zsh"
 fi
 # In a scope of its own, named after the entry (scripts/launch-app.sh).
-exec "$project_dir/scripts/launch-app.sh" kitty kitty "${configs[@]}" -o shell=zsh "$@"
+exec "$project_dir/scripts/launch-app.sh" "${unit_args[@]}" kitty kitty "${configs[@]}" -o shell=zsh "$@"

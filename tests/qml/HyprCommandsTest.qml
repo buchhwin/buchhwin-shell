@@ -134,19 +134,26 @@ ShellRoot {
              "move the active window, Lua")
         // Pinning a workspace to a monitor, so an unplugged screen does not
         // scatter its block across the survivors.
-        T.eq(H.workspaceRule(11, "DP-10").legacy, "keyword workspace 11,monitor:DP-10",
+        T.eq(H.workspaceRule(11, "DP-2").legacy, "keyword workspace 11,monitor:DP-2",
              "workspace rule, legacy")
-        T.eq(H.workspaceRule(11, "DP-10").lua,
-             "hl.workspace_rule({ workspace = \"11\", monitor = \"DP-10\" })",
+        T.eq(H.workspaceRule(11, "DP-2").lua,
+             "hl.workspace_rule({ workspace = \"11\", monitor = \"DP-2\" })",
              "workspace rule, Lua")
         // Not persistent: that would call thirty workspaces into existence for
         // three monitors, whether or not anything is in them.
-        T.ok(H.workspaceRule(11, "DP-10").legacy.indexOf("persistent") < 0, "and it creates nothing")
+        T.ok(H.workspaceRule(11, "DP-2").legacy.indexOf("persistent") < 0, "and it creates nothing")
+        // Turning "Workspaces per monitor" off takes the sent rules back
+        // (Lua config): each rule is looked up by its workspace and disabled.
+        const released = H.combine([1, 12].map(H.releaseWorkspaceRule))
+        T.eq(released.lua, "hl.workspace_rule({ workspace = \"1\" }):set_enabled(false)\nhl.workspace_rule({ workspace = \"12\" }):set_enabled(false)",
+             "release workspace rules, Lua")
+        T.eq([released.legacy, released.legacyEmpty], ["", []], "the legacy dialect has nothing to send")
+        T.eq([0, -3, "x", null].map(id => H.releaseWorkspaceRule(id).lua), ["", "", "", ""], "nonsense ids are not sent")
         // And the move a rule cannot make: a workspace that already exists.
-        T.eq(H.moveWorkspaceToMonitor(3, "DP-8").legacy, "moveworkspacetomonitor 3 DP-8",
+        T.eq(H.moveWorkspaceToMonitor(3, "DP-1").legacy, "moveworkspacetomonitor 3 DP-1",
              "move a workspace to a monitor, legacy")
-        T.eq(H.moveWorkspaceToMonitor("3", "DP-8").lua,
-             "hl.dsp.workspace.move({ workspace = 3, monitor = \"DP-8\" })",
+        T.eq(H.moveWorkspaceToMonitor("3", "DP-1").lua,
+             "hl.dsp.workspace.move({ workspace = 3, monitor = \"DP-1\" })",
              "move a workspace to a monitor, Lua")
 
         // Frame scheduling follows the screen count, not taste: on one output

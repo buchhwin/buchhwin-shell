@@ -4,11 +4,14 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../../services/settings/SwatchLogic.js" as Swatch
 
-// Settings > Terminal: Kitty appearance, Starship prompt with a live preview
-// and the Fastfetch greeting. Applies to the terminals the shell opens itself
-// (kitty: updates, the default terminal); Super+Enter opens Alacritty, which
-// keeps its own configuration and takes only the opacity from here
+// Settings > Terminal: kitty appearance, Starship prompt with a live preview
+// and the Fastfetch greeting. Which terminal opens - for Super+Enter, the
+// shell's own terminals (updates, the cursor install) and the launcher's
+// terminal apps - is Settings > Default apps' choice, kitty when nothing is
+// chosen (scripts/launch-terminal.sh). kitty takes everything here; Alacritty
+// keeps its own configuration and takes only the opacity
 // (scripts/launch-alacritty.sh).
 ColumnLayout {
     id: root
@@ -31,12 +34,12 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Shell"
-        description: "Which zsh configuration the shell's own terminals (kitty) start with"
+        description: "Which zsh configuration kitty starts with"
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
             label: "Use my own zsh configuration"
-            hint: "Kitty reads ~/.zshrc, like terminals outside this session, and the prompt settings below no longer apply. "
+            hint: "kitty then reads ~/.zshrc, like terminals outside this session, and the prompt settings below no longer apply. "
                 + "To keep fastfetch, cmatrix and cava in the shell accent, add to it: source ~/.config/buchhwin-shell/shell.zsh"
             ShellToggle { focusOnTab: true; checked: root.options.personalShell; onToggled: value => root.set("personalShell", value) }
         }
@@ -68,7 +71,7 @@ ColumnLayout {
                 text: TerminalService.previewText.length ? TerminalService.previewText : TerminalService.previewError
                 textFormat: TerminalService.previewText.length ? Text.RichText : Text.PlainText
                 // The terminal's own colours and font: this is a preview of
-                // Kitty, not a line of the shell's text.
+                // kitty, not a line of the shell's text.
                 color: Colors.terminalForeground
                 font.family: root.options.fontFamily
                 wrapMode: Text.WrapAnywhere
@@ -94,6 +97,11 @@ ColumnLayout {
         // Which logo, before anything about images. Choosing one used to be a
         // one-way door: the picker could set an image and nothing could take it
         // back short of a text editor.
+        //
+        // A text logo of one's own (the buchhwin profile's Saturn) is a third
+        // answer, offered only while it is the one in use: nothing here makes
+        // one. It used to read as "Image" with an empty thumbnail, and "System
+        // logo" took it out of fastfetch.jsonc without a word; now that asks.
         SettingRow {
             Layout.fillWidth: true
             label: "Logo"
@@ -102,11 +110,62 @@ ColumnLayout {
                 focusOnTab: true
                 Layout.fillWidth: true
                 current: TerminalService.fastfetchLogo
-                options: [{ value: "builtin", label: "System logo" }, { value: "image", label: "Image" }]
+                options: [{ value: "builtin", label: "System logo" }]
+                    .concat(TerminalService.fastfetchLogo === "text" ? [{ value: "text", label: "Text logo" }] : [])
+                    .concat([{ value: "image", label: "Image" }])
                 onSelected: value => {
-                    if (value === "builtin") TerminalService.useBuiltinLogo()
-                    else if (!TerminalService.fastfetchImage.length) { PanelService.close(); TerminalService.chooseImage() }
+                    logoRow.replacing = false
+                    if (value === "builtin" && TerminalService.fastfetchLogo === "text") logoRow.replacing = true
+                    else if (value === "builtin") TerminalService.useBuiltinLogo()
+                    else if (value === "image" && !TerminalService.fastfetchImage.length) { PanelService.close(); TerminalService.chooseImage() }
                 }
+            }
+        }
+        // The text logo in use, and the question before it goes.
+        RowLayout {
+            id: logoRow
+            property bool replacing: false
+            readonly property string fileName: TerminalService.fastfetchTextLogo.split("/").pop()
+            Layout.fillWidth: true
+            visible: TerminalService.fastfetchLogo === "text"
+            spacing: Metrics.spaceMd
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 0
+                ShellText { text: "Fastfetch text logo" }
+                ShellText {
+                    Layout.fillWidth: true
+                    text: logoRow.replacing
+                        ? "Use the system logo instead? " + logoRow.fileName + " stays where it is, but fastfetch no longer shows it."
+                        : logoRow.fileName + ", from fastfetch.jsonc. The system logo or an image replaces it there; the file itself stays."
+                    color: logoRow.replacing ? Colors.warning : Colors.mutedText
+                    role: "caption"
+                    wrapMode: Text.Wrap
+                }
+            }
+            ShellButton {
+                focusOnTab: true
+                visible: logoRow.replacing
+                text: "Use system logo"
+                compact: true
+                onClicked: { logoRow.replacing = false; TerminalService.useBuiltinLogo() }
+            }
+            ShellButton {
+                focusOnTab: true
+                visible: logoRow.replacing
+                text: "Keep"
+                variant: "accent"
+                compact: true
+                onClicked: logoRow.replacing = false
+            }
+            ShellButton {
+                focusOnTab: true
+                visible: !logoRow.replacing
+                text: TerminalService.choosingImage ? "Choosing …" : "Choose image …"
+                icon: "󰋩"
+                compact: true
+                enabledState: !TerminalService.choosingImage
+                onClicked: { PanelService.close(); TerminalService.chooseImage() }
             }
         }
         RowLayout {
@@ -161,8 +220,8 @@ ColumnLayout {
 
     SettingsSection {
         Layout.fillWidth: true
-        title: "Kitty"
-        description: "Font, transparency, spacing and cursor of the shell's own terminals"
+        title: "kitty"
+        description: "Font, transparency, spacing and cursor of kitty windows. Which terminal opens is set in Default apps."
 
         SettingRow {
             label: "Font"
@@ -188,7 +247,9 @@ ColumnLayout {
         }
         SettingRow {
             label: "Opacity"
-            hint: "Also applies to Alacritty, the session terminal (" + ShortcutService.keyHint("SUPER + RETURN", true) + ")"
+            // Not "the session terminal": that is whatever Default apps
+            // says, kitty when it says nothing.
+            hint: "Alacritty takes this opacity too when it is your terminal (" + ShortcutService.keyHint("SUPER + RETURN", true) + ")"
             ShellSlider {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -262,31 +323,13 @@ ColumnLayout {
             spacing: Metrics.spaceSm
             Repeater {
                 model: ["shell"].concat(TerminalService.promptColors)
-                Rectangle {
+                ColorSwatch {
                     required property string modelData
-                    readonly property bool active: root.options.promptColor.toLowerCase() === modelData
-                    width: Metrics.controlHeight
-                    height: width
-                    radius: width / 2
-                    color: modelData === "shell" ? Colors.accent : modelData
-                    border.width: active ? Metrics.focusBorderWidth + 1 : promptMouse.containsMouse ? Metrics.borderWidth : 0
-                    border.color: active ? Colors.text : Colors.borderStrong
-                    scale: promptMouse.pressed ? Effects.pressScale : 1
-                    Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
-                    ShellIcon {
-                        anchors.centerIn: parent
-                        visible: parent.active || parent.modelData === "shell"
-                        glyph: parent.active ? Icons.check : "󰏘"
-                        size: Metrics.iconSm
-                        color: Colors.textOn(parent.color)
-                    }
-                    MouseArea {
-                        id: promptMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.set("promptColor", parent.modelData)
-                    }
+                    fill: modelData === "shell" ? Colors.accent : modelData
+                    label: modelData === "shell" ? "Shell accent" : Swatch.nameOf(modelData)
+                    selected: root.options.promptColor.toLowerCase() === modelData
+                    mark: modelData === "shell" ? "󰏘" : ""
+                    onActivated: root.set("promptColor", modelData)
                 }
             }
         }
@@ -296,25 +339,12 @@ ColumnLayout {
             spacing: Metrics.spaceSm
             Repeater {
                 model: TerminalService.errorColors
-                Rectangle {
+                ColorSwatch {
                     required property string modelData
-                    readonly property bool active: root.options.errorColor.toLowerCase() === modelData
-                    width: Metrics.controlHeight
-                    height: width
-                    radius: width / 2
-                    color: modelData
-                    border.width: active ? Metrics.focusBorderWidth + 1 : errorMouse.containsMouse ? Metrics.borderWidth : 0
-                    border.color: active ? Colors.text : Colors.borderStrong
-                    scale: errorMouse.pressed ? Effects.pressScale : 1
-                    Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
-                    ShellIcon { anchors.centerIn: parent; visible: parent.active; glyph: Icons.check; size: Metrics.iconSm; color: Colors.textOn(parent.color) }
-                    MouseArea {
-                        id: errorMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.set("errorColor", parent.modelData)
-                    }
+                    fill: modelData
+                    label: Swatch.nameOf(modelData)
+                    selected: root.options.errorColor.toLowerCase() === modelData
+                    onActivated: root.set("errorColor", modelData)
                 }
             }
         }
@@ -324,7 +354,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: !root.options.personalShell
         title: "Symbols"
-        description: "Press Enter to apply (up to 32 characters)"
+        description: "Applied with Enter or when you leave the field (up to 32 characters)"
 
         Repeater {
             model: [{ key: "symbol", label: "Prompt" }, { key: "errorSymbol", label: "Error" }, { key: "gitSymbol", label: "Git" }]
@@ -332,12 +362,12 @@ ColumnLayout {
                 id: symbolRow
                 required property var modelData
                 label: modelData.label
-                ShellTextField {
+                StoredTextField {
                     focusOnTab: true
                     id: symbolField
                     Layout.fillWidth: true
-                    text: root.options[symbolRow.modelData.key]
-                    onAccepted: root.set(symbolRow.modelData.key, text)
+                    storedText: root.options[symbolRow.modelData.key]
+                    onCommit: value => root.set(symbolRow.modelData.key, value)
                 }
                 ShellButton {
                     focusOnTab: true
@@ -413,12 +443,12 @@ ColumnLayout {
         }
         SettingRow {
             label: "Custom"
-            ShellTextField {
+            StoredTextField {
                 focusOnTab: true
                 id: timeField
                 Layout.fillWidth: true
-                text: root.options.timeFormat
-                onAccepted: root.set("timeFormat", text)
+                storedText: root.options.timeFormat
+                onCommit: value => root.set("timeFormat", value)
             }
             ShellButton {
                 focusOnTab: true

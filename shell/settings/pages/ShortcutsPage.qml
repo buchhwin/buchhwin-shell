@@ -105,9 +105,12 @@ ColumnLayout {
                     spacing: Metrics.spaceSm
                     KeyChips { keys: ShortcutService.keyParts(customRow.modelData) }
                     ShellIcon { visible: customRow.conflict; glyph: Icons.warning; size: Metrics.iconSm; color: Colors.warning }
+                    // The combination and the command typed for it go with
+                    // it, and nothing brings them back: it asks first.
                     ShellButton {
                         focusOnTab: true
                         icon: Icons.remove; variant: "ghost"; compact: true; toolTip: "Remove"
+                        confirm: true; confirmText: "Remove?"
                         onClicked: ShortcutService.remove(customRow.modelData)
                     }
                 }
@@ -273,6 +276,8 @@ ColumnLayout {
 
         ShellTextField {
             focusOnTab: true
+            // A search: text left in it keeps no page loaded (pendingEdits).
+            property bool scratch: true
             Layout.fillWidth: true
             icon: Icons.search
             placeholder: "Search shortcuts …"
@@ -365,7 +370,7 @@ ColumnLayout {
                         }
                         ShellButton {
                             visible: bindRow.movable
-                            icon: bindRow.editing ? Icons.close : Icons.edit
+                            icon: bindRow.editing ? Icons.close : Icons.modify
                             toolTip: bindRow.editing ? "Cancel" : "Move this shortcut"
                             variant: "ghost"; compact: true; focusOnTab: true
                             onClicked: {

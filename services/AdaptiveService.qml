@@ -2,6 +2,7 @@ pragma Singleton
 import Quickshell
 import Quickshell.Io
 import QtQuick
+import "display/DisplayLogic.js" as DisplayLogic
 
 // Adaptive behaviour: accent colour from the wallpaper, automatic Laptop /
 // Docked mode when external monitors come and go, and a focus mode that
@@ -67,10 +68,14 @@ Singleton {
     // ---- automatic mode ----------------------------------------------------
     readonly property bool autoProfile: SettingsService.value("desktop.autoProfile")
     readonly property var screenNames: Quickshell.screens.map(screen => screen.name)
-    readonly property bool hasInternal: screenNames.some(name => /^(eDP|LVDS|DSI)/.test(name))
-    readonly property int externalCount: screenNames.filter(name => !/^(eDP|LVDS|DSI)/.test(name)).length
+    // The panel counts while the lid has it switched off, too: docked with
+    // the lid shut it is not among the screens, and judged by those alone
+    // the laptop was a desktop - no switch to Docked, Auto hidden.
+    // DisplayService knows it from `hyprctl monitors all`.
+    readonly property bool hasInternal: DisplayLogic.hasInternalPanel(screenNames, DisplayService.internalName)
+    readonly property int externalCount: DisplayLogic.externalCount(screenNames, DisplayService.internalName)
     // Only laptops switch; desktops without an internal panel keep their mode.
-    readonly property string suggestedMode: !hasInternal ? "" : externalCount > 0 ? "docked" : "laptop"
+    readonly property string suggestedMode: DisplayLogic.suggestedMode(screenNames, DisplayService.internalName)
 
     onSuggestedModeChanged: modeDelay.restart()
     onAutoProfileChanged: if (autoProfile) modeDelay.restart()
@@ -80,7 +85,9 @@ Singleton {
         onTriggered: {
             if (root.autoProfile && root.suggestedMode.length && LayoutService.loaded
                     && LayoutService.activeMode !== root.suggestedMode)
-                LayoutService.setActiveMode(root.suggestedMode)
+                // Automatic: no undo step of its own, and undoing an earlier
+                // edit keeps the mode the machine chose (LayoutLogic.modeAfterUndo).
+                LayoutService.setActiveMode(root.suggestedMode, true)
         }
     }
 

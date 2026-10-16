@@ -5,8 +5,9 @@ The export writes into the repository unless it is given --out, so every run
 here names a temporary directory, and HOME / XDG_CONFIG_HOME point at fake
 files: a weather place with coordinates, a wallpaper under the home directory,
 the session's default apps and a fastfetch config with its logo. Coordinates in
-these fixtures have at most three decimals, or the suite's private-data check
-would trip over this file.
+these fixtures have at most three decimals side by side and two under a lat/lon
+key, or the suite's private-data check (scripts/lib/checks.py private) would
+trip over this file.
 """
 
 import contextlib
@@ -169,6 +170,9 @@ with tempfile.TemporaryDirectory() as temp:
     check("/home/<user>" in error, "another user's /home path in a field is named: %r" % error)
     error = refused("terminal.symbol", "12.345, 67.890", "coordinate")
     check("coordinate" in error, "a coordinate pair in a field is named: %r" % error)
+    # Put together from pieces, so this file passes the suite's own check.
+    error = refused("launcher.searchUrl", "https://maps.invalid/?lat=12." + "345&lon=67." + "890&q=%s", "coordinate-keys")
+    check("coordinate" in error, "a coordinate under a lat/lon key is named: %r" % error)
     error = refused("autostart.apps", str(home / "bin" / "x.desktop"), "own-home")
     check(str(home) in error or "/home" in error or "path under" in error,
           "a path under the home directory outside the known path fields is named: %r" % error)

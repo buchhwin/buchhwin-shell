@@ -68,6 +68,7 @@ ShellCard {
                 }
                 ShellSlider {
                     Layout.fillWidth: true
+                    accessibleName: "Output volume"
                     value: AudioService.volume
                     enabledState: AudioService.sink !== null
                     onMoved: value => AudioService.setVolume(AudioService.sink, value)
@@ -78,9 +79,8 @@ ShellCard {
                 // The device row above carries it at full size and is dropped
                 // here for want of height - which left the small tile with a
                 // mute button, a slider and no way to reach the output list at
-                // all. The user found it: "I can only set the volume, I cannot
-                // get into the audio window the way I can from the
-                // microphone." A chevron needs no row of its own.
+                // all, while the microphone's tile led into its window. A
+                // chevron needs no row of its own.
                 ShellButton {
                     visible: root.tight
                     focusOnTab: true

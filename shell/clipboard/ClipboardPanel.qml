@@ -80,6 +80,7 @@ ShellPanel {
                 boundsBehavior: Flickable.StopAtBounds
                 highlightMoveDuration: Animations.hover
                 onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
+                ScrollFeel { view: list }
 
                 delegate: Rectangle {
                     id: row
@@ -113,7 +114,10 @@ ShellPanel {
                             Layout.preferredWidth: Metrics.iconLg
                             glyph: "󰦨"
                             size: Metrics.iconMd
-                            color: row.selected ? Colors.accentForeground : Colors.mutedText
+                            // On the selected row's tint: the inks measured on
+                            // it (accentForeground and mutedText are measured
+                            // on cards, and the tint takes contrast away).
+                            color: row.selected ? Colors.accentOnSoft : Colors.mutedText
                         }
                         Rectangle {
                             visible: row.modelData.image
@@ -138,10 +142,16 @@ ShellPanel {
                             Layout.fillWidth: true
                             text: row.modelData.image ? row.modelData.text : row.modelData.text.replace(/\s+/g, " ")
                             muted: row.modelData.image
+                            color: !muted ? Colors.text : row.selected ? Colors.mutedOnSoft : Colors.mutedText
                         }
+                        // Deleted for good - `cliphist delete` and the
+                        // thumbnail - so the trash can (Icons.remove), not the
+                        // dismiss cross. One click, as every row's own remove
+                        // in the shell takes and as Del on the selected row
+                        // does; only "Clear" above, the whole history, asks.
                         ShellButton {
                             toolTip: "Remove from history"
-                            icon: Icons.close; variant: "ghost"; compact: true
+                            icon: Icons.remove; variant: "ghost"; compact: true
                             onClicked: ClipboardService.remove(row.modelData)
                         }
                     }

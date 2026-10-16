@@ -4,23 +4,37 @@ import qs.shell.components
 
 // macOS-style password pill: dots for the typed characters, an arrow button
 // once something is typed, a shake on a wrong password. The text itself lives
-// in LockScreen so every screen shows the same field.
+// in LockScreen, one buffer for every screen.
 Item {
     id: root
     required property var lockState
+    // Whether this screen draws what is typed (LockLogic.showsInput, the
+    // screen with the keyboard). Every other screen's field stays as if
+    // nothing were typed: the placeholder, no arrow, and no shake either -
+    // a wrong password shakes where it was typed, and a placeholder shaking
+    // on a screen nobody types on would be motion without a meaning.
+    property bool showsInput: true
     implicitWidth: Metrics.lockFieldWidth
     implicitHeight: Metrics.lockFieldHeight
 
-    readonly property int length: Array.from(lockState.password).length
+    readonly property int length: showsInput ? Array.from(lockState.password).length : 0
 
     Connections {
         target: root.lockState
         // Movement only in the moving modes; Reduced and Off keep the field
         // still and leave the message to say what happened.
         function onShakesChanged() {
+            if (!root.showsInput) return
             if (Animations.motionEnabled) shake.restart()
             else offset.x = 0
         }
+    }
+    // The keyboard moved to another screen mid-shake: the field it left is
+    // an empty one now, and an empty field stands still.
+    onShowsInputChanged: {
+        if (showsInput) return
+        shake.stop()
+        offset.x = 0
     }
 
     Rectangle {

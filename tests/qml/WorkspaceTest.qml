@@ -114,9 +114,9 @@ ShellRoot {
         // Numbered by position, left to right then top to bottom, because the
         // Displays page and the Identify overlay number them the same way -
         // monitor 1 has to be the same monitor everywhere.
-        const screens = [{ name: "DP-13", x: 5120, y: 0 }, { name: "DP-8", x: 0, y: 232 },
-                         { name: "DP-10", x: 2560, y: 232 }]
-        T.eq(W.monitorOrder(screens), ["DP-8", "DP-10", "DP-13"], "left to right, whatever order they arrive in")
+        const screens = [{ name: "DP-2", x: 5120, y: 0 }, { name: "DP-3", x: 0, y: 240 },
+                         { name: "DP-1", x: 2560, y: 240 }]
+        T.eq(W.monitorOrder(screens), ["DP-3", "DP-1", "DP-2"], "left to right, whatever order they arrive in")
         T.eq(W.monitorOrder([{ name: "B", x: 0, y: 100 }, { name: "A", x: 0, y: 0 }]), ["A", "B"],
              "same column: top before bottom")
         T.eq(W.monitorOrder([{ name: "B", x: 0, y: 0 }, { name: "A", x: 0, y: 0 }]), ["A", "B"],
@@ -125,35 +125,53 @@ ShellRoot {
 
         // What a reboot leaves: the compositor gave each monitor a workspace
         // before the rules were in. 3 and 4 belong to the first block.
-        const order = ["DP-8", "DP-10", "DP-13"]
+        const order = ["DP-3", "DP-1", "DP-2"]
         const afterBoot = [
-            { id: 1, monitor: "DP-8" }, { id: 3, monitor: "DP-10" }, { id: 4, monitor: "DP-13" },
-            { id: 12, monitor: "DP-10" }, { id: -98, monitor: "DP-8" }
+            { id: 1, monitor: "DP-3" }, { id: 3, monitor: "DP-1" }, { id: 4, monitor: "DP-2" },
+            { id: 12, monitor: "DP-1" }, { id: -98, monitor: "DP-3" }
         ]
-        T.eq(W.misplaced(order, afterBoot), [{ id: 3, monitor: "DP-8" }, { id: 4, monitor: "DP-8" }],
+        T.eq(W.misplaced(order, afterBoot), [{ id: 3, monitor: "DP-3" }, { id: 4, monitor: "DP-3" }],
              "the workspaces on the wrong monitor, and where they go")
-        T.eq(W.misplaced(order, [{ id: 12, monitor: "DP-10" }, { id: 21, monitor: "DP-13" }]), [],
+        T.eq(W.misplaced(order, [{ id: 12, monitor: "DP-1" }, { id: 21, monitor: "DP-2" }]), [],
              "nothing to move when every block sits on its monitor")
-        T.eq(W.misplaced(["DP-8", "DP-13"], [{ id: 12, monitor: "DP-13" }, { id: 25, monitor: "DP-13" }]),
+        T.eq(W.misplaced(["DP-3", "DP-2"], [{ id: 12, monitor: "DP-2" }, { id: 25, monitor: "DP-2" }]),
              [], "with a monitor gone its block follows the order, and a block beyond the monitors stays")
-        T.eq(W.misplaced(["DP-8", "DP-13"], [{ id: 12, monitor: "DP-8" }]), [{ id: 12, monitor: "DP-13" }],
+        T.eq(W.misplaced(["DP-3", "DP-2"], [{ id: 12, monitor: "DP-3" }]), [{ id: 12, monitor: "DP-2" }],
              "the second block belongs to whoever is second now")
         // After the moves: a monitor left showing a stranger (Hyprland filled
         // it with the next free number) goes to one of its own.
         T.eq(W.homes(order, [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 12 }],
-                     [{ monitor: "DP-8", id: 1 }, { monitor: "DP-10", id: 12 }, { monitor: "DP-13", id: 2 }]),
-             [{ monitor: "DP-13", id: 21 }], "the third screen showing 2 goes to 21")
+                     [{ monitor: "DP-3", id: 1 }, { monitor: "DP-1", id: 12 }, { monitor: "DP-2", id: 2 }]),
+             [{ monitor: "DP-2", id: 21 }], "the third screen showing 2 goes to 21")
         T.eq(W.homes(order, [{ id: 1 }, { id: 14 }, { id: 12 }],
-                     [{ monitor: "DP-10", id: 3 }]),
-             [{ monitor: "DP-10", id: 12 }], "to the lowest of its own that exists")
-        T.eq(W.homes(order, [], [{ monitor: "DP-8", id: 4 }, { monitor: "DP-10", id: 15 }, { monitor: "HDMI-1", id: 2 }]), [],
+                     [{ monitor: "DP-1", id: 3 }]),
+             [{ monitor: "DP-1", id: 12 }], "to the lowest of its own that exists")
+        T.eq(W.homes(order, [], [{ monitor: "DP-3", id: 4 }, { monitor: "DP-1", id: 15 }, { monitor: "HDMI-1", id: 2 }]), [],
              "nothing to do when every screen shows its own, and an unknown screen is left alone")
+        // Undocked: Hyprland hands the gone monitor's block to the laptop
+        // with its ids. Those are strays to visit, not mistakes: the screen
+        // showing 12 stays there (it was sent home 400 ms after the next
+        // workspace came or went), just as `misplaced` leaves 11 and 12 alone.
+        const undocked = [{ id: 3, monitor: "eDP-1" }, { id: 11, monitor: "eDP-1" }, { id: 12, monitor: "eDP-1" }]
+        T.eq(W.homes(["eDP-1"], undocked, [{ monitor: "eDP-1", id: 12 }]), [], "a workspace from a gone monitor's block is stayed on")
+        T.eq(W.misplaced(["eDP-1"], undocked), [], "and nothing moves it either")
+        T.eq(W.homes(["DP-3", "DP-1"], [{ id: 1 }, { id: 25 }], [{ monitor: "DP-3", id: 25 }, { monitor: "DP-1", id: 1 }]),
+             [{ monitor: "DP-1", id: 11 }], "the one beyond the blocks stays, a screen showing another's block still goes home")
+        T.eq(W.homes(["eDP-1"], undocked, [{ monitor: "eDP-1", id: -1 }]), [{ monitor: "eDP-1", id: 3 }],
+             "a screen whose workspace is being moved away still gets one of its own")
+
+        // Turning the setting off takes the rules back (Lua config).
+        T.eq(W.ruledIds(20).length, 20, "two monitors had twenty rules")
+        T.eq([W.ruledIds(10)[0], W.ruledIds(10)[9]], [1, 10], "from 1")
+        T.eq([W.ruledIds(0), W.ruledIds(undefined), W.ruledIds("x")], [[], [], []], "none sent, none to take back")
+        // The command that takes them back is HyprCommands.releaseWorkspaceRule
+        // (HyprCommandsTest).
         T.eq(W.misplaced([], afterBoot), [], "no monitors known, nothing moves")
         T.eq(W.misplaced(order, null), [], "no workspaces, nothing moves")
-        T.eq(W.misplaced(order, [{ id: "3", monitor: "DP-13" }, { id: 4 }]),
-             [{ id: 3, monitor: "DP-8" }, { id: 4, monitor: "DP-8" }], "string ids and a missing monitor")
+        T.eq(W.misplaced(order, [{ id: "3", monitor: "DP-2" }, { id: 4 }]),
+             [{ id: 3, monitor: "DP-3" }, { id: 4, monitor: "DP-3" }], "string ids and a missing monitor")
         T.eq(W.monitorOrder([{ x: 0 }, { name: "", x: 0 }]), [], "a monitor with no name is not a monitor")
-        T.eq([W.monitorIndex(screens, "DP-8"), W.monitorIndex(screens, "DP-10"), W.monitorIndex(screens, "DP-13")],
+        T.eq([W.monitorIndex(screens, "DP-3"), W.monitorIndex(screens, "DP-1"), W.monitorIndex(screens, "DP-2")],
              [0, 1, 2], "each monitor's slot")
         T.eq(W.monitorIndex(screens, "nothing"), 0, "an unknown monitor is treated as the first, never as a gap")
 
@@ -167,34 +185,34 @@ ShellRoot {
              "and to whose it is")
         T.eq([W.globalId(0, 1), W.globalId("x", 1), W.localId(0), W.localId(-3)], [0, 0, 0, 0],
              "nonsense in, zero out - never a valid id by accident")
-        T.eq([W.offsetFor(screens, "DP-8"), W.offsetFor(screens, "DP-10"), W.offsetFor(screens, "DP-13")],
+        T.eq([W.offsetFor(screens, "DP-3"), W.offsetFor(screens, "DP-1"), W.offsetFor(screens, "DP-2")],
              [0, 10, 20], "where each block starts")
 
         // `fixed` inside a block: the second monitor shows its own 1-4, which
         // are 11-14 in the compositor, and the labels stay 1-4.
-        const perMon = [{ id: 1, name: "1", windows: 1, screen: "DP-8" },
-                        { id: 12, name: "12", windows: 1, screen: "DP-10" }]
-        const second = W.entries("fixed", 4, perMon, "DP-10", 12, 10, 12)
+        const perMon = [{ id: 1, name: "1", windows: 1, screen: "DP-3" },
+                        { id: 12, name: "12", windows: 1, screen: "DP-1" }]
+        const second = W.entries("fixed", 4, perMon, "DP-1", 12, 10, 12)
         T.eq(ids(second), [11, 12, 13, 14], "the second monitor's own four")
         T.eq(second.map(item => item.label), ["1", "2", "3", "4"], "labelled as its own 1-4")
         T.eq(second.filter(item => item.active).map(item => item.id), [12], "and its own active one")
-        T.eq(W.entries("fixed", 4, perMon, "DP-8", 1, 0, 12).map(item => item.label), ["1", "2", "3", "4"],
+        T.eq(W.entries("fixed", 4, perMon, "DP-3", 1, 0, 12).map(item => item.label), ["1", "2", "3", "4"],
              "the first monitor's block is unchanged")
-        T.eq(ids(W.entries("fixed", 4, perMon, "DP-8", 1, 0, 12)), [1, 2, 3, 4],
+        T.eq(ids(W.entries("fixed", 4, perMon, "DP-3", 1, 0, 12)), [1, 2, 3, 4],
              "and it does not show the other monitor's workspaces")
         // A workspace from another block that landed here is shown rather than
         // hidden: it exists and it has windows in it.
-        T.eq(ids(W.entries("fixed", 2, [{ id: 25, name: "25", windows: 1, screen: "DP-8" }], "DP-8", 1, 0, 1)),
+        T.eq(ids(W.entries("fixed", 2, [{ id: 25, name: "25", windows: 1, screen: "DP-3" }], "DP-3", 1, 0, 1)),
              [1, 2, 25], "a stray from another block is not hidden")
-        T.eq(W.entries("fixed", 2, [{ id: 11, name: "11", windows: 1, screen: "DP-10" }], "DP-10", 11, 10, 11)[0].label,
+        T.eq(W.entries("fixed", 2, [{ id: 11, name: "11", windows: 1, screen: "DP-1" }], "DP-1", 11, 10, 11)[0].label,
              "1", "an unnamed workspace shows its own monitor's number")
-        T.eq(W.entries("fixed", 2, [{ id: 11, name: "web", windows: 1, screen: "DP-10" }], "DP-10", 11, 10, 11)[0].label,
+        T.eq(W.entries("fixed", 2, [{ id: 11, name: "web", windows: 1, screen: "DP-1" }], "DP-1", 11, 10, 11)[0].label,
              "web", "a named one keeps its name, block or no block")
 
         // Active is the monitor's own, focused is the one with the keyboard.
         // Comparing against the global focus left two of three bars with no
         // active pip at all.
-        const third = W.entries("fixed", 2, perMon, "DP-13", 21, 20, 12)
+        const third = W.entries("fixed", 2, perMon, "DP-2", 21, 20, 12)
         T.eq(third.filter(item => item.active).map(item => item.id), [21], "an unfocused monitor still shows where it is")
         T.eq(third.filter(item => item.focused).length, 0, "and does not claim the keyboard")
         T.eq(second.filter(item => item.focused).map(item => item.id), [12], "the focused monitor says so")
@@ -205,14 +223,14 @@ ShellRoot {
         // Drawing 11 as this monitor's "1" would put two pips on the same
         // place and make clicking either a coin toss, so a stray keeps its
         // real number and says so.
-        const stray = W.entries("fixed", 2, [{ id: 11, name: "11", windows: 1, screen: "DP-8" }], "DP-8", 1, 0, 1)
+        const stray = W.entries("fixed", 2, [{ id: 11, name: "11", windows: 1, screen: "DP-3" }], "DP-3", 1, 0, 1)
         T.eq(ids(stray), [1, 2, 11], "the stray is shown, not hidden")
         T.eq(stray.map(item => item.label), ["1", "2", "11"], "and keeps its real number")
         T.eq(stray.map(item => item.stray), [false, false, true], "and is marked as not this monitor's")
-        T.eq(W.entries("fixed", 2, [{ id: 11, name: "mail", windows: 1, screen: "DP-8" }], "DP-8", 1, 0, 1)
+        T.eq(W.entries("fixed", 2, [{ id: 11, name: "mail", windows: 1, screen: "DP-3" }], "DP-3", 1, 0, 1)
              .filter(item => item.id === 11).map(item => [item.label, item.stray]),
              [["mail", false]], "a named stray is just its name: the name was the point")
-        T.eq(W.entries("fixed", 2, [{ id: 11, name: "11", windows: 1, screen: "DP-10" }], "DP-10", 11, 10, 11)[0].stray,
+        T.eq(W.entries("fixed", 2, [{ id: 11, name: "11", windows: 1, screen: "DP-1" }], "DP-1", 11, 10, 11)[0].stray,
              false, "on its own monitor it is not a stray at all")
 
         T.finish("WorkspaceTest")

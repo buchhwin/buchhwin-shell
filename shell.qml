@@ -821,19 +821,14 @@ ShellRoot {
         function setOption(key: string, value: string): bool {
             if (["fullscreen", "hoverMode", "clickAction", "middleAction", "rightAction", "panelOrigin", "osdStyle", "accentGlyphs"].indexOf(key) >= 0)
                 return SettingsService.set("notch." + key, value)
-            if (["openDelay", "closeDelay"].indexOf(key) >= 0) {
-                const number = Number(value)
-                if (!isFinite(number) || number < 0 || number > 2000) return false
-                return SettingsService.set("notch." + key, Math.round(number))
-            }
-            // The collapsed body (bodyHeight 24-64, bodyRadius 0-32,
-            // bodyPadding 0-48): the ranges the notch clamps to, so a value
-            // outside them is refused here rather than silently clamped.
-            if (["bodyHeight", "bodyRadius", "bodyPadding"].indexOf(key) >= 0) {
-                const number = Number(value)
-                const range = NotchLogic.BODY_RANGES[key]
-                if (!isFinite(number) || number < range.min || number > range.max) return false
-                return SettingsService.set("notch." + key, Math.round(number))
+            // The delays (openDelay 0-1000, closeDelay 0-2000 ms) and the
+            // collapsed body (bodyHeight 24-64, bodyRadius 0-32, bodyPadding
+            // 0-48): the ranges the notch clamps to, so a value outside them
+            // is refused here rather than stored and silently clamped
+            // (NotchLogic.optionNumber).
+            if (NotchLogic.optionRange(key) !== null) {
+                const number = NotchLogic.optionNumber(key, value)
+                return number !== null && SettingsService.set("notch." + key, number)
             }
             if (key === "reserve") return SettingsService.set("notch.reserve", value === "true")
             if (key === "swipe") return SettingsService.set("notch.swipe", value === "true")

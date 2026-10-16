@@ -40,9 +40,9 @@ function validScale(value) {
 // distance, up to 89 steps. The rule still sends the two-decimal value;
 // the geometry has to use what Hyprland makes of it, or every position
 // computed from the shell's width is wrong by the difference. 1.67 on a 4K
-// screen is 200/120 and 2304 wide, not 2299: the shell wrote x = 2299 for
-// the next monitor on 2026-10-09, five pixels inside its neighbour, and its
-// own overlap check, built on the same width, saw nothing.
+// screen is 200/120 and 2304 wide, not 2299: the shell once wrote x = 2299
+// for the next monitor, five pixels inside its neighbour, and its own
+// overlap check, built on the same width, saw nothing.
 function effectiveScale(scale, width, height) {
     const asked = Number(scale) || 1
     const w = Number(width) || 0, h = Number(height) || 0
@@ -228,17 +228,44 @@ function placeApart(monitors, name, x, y) {
 // shell's old, too-short widths come back five pixels apart from each other
 // - and what a resolution, scale or rotation change goes through, since
 // those change a monitor's size under its neighbours.
-function spread(monitors) {
+//
+// `last` (a name, optional) is placed after all the others and, where it
+// lands on one of them, at the end of the layout (placeAfter): a laptop
+// panel the file had switched off comes back at a position nobody checked
+// against its neighbours while it was off, and it must neither push the
+// screens on the desk out of their places nor come first in their order.
+function spread(monitors, last) {
     const result = monitors.slice()
     const order = result.map((monitor, index) => index).filter(index => !result[index].disabled)
-        .sort((a, b) => result[a].x - result[b].x || result[a].y - result[b].y)
+        .sort((a, b) => (result[a].name === last) - (result[b].name === last)
+                        || result[a].x - result[b].x || result[a].y - result[b].y)
     const placed = []
     for (const index of order) {
-        const position = placeApart(placed.concat([result[index]]), result[index].name, result[index].x, result[index].y)
-        result[index] = Object.assign({}, result[index], position)
+        const monitor = result[index]
+        const position = monitor.name === last
+            ? (overlapping(placed.concat([monitor])) ? placeAfter(placed.concat([monitor]), monitor.name) : { x: monitor.x, y: monitor.y })
+            : placeApart(placed.concat([monitor]), monitor.name, monitor.x, monitor.y)
+        result[index] = Object.assign({}, monitor, position)
         placed.push(result[index])
     }
     return result
+}
+
+// A place right of every other enabled monitor, level with the top of the
+// layout. For a screen coming back to a layout arranged without it (the
+// laptop panel after the lid): placeApart would take the nearest way out,
+// often above or left of the others, and the monitor order goes by position
+// (WorkspaceLogic.monitorOrder) - the panel would become monitor 1, and
+// every block of workspaces would move one screen on. At the end, the
+// screens keep their numbers and their workspaces.
+function placeAfter(monitors, name) {
+    const target = monitors.find(monitor => monitor.name === name)
+    const others = monitors.filter(monitor => monitor.name !== name && !monitor.disabled)
+    if (!others.length) return target ? { x: Math.round(target.x), y: Math.round(target.y) } : { x: 0, y: 0 }
+    return {
+        x: Math.max.apply(null, others.map(monitor => monitor.x + logicalSize(monitor).width)),
+        y: Math.min.apply(null, others.map(monitor => monitor.y))
+    }
 }
 
 // Move a monitor by whole steps with the arrow keys, then let `snap` finish
@@ -302,7 +329,55 @@ function lidAdjusted(monitors, internalName, lidClosed) {
     return update(monitors, internalName, { disabled: plan === "disable" })
 }
 
-// Persistence: saved settings per monitor name.
+// The target layout while nobody has said yet whether the lid is shut: a
+// laptop panel that is off now stays off, and nothing else is held back. The
+// shell applies the saved layout before UPower's answer to IdleService's
+// lid check is in, and on a restart at the dock with the lid shut a saved
+// "on" for the panel switched it on for that moment - the screens and their
+// workspaces rearranged twice. Held only while another screen stays on.
+function lidPending(target, live, internalName) {
+    if (!internalName) return target
+    const now = live.find(monitor => monitor.name === internalName)
+    const wanted = target.find(monitor => monitor.name === internalName)
+    if (!now || !now.disabled || !wanted || wanted.disabled) return target
+    if (!target.some(monitor => monitor.name !== internalName && !monitor.disabled)) return target
+    return update(target, internalName, { disabled: true })
+}
+
+// Whether `name` is the laptop panel. DisplayService passes the name it
+// found (a nested session can name any output); without one the connector
+// name decides, as `isInternal` does.
+function isPanel(name, internalName) {
+    if (internalName === undefined || internalName === null) return isInternal(name)
+    return String(name) === String(internalName)
+}
+
+// The automatic Laptop / Docked mode. The panel counts as there whenever
+// the laptop has one, on or off: with the lid shut at the dock the shell
+// switches it off (lidPlan), it drops out of the enabled screens, and a
+// check built on those alone saw a desktop, suggested nothing and left the
+// mode on "laptop" (and the Auto switch hidden). `screenNames` are the
+// enabled outputs, `internalName` the panel DisplayService knows of, which
+// `hyprctl monitors all` lists disabled or not.
+function hasInternalPanel(screenNames, internalName) {
+    const names = Array.isArray(screenNames) ? screenNames.map(String) : []
+    return String(internalName || "").length > 0 || names.some(isInternal)
+}
+
+function externalCount(screenNames, internalName) {
+    const internal = String(internalName || "")
+    return (Array.isArray(screenNames) ? screenNames.map(String) : [])
+        .filter(name => name !== internal && !isInternal(name)).length
+}
+
+// "" on a machine without a panel: desktops keep their mode.
+function suggestedMode(screenNames, internalName) {
+    if (!hasInternalPanel(screenNames, internalName)) return ""
+    return externalCount(screenNames, internalName) > 0 ? "docked" : "laptop"
+}
+
+// Persistence: saved settings per monitor, keyed by the connector name it was
+// last kept on.
 function toSaved(monitors) {
     const result = { version: 1, monitors: {} }
     for (const monitor of monitors) {
@@ -316,18 +391,134 @@ function toSaved(monitors) {
     return result
 }
 
+function hasEntry(entries, key) {
+    return Object.prototype.hasOwnProperty.call(entries, key) && entries[key] !== null && typeof entries[key] === "object"
+}
+
+// Which saved entry belongs to this monitor, as its key, or null. By the
+// description first wherever both sides have one: a dock hands out
+// connector names in the order it finds its screens, so one name can be a
+// 4K screen at one desk and a Full HD one at another, and matched by name
+// alone the 4K screen was switched to the Full HD one's mode and scale. The
+// name decides only where a description is missing on either side.
+//
+// The same screen on another connector finds its entry under the old name,
+// unless a connected screen of that name claims it by the first rule (a
+// twin with the same description, or one without any): one entry never
+// serves two screens.
+function owns(monitor, entry) {
+    const description = String(monitor.description || "")
+    const saved = String(entry.description || "")
+    return !description.length || !saved.length || saved === description
+}
+
+function matchKey(entries, monitor, monitors) {
+    if (!entries || typeof entries !== "object" || !monitor) return null
+    if (hasEntry(entries, monitor.name) && owns(monitor, entries[monitor.name])) return monitor.name
+    const description = String(monitor.description || "")
+    if (!description.length) return null
+    const connected = Array.isArray(monitors) ? monitors : []
+    for (const key of Object.keys(entries)) {
+        if (key === monitor.name || !hasEntry(entries, key)) continue
+        if (String(entries[key].description || "") !== description) continue
+        const holder = connected.find(other => other && other.name === key)
+        if (holder && owns(holder, entries[key])) continue
+        return key
+    }
+    return null
+}
+
+// A monitor with a saved entry's settings. A saved "off" for the laptop panel
+// counts only when it was kept with the lid open (`lidOpen`): the lid
+// switches the panel off at runtime, and a Keep with the lid shut used to
+// save that as the user's choice - after which the panel went dark at every
+// desk, lid open or not, 800 ms after a monitor was plugged in. Files from
+// before the marker carry exactly that, and are read as "on".
+function withEntry(monitor, entry, internalName) {
+    const mode = (monitor.modes || []).find(item => item.width === entry.width && item.height === entry.height
+                                                  && Math.abs(item.refresh - entry.refresh) < 0.5)
+    return Object.assign({}, monitor, {
+        width: mode ? mode.width : monitor.width,
+        height: mode ? mode.height : monitor.height,
+        refresh: mode ? mode.refresh : monitor.refresh,
+        x: Number(entry.x) || 0, y: Number(entry.y) || 0,
+        // A custom scale is allowed, within what a monitor can be run at;
+        // the old whitelist appended the value to itself before looking
+        // it up and so refused nothing.
+        scale: validScale(entry.scale) ? round2(entry.scale) : monitor.scale,
+        transform: [0, 1, 2, 3].indexOf(entry.transform) >= 0 ? entry.transform : 0,
+        vrr: [0, 1, 2].indexOf(entry.vrr) >= 0 ? entry.vrr : 0,
+        disabled: entry.disabled === true && (!isPanel(monitor.name, internalName) || entry.lidOpen === true)
+    })
+}
+
+// What Keep writes. Merged into the file rather than replacing it: entries
+// of monitors that are not connected now stay (repairSaved does the same),
+// or every Keep at one desk forgot the other desk's screens. An entry kept
+// under a name a connected screen has now, but with another description,
+// is another desk's screen on the same connector: it moves aside to
+// "<name>@<description>", where matchKey still finds it by description.
+//
+// With the lid shut the panel is off because of the lid, not because anyone
+// chose it (`lidPlan`), so it is saved as it is without the lid: its kept
+// entry (an "off" chosen with the lid open stays), else the panel before the
+// lid took it (`restore`), else the panel as it is - on, and where it lands
+// on the screens arranged while it was off, at the end of them (placeAfter).
+// `lidOpen` on the panel's entry says whether its on/off came from an open
+// lid.
+function kept(saved, draft, internalName, lidClosed, restore) {
+    const old = saved && saved.version === 1 && saved.monitors && typeof saved.monitors === "object" ? saved.monitors : {}
+    const panelName = String(internalName || "")
+    const panel = panelName.length ? draft.find(monitor => monitor.name === panelName) || null : null
+    let list = draft
+    let lidOpen = !lidClosed
+    if (lidClosed && panel && panel.disabled) {
+        const key = matchKey(old, panel, draft)
+        const source = restore && restore.name === panel.name ? restore : panel
+        let free = key !== null ? withEntry(source, old[key], panelName) : Object.assign({}, source, { disabled: false })
+        const others = draft.map(monitor => monitor.name === panel.name ? free : monitor)
+        if (!free.disabled && overlapping(others)) free = Object.assign({}, free, placeAfter(others, panel.name))
+        lidOpen = free.disabled
+        list = draft.map(monitor => monitor.name === panel.name ? free : monitor)
+    }
+    const result = toSaved(list).monitors
+    if (panel) result[panel.name].lidOpen = lidOpen
+    const consumed = list.map(monitor => matchKey(old, monitor, list)).filter(key => key !== null)
+    const names = list.map(monitor => monitor.name)
+    for (const key of Object.keys(old)) {
+        if (consumed.indexOf(key) >= 0 || !hasEntry(old, key)) continue
+        let target = key
+        if (names.indexOf(key) >= 0) {
+            const description = String(old[key].description || "")
+            if (!description.length) continue
+            target = key + "@" + description
+        }
+        if (!Object.prototype.hasOwnProperty.call(result, target)) result[target] = Object.assign({}, old[key])
+    }
+    return { version: 1, monitors: result }
+}
+
 // The saved file with the positions `applySaved` had to correct (spread),
 // and nothing else touched: entries of monitors that are not connected now
-// stay as they are, which is why this does not go through `toSaved`. Null
-// when the file already says what the layout says.
-function repairSaved(saved, monitors) {
+// stay as they are, which is why this does not go through `toSaved`. A
+// panel "off" saved without `lidOpen` is cleared on the way (withEntry never
+// applies it), so the file says what is applied and a shell from before the
+// marker reads it right too. Null when the file already says what the
+// layout says.
+function repairSaved(saved, monitors, internalName) {
     if (!saved || saved.version !== 1 || !saved.monitors) return null
     let changed = false
     const entries = {}
     for (const name in saved.monitors) entries[name] = Object.assign({}, saved.monitors[name])
     for (const monitor of monitors) {
-        const entry = entries[monitor.name]
-        if (!entry || monitor.disabled) continue
+        const key = matchKey(entries, monitor, monitors)
+        if (key === null) continue
+        const entry = entries[key]
+        if (isPanel(monitor.name, internalName) && entry.disabled === true && entry.lidOpen !== true) {
+            entry.disabled = false
+            changed = true
+        }
+        if (monitor.disabled) continue
         if (Number(entry.x) === monitor.x && Number(entry.y) === monitor.y) continue
         entry.x = monitor.x
         entry.y = monitor.y
@@ -337,30 +528,20 @@ function repairSaved(saved, monitors) {
 }
 
 // Monitors with saved settings applied (only connected ones; never disables
-// every monitor).
-function applySaved(monitors, saved) {
+// every monitor). `internalName` as in `isPanel`.
+function applySaved(monitors, saved, internalName) {
     if (!saved || saved.version !== 1 || !saved.monitors) return monitors
+    let back
     const next = monitors.map(monitor => {
-        const entry = saved.monitors[monitor.name]
-        if (!entry) return monitor
-        const mode = monitor.modes.find(item => item.width === entry.width && item.height === entry.height
-                                          && Math.abs(item.refresh - entry.refresh) < 0.5)
-        return Object.assign({}, monitor, {
-            width: mode ? mode.width : monitor.width,
-            height: mode ? mode.height : monitor.height,
-            refresh: mode ? mode.refresh : monitor.refresh,
-            x: Number(entry.x) || 0, y: Number(entry.y) || 0,
-            // A custom scale is allowed, within what a monitor can be run at;
-            // the old whitelist appended the value to itself before looking
-            // it up and so refused nothing.
-            scale: validScale(entry.scale) ? round2(entry.scale) : monitor.scale,
-            transform: [0, 1, 2, 3].indexOf(entry.transform) >= 0 ? entry.transform : 0,
-            vrr: [0, 1, 2].indexOf(entry.vrr) >= 0 ? entry.vrr : 0,
-            disabled: entry.disabled === true
-        })
+        const key = matchKey(saved.monitors, monitor, monitors)
+        if (key === null) return monitor
+        const result = withEntry(monitor, saved.monitors[key], internalName)
+        if (saved.monitors[key].disabled === true && !result.disabled) back = monitor.name
+        return result
     })
     // Spread, because the positions in the file may have been computed from
     // widths that were wrong (effectiveScale), and because a mode or scale
-    // changed by hand in the file changes a size under its neighbours.
-    return enabledCount(next) > 0 ? spread(next) : monitors
+    // changed by hand in the file changes a size under its neighbours. A
+    // panel whose saved "off" was not taken goes last (see `spread`).
+    return enabledCount(next) > 0 ? spread(next, back) : monitors
 }

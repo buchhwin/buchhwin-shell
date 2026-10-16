@@ -19,7 +19,7 @@ ColumnLayout {
 
     function toneColor(tone) {
         return tone === "error" ? Colors.danger : tone === "busy" ? Colors.accentForeground
-            : tone === "ok" ? Colors.success : Colors.mutedText
+            : tone === "ok" ? Colors.positive : Colors.mutedText
     }
 
     SettingsSection {

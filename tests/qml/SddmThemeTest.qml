@@ -42,10 +42,10 @@ ShellRoot {
         T.eq([L.clampIndex(2, 3), L.clampIndex(3, 3), L.clampIndex(-1, 3), L.clampIndex(undefined, 3), L.clampIndex(0, 0)],
              [2, 0, 0, 0, -1], "clamped rows")
         T.eq([L.nextIndex(0, 2), L.nextIndex(1, 2), L.nextIndex(5, 2), L.nextIndex(0, 0)], [1, 0, 1, -1], "next layout")
-        T.eq([L.displayName("Jan B", "jan"), L.displayName("", "jan"), L.displayName(undefined, undefined)], ["Jan B", "jan", ""], "display name")
-        T.eq([L.initial("jan"), L.initial("  élise"), L.initial("_1x"), L.initial("")], ["J", "É", "1", "?"], "initials")
-        T.eq([L.hasOwnFace("/usr/share/sddm/faces/.face.icon"), L.hasOwnFace("/usr/share/sddm/faces/jan.face.icon"),
-              L.hasOwnFace("/home/jan/.face.icon"), L.hasOwnFace("/var/lib/AccountsService/icons/jan"), L.hasOwnFace("")],
+        T.eq([L.displayName("Sample User", "sample"), L.displayName("", "sample"), L.displayName(undefined, undefined)], ["Sample User", "sample", ""], "display name")
+        T.eq([L.initial("sample"), L.initial("  élise"), L.initial("_1x"), L.initial("")], ["S", "É", "1", "?"], "initials")
+        T.eq([L.hasOwnFace("/usr/share/sddm/faces/.face.icon"), L.hasOwnFace("/usr/share/sddm/faces/sample.face.icon"),
+              L.hasOwnFace("/home/sample/.face.icon"), L.hasOwnFace("/var/lib/AccountsService/icons/sample"), L.hasOwnFace("")],
              [false, true, true, true, false], "own faces")
         T.eq([L.sessionLabel("Plasma (Wayland)", "plasma.desktop"), L.sessionLabel("", "buchhwin-shell.desktop"), L.sessionLabel("", "")],
              ["Plasma (Wayland)", "buchhwin-shell", "Session"], "session labels")

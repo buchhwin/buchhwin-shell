@@ -1,12 +1,50 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# install/install.sh [--apply] [--relink]
 project_dir=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 apply=false
-[[ ${1:-} == "--apply" ]] && apply=true
+relink=false
+[[ ${BUCHHWIN_RELINK:-0} == 1 ]] && relink=true
+for arg in "$@"; do
+  case $arg in
+    --apply) apply=true ;;
+    --relink) relink=true ;;
+    *) printf 'Unknown option: %s\n' "$arg" >&2; exit 2 ;;
+  esac
+done
 
 config_home=${XDG_CONFIG_HOME:-"$HOME/.config"}
 data_home=${XDG_DATA_HOME:-"$HOME/.local/share"}
+session_link="$HOME/.local/share/buchhwin-shell"
+
+# The session may run from the stable worktree scripts/deploy.sh keeps (a
+# worktree of this same repository, on branch `stable`), so that edits reach
+# the desktop only through a deploy. Run from the development checkout - the
+# README's update line, or bootstrap.sh again to add a package - this used to
+# back that link up and point the session at the half-edited files of main
+# at its next start. The links now go where the session already runs from,
+# and the run says so; --relink (or BUCHHWIN_RELINK=1) moves the session to
+# this checkout on purpose, which is the way back from a deploy setup.
+# deploy.sh --init runs the stable worktree's own copy of this script, so
+# its link from the development checkout to the stable one is made as before.
+link_dir=$project_dir
+if ! $relink && [[ -L $session_link ]] && command -v git >/dev/null 2>&1; then
+  current=$(readlink -f -- "$session_link" 2>/dev/null) || current=""
+  if [[ -n $current && $current != "$project_dir" && -d $current ]]; then
+    here_common=$(git -C "$project_dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || here_common=""
+    there_common=$(git -C "$current" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || there_common=""
+    there_top=$(git -C "$current" rev-parse --show-toplevel 2>/dev/null) || there_top=""
+    there_branch=$(git -C "$current" symbolic-ref --short -q HEAD 2>/dev/null) || there_branch=""
+    if [[ -n $here_common && $here_common == "$there_common" && $there_top == "$current" && $there_branch == stable ]]; then
+      link_dir=$current
+      printf 'The session runs from the stable worktree %s; the links stay with it.\n' "$link_dir"
+      printf 'Changes reach it through scripts/deploy.sh. To run the session from %s instead: %s --apply --relink\n' \
+        "$project_dir" "$0"
+    fi
+  fi
+fi
+
 # What systemd, xdg-desktop-portal and the shell itself (services/Paths.qml)
 # read lives under XDG_CONFIG_HOME, and zsh's site-functions under
 # XDG_DATA_HOME, so the links go where those look. Two paths stay literal on
@@ -14,14 +52,14 @@ data_home=${XDG_DATA_HOME:-"$HOME/.local/share"}
 # launchers, and ~/.local/share/buchhwin-shell is the name the session entry,
 # the systemd targets, hypr/ and every script use for the running copy.
 links=(
-  "$project_dir:$HOME/.local/share/buchhwin-shell"
-  "$project_dir/session/buchhwin-shell-session:$HOME/.local/bin/buchhwin-shell-session"
-  "$project_dir/scripts/buchhwin:$HOME/.local/bin/buchhwin"
-  "$project_dir/shell-completion/_buchhwin:$data_home/zsh/site-functions/_buchhwin"
-  "$project_dir/zsh/buchhwin.zsh:$config_home/buchhwin-shell/shell.zsh"
-  "$project_dir/systemd/buchhwin-shell-session.target:$config_home/systemd/user/buchhwin-shell-session.target"
-  "$project_dir/systemd/buchhwin-shell-autostart.target:$config_home/systemd/user/buchhwin-shell-autostart.target"
-  "$project_dir/session/xdg-desktop-portal/buchhwin-shell-portals.conf:$config_home/xdg-desktop-portal/buchhwin-shell-portals.conf"
+  "$link_dir:$session_link"
+  "$link_dir/session/buchhwin-shell-session:$HOME/.local/bin/buchhwin-shell-session"
+  "$link_dir/scripts/buchhwin:$HOME/.local/bin/buchhwin"
+  "$link_dir/shell-completion/_buchhwin:$data_home/zsh/site-functions/_buchhwin"
+  "$link_dir/zsh/buchhwin.zsh:$config_home/buchhwin-shell/shell.zsh"
+  "$link_dir/systemd/buchhwin-shell-session.target:$config_home/systemd/user/buchhwin-shell-session.target"
+  "$link_dir/systemd/buchhwin-shell-autostart.target:$config_home/systemd/user/buchhwin-shell-autostart.target"
+  "$link_dir/session/xdg-desktop-portal/buchhwin-shell-portals.conf:$config_home/xdg-desktop-portal/buchhwin-shell-portals.conf"
 )
 
 fastfetch_source="$config_home/buchhwin-dwl/fastfetch.jsonc"
@@ -30,7 +68,7 @@ fastfetch_target="$config_home/buchhwin-shell/fastfetch.jsonc"
 # so a fresh install has the greeting the session was designed around instead
 # of Fastfetch's own defaults - `zsh/buchhwin.zsh` only passes --config when
 # this file exists, so without it nothing here applies at all.
-fastfetch_default="$project_dir/config/fastfetch.jsonc"
+fastfetch_default="$link_dir/config/fastfetch.jsonc"
 
 if ! $apply; then
   printf 'Dry run. The following links would be installed:\n'
@@ -116,5 +154,5 @@ else
   printf 'No Fastfetch configuration found; Fastfetch uses its defaults.\n'
 fi
 
-printf 'Global Kitty settings were not changed; the session uses %s directly.\n' "$project_dir/kitty/kitty.conf"
+printf 'Global Kitty settings were not changed; the session uses %s directly.\n' "$link_dir/kitty/kitty.conf"
 printf 'Install the SDDM entry separately with: sudo %s/install/system-install.sh\n' "$project_dir"

@@ -387,8 +387,8 @@ ColumnLayout {
                 focusOnTab: true
                 Layout.fillWidth: true
                 current: String(SettingsService.x11ScaleSetting)
-                options: [{ value: "0", label: "Auto" }, { value: "1.25", label: "125 %" }, { value: "1.5", label: "150 %" },
-                          { value: "1.75", label: "175 %" }, { value: "2", label: "200 %" }]
+                options: [{ value: "0", label: "Auto" }, { value: "1.25", label: "125%" }, { value: "1.5", label: "150%" },
+                          { value: "1.75", label: "175%" }, { value: "2", label: "200%" }]
                 onSelected: value => SettingsService.set("display.x11Scale", Number(value))
             }
         }

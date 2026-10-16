@@ -269,3 +269,24 @@ function ansiToRich(text) {
     emit(clean.slice(last))
     return parts.join("")
 }
+
+// fastfetch's logo types that draw text or one of its own logos: a width in
+// columns means nothing to them (scripts/fastfetch-image.py, logo_kind).
+var TEXT_LOGO_TYPES = ["file", "file-raw", "data", "data-raw", "builtin", "small", "none"]
+
+// Whether `fastfetch-image.py size COLUMNS` would change fastfetch.jsonc: an
+// image logo with a stretching height or another width. No file, no logo
+// object, a document that is not an object, or a text logo (the buchhwin
+// profile's Saturn, which used to get an image width written into it), and it
+// writes nothing. A file that is not plain JSON - comments, as the shipped one
+// has until its first fit - is left to the script, which reads those.
+function logoNeedsFit(text, columns) {
+    var data = null
+    try { data = JSON.parse(text) } catch (error) { return true }
+    var logo = data !== null && typeof data === "object" && !Array.isArray(data) ? data.logo : null
+    if (logo === null || logo === undefined || typeof logo !== "object" || Array.isArray(logo)) return false
+    if (!logo.source) return false
+    var type = typeof logo.type === "string" ? logo.type.toLowerCase() : ""
+    if (TEXT_LOGO_TYPES.indexOf(type) >= 0) return false
+    return "height" in logo || logo.width !== columns
+}

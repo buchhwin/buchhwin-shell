@@ -60,6 +60,20 @@ ShellRoot {
         T.eq(F.progress(done), 1, "full progress")
         T.eq(F.enrollLine(done, "Enroll result: enroll-failed"), done, "finished state is final")
 
+        // Settings steps aside while polkit may be asking (ui-b#2): before
+        // the tool speaks, after it announced the finger, and once the reader
+        // answered or the run ended - a retry counts, a denial ends it.
+        const fresh = F.enrollStart("right-index-finger", 8, "press")
+        const announced = F.enrollLine(fresh, "Enrolling right-index-finger finger.")
+        T.eq([F.authPhase(fresh), F.authPhase(announced)], ["waiting", "asking"], "the password may be asked once the finger is announced")
+        T.eq([F.authPhase(F.enrollLine(announced, "Enroll result: enroll-stage-passed")),
+              F.authPhase(F.enrollLine(announced, "Enroll result: enroll-retry-scan")),
+              F.authPhase(F.enrollExited(announced, 1, false)), F.authPhase(null)],
+             ["answered", "answered", "answered", "answered"], "the reader's first word, the end or no run at all is past the question")
+        T.eq([F.isPasswordAgent("org.kde.polkit-kde-authentication-agent-1"), F.isPasswordAgent("polkit-gnome-authentication-agent-1"),
+              F.isPasswordAgent("lxqt-policykit-agent"), F.isPasswordAgent("code"), F.isPasswordAgent(""), F.isPasswordAgent(undefined)],
+             [true, true, true, false, false, false], "the agent's dialog is told by its app id")
+
         const duplicate = F.enrollLine(state, "Enroll result: enroll-duplicate")
         T.eq([duplicate.phase, duplicate.error, duplicate.success], ["failed", true, false], "duplicate fails")
         T.eq(F.enrollLine(state, "Enroll result: enroll-failed").message, "Enrollment failed. Try again.", "failed message")

@@ -16,11 +16,28 @@ check() {
 }
 
 mkdir -p "$root/etc/sddm.conf.d" "$root/etc/systemd/system" "$home/.config/buchhwin-shell" "$home/Pictures"
+
+# The script reads the wallpaper with the user's rights (runuser), which only
+# root may use. The stand-in records the user and reads as this one; a file
+# under $private stands for one only root can read.
+private="$sandbox/private"
+mkdir -p "$sandbox/bin" "$private"
+cat > "$sandbox/bin/runuser" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$2" >> "$SDDM_TEST_RUNUSER_LOG"
+shift 3
+for last; do :; done
+case $(readlink -f -- "$last") in "$SDDM_TEST_PRIVATE"/*) echo "cat: Permission denied" >&2; exit 1 ;; esac
+exec "$@"
+STUB
+chmod +x "$sandbox/bin/runuser"
+export PATH="$sandbox/bin:$PATH" SDDM_TEST_RUNUSER_LOG="$sandbox/runuser.log" SDDM_TEST_PRIVATE="$private"
 printf '[General]\nNumlock=on\n\n[Theme]\nCurrent=breeze\nCursorTheme=Breeze\n\n[Users]\nMaximumUid=60000\n' > "$root/etc/sddm.conf"
 printf '[Theme]\n  Current = maya\n' > "$root/etc/sddm.conf.d/10-other.conf"
 printf '[Wayland]\nCurrent=not-a-theme\n' > "$root/etc/sddm.conf.d/20-unrelated.conf"
 ln -s /usr/lib/systemd/system/plasmalogin.service "$root/etc/systemd/system/display-manager.service"
-printf 'synthetic image' > "$home/Pictures/Wall.WEBP"
+# Synthetic files that start like the formats they are named after.
+printf 'RIFF\044\000\000\000WEBPVP8 synthetic' > "$home/Pictures/Wall.WEBP"
 printf 'synthetic face' > "$sandbox/face.png"
 printf '{ "wallpaper": { "path": "~/Pictures/Wall.WEBP" } }\n' > "$home/.config/buchhwin-shell/settings.json"
 cp -p "$root/etc/sddm.conf" "$sandbox/sddm.conf.orig"
@@ -32,6 +49,7 @@ output=$("$project_dir/install/sddm-theme.sh" install --root "$root" \
 theme="$root/usr/share/sddm/themes/buchhwin"
 check '[[ -f $theme/Main.qml && -f $theme/metadata.desktop && -f $theme/assets/background.svg ]]' "theme copied"
 check 'cmp -s "$home/Pictures/Wall.WEBP" "$theme/background.webp"' "wallpaper copied with a lower-case extension"
+check 'grep -qx tester "$sandbox/runuser.log"' "the wallpaper is read as the user it is for"
 check 'grep -qx "background=background.webp" "$theme/theme.conf.user"' "theme.conf.user selects the wallpaper"
 check 'grep -qx "Current=buchhwin" "$root/etc/sddm.conf.d/buchhwin-theme.conf"' "theme selected"
 check '! grep -qE "^[[:space:]]*Current" "$root/etc/sddm.conf" && grep -qx "CursorTheme=Breeze" "$root/etc/sddm.conf"' "sddm.conf theme selection commented out, rest kept"
@@ -44,11 +62,37 @@ check 'grep -q "Would run: systemctl disable plasmalogin.service" <<<"$output" &
 printf 'text' > "$sandbox/notes.txt"
 check '! "$project_dir/install/sddm-theme.sh" install --root "$root" --wallpaper "$sandbox/notes.txt" >/dev/null 2>&1' "unsupported wallpaper refused"
 check '! "$project_dir/install/sddm-theme.sh" install --root "$root" --wallpaper "$sandbox/missing.jpg" >/dev/null 2>&1' "missing wallpaper refused"
-printf 'second' > "$sandbox/second.jpg"
+printf '\377\330\377\340second' > "$sandbox/second.jpg"
 "$project_dir/install/sddm-theme.sh" install --root "$root" --wallpaper "$sandbox/second.jpg" >/dev/null
 check '[[ ! -e $theme/background.webp && -f $theme/background.jpg ]]' "reinstall replaces the wallpaper"
 "$project_dir/install/sddm-theme.sh" install --root "$root" --settings "$sandbox/missing.json" >/dev/null
 check '[[ -f $theme/theme.conf.user ]] && ! grep -q "^background=" "$theme/theme.conf.user"' "no wallpaper falls back to the bundled gradient"
+
+# settings.json is the user's to write, and this runs as root: a wallpaper path
+# that is a symlink to a file only root can read is not followed, and one to
+# a file the user can read but that is no picture is not copied.
+printf 'root only' > "$private/shadow"
+ln -s "$private/shadow" "$home/Pictures/link.png"
+user_settings="$home/.config/buchhwin-shell/settings.json"
+printf '{ "wallpaper": { "path": "~/Pictures/link.png" } }\n' > "$user_settings"
+output=$("$project_dir/install/sddm-theme.sh" install --root "$root" --settings "$user_settings" --user tester)
+check '! compgen -G "$theme/background.*" >/dev/null && ! grep -rqs "root only" "$theme"' "a symlink to a root-only file is not copied"
+check 'grep -q "not readable by tester, using the bundled gradient" <<<"$output"' "and the run says why: $output"
+printf 'not a picture' > "$home/Pictures/notes.png"
+printf '{ "wallpaper": { "path": "~/Pictures/notes.png" } }\n' > "$user_settings"
+output=$("$project_dir/install/sddm-theme.sh" install --root "$root" --settings "$user_settings" --user tester)
+check '! compgen -G "$theme/background.*" >/dev/null && grep -q "not an image, using the bundled gradient" <<<"$output"' \
+  "a readable file that is no picture falls back to the gradient"
+check '! "$project_dir/install/sddm-theme.sh" install --root "$root" --wallpaper "$home/Pictures/notes.png" >/dev/null 2>&1' \
+  "and one named on the command line is refused"
+# Every format the theme accepts, recognised by its first bytes.
+for sample in 'png:\211PNG\r\n\032\n' 'jpeg:\377\330\377' 'webp:RIFF\0\0\0\0WEBP' 'avif:\0\0\0\034ftypavif' \
+  'jxl:\377\012' 'bmp:BM' 'svg:<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"/>'; do
+  kind=${sample%%:*}
+  printf "${sample#*:}" > "$sandbox/sample.$kind"
+  "$project_dir/install/sddm-theme.sh" install --root "$root" --wallpaper "$sandbox/sample.$kind" >/dev/null 2>&1 || true
+  check 'cmp -s "$sandbox/sample.$kind" "$theme/background.$kind"' "a $kind wallpaper is copied"
+done
 
 # The look of the login screen comes from the user's own settings, because the
 # greeter runs as another user and cannot read them itself.

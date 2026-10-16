@@ -79,13 +79,13 @@ check '! grep -q "^checkupdates .*--nosync" "$calls"' "and a normal check syncs 
 
 # ---- a list, with the AUR beside it ------------------------------------------
 stubs "linux 6.17.0.arch1-1 -> 6.17.1.arch1-1
-icaclient 25.08-1 -> 26.04-1 [ignored]" 0 "" "brave-bin 1.97.1-1 -> 1.97.2-1"
+pinned-app 25.08-1 -> 26.04-1 [ignored]" 0 "" "brave-bin 1.97.1-1 -> 1.97.2-1"
 run "$sandbox/os-arch"
 json=$(sec dnf)
 check '[[ $json == *"\"name\": \"linux\", \"arch\": \"$machine\", \"evr\": \"6.17.1.arch1-1\", \"repository\": \"core\""* ]]' \
   "the list becomes dnf5's JSON, with the repository from the synced copy ($json)"
 check '[[ $json == *"\"name\": \"brave-bin\""*"\"repository\": \"aur\""* ]]' "the AUR's updates are in it, from aur"
-check '[[ $json != *icaclient* ]]' "a package held back with IgnorePkg is not offered"
+check '[[ $json != *pinned-app* ]]' "a package held back with IgnorePkg is not offered"
 check 'grep -qx "linux.$machine${tab}6.17.0.arch1-1" <<<"$(sec installed)" && grep -qx "brave-bin.$machine${tab}1.97.1-1" <<<"$(sec installed)"' \
   "@installed names the old versions ($(sec installed | paste -sd' '))"
 check 'grep -q "^paru -Qua" "$calls"' "the AUR helper is asked with -Qua"

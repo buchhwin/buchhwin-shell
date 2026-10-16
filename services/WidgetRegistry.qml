@@ -42,7 +42,7 @@ Singleton {
         "vpn": { pillDisplay: "icon", label: "VPN", icon: "󰖂", category: "system", file: "VpnWidget.qml",
                  sizes: ["small", "medium"], action: "vpnPopup", available: true,
                  defaults: { anchorX: "right", x: 0.84, y: 0.02, style: "capsule" } },
-        "workspace": { label: "Workspace", icon: Icons.edit, category: "desktop", file: "WorkspaceWidget.qml",
+        "workspace": { label: "Workspace", icon: Icons.arrange, category: "desktop", file: "WorkspaceWidget.qml",
                        sizes: ["small"], action: "", available: true,
                        defaults: { anchorX: "left", x: 0.015, y: 0.02, style: "capsule" } },
         "activeWindow": { label: "Active window", icon: "󰖯", category: "desktop", file: "ActiveWindowWidget.qml",

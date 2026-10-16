@@ -469,16 +469,29 @@ function checkCommand(script, refresh, cacheOnly) {
     return argv
 }
 
-function discoverCommand() {
-    return ["plasma-discover", "--mode", "update"]
+// Through scripts/launch-app.sh, like the launcher's applications: a unit
+// named after Discover's entry, and the session's environment rather than
+// the shell's own settings (two malloc arenas, no KDE platform theme).
+function discoverCommand(launchScript) {
+    return [launchScript, "org.kde.discover", "plasma-discover", "--mode", "update"]
 }
+
+// The page's terminals run as user services of these names
+// (launch-terminal.sh --unit), not as children of the shell: a shell that
+// stops cleanly ends its children, and the terminal with `pacman -Syu` in it
+// went with every reload, deploy and shell update, pacman mid-transaction
+// (16.10.). By name they can be watched, also by a shell started while one
+// runs. They open in the session's terminal (Settings > Default apps), held
+// open once the command has ended, under a title that says what runs.
+var UPGRADE_UNIT = "buchhwin-upgrade"
+var FLATPAK_UNIT = "buchhwin-flatpak-update"
 
 // Arch: Discover cannot install pacman's updates without PackageKit, and an
 // upgrade on Arch is the whole system at once, in a terminal, by its user.
 // An AUR helper upgrades the repositories and the AUR together; without one
 // pacman asks for the password itself.
-function terminalUpgradeCommand(kittyScript) {
-    return [kittyScript, "--hold", "sh", "-c",
+function terminalUpgradeCommand(terminalScript) {
+    return [terminalScript, "--unit", UPGRADE_UNIT, "--hold", "--title", "System upgrade", "--", "sh", "-c",
             "if command -v paru >/dev/null 2>&1; then exec paru -Syu; "
             + "elif command -v yay >/dev/null 2>&1; then exec yay -Syu; "
             + "else exec sudo pacman -Syu; fi"]
@@ -486,6 +499,21 @@ function terminalUpgradeCommand(kittyScript) {
 
 // User installation only: system Flatpaks and packages go through Discover
 // (polkit asks for the administrator password there).
-function flatpakUpdateCommand(kittyScript) {
-    return [kittyScript, "--hold", "flatpak", "update", "--user", "-y"]
+function flatpakUpdateCommand(terminalScript) {
+    return [terminalScript, "--unit", FLATPAK_UNIT, "--hold", "--title", "Flatpak update", "--",
+            "flatpak", "update", "--user", "-y"]
+}
+
+// Prints "active" once when the unit runs, and returns once it no longer
+// does; every 2 s, and only while a terminal is open.
+function unitWatchCommand(unit) {
+    return ["sh", "-c", "systemctl --user -q is-active \"$1\" || exit 0; echo active; "
+            + "while systemctl --user -q is-active \"$1\"; do sleep 2; done", "sh", unit]
+}
+
+// The shell's own update ends in a restart and re-runs the installer: not
+// while one of the terminals above is still at work (asked by hand, it says
+// so; the automatic one tries again at its next check).
+function shellUpdateAllowed(upgrading, flatpakUpdating) {
+    return !upgrading && !flatpakUpdating
 }

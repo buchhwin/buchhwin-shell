@@ -15,8 +15,15 @@ import "../../services/notch/NotchLogic.js" as Logic
 // sized for the expanded shape; input only reaches the shape, so clicks next
 // to it go to the windows below. Panels opened by hotkeys appear centred
 // below the collapsed notch (LayoutService.clockRect).
+//
+// Built only while the desktop mode shows a notch, as the pill bar is: in the
+// widgets and bar modes every screen used to carry a hidden notch anyway - the
+// strip and its widget loaders, the springs, the shadow and its effect, the
+// timers - following workspaces, the minute and the network behind a surface
+// that never mapped. Leaving notch mode destroys them (each reports its
+// rectangle away on the way out) and coming back builds them again.
 Variants {
-    model: Quickshell.screens
+    model: LayoutService.loaded && LayoutService.notchShown ? Quickshell.screens : []
 
     PanelWindow {
         id: window
@@ -25,7 +32,21 @@ Variants {
         readonly property bool fullscreenOn: HyprlandService.fullscreenOn(modelData)
         readonly property bool hiddenForFullscreen: NotchService.fullscreen === "hide" && fullscreenOn
         readonly property bool fullscreenShown: NotchService.fullscreen === "show" && fullscreenOn
-        readonly property bool active: LayoutService.loaded && SettingsService.loaded && LayoutService.notchShown && !hiddenForFullscreen
+        // Mapped for as long as the mode shows a notch; drawn and taking input
+        // only while no fullscreen window hides it.
+        //
+        // A fullscreen window used to unmap it, and Quickshell destroys a
+        // hidden layer window: every fullscreen toggle, and every switch to or
+        // from a workspace with a fullscreen window (a remote desktop), built
+        // a new window, render thread and GL context on the way back, and the
+        // reserved zone went to 0 and came back, so the app was laid out twice
+        // on its way out of fullscreen. Now the surface stays and only its
+        // content goes: nothing is drawn (`active` hides every visual part
+        // below), the input mask is empty, and the zone stays what it is -
+        // a real fullscreen window covers the whole monitor whatever is
+        // reserved, and Hyprland does not draw the Top layer over one either.
+        readonly property bool mapped: LayoutService.loaded && SettingsService.loaded && LayoutService.notchShown
+        readonly property bool active: mapped && !hiddenForFullscreen
         // A mapped layer surface keeps its exclusive zone, so a change of
         // "Reserve space" maps the surface again.
         property bool remapping: false
@@ -164,13 +185,18 @@ Variants {
                      to: window.expanded ? window.overviewHeight
                          : window.displaying ? window.displayHeight : NotchService.bodyHeight }
         NotchValue { id: bodyEar; minimum: Metrics.notchEar; to: window.expanded ? Metrics.notchExpandedEar : Metrics.notchEar }
-        NotchValue { id: bodyRadius; minimum: NotchService.drawnBodyRadius; to: window.expanded ? Metrics.notchExpandedRadius : NotchService.drawnBodyRadius }
+        // The collapsed corners at no more than half the body's height (the
+        // height is a slider, the radius its own number; Logic.collapsedRadius
+        // says why clamped and not scaled). The outline and the shadow both
+        // take it from here; the pill is round at its ends anyway.
+        readonly property real collapsedRadius: Logic.collapsedRadius(NotchService.drawnBodyRadius, NotchService.bodyHeight)
+        NotchValue { id: bodyRadius; minimum: window.collapsedRadius; to: window.expanded ? Metrics.notchExpandedRadius : window.collapsedRadius }
         // The body's geometry, shared by the outline, the pill and the shadow.
         readonly property var bodyShape: Logic.geometry(window.width / 2,
             bodyWidth.value, bodyHeight.value, bodyEar.value, bodyRadius.value)
 
         screen: modelData
-        visible: active && !remapping
+        visible: mapped && !remapping
         color: "transparent"
         anchors.top: true
         implicitWidth: Metrics.notchMaxExpandedWidth + Metrics.notchExpandedEar * 2 + Metrics.spaceXxl * 2
@@ -186,7 +212,10 @@ Variants {
         // moves the notch to the Overlay layer while one is fullscreen.
         WlrLayershell.layer: fullscreenShown ? WlrLayer.Overlay : WlrLayer.Top
 
-        mask: Region { item: maskArea }
+        // Nothing at all while hidden for a fullscreen window: an empty region
+        // passes every click through to the window, whatever the compositor
+        // does with the layer under it.
+        mask: Region { item: window.active ? maskArea : null }
 
         onWantExpandedChanged: {
             if (wantExpanded) {
@@ -315,9 +344,9 @@ Variants {
             target: NotchService
             function onReserveChanged() { window.remap() }
             // The body height is part of the zone, so a preset that changes
-            // it (Classic's 32 for Island's 40) maps the surface again too
-            // while space is reserved - and the rectangle the panels align to
-            // is reported again either way.
+            // it (Classic's 32 for Island's 34) or the Height row maps the
+            // surface again too while space is reserved - and the rectangle
+            // the panels align to is reported again either way.
             function onBodyHeightChanged() {
                 if (NotchService.reserve) window.remap()
                 window.reportPlace()
@@ -409,6 +438,7 @@ Variants {
             layer.enabled: true
         }
         MultiEffect {
+            visible: window.active
             opacity: window.bodyOpacity
             source: shadowCaster
             anchors.fill: shadowCaster
@@ -449,7 +479,7 @@ Variants {
 
         Rectangle {
             opacity: window.bodyOpacity
-            visible: NotchService.pill
+            visible: NotchService.pill && window.active
             x: window.bodyShape.left
             y: window.shapeTop
             width: Math.max(0, window.bodyShape.right - window.bodyShape.left)
@@ -460,15 +490,18 @@ Variants {
 
         // The outline is built again each time the window is shown. A Shape
         // drawn by the CurveRenderer keeps its last geometry across an unmap
-        // and map of the layer surface - hidden for a fullscreen window, or
-        // remapped for a reserve change - and paints the body where it was
-        // when the window went away, until the next morph changes the path.
-        // Seen as the notch coming back with its body half off the left edge
-        // while the clock and the shadow, which read the geometry directly,
-        // were in the right place; a hover (a morph) put it right.
+        // and map of the layer surface - remapped for a reserve change, and
+        // until 16.10. unmapped for every fullscreen window - and paints the
+        // body where it was when the window went away, until the next morph
+        // changes the path. Seen as the notch coming back with its body half
+        // off the left edge while the clock and the shadow, which read the
+        // geometry directly, were in the right place; a hover (a morph) put
+        // it right. A fullscreen window now hides the content and keeps the
+        // surface, and the outline is still let go and built again with the
+        // content: a Shape is cheap, a stale outline is not.
         Loader {
             opacity: window.bodyOpacity
-            active: !NotchService.pill && window.visible
+            active: !NotchService.pill && window.visible && window.active
             anchors.fill: parent
             sourceComponent: Shape {
                 preferredRendererType: Shape.CurveRenderer
@@ -525,6 +558,7 @@ Variants {
         // are children so hovering them keeps the notch open.
         Item {
             id: hitArea
+            visible: window.active
             opacity: window.bodyOpacity
             x: (window.width - width) / 2
             y: window.shapeTop

@@ -4,10 +4,10 @@ import Quickshell.Io
 import QtQuick
 import "terminal/TerminalLogic.js" as Logic
 
-// Settings > Terminal. Generates the Starship prompt (starship.toml), Kitty
+// Settings > Terminal. Generates the Starship prompt (starship.toml), kitty
 // overrides (kitty.conf) and the Fastfetch greeting switch in the shell's
 // config directory for terminals started through launch-kitty.sh, reloads
-// running Kitty windows in the real session and renders a prompt preview.
+// running kitty windows in the real session and renders a prompt preview.
 Singleton {
     id: root
 
@@ -43,11 +43,15 @@ Singleton {
 
     property string previewText: ""
     property string previewError: ""
-    // "builtin" (the distribution's own ASCII logo) or "image". Read from the
+    // "builtin" (the distribution's own ASCII logo), "image" or "text" (a text
+    // logo of one's own, like the buchhwin profile's Saturn). Read from the
     // configuration rather than inferred from an empty path, because "no image
-    // chosen" and "the chosen image is gone" are not the same thing to say.
+    // chosen" and "the chosen image is gone" are not the same thing to say -
+    // and a text file is not an image to decode.
     property string fastfetchLogo: "builtin"
     property string fastfetchImage: ""
+    // The text logo's file, while that is the logo.
+    property string fastfetchTextLogo: ""
     property string fastfetchError: ""
     property bool choosingImage: false
     // Set by the settings page; the preview only runs while it is shown.
@@ -86,18 +90,8 @@ Singleton {
         logoPending = false
         if (logoFile === "read" && logoNeedsFit(fastfetchConfig.text(), imageSize)) sizeProc.running = true
     }
-    // What `fastfetch-image.py size` would change: a `logo` object with a
-    // stretching height or another width. No file, no logo object, or a
-    // document that is not an object, and it writes nothing. A file that is
-    // not plain JSON - comments, as the shipped one has until its first fit -
-    // is left to the script, which reads those.
-    function logoNeedsFit(text, columns) {
-        let data = null
-        try { data = JSON.parse(text) } catch (error) { return true }
-        const logo = data !== null && typeof data === "object" && !Array.isArray(data) ? data.logo : null
-        if (logo === null || logo === undefined || typeof logo !== "object" || Array.isArray(logo)) return false
-        return "height" in logo || logo.width !== columns
-    }
+    // What `fastfetch-image.py size` would change (TerminalLogic.logoNeedsFit).
+    function logoNeedsFit(text, columns) { return Logic.logoNeedsFit(text, columns) }
     readonly property bool previewGit: options.previewGit
     onPreviewGitChanged: refreshPreview()
 
@@ -231,8 +225,10 @@ Singleton {
             onStreamFinished: {
                 try {
                     const result = JSON.parse(text)
-                    root.fastfetchImage = result.source || ""
-                    root.fastfetchLogo = result.kind === "image" ? "image" : "builtin"
+                    const kind = result.kind === "image" || result.kind === "text" ? result.kind : "builtin"
+                    root.fastfetchImage = kind === "image" ? result.source || "" : ""
+                    root.fastfetchTextLogo = kind === "text" ? result.source || "" : ""
+                    root.fastfetchLogo = kind
                     root.fastfetchError = result.error || ""
                 } catch (error) {
                     root.fastfetchError = "Fastfetch configuration unreadable"
@@ -251,7 +247,8 @@ Singleton {
     Process {
         id: chooseProc
         stderr: ErrorLog { label: "TerminalService.chooseProc" }
-        command: ["sh", "-c", "file=$(kdialog --title 'Fastfetch image' --getopenfilename \"$HOME/Pictures\" 'Images (*.png *.jpg *.jpeg *.webp *.bmp)') || exit 0; [ -n \"$file\" ] && python3 \"$1\" set \"$file\"", "sh", Paths.script("fastfetch-image.py")]
+        // kdialog through launch-app.sh ($2), for the session's environment.
+        command: ["sh", "-c", "file=$(\"$2\" org.kde.kdialog kdialog --title 'Fastfetch image' --getopenfilename \"$HOME/Pictures\" 'Images (*.png *.jpg *.jpeg *.webp *.bmp)') || exit 0; [ -n \"$file\" ] && python3 \"$1\" set \"$file\"", "sh", Paths.script("fastfetch-image.py"), Paths.script("launch-app.sh")]
         stdout: StdioCollector {
             onStreamFinished: {
                 if (text.trim().length) {

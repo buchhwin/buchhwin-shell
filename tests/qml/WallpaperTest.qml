@@ -14,6 +14,9 @@ ShellRoot {
     readonly property string wallFolder: Paths.cacheDir + "/wallpaper-test"
     FileView { id: imageA; path: root.wallFolder + "/a.png"; printErrors: false }
     FileView { id: imageB; path: root.wallFolder + "/b.png"; printErrors: false }
+    // The service's state file, as it was written.
+    FileView { id: written; path: Paths.configDir + "/wallpapers.json"; blockLoading: true; printErrors: false }
+    property var writtenState: null
     // The accent from the wallpaper follows every image below, and none of
     // them is one it can read.
     readonly property string accentSource: AdaptiveService.accentSource
@@ -35,6 +38,14 @@ ShellRoot {
         T.eq(W.pathFor(state, "eDP-1", "/w/a.png", images), "/w/a.png", "other screens use the shared one")
         T.eq(W.pathFor(state, "DP-1", "/w/a.png", ["/w/a.png"]), "/w/a.png", "missing file falls back")
         T.eq(W.withScreen(state, "DP-1", "").screens, {}, "override removed")
+        T.eq(W.currentPath("/w/s.png", "/w/b.jpg", images, "", ""), "/w/s.png", "the slideshow's image wins")
+        T.eq(W.currentPath("", "/w/b.jpg", images, "", ""), "/w/b.jpg", "a listed configured image needs no check")
+        T.eq(W.currentPath("", "/x/far.png", images, "", ""), "", "an unlisted one shows nothing until checked")
+        T.eq(W.currentPath("", "/x/far.png", images, "/x/far.png", ""), "/x/far.png", "checked and there")
+        T.eq(W.currentPath("", "/x/far.png", images, "/x/far.png", "/x/far.png"), images[0], "checked and missing: the first image")
+        T.eq(W.currentPath("", "/x/far.png", [], "/x/far.png", "/x/far.png"), "", "missing and an empty folder: none")
+        T.eq(W.currentPath("", "/x/far.png", images, "/x/old.png", ""), "", "an answer for another path does not count")
+        T.eq(W.currentPath("", "", images, "", ""), images[0], "nothing configured: the first image")
         state = W.toggleFavourite(W.toggleFavourite(state, "/w/b.jpg"), "/w/c.webp")
         T.eq(state.favourites, ["/w/b.jpg", "/w/c.webp"], "favourites added")
         T.eq(W.toggleFavourite(state, "/w/b.jpg").favourites, ["/w/c.webp"], "favourite removed")
@@ -167,6 +178,50 @@ ShellRoot {
         // as it did, which is what keeps every other caller honest.
         T.eq(paths(W.pickerItems(shelf, [], "")).length, 4, "no folder given is no grouping and no filtering")
 
+        // ---- the picker's last chip ---------------------------------------
+        // Kept in wallpapers.json, at version 1, and read as everything when a
+        // file from before it has none.
+        T.eq(W.emptyState().pickerFilter, "", "nothing remembered is everything")
+        T.eq(W.parseState(JSON.stringify({ version: 1, screens: {}, favourites: [] })).pickerFilter, "",
+             "a file written before the chip was kept reads as everything")
+        T.eq(W.parseState(JSON.stringify({ version: 1, pickerFilter: "nature" })).pickerFilter, "nature",
+             "a folder chip is read back")
+        T.eq(W.parseState(JSON.stringify({ version: 1, pickerFilter: W.FAVOURITES })).pickerFilter, W.FAVOURITES,
+             "and so is the favourites chip")
+        T.eq(W.parseState(JSON.stringify({ version: 2, pickerFilter: "nature" })).pickerFilter, "",
+             "another version is thrown away whole, the chip with it")
+        T.eq([W.pickerFilterKey("a/b"), W.pickerFilterKey(".."), W.pickerFilterKey("."), W.pickerFilterKey(7),
+              W.pickerFilterKey("x\u0000y"), W.pickerFilterKey(null), W.pickerFilterKey("x".repeat(256))],
+             ["", "", "", "", "", "", ""], "a path, . or .., a number, a NUL or an overlong name is no chip")
+        T.eq(W.pickerFilterKey("Über mich #2"), "Über mich #2", "any folder name is")
+        const remembered = W.withPickerFilter(state, "nature")
+        T.eq(remembered.pickerFilter, "nature", "a chip is remembered")
+        T.eq([remembered.favourites, remembered.screens], [state.favourites, state.screens], "without touching the rest")
+        T.eq(W.toggleFavourite(remembered, "/w/a.png").pickerFilter, "nature", "marking a favourite keeps the chip")
+        T.eq(W.withScreen(remembered, "DP-1", "/w/a.png").pickerFilter, "nature", "and so does a screen's own wallpaper")
+        T.eq(W.withPickerFilter(remembered, "").pickerFilter, "", "clicking All remembers everything")
+
+        // Opening: the remembered chip while it is offered, else everything.
+        const chips = W.pickerFilters(shelf, [flat], home)
+        T.eq(W.openingFilter("nature", chips), "nature", "the picker opens on the folder chosen last")
+        T.eq(W.openingFilter(W.FAVOURITES, chips), W.FAVOURITES, "or on the favourites")
+        T.eq(W.openingFilter("gone", chips), "", "a folder that is gone opens on everything")
+        T.eq(W.openingFilter(W.FAVOURITES, W.pickerFilters(shelf, [], home)), "",
+             "and so does the favourites chip with nothing starred")
+        T.eq(W.openingFilter("", chips), "", "everything opens on everything")
+
+        // While it is open: the chips change as the folder is read, and as
+        // folders come and go.
+        T.eq(W.filterAfterChange("nature", chips, ""), "nature", "a chip still offered stays")
+        T.eq(W.filterAfterChange("nature", W.pickerFilters([flat], [], home), ""), "",
+             "one that went falls back to everything")
+        T.eq(W.filterAfterChange("", W.pickerFilters([flat], [], home), "nature"), "",
+             "the remembered chip waits while its folder is not read yet")
+        T.eq(W.filterAfterChange("", chips, "nature"), "nature", "and is shown once it is offered")
+        T.eq(W.filterAfterChange("abstract", chips, ""), "abstract", "nothing awaited leaves the chosen chip alone")
+        T.ok(W.offersFilter(chips, "") && W.offersFilter(chips, "abstract") && !W.offersFilter(chips, "gone")
+             && !W.offersFilter(null, "nature"), "offersFilter: everything always, a folder only while it is a chip")
+
         // ---- a rotation that stays inside one folder ----------------------
 
         const anyState = { favourites: [], slideshow: [], screens: {} }
@@ -250,7 +305,7 @@ ShellRoot {
             // A file outside the folder is asked for; this one is there.
             const outside = Quickshell.shellPath("config/builtin-profiles/buchhwin/saturn.txt")
             SettingsService.set("wallpaper.path", outside)
-            T.eq(WallpaperService.current, outside, "a file outside the folder is taken to be there until asked")
+            T.eq(WallpaperService.current, "", "a file outside the folder shows nothing until it was asked for")
             root.waits = 0
             outsideFile.start()
         }
@@ -265,6 +320,66 @@ ShellRoot {
             T.eq(root.accentSource, WallpaperService.current, "the accent was asked for each wallpaper")
             T.eq(SettingsService.value("appearance.accent"), "#50e2cb",
                  "and an image that is gone or cannot be read keeps the accent rather than turning it blue")
+            ownWrite.start()
+        }
+    }
+
+    // wallpapers.json is watched, and the watch reads back every write of the
+    // service's own (pitfall 77): that text is the state it holds, and parsed
+    // again it handed out a new state that re-ran every binding on it.
+    Timer {
+        id: ownWrite
+        interval: 50
+        onTriggered: {
+            WallpaperService.toggleFavourite(root.wallFolder + "/a.png")
+            root.writtenState = WallpaperService.state
+            T.eq(WallpaperService.favourites, [root.wallFolder + "/a.png"], "a favourite is marked")
+            readBack.start()
+        }
+    }
+
+    Timer {
+        id: readBack
+        interval: 400
+        onTriggered: {
+            written.reload()
+            T.ok(WallpaperService.state === root.writtenState, "the watch reading the write back hands out no new state")
+            WallpaperService.load()
+            T.ok(WallpaperService.state === root.writtenState, "and neither does reading it again")
+            T.eq(WallpaperService.fileText, written.text(), "the service knows the file as it wrote it")
+            chipWrite.start()
+        }
+    }
+
+    // The picker's last chip goes into the same file, beside the favourites,
+    // and the chip already shown is no reason to write it again.
+    Timer {
+        id: chipWrite
+        interval: 50
+        onTriggered: {
+            WallpaperService.setPickerFilter("nature")
+            T.eq(WallpaperService.pickerFilter, "nature", "the picker's chip is remembered")
+            T.eq(WallpaperService.favourites, [root.wallFolder + "/a.png"], "and the favourites stay")
+            root.writtenState = WallpaperService.state
+            WallpaperService.setPickerFilter("nature")
+            T.ok(WallpaperService.state === root.writtenState, "the same chip again writes nothing")
+            chipRead.start()
+        }
+    }
+
+    // A FileView of its own, given its path only now: `written` above does not
+    // read the file again on a second reload() after the atomic replace.
+    property string chipPath: ""
+    FileView { id: chipFile; path: root.chipPath; blockLoading: true; printErrors: false }
+
+    Timer {
+        id: chipRead
+        interval: 400
+        onTriggered: {
+            root.chipPath = Paths.configDir + "/wallpapers.json"
+            const stored = W.parseState(chipFile.text())
+            T.eq([stored.pickerFilter, stored.favourites], ["nature", [root.wallFolder + "/a.png"]],
+                 "wallpapers.json holds the chip next to the favourites")
             T.finish("WallpaperTest")
         }
     }

@@ -35,6 +35,7 @@ ShellRoot {
         }
         WidgetBase { id: roomy; sizeClass: "large"; icon: "x"; label: "42%"; detail: "2 h left"; availableWidth: 400 }
         WidgetBase { id: stacked; vertical: true; icon: "x"; label: "42%"; availableWidth: 30 }
+        WidgetBase { id: dark; icon: "x"; label: "<img src=\"http://127.0.0.1:9/x.png\"> - Brave" }
     }
 
     // The label Text of a widget: the one showing its label.
@@ -42,6 +43,8 @@ ShellRoot {
     function detailOf(widget) { return widget.children.find(child => child.text === widget.detail && child !== labelOf(widget)) }
 
     Component.onCompleted: {
+        const black = String(Colors.notch)
+
         // ---- the glyph's ink -------------------------------------------
         T.ok(Qt.colorEqual(plain.glyphInk, plain.textColor), "the ink is the text's colour by default")
         T.ok(Qt.colorEqual(plain.iconColor, plain.glyphInk), "and the glyph wears it")
@@ -58,8 +61,27 @@ ShellRoot {
 
         T.ok(Qt.colorEqual(plain.trackColor, Colors.track), "the meter's groove is the theme's by default")
 
+        // ---- states on a surface that stays dark ---------------------------
+        T.ok(Qt.colorEqual(dark.successInk, Colors.success), "a state is the theme's colour by default")
+        T.ok(Qt.colorEqual(dark.dangerInk, Colors.danger), "danger too")
+        T.ok(Qt.colorEqual(dark.warningInk, Colors.warning), "warning too")
+        T.ok(Qt.colorEqual(dark.accentInk, Colors.accentForeground), "and the accent ink")
+        dark.onDark = true
+        T.ok(Qt.colorEqual(dark.successInk, Colors.successOnDark), "on the notch, the on-dark green")
+        T.ok(Qt.colorEqual(dark.dangerInk, Colors.dangerOnDark), "the on-dark red")
+        T.ok(Qt.colorEqual(dark.warningInk, Colors.warningOnDark), "the on-dark amber")
+        T.ok(Qt.colorEqual(dark.accentInk, Colors.notchAccent), "and the accent made for black")
+        for (const ink of [Colors.successOnDark, Colors.dangerOnDark, Colors.warningOnDark, Colors.notchAccent])
+            T.ok(C.contrast(String(ink), black) >= 3, "each reads at 3:1 on the notch (" + ink + ")")
+
+        // ---- somebody else's string stays text ----------------------------
+        const markup = labelOf(dark)
+        T.ok(markup !== undefined && markup.textFormat === Text.PlainText,
+             "a label is plain text, so a title with <img> is not fetched")
+        T.ok(dark.children.filter(child => child.text !== undefined).every(child => child.textFormat === Text.PlainText),
+             "and so is every line of the widget")
+
         // ---- the notch's own inks --------------------------------------
-        const black = String(Colors.notch)
         T.ok(C.contrast(String(Colors.notchAccent), black) >= 3, "the notch accent keeps 3:1 on black")
         T.eq(String(Colors.notchAccent), C.readable(String(Colors.accent), black, 3), "it is the accent made readable there")
         T.eq(C.readable("#4f8ff7", black, 3), "#4f8ff7", "the calm blue stays as it is")

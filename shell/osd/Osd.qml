@@ -233,7 +233,7 @@ PanelWindow {
                         width: parent.width * Math.max(0, Math.min(1, window.level))
                         height: parent.height
                         radius: height / 2
-                        color: window.mutedState ? Colors.mutedText : Colors.accent
+                        color: window.mutedState ? Colors.mutedText : Colors.accentFill
                         Behavior on width { NumberAnimation { duration: Animations.move(Animations.control); easing.type: Animations.easing } }
                     }
                 }
@@ -253,7 +253,7 @@ PanelWindow {
                                 ? (track.width - (window.segments - 1) * Metrics.spaceXs) / window.segments : 0
                             height: track.height
                             radius: height / 2
-                            color: index < KbdBacklightService.current ? Colors.accent : Colors.track
+                            color: index < KbdBacklightService.current ? Colors.accentFill : Colors.track
                             Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
                         }
                     }

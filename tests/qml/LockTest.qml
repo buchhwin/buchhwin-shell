@@ -1,14 +1,109 @@
 import Quickshell
+import Quickshell.Io
 import QtQuick
+import qs.theme
+import qs.shell.lock
 import "Harness.js" as T
 import "../../services/lock/LockLogic.js" as L
 
 ShellRoot {
+    id: root
+    // The lock process's entry point, for the shell id it names itself by.
+    // The runner copies the whole tree beside the test, lock.qml included.
+    FileView { id: lockEntry; path: Quickshell.shellPath("lock.qml"); blockLoading: true }
+
+    // Two screens' password fields over one shared state, wired the way
+    // LockFace wires them: one buffer, and `showsInput` from LockLogic with
+    // the screen the faces report. The connector names are generic ones.
+    QtObject {
+        id: shared
+        property string password: ""
+        property bool busy: false
+        property int shakes: 0
+        property string inputScreen: ""
+        function noteInput(screenName, gained) { inputScreen = L.inputScreenAfter(inputScreen, screenName, gained) }
+        function submit() {}
+    }
+    Item {
+        width: 800
+        height: 200
+        PasswordField { id: fieldA; lockState: shared; showsInput: L.showsInput("DP-1", shared.inputScreen) }
+        PasswordField { id: fieldB; y: 100; lockState: shared; showsInput: L.showsInput("HDMI-A-1", shared.inputScreen) }
+    }
+
+    function find(item, test) {
+        if (!item) return null
+        if (test(item)) return item
+        const kids = item.children || []
+        for (let i = 0; i < kids.length; ++i) {
+            const found = find(kids[i], test)
+            if (found) return found
+        }
+        return null
+    }
+    function shown(field, words) {
+        const label = find(field, item => item.role !== undefined && item.text === words)
+        return label !== null && label.visible
+    }
+    function dots(field) {
+        const label = find(field, item => item.role !== undefined && /^•/.test(item.text))
+        return label !== null && label.visible ? label.text : ""
+    }
+    // The pill carries the shake's Translate; the arrow is the MouseArea's button.
+    function offset(field) { return find(field, item => item.transform !== undefined && item.transform.length > 0).transform[0].x }
+    function arrow(field) { return find(field, item => item.containsMouse !== undefined).parent }
+
+    // The shake and the arrow animate, so they are read over a few frames.
+    property int phase: 0
+    property int ticks: 0
+    property real swingA: 0
+    property real swingB: 0
+    Timer {
+        id: frames
+        interval: 10
+        repeat: true
+        onTriggered: root.frame()
+    }
+    function frame() {
+        ticks += 1
+        swingA = Math.max(swingA, Math.abs(offset(fieldA)))
+        swingB = Math.max(swingB, Math.abs(offset(fieldB)))
+        if (phase === 0) {
+            // Read while the shake is under way (it lasts ~0.4 s), not after.
+            if (swingA === 0 && ticks < 50) return
+            // A wrong password typed on DP-1 shakes there and nowhere else.
+            T.ok(swingA > 0, "the field with the keyboard shakes (max offset " + swingA + ")")
+            T.eq(swingB, 0, "the other screen's field stands still")
+            // The keyboard leaves mid-shake: the field it left stops at rest.
+            shared.noteInput("HDMI-A-1", true)
+            T.eq(offset(fieldA), 0, "the field the keyboard left is back at rest at once")
+            swingA = 0
+            swingB = 0
+            ticks = 0
+            phase = 1
+            return
+        }
+        if (ticks < 25) return
+        frames.stop()
+        T.eq([swingA, swingB], [0, 0], "neither field moves after the keyboard moved")
+        T.ok(arrow(fieldB).visible && arrow(fieldB).opacity > 0, "the arrow comes up where the keyboard went")
+        T.ok(!arrow(fieldA).visible, "and leaves the screen it left")
+        T.finish("LockTest")
+    }
+
     Component.onCompleted: {
-        T.eq(L.displayName("jan:x:1000:1000:Jan Buchwinkler,,,:/home/jan:/bin/bash", "jan"), "Jan Buchwinkler", "GECOS full name")
-        T.eq(L.displayName("jan:x:1000:1000::/home/jan:/bin/bash", "jan"), "jan", "login without GECOS")
-        T.eq(L.displayName("", "jan"), "jan", "missing passwd line")
-        T.eq([L.initial("jan"), L.initial(""), L.initial("Ärger")], ["J", "?", "Ä"], "initials")
+        // The lock process keeps the session's services inert. It is told
+        // apart by the shell id lock.qml declares, so the two must agree.
+        T.eq([L.lockProcess("buchhwin-shell-lock"), L.lockProcess(""), L.lockProcess(undefined), L.lockProcess("buchhwin-shell")],
+             [true, false, false, false], "only the lock's shell id is the lock process")
+        T.ok(lockEntry.text().split("\n").indexOf("//@ pragma ShellId " + L.LOCK_SHELL_ID) >= 0,
+             "lock.qml declares the shell id LockLogic knows")
+
+        // An invented account, never a real one.
+        T.eq(L.displayName("sample:x:1000:1000:Sample User,,,:/home/sample:/bin/bash", "sample"), "Sample User", "GECOS full name")
+        T.eq(L.displayName("sample:x:1000:1000::/home/sample:/bin/bash", "sample"), "sample", "login without GECOS")
+        T.eq(L.displayName("", "sample"), "sample", "missing passwd line")
+        T.eq([L.initial("sample"), L.initial(""), L.initial("Ärger")], ["S", "?", "Ä"], "initials")
 
         const results = { Success: 0, Failed: 1, Error: 2, MaxTries: 3 }
         T.eq(L.afterPam(0, results).action, "unlock", "success unlocks")
@@ -76,6 +171,43 @@ ShellRoot {
         T.eq(L.fingerprintText("prompt", "Place your finger on the fingerprint reader"), "Place your finger on the fingerprint reader", "prompt text")
         T.eq(L.fingerprintText("ended", "Verification timed out"), "Fingerprint timed out. Enter your password.", "timeout text")
         T.ok(L.fingerprintText("mismatch", "Failed to match fingerprint").indexOf("not recognized") >= 0, "mismatch text")
-        T.finish("LockTest")
+
+        // Which screen draws the typed password: the one with the keyboard.
+        T.eq(L.inputScreenAfter("", "DP-1", true), "DP-1", "a surface gaining the keyboard takes the input")
+        T.eq(L.inputScreenAfter("DP-1", "HDMI-A-1", true), "HDMI-A-1", "the keyboard moving to another monitor moves it")
+        T.eq(L.inputScreenAfter("DP-1", "DP-1", false), "DP-1", "losing the keyboard moves nothing")
+        T.eq(L.inputScreenAfter("DP-1", "HDMI-A-1", false), "DP-1", "another surface losing it moves nothing")
+        T.eq(L.inputScreenAfter("DP-1", "", true), "DP-1", "a surface without a screen name moves nothing")
+        T.eq(L.inputScreenAfter(undefined, undefined, true), "", "nothing reported yet")
+        // Both orders a compositor may report a move in end on the new screen.
+        T.eq(L.inputScreenAfter(L.inputScreenAfter("DP-1", "DP-1", false), "HDMI-A-1", true), "HDMI-A-1", "leave, then enter")
+        T.eq(L.inputScreenAfter(L.inputScreenAfter("DP-1", "HDMI-A-1", true), "DP-1", false), "HDMI-A-1", "enter, then leave")
+        T.eq([L.showsInput("DP-1", "DP-1"), L.showsInput("HDMI-A-1", "DP-1")], [true, false], "only the input screen draws the password")
+        T.eq([L.showsInput("DP-1", ""), L.showsInput("HDMI-A-1", undefined)], [true, true], "before any report every screen draws, as before")
+        T.eq(L.showsInput("eDP-1", "eDP-1"), true, "a single monitor draws it")
+
+        // The fields: nothing reported yet, nothing typed - both empty.
+        T.eq([shown(fieldA, "Enter password"), shown(fieldB, "Enter password")], [true, true], "both fields empty at the start")
+        // The keyboard on DP-1 (the face's report), then three keys.
+        shared.noteInput("DP-1", true)
+        shared.noteInput("HDMI-A-1", false)
+        shared.password = "abc"
+        T.eq([fieldA.length, fieldB.length], [3, 0], "one buffer, drawn on one screen")
+        T.eq([dots(fieldA), dots(fieldB)], ["•••", ""], "dots only where the keys go")
+        T.eq([shown(fieldA, "Enter password"), shown(fieldB, "Enter password")], [false, true], "the other screen keeps the placeholder")
+        shared.busy = true
+        T.eq([dots(fieldA), shown(fieldB, "Checking …")], ["•••", true], "while PAM works the other screen says so, still without dots")
+        shared.busy = false
+        // The pointer takes the keyboard to HDMI-A-1: the dots follow.
+        shared.noteInput("DP-1", false)
+        shared.noteInput("HDMI-A-1", true)
+        T.eq([dots(fieldA), dots(fieldB)], ["", "•••"], "the dots follow the keyboard to the other monitor")
+        // A key from a surface that never reported the keyboard counts too.
+        shared.noteInput("DP-1", true)
+        T.eq([dots(fieldA), dots(fieldB)], ["•••", ""], "a key moves the dots to where it arrived")
+
+        T.ok(Animations.motionEnabled, "the sandbox animates (the shake needs it)")
+        shared.shakes += 1
+        frames.start()
     }
 }

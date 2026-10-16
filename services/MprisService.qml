@@ -157,15 +157,25 @@ Singleton {
         else if (active && active.canControl && active.volumeSupported) active.volume = Math.max(0, Math.min(1, value))
     }
     function toggleMute() { if (stream) AudioService.toggleMute(stream) }
+    // A player's length when it is a real one, else 0 (MediaLogic.realLength):
+    // a live stream reports none, zero or INT64_MAX µs, and every consumer
+    // asks here rather than trusting `length > 0` on its own - which let the
+    // last of those through as a remaining time of 153 million minutes.
+    function lengthOf(player) {
+        return player ? Logic.realLength(player.lengthSupported, player.length) : 0
+    }
+    readonly property real trackLength: lengthOf(active)
+    // There is a track to seek along: a length worth drawing a bar for.
+    readonly property bool hasLength: trackLength > 0
     function seekTo(ratio) {
-        if (active && active.canSeek && active.lengthSupported && active.length > 0)
-            active.position = Math.max(0, Math.min(1, ratio)) * active.length
+        if (active && active.canSeek && hasLength)
+            active.position = Math.max(0, Math.min(1, ratio)) * trackLength
     }
 
-    function formatTime(seconds) {
-        if (!seconds || seconds < 0) return "0:00"
-        const total = Math.floor(seconds)
-        return Math.floor(total / 60) + ":" + String(total % 60).padStart(2, "0")
+    // m:ss, or h:mm:ss for a track of an hour or more (pass its length as
+    // `reference`, so elapsed and remaining keep one shape).
+    function formatTime(seconds, reference) {
+        return Logic.formatTime(seconds, reference)
     }
 
     Timer {

@@ -24,7 +24,13 @@ ShellPanel {
     readonly property var groups: shown ? ShortcutService.grouped(query) : []
     readonly property int count: groups.reduce((total, group) => total + group.rows.length, 0)
 
-    onWantedChanged: if (wanted) query = ""
+    // The field is cleared with the filter. The sheet is built once and
+    // kept, field and all, so resetting `query` alone reopened it on the
+    // old search text over an unfiltered list.
+    onWantedChanged: if (wanted) {
+        search.text = ""
+        query = ""
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -71,6 +77,28 @@ ShellPanel {
             contentHeight: columns.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
+            ScrollFeel { id: sheetFeel; view: sheet }
+
+            // A hint that there is more below, the one every ScrollList has:
+            // the sheet is a fixed size and its columns run past it, and a
+            // bare Flickable said nothing about the rows under its edge. On
+            // the Flickable itself, over its right edge - declared here it
+            // would land in the content and scroll away with the rows.
+            Rectangle {
+                parent: sheet
+                visible: sheet.contentHeight > sheet.height + 1
+                x: sheet.width - width
+                y: sheet.visibleArea.yPosition * sheet.height
+                z: 1
+                width: Metrics.scrollHintWidth
+                height: Math.max(Metrics.spaceLg, sheet.visibleArea.heightRatio * sheet.height)
+                radius: width / 2
+                color: Colors.scrollHint
+                opacity: sheet.moving || sheetFeel.scrolling ? 1 : Effects.mutedOpacity
+                Behavior on opacity {
+                    NumberAnimation { duration: Animations.hover; easing.type: Animations.easing }
+                }
+            }
 
             // As many columns as the card is wide enough for, and **not** a
             // `GridLayout`. A grid makes every row as tall as its tallest cell,

@@ -12,6 +12,12 @@ ColumnLayout {
     Component.onCompleted: NetworkService.setScanning(true)
     Component.onDestruction: NetworkService.setScanning(false)
 
+    // Wi-Fi that can find networks: the radio flag on and an adapter to
+    // search with. NetworkManager keeps the flag on where there is no adapter
+    // at all, and the page searched forever beside nothing to search with.
+    // (NetworkService.wifiUsable)
+    readonly property bool wifiUsable: NetworkService.wifiUsable
+
     ShellCard {
         Layout.fillWidth: true
         implicitHeight: header.implicitHeight + Metrics.spaceLg * 2
@@ -20,7 +26,14 @@ ColumnLayout {
             anchors.fill: parent
             anchors.margins: Metrics.spaceLg
             spacing: Metrics.spaceMd
-            ShellIcon { glyph: NetworkService.icon; size: Metrics.iconLg; color: NetworkService.connected ? Colors.accentForeground : Colors.mutedText }
+            // The Wi-Fi card's glyph is Wi-Fi's, as on the control center's
+            // tile: the wire is named in the line below, not drawn here.
+            ShellIcon {
+                glyph: !root.wifiUsable ? "󰤮" : NetworkService.current
+                    ? NetworkService.signalIcon(NetworkService.current.signalStrength) : "󰤯"
+                size: Metrics.iconLg
+                color: NetworkService.current ? Colors.accentForeground : Colors.mutedText
+            }
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 0
@@ -32,6 +45,7 @@ ColumnLayout {
                 }
             }
             ShellToggle {
+                accessibleName: "Wi-Fi"
                 checked: NetworkService.wifiEnabled
                 enabledState: NetworkService.wifiAvailable
                 onToggled: value => NetworkService.setWifiEnabled(value)
@@ -43,7 +57,7 @@ ColumnLayout {
     // Bluetooth page and in the network popup.
     ScrollList {
         Layout.fillWidth: true
-        visible: NetworkService.wifiEnabled
+        visible: root.wifiUsable
         title: "Networks"
         maxHeight: Metrics.popupListHeight
         EmptyState {
@@ -75,9 +89,22 @@ ColumnLayout {
         }
     }
 
+    // The flag on and nothing to search with says so, as the network popup
+    // does, rather than "Searching for networks …" for good.
+    CardSection {
+        Layout.fillWidth: true
+        visible: NetworkService.wifiEnabled && !NetworkService.wifiAvailable
+        EmptyState {
+            Layout.fillWidth: true
+            row: true
+            icon: "󰤮"
+            title: "No Wi-Fi adapter available"
+        }
+    }
+
     RowLayout {
         Layout.fillWidth: true
-        visible: NetworkService.wifiEnabled
+        visible: root.wifiUsable
         spacing: Metrics.spaceSm
         ShellButton { icon: "󰖩"; text: "Hidden network"; compact: true; onClicked: PanelService.openOver("wifiPassword", { ssid: "", hidden: true }, { page: "network" }) }
         Item { Layout.fillWidth: true }

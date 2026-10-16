@@ -114,6 +114,7 @@ ShellPanel {
                 cellWidth: Math.floor(width / root.columns)
                 cellHeight: Metrics.emojiCell
                 boundsBehavior: Flickable.StopAtBounds
+                ScrollFeel { view: grid }
 
                 delegate: Item {
                     required property var modelData
@@ -132,6 +133,7 @@ ShellPanel {
                             anchors.centerIn: parent
                             text: EmojiService.text(modelData)
                             color: Colors.text
+                            textFormat: Text.PlainText
                             font.family: Typography.family
                             font.pixelSize: Typography.emojiSize
                             renderType: Typography.renderType

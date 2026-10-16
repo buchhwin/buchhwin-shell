@@ -32,14 +32,14 @@ WidgetBase {
 
     icon: metric === "ram" ? "󰍛" : metric === "disk" ? "󰋊" : "󰻠"
     label: SystemStatsService.percent(usage)
-    iconColor: usage > 0.9 ? Colors.danger : usage > 0.75 ? Colors.warning : root.glyphInk
+    iconColor: usage > 0.9 ? root.dangerInk : usage > 0.75 ? root.warningInk : root.glyphInk
     // What a bigger cell is worth here: the name, so a row of three of these
     // can be read without knowing the glyphs; a bar, because a number alone
     // does not say whether 62 % is a lot; and how much of the thing there
     // actually is.
     name: metric === "ram" ? "RAM" : metric === "disk" ? "Disk" : "CPU"
     meter: usage
-    meterColor: usage > 0.9 ? Colors.danger : usage > 0.75 ? Colors.warning : Colors.accent
+    meterColor: usage > 0.9 ? root.dangerInk : usage > 0.75 ? root.warningInk : Colors.accent
     detail: metric === "ram" && SystemStatsService.memory
             ? SystemStatsService.formatBytes(SystemStatsService.memory.used * 1024) + " of "
               + SystemStatsService.formatBytes(SystemStatsService.memory.total * 1024)

@@ -8,11 +8,13 @@ import qs.shell.components
 import "../../services/arrange/ArrangeLogic.js" as Arrange
 import "../../services/LayoutLogic.js" as LayoutLogic
 import "../../services/notch/NotchLogic.js" as NotchLogic
+import "../../services/lock/LockLogic.js" as LockLogic
 
 // One screen of the lock screen (macOS style): the blurred capture of this
 // screen, date and a large clock at the top, avatar, name and password at the
 // bottom. Optional extras (Settings > Lock Screen): media, battery and keyboard
-// layout, power buttons. Keys go to the shared state in LockScreen.
+// layout, power buttons. Keys go to the shared state in LockScreen; the typed
+// password is drawn only on the screen that has the keyboard.
 Item {
     id: root
     readonly property CalendarDemand calendarDemand: CalendarDemand {}
@@ -32,7 +34,20 @@ Item {
         ? "file://" + lockState.dir + "/" + screenName.replace(/[^A-Za-z0-9._-]/g, "_") + ".png" : ""
     property string confirmAction: ""
 
+    // Which screen draws the password (LockLogic.showsInput). One surface has
+    // the keyboard at a time and Qt marks its window active (the session lock
+    // surface here, the preview's layer window in nested screenshots), so the
+    // face reports that, and every key it is given as well: a key can only
+    // arrive where the keyboard is, so the dots follow the keys even if the
+    // window's active state lags behind a focus change.
+    readonly property bool hasKeyboard: Window.active
+    onHasKeyboardChanged: lockState.noteInput(screenName, hasKeyboard)
+    onScreenNameChanged: if (hasKeyboard) lockState.noteInput(screenName, true)
+    Component.onCompleted: lockState.noteInput(screenName, hasKeyboard)
+    readonly property bool showsInput: LockLogic.showsInput(screenName, lockState.inputScreen)
+
     Keys.onPressed: event => {
+        lockState.noteInput(root.screenName, true)
         lockState.keyActivity()
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) lockState.submit()
         else if (event.key === Qt.Key_Backspace) lockState.erase(event.modifiers & Qt.ControlModifier)
@@ -130,7 +145,7 @@ Item {
                 visible: PowerService.hasBattery
                 spacing: Metrics.spaceXs
                 LockLabel { text: PowerService.percent + "%" }
-                ShellIcon { glyph: PowerService.icon; size: Metrics.iconMd; color: PowerService.charging ? Colors.successOnDark : PowerService.low ? Colors.dangerOnDark : Colors.lockText }
+                ShellIcon { glyph: PowerService.icon; size: Metrics.iconMd; color: PowerService.charging ? Colors.positiveOnDark : PowerService.low ? Colors.dangerOnDark : Colors.lockText }
             }
         }
 
@@ -197,6 +212,7 @@ Item {
             PasswordField {
                 Layout.alignment: Qt.AlignHCenter
                 lockState: root.lockState
+                showsInput: root.showsInput
             }
             // Status: errors and Caps Lock, or the fingerprint hint (pam_fprintd).
             LockLabel {
@@ -501,7 +517,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     glyph: PowerService.icon
                     size: Metrics.iconMd
-                    color: PowerService.charging ? Colors.successOnDark : PowerService.low ? Colors.dangerOnDark : Colors.lockText
+                    color: PowerService.charging ? Colors.positiveOnDark : PowerService.low ? Colors.dangerOnDark : Colors.lockText
                 }
                 LockLabel {
                     anchors.verticalCenter: parent.verticalCenter

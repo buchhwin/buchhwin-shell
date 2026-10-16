@@ -39,6 +39,7 @@ Item {
             text: ":"
             font: root.clockFont
             color: Colors.lockClock
+            textFormat: Text.PlainText
             renderType: Typography.renderType
             anchors.verticalCenter: parent.verticalCenter
             anchors.verticalCenterOffset: -Metrics.spaceSm
@@ -55,6 +56,7 @@ Item {
             text: root.suffix
             font: root.suffixFont
             color: Colors.lockClock
+            textFormat: Text.PlainText
             renderType: Typography.renderType
         }
     }

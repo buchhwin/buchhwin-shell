@@ -121,9 +121,13 @@ ColumnLayout {
                     text: UpdatesService.shellUpdating ? "Updating …" : "Update the shell"
                     compact: true
                     variant: UpdatesService.shellUpdatable ? "accent" : "surface"
+                    // Not while the upgrade or the Flatpak update below runs
+                    // in its terminal: the update restarts the shell.
                     enabledState: UpdatesService.actionsAllowed && UpdatesService.shellUpdatable && !UpdatesService.shellUpdating
+                        && !UpdatesService.terminalBusy
                     toolTip: !UpdatesService.actionsAllowed ? "Only available in the buchhwin-shell session"
-                        : UpdatesService.shell.dirty || UpdatesService.shell.ahead > 0 ? "Refused while the checkout has local changes or local commits" : ""
+                        : UpdatesService.shell.dirty || UpdatesService.shell.ahead > 0 ? "Refused while the checkout has local changes or local commits"
+                        : UpdatesService.terminalBusy && UpdatesService.shellUpdatable ? "Waits until the update in the terminal window has finished" : ""
                     onClicked: UpdatesService.updateShell()
                 }
                 ShellIcon {

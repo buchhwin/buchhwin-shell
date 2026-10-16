@@ -90,7 +90,7 @@ session_variables=(
   DISPLAY WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE
   XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP DESKTOP_SESSION XDG_SESSION_TYPE
   QT_QPA_PLATFORM QT_QPA_PLATFORMTHEME XCURSOR_THEME XCURSOR_SIZE
-  PAM_KWALLET5_LOGIN
+  XDG_CONFIG_DIRS PAM_KWALLET5_LOGIN
 )
 step "environment imported" systemctl --user import-environment "${session_variables[@]}"
 step "D-Bus activation environment" dbus-update-activation-environment --systemd "${session_variables[@]}"

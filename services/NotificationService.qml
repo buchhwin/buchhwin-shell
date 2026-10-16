@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Services.Notifications
 import QtQuick
 import "notifications/NotificationLogic.js" as Logic
+import "lock/LockLogic.js" as LockLogic
 
 // Session notification server, popup queue and Do Not Disturb. DND modes:
 // off, 1h, tomorrow (next morning), manual. The mode survives reloads.
@@ -13,8 +14,12 @@ Singleton {
     // owns org.freedesktop.Notifications steals the name from the real shell
     // whenever that one restarts. Nested shells only run the server with
     // BUCHHWIN_NESTED_NOTIFICATIONS=1.
-    readonly property bool serverWanted: Quickshell.env("BUCHHWIN_NESTED") !== "1"
-        || Quickshell.env("BUCHHWIN_NESTED_NOTIFICATIONS") === "1"
+    // The lock screen's process (lock.qml) never runs one: a second server
+    // waits in the bus queue there and takes the name - and the notifications
+    // with it, into a process that shows none - whenever the shell restarts
+    // while the screen is locked (LockLogic.lockProcess).
+    readonly property bool serverWanted: !LockLogic.lockProcess(Quickshell.shellId)
+        && (Quickshell.env("BUCHHWIN_NESTED") !== "1" || Quickshell.env("BUCHHWIN_NESTED_NOTIFICATIONS") === "1")
     readonly property var server: serverLoader.item
     readonly property int maxPopups: 3
     // How many notifications the history keeps. Every one is tracked, image
@@ -31,7 +36,8 @@ Singleton {
     // primitives per key.
     property var appRules: ({})
     property real now: Date.now()
-    readonly property bool dndActive: dndMode === "manual" || ((dndMode === "1h" || dndMode === "tomorrow") && dndUntil > now)
+    readonly property bool dndActive: Logic.dndActive(dndMode, dndUntil, now)
+    readonly property bool dndTimed: Logic.TIMED_DND.indexOf(dndMode) >= 0
     readonly property bool autoSuppressed: (SettingsService.value("notifications.suppressFullscreen") && HyprlandService.fullscreenActive)
         || (SettingsService.value("notifications.suppressGames") && HyprlandService.gameActive)
     readonly property bool suppressed: dndActive || autoSuppressed
@@ -92,7 +98,7 @@ Singleton {
     }
 
     function scheduleExpiry() {
-        if ((dndMode === "1h" || dndMode === "tomorrow") && dndUntil > Date.now()) {
+        if (dndTimed && dndUntil > Date.now()) {
             expiry.interval = Math.min(2147483000, Math.max(1000, dndUntil - Date.now() + 500))
             expiry.restart()
         } else {
@@ -167,17 +173,28 @@ Singleton {
         scheduleExpiry()
     }
 
+    // The clock read again: at the expiry, and once a minute while a timed
+    // mode is on. The expiry alone runs on the monotonic clock, which stops in
+    // suspend, so a night slept through ended Do Not Disturb hours late
+    // (Logic.dndAfter). A minute after waking is the most it can be off now.
+    function checkDnd() {
+        now = Date.now()
+        const next = Logic.dndAfter(dndMode, dndUntil, now)
+        if (next !== dndMode) {
+            dndMode = next
+            saveState()
+        }
+        scheduleExpiry()
+    }
     Timer {
         id: expiry
-        onTriggered: {
-            root.now = Date.now()
-            if (!root.dndActive && root.dndMode !== "off") {
-                root.dndMode = "off"
-                root.saveState()
-            } else {
-                root.scheduleExpiry()
-            }
-        }
+        onTriggered: root.checkDnd()
+    }
+    Timer {
+        interval: 60000
+        repeat: true
+        running: root.dndTimed
+        onTriggered: root.checkDnd()
     }
 
     // The kernel's own boot marker, read once and blocking: it is 37 bytes and

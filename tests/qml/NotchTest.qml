@@ -1,6 +1,8 @@
 import Quickshell
 import Quickshell.Io
 import QtQuick
+import qs.theme
+import qs.services
 import "Harness.js" as T
 import "../../services/notch/NotchLogic.js" as N
 import "../../services/LayoutLogic.js" as L
@@ -158,6 +160,16 @@ ShellRoot {
              "outline with ears and bottom corners")
         T.eq(N.geometry(50, -4, 0, 8, 12), { ear: 0, radius: 0, left: 50, right: 50, bottom: 0 },
              "empty body collapses to a point")
+        // The collapsed corners against a body that is a slider now: clamped
+        // at half the height, not scaled with it.
+        T.eq(N.collapsedRadius(14, 34), 14, "Island's corners fit its body as they are")
+        T.eq([N.collapsedRadius(14, 48), N.collapsedRadius(14, 28)], [14, 14],
+             "a taller or lower body keeps the corners' number while they fit")
+        T.eq(N.collapsedRadius(22, 34), 17, "large shell corners round off at half the height")
+        T.eq(N.collapsedRadius(N.BODY_RADIUS.max, N.BODY_HEIGHT.min), N.BODY_HEIGHT.min / 2,
+             "the roundest corners on the lowest body: a pill's ends")
+        T.eq([N.collapsedRadius(-3, 34), N.collapsedRadius("x", 34), N.collapsedRadius(14, undefined)], [0, 0, 0],
+             "nonsense is square")
         T.eq(N.mix(10, 20, 0.25), 12.5, "mix")
 
         // The wide layout's event list
@@ -322,7 +334,26 @@ ShellRoot {
              [32, 24, 32, 11, 22, 22], "body sizes clamped and rounded, nonsense falls back to the token")
         T.eq(Object.keys(N.BODY_RANGES), ["bodyHeight", "bodyRadius", "bodyPadding"], "one range per body setting, under its key")
         T.ok(N.BODY_HEIGHT.min <= 32 && N.BODY_RADIUS.min <= 11 && N.BODY_PADDING.min <= 16, "Classic's body is inside the ranges")
-        T.ok(N.BODY_HEIGHT.max >= 40 && N.BODY_RADIUS.max >= 16 && N.BODY_PADDING.max >= 22, "and so is Island's")
+        T.ok(N.BODY_HEIGHT.max >= 34 && N.BODY_RADIUS.max >= 14 && N.BODY_PADDING.max >= 22, "and so is Island's")
+        // A notch without stored values is Island's: the settings' defaults
+        // and the theme's fallback tokens are the preset file's body.
+        const islandBody = JSON.parse(islandFile.text()).options
+        T.eq([Metrics.notchHeight, Metrics.notchRadius, Metrics.notchPadding],
+             [islandBody.bodyHeight, islandBody.bodyRadius, islandBody.bodyPadding], "the theme's fallback is Island's body")
+        T.eq(["bodyHeight", "bodyRadius", "bodyPadding"].map(key => SettingsService.defaultOf("notch." + key)),
+             [islandBody.bodyHeight, islandBody.bodyRadius, islandBody.bodyPadding], "and so are the settings' defaults")
+
+        // The Height row stores whole pixels inside the range on release, and
+        // nothing - no undo step - for a release on the stored value.
+        T.eq(N.bodyChange("bodyHeight", 30.4, 34), 30, "whole pixels")
+        T.eq(N.bodyChange("bodyHeight", 33.6, 34), null, "a release that rounds to the stored height is no change")
+        T.eq([N.bodyChange("bodyHeight", 12, 34), N.bodyChange("bodyHeight", 99, 34)], [24, 64], "inside the range")
+        T.eq(N.bodyChange("bodyHeight", 40, 34), 40, "the old Island height is still a choice")
+        T.eq([N.bodyChange("bodyHeight", "x", 34), N.bodyChange("bodyHeight", null, 34), N.bodyChange("bodyHeight", "", 34)],
+             [null, null, null], "not a number is nothing to store")
+        T.eq(N.bodyChange("bodyHeight", 24, undefined), 24, "a height without a stored one is a change")
+        T.eq([N.bodyChange("openDelay", 300, 150), N.bodyChange("toString", 30, 34)], [null, null],
+             "only the body keys")
         T.eq(N.migrate({ notch: { expandOnHover: false, reserve: true } }).notch, { reserve: true, hoverMode: "click" },
              "expandOnHover off becomes click")
         T.eq(N.migrate({ notch: { expandOnHover: true, hoverMode: "off" } }).notch, { hoverMode: "off" },
@@ -354,8 +385,8 @@ ShellRoot {
         const openWorkspaces = L.notchItems(island.layout, "expanded").filter(item => item.type === "workspace")
         T.eq(openWorkspaces.map(item => item.options.style), ["dots"], "Island's open workspaces are round dots, like its strip")
         T.eq(island.options.hoverMode, "hover", "Island opens on hover")
-        T.eq([island.options.bodyHeight, island.options.bodyRadius, island.options.bodyPadding], [40, 16, 22],
-             "Island's body is the theme's: 40 tall, corners of 16, 22 of air")
+        T.eq([island.options.bodyHeight, island.options.bodyRadius, island.options.bodyPadding], [34, 14, 22],
+             "Island's body is the theme's: 34 tall, corners of 14, 22 of air")
 
         // Classic is the notch as it was before Island: the time alone in the
         // strip, the overview of five on hover, at the default width.
@@ -383,6 +414,8 @@ ShellRoot {
                  files[i][0] + ": every option in the file is one a preset carries")
             T.ok(Object.keys(N.BODY_RANGES).every(key => N.bodySize(options[key], N.BODY_RANGES[key], -1) === options[key]),
                  files[i][0] + ": the body sizes are inside their ranges")
+            T.eq(N.collapsedRadius(options.bodyRadius, options.bodyHeight), options.bodyRadius,
+                 files[i][0] + ": its corners are drawn as the file says, at the designed corner scale")
         }
 
         let presetConfig = L.sanitize({})
@@ -398,6 +431,37 @@ ShellRoot {
         presetConfig = L.sanitize(L.removeNotchPreset(presetConfig, "custom-my-notch"))
         T.eq(presetConfig.notchPresets, [], "removed")
         T.eq(L.addNotchPreset(presetConfig, "", L.defaultNotch(), {}, []).id, "", "no name, nothing saved")
+
+        // ---- numbers the IPC sets: one rule, the notch's own ranges --------
+        T.eq(N.optionRange("openDelay"), N.OPEN_DELAY, "the open delay's range is the one the notch clamps to")
+        T.eq(N.optionRange("closeDelay"), N.CLOSE_DELAY, "and the close delay's")
+        T.eq(N.optionRange("bodyHeight"), N.BODY_HEIGHT, "the body keys by their setting")
+        T.eq([N.optionRange("reserve"), N.optionRange("toString"), N.optionRange("")], [null, null, null], "no range for anything else")
+        T.eq(N.optionNumber("openDelay", "1500"), null, "1500 ms is refused for opening, not stored and clamped to 1000")
+        T.eq(N.optionNumber("openDelay", "1000"), 1000, "the open delay's top")
+        T.eq(N.optionNumber("closeDelay", "1500"), 1500, "1500 ms is a close delay")
+        T.eq(N.optionNumber("closeDelay", "2001"), null, "above the close delay's top")
+        T.eq(N.optionNumber("openDelay", "149.6"), 150, "rounded to whole ms")
+        T.eq([N.optionNumber("openDelay", "-1"), N.optionNumber("openDelay", "soon"), N.optionNumber("openDelay", ""),
+              N.optionNumber("openDelay", " ")], [null, null, null, null], "negative, not a number or nothing")
+        T.eq(N.optionNumber("bodyHeight", "64"), 64, "a body size inside its range")
+        T.eq(N.optionNumber("bodyHeight", "65"), null, "and one outside it")
+        T.eq(N.optionNumber("reserve", "1"), null, "a key that takes no number")
+        T.eq(N.delay(N.optionNumber("openDelay", "1000"), N.OPEN_DELAY), 1000, "what is stored is what the notch uses")
+
+        // ---- what an empty overview cell says ------------------------------
+        T.eq(N.emptyText("weather", { weather: "noLocation" }, "Weather"), "No location", "weather without a place")
+        T.eq(N.emptyText("weather", { weather: "disabled" }, "Weather"), "Weather off", "weather switched off")
+        T.eq(N.emptyText("weather", { weather: "error" }, "Weather"), "No forecast", "no forecast to be had")
+        T.eq(N.emptyText("weather", { weather: "loading" }, "Weather"), "Loading …", "on its way")
+        T.eq(N.emptyText("events", {}, "Events"), "No events", "a day without events")
+        T.eq(N.emptyText("calendarSummary", {}, "Events"), "No events", "the events widget too")
+        T.eq([N.emptyText("media", {}, "Media"), N.emptyText("nowPlaying", {}, "Playback")],
+             ["Nothing playing", "Nothing playing"], "the media block and the Playback widget")
+        T.eq(N.emptyText("activeWindow", { workspaceEmpty: true }, "Active window"), "Empty workspace", "nothing open here")
+        T.eq(N.emptyText("activeWindow", { workspaceEmpty: false }, "Active window"), "No window", "windows, none focused")
+        T.eq(N.emptyText("privacy", {}, "Privacy"), "Privacy", "anything else keeps its name")
+        T.eq(N.emptyText("cpu", null, ""), "cpu", "and without one, its type")
 
         T.finish("NotchTest")
     }

@@ -65,21 +65,41 @@ fi
 qt6_dir=/usr/lib64/qt6
 [[ -d $qt6_dir ]] || qt6_dir=/usr/lib/qt6
 [[ $distro == arch ]] && qt6_dir=/usr/lib/qt6
-if [[ -r $qt6_dir/plugins/plasmacalendarplugins/pimevents.so && -d $qt6_dir/qml/org/kde/plasma/PimCalendars ]]; then
+# The QML modules services/CalendarService.qml imports. Without any one of
+# them the service fails to load and takes the whole shell with it, so each
+# is required: PimCalendars (kdepim-addons), the Plasma calendar
+# (plasma-workspace), KItemModels and Akonadi (merkuro pulls it in; on Fedora
+# akonadi-server ships it). The package for the hint differs per distribution.
+package_for() {
+  case $distro in
+    arch) printf '%s' "$1" ;;
+    opensuse-leap) printf '%s' "$3" ;;
+    *) printf '%s' "$2" ;;
+  esac
+}
+while IFS='|' read -r module label package; do
+  if [[ -d $qt6_dir/qml/$module ]]; then
+    printf 'ok       %s QML module (%s)\n' "$label" "${module//\//.}"
+  else
+    printf 'missing  %s QML module %s (the shell does not load without it; %s)\n' \
+      "$label" "${module//\//.}" "$(distro_install_hint "$distro" "$package")"
+    status=1
+  fi
+done <<MODULES
+org/kde/plasma/PimCalendars|KDE PIM calendar|kdepim-addons
+org/kde/plasma/workspace/calendar|Plasma calendar|$(package_for plasma-workspace plasma-workspace plasma6-workspace)
+org/kde/kitemmodels|KItemModels|$(package_for kitemmodels kf6-kitemmodels kf6-kitemmodels)
+org/kde/akonadi|Akonadi|$(package_for merkuro akonadi-server merkuro)
+MODULES
+# The events themselves come from a plugin of the same package; without it
+# the dashboard's events stay empty, and nothing else breaks.
+if [[ -r $qt6_dir/plugins/plasmacalendarplugins/pimevents.so ]]; then
   printf 'ok       KDE calendar plugin (pimevents)\n'
 else
-  printf 'missing  KDE calendar plugin (kdepim-addons; dashboard events stay empty)\n'
+  printf 'missing  KDE calendar plugin pimevents (dashboard events stay empty; %s)\n' "$(distro_install_hint "$distro" kdepim-addons)"
 fi
-# Two different things: services/CalendarService.qml imports org.kde.akonadi
-# (merkuro ships it), and without the module the service fails to load and
-# takes the whole shell with it - required. The Python bindings only write
-# events, and Leap and Arch do not package them - optional.
-if [[ -d $qt6_dir/qml/org/kde/akonadi ]]; then
-  printf 'ok       Akonadi QML module (org.kde.akonadi)\n'
-else
-  printf 'missing  Akonadi QML module org.kde.akonadi (the shell does not load without it; %s)\n' "$(distro_install_hint "$distro" merkuro)"
-  status=1
-fi
+# The Python bindings only write events, and Leap and Arch do not package
+# them - optional.
 if python3 -c 'import AkonadiCore' >/dev/null 2>&1; then
   printf 'ok       Akonadi Python bindings (writing calendar events)\n'
 elif [[ $distro == fedora ]]; then

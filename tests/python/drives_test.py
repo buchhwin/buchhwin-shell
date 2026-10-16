@@ -164,19 +164,19 @@ check(events == [{"kind": "mounted", "id": "sdc5", "drive": "WD_Elements"}], "un
 
 # MTP phones from the gvfs volume monitor (UDisks2 never sees them).
 volumes = [{"name": "Windows", "uri": "file:///run/media/user/Windows"},
-           {"name": "Pixel 7", "uri": "mtp://Google_Pixel_7_1A2B/"},
+           {"name": "Sample Phone", "uri": "mtp://Vendor_Phone_1A2B/"},
            {"name": "", "uri": "mtp://%5Busb%3A001%2C005%5D/"},
            {"name": "Broken", "uri": ""}]
-mounts = [{"name": "Pixel 7", "uri": "mtp://Google_Pixel_7_1A2B", "path": "/run/user/1000/gvfs/mtp:host=Google_Pixel_7_1A2B"},
+mounts = [{"name": "Sample Phone", "uri": "mtp://Vendor_Phone_1A2B", "path": "/run/user/1000/gvfs/mtp:host=Vendor_Phone_1A2B"},
           {"name": "Backup", "uri": "file:///run/media/user/Backup", "path": "/run/media/user/Backup"},
           {"name": "Old phone", "uri": "mtp://Nokia_9/", "path": "/run/user/1000/gvfs/mtp:host=Nokia_9"}]
 phones = module.build_phones(volumes, mounts)
-check([item["id"] for item in phones] == ["mtp-nokia_9", "mtp-5busb_3a001_2c005_5d", "mtp-google_pixel_7_1a2b"],
+check([item["id"] for item in phones] == ["mtp-nokia_9", "mtp-5busb_3a001_2c005_5d", "mtp-vendor_phone_1a2b"],
       "phones sorted by name, non-MTP left out: %r" % [item["id"] for item in phones])
 by_name = {item["name"]: item for item in phones}
-check(by_name["Pixel 7"] == {"id": "mtp-google_pixel_7_1a2b", "name": "Pixel 7", "uri": "mtp://Google_Pixel_7_1A2B/",
-                             "mountPoint": "/run/user/1000/gvfs/mtp:host=Google_Pixel_7_1A2B", "mounted": True},
-      "mount matched to the volume despite the trailing slash: %r" % by_name["Pixel 7"])
+check(by_name["Sample Phone"] == {"id": "mtp-vendor_phone_1a2b", "name": "Sample Phone", "uri": "mtp://Vendor_Phone_1A2B/",
+                             "mountPoint": "/run/user/1000/gvfs/mtp:host=Vendor_Phone_1A2B", "mounted": True},
+      "mount matched to the volume despite the trailing slash: %r" % by_name["Sample Phone"])
 check(by_name["Phone"]["mounted"] is False and by_name["Phone"]["mountPoint"] == "", "unmounted phone without a name")
 check(by_name["Old phone"]["mounted"] is True, "a mount without a volume is still listed")
 check(module.build_phones([], []) == [] and module.build_phones(None, None) == [], "no phones")
@@ -184,14 +184,40 @@ check(module.mtp_id("mtp://[usb:001,005]/") == "mtp-usb_001_005", "id from a leg
 check(module.same_device("mtp://X/", "mtp://X") and not module.same_device("mtp://X/", "mtp://Y/"), "URI comparison")
 check(module.same_device("", "") is False, "empty URIs never match")
 
-events = module.diff_phones(phones, [dict(by_name["Pixel 7"], mounted=False, mountPoint=""),
+events = module.diff_phones(phones, [dict(by_name["Sample Phone"], mounted=False, mountPoint=""),
                                      {"id": "mtp-new", "name": "New", "uri": "mtp://New/", "mountPoint": "", "mounted": False}])
 check(events == [{"kind": "phoneAdded", "id": "mtp-new"},
                  {"kind": "phoneRemoved", "id": "mtp-nokia_9"},
                  {"kind": "phoneRemoved", "id": "mtp-5busb_3a001_2c005_5d"},
-                 {"kind": "phoneUnmounted", "id": "mtp-google_pixel_7_1a2b"}], "phone events: %r" % events)
+                 {"kind": "phoneUnmounted", "id": "mtp-vendor_phone_1a2b"}], "phone events: %r" % events)
 check(module.diff_phones(phones, phones) == [], "no phone events without changes")
 check(isinstance(module.mtp_available(), bool), "gvfs-mtp presence is a plain flag")
+
+# The monitor's reads in a row (settle): the list at start, an error, the same
+# list again. The shell shows "unavailable" from the error on, so the list has
+# to be said once more even though nothing changed.
+state = {"drives": [], "phones": [], "stale": True, "first": True, "retries": 0}
+listed = {"drives": before, "phones": []}
+said, events = module.settle(state, listed, None)
+check(said == "drives" and events == [], "the first read is said, without events for what is plugged in already")
+check(module.settle(state, listed, None) == (None, []), "an unchanged read says nothing")
+check(module.settle(state, None, "timed out") == ("error", []), "a failed read is an error")
+check(state["retries"] == 1 and module.settle(state, None, "timed out")[0] == "error" and state["retries"] == 2,
+      "failed reads in a row are counted")
+check(state["drives"] == before, "an error keeps the last list")
+said, events = module.settle(state, listed, None)
+check(said == "drives" and events == [], "the same list after an error is said again: %r" % said)
+check(state["retries"] == 0 and module.settle(state, listed, None) == (None, []), "and then nothing until a change")
+# Plugged in while UDisks2 could not be read: a real event once it can.
+module.settle(state, None, "restarting")
+said, events = module.settle(state, {"drives": module.build_drives(after_objects), "phones": []}, None)
+check(said == "drives" and {"kind": "added", "id": "Kingston_1"} in events, "a drive plugged in meanwhile is added")
+# A start without UDisks2: the error, no empty list that would read as "no drives".
+fresh = {"drives": [], "phones": [], "stale": True, "first": True, "retries": 0}
+check(module.settle(fresh, None, "not available") == ("error", []), "a start without UDisks2 says so")
+said, events = module.settle(fresh, {"drives": [], "phones": []}, None)
+check(said == "drives" and events == [], "and says the (empty) list once it is there")
+check([module.retry_delay(n) for n in (1, 2, 5, 9)] == [2000, 5000, 60000, 60000], "tries again sooner, then every minute")
 
 if failures:
     for failure in failures:

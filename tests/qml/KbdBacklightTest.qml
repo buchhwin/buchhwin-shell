@@ -5,7 +5,7 @@ import "../../services/power/KbdBacklightLogic.js" as K
 
 ShellRoot {
     Component.onCompleted: {
-        // This machine's light has three levels; nothing may hard-code that.
+        // A ThinkPad's light has three levels; nothing may hard-code that.
         T.eq([K.label(0, 2), K.label(1, 2), K.label(2, 2)], ["Off", "Low", "High"], "three levels are words")
         T.eq([K.label(0, 1), K.label(1, 1)], ["Off", "On"], "a light with one step is off or on")
         T.eq([K.label(0, 3), K.label(2, 3), K.label(3, 3)], ["Off", "Medium", "High"], "four levels are still words")

@@ -115,7 +115,7 @@ Item {
             border.width: target ? Metrics.focusBorderWidth : Metrics.borderWidth
             border.color: target ? Colors.accentLine : Colors.border
 
-            SectionLabel {
+            EditorCaption {
                 // On the screen's side of the zone: below a top bar, above a
                 // bottom one, beside a side bar. Always below put the labels
                 // of a bottom bar, and the last third of a side bar, off the
@@ -132,11 +132,9 @@ Item {
                 text: overlay.vertical
                     ? (modelData === "left" ? "Top" : modelData === "center" ? "Center" : "Bottom")
                     : (modelData === "left" ? "Left" : modelData === "center" ? "Center" : "Right")
-                // The scrim's ink with the editor's outline: the panel's muted
-                // grey was dark on dark over the light theme's wallpaper.
-                color: Colors.scrimText
-                style: Text.Outline
-                styleColor: Colors.scrimStrong
+                // On a plate, as the hint lines are: straight on the
+                // wallpaper no one ink read on both a dark and a bright image.
+                role: "label"
             }
         }
     }

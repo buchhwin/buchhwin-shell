@@ -5,6 +5,7 @@ import qs.theme
 import qs.services
 import qs.shell.components
 import "../../../services/appearance/AnimationLogic.js" as AnimationLogic
+import "../../../services/settings/SwatchLogic.js" as Swatch
 
 GridLayout {
     id: root
@@ -12,7 +13,9 @@ GridLayout {
     columnSpacing: Metrics.pageGap
     rowSpacing: Metrics.pageGap
 
-    readonly property var accents: Colors.accentChoices
+    // The choices, and the accent in use after them when it is none of them
+    // (Colors.accentSwatches), so there is always a chosen swatch.
+    readonly property var accents: Colors.accentSwatches
     readonly property var fontFamilies: {
         const seen = {}
         return Qt.fontFamilies().filter(name => !name.startsWith(".") && !seen[name] && (seen[name] = true))
@@ -144,25 +147,12 @@ GridLayout {
             spacing: Metrics.spaceSm
             Repeater {
                 model: root.accents
-                Rectangle {
+                ColorSwatch {
                     required property string modelData
-                    readonly property bool active: SettingsService.accent.toLowerCase() === modelData
-                    width: Metrics.controlHeight
-                    height: width
-                    radius: width / 2
-                    color: modelData
-                    border.width: active ? Metrics.focusBorderWidth + 1 : accentMouse.containsMouse ? Metrics.borderWidth : 0
-                    border.color: active ? Colors.text : Colors.borderStrong
-                    scale: accentMouse.pressed ? Effects.pressScale : 1
-                    Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
-                    ShellIcon { anchors.centerIn: parent; visible: parent.active; glyph: Icons.check; size: Metrics.iconSm; color: Colors.textOn(parent.color) }
-                    MouseArea {
-                        id: accentMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: { SettingsService.set("appearance.accentFromWallpaper", false); SettingsService.set("appearance.accent", parent.modelData) }
-                    }
+                    fill: modelData
+                    label: Swatch.nameOf(modelData)
+                    selected: SettingsService.accent.toLowerCase() === modelData
+                    onActivated: { SettingsService.set("appearance.accentFromWallpaper", false); SettingsService.set("appearance.accent", modelData) }
                 }
             }
         }
@@ -219,7 +209,7 @@ GridLayout {
         Layout.fillWidth: true
         Layout.columnSpan: root.columns
         title: "Panels"
-        description: "Background color and transparency of panels, popups, pills and widgets. A light color switches to the light theme and a dark one to the dark theme, so text stays readable."
+        description: "Background color and transparency of panels, popups, pills and widgets. A light color switches to the light theme and a dark one to the dark theme, so the desktop and apps go along."
 
         readonly property var choice: Colors.panelColorChoices.find(item => item.value === PanelStyleService.color)
         readonly property int ownCount: PanelStyleService.groups.filter(group => PanelStyleService.hasOwnOpacity(group.key)).length
@@ -241,32 +231,16 @@ GridLayout {
             spacing: Metrics.spaceSm
             Repeater {
                 model: [{ value: "auto", label: "Theme colors" }].concat(Colors.panelColorChoices)
-                Rectangle {
+                ColorSwatch {
                     required property var modelData
                     readonly property bool isAuto: modelData.value === "auto"
-                    readonly property bool active: PanelStyleService.color === modelData.value
-                    width: Metrics.controlHeight
-                    height: width
-                    radius: width / 2
-                    color: isAuto ? Colors.surface1 : modelData.value
-                    border.width: active ? Metrics.focusBorderWidth + 1 : panelMouse.containsMouse ? Metrics.focusBorderWidth : Metrics.borderWidth
-                    border.color: active ? Colors.accentLine : panelMouse.containsMouse ? Colors.text : Colors.borderStrong
-                    scale: panelMouse.pressed ? Effects.pressScale : 1
-                    Behavior on scale { NumberAnimation { duration: Animations.move(Animations.press); easing.type: Animations.easing } }
-                    ShellIcon {
-                        anchors.centerIn: parent
-                        visible: parent.isAuto || parent.active
-                        glyph: parent.isAuto && !parent.active ? "󰔎" : Icons.check
-                        size: Metrics.iconSm
-                        color: parent.isAuto ? Colors.text : PanelStyleService.isLight(parent.modelData.value) ? Colors.onLightSwatch : Colors.onDarkSwatch
-                    }
-                    MouseArea {
-                        id: panelMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: PanelStyleService.setColor(parent.modelData.value, Colors.dark)
-                    }
+                    fill: isAuto ? Colors.surface1 : modelData.value
+                    label: modelData.label
+                    outlined: true
+                    selected: PanelStyleService.color === modelData.value
+                    mark: isAuto ? "󰔎" : ""
+                    markColor: isAuto ? Colors.text : PanelStyleService.isLight(modelData.value) ? Colors.onLightSwatch : Colors.onDarkSwatch
+                    onActivated: PanelStyleService.setColor(modelData.value, Colors.dark)
                 }
             }
         }
@@ -309,19 +283,20 @@ GridLayout {
             text: panelSection.customError
             role: "small"; color: Colors.danger; wrapMode: Text.Wrap
         }
-        // Text colours follow the theme (all components read Colors.text). Choosing
-        // a colour switches the theme; a later theme change can disagree again.
+        // Choosing a colour switches the theme; a later theme change can
+        // disagree again. That is no warning any more: the panels' text
+        // follows the panel colour (Colors.surfaceDark), and only the desktop
+        // and the applications go by the theme - which the button offers to
+        // bring along.
         RowLayout {
             Layout.fillWidth: true
             visible: PanelStyleService.customColor && !PanelStyleService.matchesTheme(Colors.dark)
             spacing: Metrics.spaceSm
-            ShellIcon { glyph: "󰋽"; size: Metrics.iconSm; color: Colors.warning }
+            ShellIcon { glyph: Icons.info; size: Metrics.iconSm; color: Colors.mutedText }
             ShellText {
                 Layout.fillWidth: true
-                text: PanelStyleService.lightColor
-                    ? "Text colors follow the theme and are hard to read on a light panel color."
-                    : "Text colors follow the theme and are hard to read on a dark panel color."
-                role: "small"; color: Colors.warning; wrapMode: Text.Wrap
+                text: "Panels keep readable text in any color; the theme sets the desktop and apps."
+                role: "small"; muted: true; wrapMode: Text.Wrap
             }
             ShellButton {
                 focusOnTab: true
@@ -333,7 +308,12 @@ GridLayout {
 
         OpacityRow {
             label: "Transparency"
-            hint: "Default for all windows"
+            // A light panel has a floor (PanelStyleLogic.LIGHT_MIN_OPACITY),
+            // so a slider set further does less than it says; the hint says why.
+            hint: Colors.surfaceDark ? "Default for all windows"
+                : "Default for all windows. A light panel stays at most "
+                  + Math.round((1 - PanelStyleService.lightMinOpacity) * 100)
+                  + "% transparent, so its text keeps its contrast."
             opacityValue: PanelStyleService.defaultOpacity
             resettable: false
             onPreview: value => PanelStyleService.setPreview("default", value)
@@ -641,7 +621,7 @@ GridLayout {
                 text: "Install …"
                 compact: true
                 onClicked: {
-                    Quickshell.execDetached([Paths.script("launch-kitty.sh"), "--hold", Paths.script("install-cursor-macos.sh")])
+                    Quickshell.execDetached([Paths.script("launch-terminal.sh"), "--hold", "--title", "macOS cursor install", "--", Paths.script("install-cursor-macos.sh")])
                     PanelService.close()
                 }
             }

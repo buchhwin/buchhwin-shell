@@ -83,3 +83,15 @@ function nameFromPath(path) {
     const base = String(path || "").split("/").pop()
     return base.replace(/\.(conf|config)$/i, "") || "WireGuard"
 }
+
+// The public key to show and copy for what the private-key field holds: only
+// the one made from that very key. `fromTag` is the tag (tagOf) of the private
+// key the public one was made from. Shown on its own, a public key outlived
+// the key it belonged to: generate, then paste the provider's key, and the
+// hint and the copy button still offered the first one - the server set up
+// with it, and a tunnel that never connects.
+function publicFor(privateText, publicKey, fromTag, tagOf) {
+    const text = String(privateText || "").trim()
+    if (!text.length || !publicKey || !fromTag) return ""
+    return tagOf(text) === fromTag ? String(publicKey) : ""
+}

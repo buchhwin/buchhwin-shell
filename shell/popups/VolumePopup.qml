@@ -38,6 +38,10 @@ PopupPanel {
                 ShellSlider {
                     focusOnTab: true
                     Layout.fillWidth: true
+                    // Named on the slider, as the control center's audio page
+                    // names its own: the glyph and the figure beside it are
+                    // siblings, and a screen reader said "slider, 40%".
+                    accessibleName: "Output volume"
                     value: AudioService.volume
                     enabledState: AudioService.sink !== null
                     onMoved: value => AudioService.setVolume(AudioService.sink, value)

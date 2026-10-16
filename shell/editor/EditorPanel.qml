@@ -25,11 +25,13 @@ Rectangle {
     MouseArea { anchors.fill: parent }
 
     Flickable {
+        id: flick
         anchors.fill: parent
         anchors.margins: Metrics.panelPadding
         contentHeight: column.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+        ScrollFeel { view: flick }
 
         ColumnLayout {
             id: column

@@ -16,7 +16,7 @@ SettingsSection {
         focusOnTab: true
         Layout.fillWidth: true
         current: LayoutService.desktopMode
-        options: [{ value: "widgets", label: "Widgets", icon: Icons.edit },
+        options: [{ value: "widgets", label: "Widgets", icon: Icons.arrange },
                   { value: "pills", label: "Bar", icon: "󰘔" },
                   { value: "notch", label: "Notch", icon: "󱂩" }]
         onSelected: value => LayoutService.setDesktopMode(value)
@@ -26,7 +26,7 @@ SettingsSection {
         spacing: Metrics.spaceSm
         ShellButton {
             focusOnTab: true
-            icon: Icons.edit; text: "Edit layout"; variant: "accent"
+            icon: Icons.arrange; text: "Edit layout"; variant: "accent"
             onClicked: { PanelService.close(); LayoutService.editMode = true }
         }
         ShellButton { focusOnTab: true; icon: Icons.undo; text: "Undo"; enabledState: LayoutService.undoStack.length > 0; onClicked: LayoutService.undo() }

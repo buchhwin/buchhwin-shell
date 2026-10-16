@@ -10,7 +10,7 @@ WidgetBase {
     readonly property bool recording: AudioService.micInUse
     hasData: sharing || recording
     icon: sharing ? "󰹑" : "󰍬"
-    iconColor: sharing ? Colors.danger : Colors.warning
+    iconColor: sharing ? dangerInk : warningInk
     label: sharing && recording ? "Screen and microphone" : sharing ? "Screen is shared" : "Microphone active"
     maxLabelWidth: 200
     name: "In use"

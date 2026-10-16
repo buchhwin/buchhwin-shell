@@ -11,6 +11,7 @@ import qs.shell.components
 import "../../services/overview/OverviewLogic.js" as Logic
 import "../../services/appearance/ContrastLogic.js" as Contrast
 import "../../services/model/KeyedLogic.js" as Keyed
+import "SelectionLogic.js" as Selection
 
 // Super+W: workspaces with live window previews. Type to filter, arrows to
 // select, Enter to focus, Delete to close; click a workspace to switch to it,
@@ -42,13 +43,15 @@ ShellPanel {
     readonly property var groups: Logic.groups(workspaces, monitors)
     property int selected: 0
     readonly property var flat: Logic.flatWindows(workspaces, search.text)
-    readonly property var selectedWindow: flat.length ? flat[Math.min(selected, flat.length - 1)] : null
+    readonly property var selectedWindow: flat.length ? flat[Selection.clamp(selected, flat.length)] : null
     // The accent as text and outline on the scrim, which is dark in both
     // themes. accentForeground is made for cards: the light theme darkens it
     // for light ones, and on the scrim it sank into the dark. Readable against
-    // the lock's base instead, which is as dark as the scrim reads; in the dark
-    // theme it stays accentForeground, so nothing changes there.
-    readonly property color scrimAccent: Colors.dark ? Colors.accentForeground
+    // the lock's base instead, which is as dark as the scrim reads; on dark
+    // panels it stays accentForeground, so nothing changes there. Asked of
+    // the panel side, not the theme: accentForeground follows the panel
+    // colour, and a light panel in the dark theme darkens it all the same.
+    readonly property color scrimAccent: Colors.surfaceDark ? Colors.accentForeground
         : Contrast.readable(String(Colors.accent), String(Colors.lockBase))
     // **One row per monitor.** A monitor's "New workspace" card belongs beside
     // its workspaces, not under them, so the widest row decides the column
@@ -104,7 +107,7 @@ ShellPanel {
         selected = 0
         refresh()
     }
-    onFlatChanged: selected = Math.min(selected, Math.max(0, flat.length - 1))
+    onFlatChanged: selected = Selection.clamp(selected, flat.length)
 
     Timer { id: refreshTimer; interval: Animations.overviewRefresh; onTriggered: window.refresh() }
     Timer {
@@ -177,12 +180,17 @@ ShellPanel {
             icon: Icons.search
             placeholder: "Search windows …"
             color: Colors.panelFor("overview")
+            // An outline in the ink for marks: the field's fill is the panel's
+            // and the scrim under it is nearly as dark, so in the dark theme
+            // the field was there at 1.03:1 and found by its placeholder.
+            // Grey in both themes, and the scrim is dark in both.
+            border.color: Colors.subtleText
             onAccepted: window.focusWindow(window.selectedWindow)
             onEscapePressed: if (!text.length) PanelService.close("overview")
-            Keys.onLeftPressed: event => { if (text.length) { event.accepted = false; return } window.selected = Math.max(0, window.selected - 1) }
-            Keys.onRightPressed: event => { if (text.length) { event.accepted = false; return } window.selected = Math.min(window.flat.length - 1, window.selected + 1) }
-            Keys.onUpPressed: window.selected = Math.max(0, window.selected - 1)
-            Keys.onDownPressed: window.selected = Math.min(window.flat.length - 1, window.selected + 1)
+            Keys.onLeftPressed: event => { if (text.length) { event.accepted = false; return } window.selected = Selection.step(window.selected, -1, window.flat.length) }
+            Keys.onRightPressed: event => { if (text.length) { event.accepted = false; return } window.selected = Selection.step(window.selected, 1, window.flat.length) }
+            Keys.onUpPressed: window.selected = Selection.step(window.selected, -1, window.flat.length)
+            Keys.onDownPressed: window.selected = Selection.step(window.selected, 1, window.flat.length)
             onDeleteOnEmpty: if (window.selectedWindow) window.dispatch(HyprCompat.commands.closeWindow(window.selectedWindow.address))
         }
 
@@ -236,6 +244,7 @@ ShellPanel {
             contentHeight: cards.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
+            ScrollFeel { view: cardsFlick }
 
             // One row per monitor, in the order the Displays page numbers
             // them and with the screen the overview opened on first. A single
@@ -255,7 +264,7 @@ ShellPanel {
                 // address): every window move hands the overview a new array,
                 // and plain arrays rebuilt every card and every preview - each
                 // capture started again and showed the window icon for a moment
-                // (the user, 15.10., after a drag). Now only what came or went
+                // (seen after a drag). Now only what came or went
                 // is built; the rest gets its new modelData in place.
                 Repeater {
                     model: ScriptModel { values: window.shown ? window.groups : []; objectProp: "monitor" }
@@ -430,7 +439,7 @@ ShellPanel {
                                             // a while if the move never happened.
                                             property bool sent: false
                                             readonly property bool dragging: dragArea.drag.active
-                                            readonly property bool isSelected: window.selectedWindow !== null && window.selectedWindow.address === modelData.address
+                                            readonly property bool isSelected: !!window.selectedWindow && window.selectedWindow.address === modelData.address
                                             readonly property var toplevel: window.wanted ? window.toplevelFor(modelData.address) : null
                                             property real homeX: modelData.x * frame.width
                                             property real homeY: modelData.y * frame.height
@@ -459,10 +468,10 @@ ShellPanel {
                                             // While dragged it lives in `dragLayer`, above
                                             // every card: the card clips its windows, and a
                                             // thumbnail taken to another workspace vanished
-                                            // the moment it left its own card (the user,
-                                            // 15.10.). ParentChange keeps it where it is on
-                                            // screen; the drag and its own setX/setY end the
-                                            // position bindings, which `rehome` puts back.
+                                            // the moment it left its own card. ParentChange
+                                            // keeps it where it is on screen; the drag and
+                                            // its own setX/setY end the position bindings,
+                                            // which `rehome` puts back.
                                             states: State {
                                                 when: thumb.dragging
                                                 ParentChange { target: thumb; parent: dragLayer }

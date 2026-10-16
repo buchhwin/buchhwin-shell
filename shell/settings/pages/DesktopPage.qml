@@ -112,15 +112,18 @@ ColumnLayout {
         }
         SettingRow {
             label: "Folder"
-            ShellTextField {
+            // Leaving the field empty keeps the folder (Escape used to store
+            // nothing on the way out); Return on an empty field is the way
+            // back to the default.
+            hint: "Clear it and press Enter for the default"
+            StoredTextField {
                 focusOnTab: true
                 id: recordingFolder
                 Layout.fillWidth: true
                 icon: Icons.folder
                 placeholder: "~/Videos/Recordings"
-                text: SettingsService.value("recording.folder")
-                onAccepted: SettingsService.set("recording.folder", text.trim())
-                onInputActiveFocusChanged: if (!inputActiveFocus) SettingsService.set("recording.folder", text.trim())
+                storedText: SettingsService.value("recording.folder")
+                onCommit: value => SettingsService.set("recording.folder", value.trim())
             }
             ShellButton {
                 focusOnTab: true

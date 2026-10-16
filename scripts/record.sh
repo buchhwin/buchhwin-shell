@@ -163,8 +163,13 @@ supervise() {
   if [[ -s $file ]]; then
     printf 'saved %s (%s, exit %s)\n' "$file" "$duration" "$status"
     [[ $notify_enabled == 1 ]] || return 0
+    # notify-send waits until its notice closes, and the shell keeps notices
+    # in its history: unbounded, this supervisor and its notify-send stayed
+    # for the whole session after each recording (pitfall 78, as in
+    # screenshot.sh). Ten minutes is time enough to click; after that the
+    # notice stays in the history and its buttons do nothing.
     local action
-    action=$(notify-send --app-name="Screen recording" --icon=media-record \
+    action=$(timeout 10m notify-send --app-name="Screen recording" --icon=media-record \
       --action=open=Open --action=folder="Show in folder" \
       "Recording saved" "${file##*/} · $duration" 2>/dev/null || true)
     case "$action" in

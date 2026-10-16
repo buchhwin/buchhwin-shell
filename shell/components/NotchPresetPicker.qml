@@ -84,7 +84,7 @@ ColumnLayout {
                 ShellButton {
                     focusOnTab: true
                     visible: !card.modelData.builtin && root.writable
-                    icon: Icons.edit; variant: "ghost"; compact: true; toolTip: "Rename"
+                    icon: Icons.modify; variant: "ghost"; compact: true; toolTip: "Rename"
                     onClicked: root.renaming = root.renaming === card.modelData.id ? "" : card.modelData.id
                 }
                 ShellButton {

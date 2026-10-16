@@ -12,9 +12,15 @@
                               cross IPC (Quickshell logs "Type QVariant cannot be used")
   checks.py hypr              hyprland.conf, hyprland.lua and HyprAnimations.js drifting apart
   checks.py reserved          names Qt 6.9's QML parser refuses (openSUSE Leap 16)
+  checks.py plaintext         a raw Text in shell/ without textFormat (AutoText renders
+                              markup in a string and fetches an <img> it names)
+  checks.py private           private data in the files Git would commit: places,
+                              keys, tokens, e-mail addresses, this user's home
 """
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -1292,6 +1298,153 @@ def check_reserved():
     return failed
 
 
+# ---- plain text ---------------------------------------------------------------
+# Qt's default text format is AutoText: a string that looks like markup is
+# rendered as rich text, and an `<img src=...>` in it is fetched. A window
+# title, a track, an SSID or an event title then made the shell request
+# whatever address the string named (the review of 2026-10-16). `ShellText`
+# is plain; every `Text {` and `component X: Text` written by hand says its
+# format too, glyphs and digits included - it costs nothing and keeps the rule
+# one rule. tests/python/plain_text_test.py checks the scanner.
+TEXT_START = re.compile(r"(?:^|[\s:])Text\s*\{")
+
+
+def _without_strings(line):
+    """The line without its strings and its `//` comment."""
+    line = re.sub(r'"(?:\\.|[^"\\])*"', '""', line)
+    return line.split("//", 1)[0]
+
+
+def raw_texts(source):
+    """[(line, has textFormat)] for each raw Text element in a QML source."""
+    lines = [_without_strings(line) for line in source.splitlines()]
+    found = []
+    for start, line in enumerate(lines):
+        if not TEXT_START.search(line):
+            continue
+        depth = 0
+        has_format = False
+        for index in range(start, len(lines)):
+            text = lines[index]
+            if index > start and depth == 1 and re.match(r"\s*textFormat\s*:", text):
+                has_format = True
+            depth += text.count("{") - text.count("}")
+            if depth <= 0:
+                break
+        found.append((start + 1, has_format))
+    return found
+
+
+def check_plaintext():
+    files = sorted((ROOT / "shell").rglob("*.qml")) + sorted(ROOT.glob("*.qml"))
+    failed = 0
+    checked = 0
+    for path in files:
+        for line, has_format in raw_texts(path.read_text(encoding="utf-8")):
+            checked += 1
+            if not has_format:
+                print(f"{path.relative_to(ROOT)}:{line}: a raw Text without textFormat (Text.PlainText, or ShellText)")
+                failed += 1
+    print(f"checked {checked} raw Text elements for a text format")
+    return failed
+
+
+# ---- private data -------------------------------------------------------------
+# What must never be committed (docs/testing.md, pitfall 17): where someone
+# lives, keys and tokens, an e-mail address, the developer's own home. The
+# suite used to look only for two numbers with four decimals written side by
+# side, while the shell keeps coordinates under lat/lon keys (settings.json,
+# Open-Meteo's answers): a fixture copied from a live file passed it.
+#
+# A pair side by side needs 4 decimals, because code is full of short decimal
+# pairs (Qt.rgba(0.075, 0.086, ...)); a lat/lon key needs 3, about 100 m - a
+# street. Invented places keep to 2 decimals. A public place that needs more
+# is listed in PUBLIC_COORDINATES, or its line carries "private-data: public"
+# (or "private-data: invented" for a made-up value that has to look real).
+# Findings name the file, the line and the kind, never the text: CI logs are
+# public.
+PRIVATE_PATTERNS = (
+    ("coordinates", re.compile(r"[-+]?\d{1,3}\.\d{4,}\s*[,;]\s*[-+]?\d{1,3}\.\d{4,}")),
+    ("a coordinate", re.compile(r"\b(?:lat|lon|lng|latitude|longitude)\b[\"']?\s*[:=]\s*[\"']?[-+]?\d{1,3}\.\d{3,}",
+                                re.IGNORECASE)),
+    ("a private key", re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----")),
+    ("a GitHub token", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})")),
+    ("a WireGuard private key", re.compile(r"\bPrivateKey\s*=\s*[A-Za-z0-9+/]{43}=")),
+    ("an e-mail address", re.compile(r"\b([A-Za-z0-9._%+-]+)@([A-Za-z][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})\b")),
+)
+# Berlin's centre as Open-Meteo's geocoding answers it (tests/qml/WeatherTest.qml
+# checks the rounding with it): a city, not anyone's home.
+PUBLIC_COORDINATES = {"52.52437", "13.41053"}
+# Domains that name no one (RFC 2606, RFC 6761), and systemd's unit@instance
+# names, which look like addresses.
+PUBLIC_DOMAINS = re.compile(r"(?:^|\.)(?:example\.(?:com|net|org)|example|invalid|test|localhost)$"
+                            r"|\.(?:service|socket|target|timer|scope|slice|mount|automount|path|swap|device)$",
+                            re.IGNORECASE)
+PRIVATE_MARK = re.compile(r"private-data:\s*(?:public|invented)")
+
+
+def private_findings(text, homes=()):
+    """[(line, kind)] for everything in text that looks private. homes: the
+    developer's own home directories, which no file should name."""
+    found = []
+    home_patterns = [re.compile(re.escape(home) + r"(?![A-Za-z0-9_.-])") for home in homes]
+    for number, line in enumerate(text.splitlines(), 1):
+        if PRIVATE_MARK.search(line):
+            continue
+        for kind, pattern in PRIVATE_PATTERNS:
+            for match in pattern.finditer(line):
+                if kind == "an e-mail address" and (PUBLIC_DOMAINS.search(match.group(2)) or match.group(1) == "git"):
+                    continue
+                if kind in ("coordinates", "a coordinate") and \
+                        set(re.findall(r"\d{1,3}\.\d+", match.group(0))) <= PUBLIC_COORDINATES:
+                    continue
+                found.append((number, kind))
+        for pattern in home_patterns:
+            if pattern.search(line):
+                found.append((number, "this user's home directory"))
+    return found
+
+
+def own_homes():
+    """This user's home, when it is a person's (/home/name): naming it in a
+    file gives the user name away. Short names are left out - "/home/u" is
+    what fixtures use."""
+    home = os.path.realpath(os.path.expanduser("~"))
+    match = re.fullmatch(r"(?:/var)?/home/([^/]+)", home)
+    return [home] if match and len(match.group(1)) >= 3 else []
+
+
+def committable_files():
+    """What Git would commit: tracked files and untracked ones it does not
+    ignore (the local handouts in docs/ are excluded by .git/info/exclude).
+    Without Git (an unpacked archive), every file but .git's."""
+    try:
+        listing = subprocess.run(["git", "-C", str(ROOT), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                                 capture_output=True, check=True).stdout
+        names = sorted({name for name in listing.decode("utf-8", "surrogateescape").split("\0") if name})
+        return [ROOT / name for name in names]
+    except (OSError, subprocess.CalledProcessError):
+        return sorted(path for path in ROOT.rglob("*") if ".git" not in path.relative_to(ROOT).parts)
+
+
+def check_private():
+    homes = own_homes()
+    failed = 0
+    checked = 0
+    for path in committable_files():
+        if path.is_symlink() or not path.is_file():
+            continue
+        data = path.read_bytes()
+        if b"\0" in data[:8192]:
+            continue
+        checked += 1
+        for line, kind in private_findings(data.decode("utf-8", "replace"), homes):
+            print(f"{path.relative_to(ROOT)}:{line}: {kind}")
+            failed += 1
+    print(f"checked {checked} files for private data")
+    return failed
+
+
 def main(argv):
     if not argv:
         print(__doc__)
@@ -1313,6 +1466,10 @@ def main(argv):
         return 1 if check_hypr() else 0
     if command == "reserved":
         return 1 if check_reserved() else 0
+    if command == "plaintext":
+        return 1 if check_plaintext() else 0
+    if command == "private":
+        return 1 if check_private() else 0
     print(__doc__)
     return 2
 
