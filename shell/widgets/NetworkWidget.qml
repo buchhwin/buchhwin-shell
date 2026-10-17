@@ -36,6 +36,19 @@ WidgetBase {
                     opacity: index < root.litBars ? 1 : Effects.mutedOpacity
                 }
             }
+            // Connected without the internet: a "!" after the bars, where a
+            // phone puts it - the glyphs carry their own (SignalLogic).
+            Text {
+                visible: NetworkService.limited
+                anchors.bottom: parent.bottom
+                text: "!"
+                textFormat: Text.PlainText
+                font.family: Typography.family
+                font.weight: Font.Bold
+                font.pixelSize: Typography.smallSize * root.scaleFactor
+                color: root.onDark ? Colors.warningOnDark : Colors.warning
+                renderType: Typography.renderType
+            }
         }
     }
 }

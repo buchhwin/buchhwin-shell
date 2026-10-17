@@ -5,6 +5,7 @@ import Quickshell.Networking
 import QtQuick
 import "network/WireguardLogic.js" as WireguardLogic
 import "network/ScanLogic.js" as ScanLogic
+import "network/SignalLogic.js" as Signal
 
 // Wi-Fi through Quickshell.Networking (NetworkManager). VPN connections and
 // addresses come from nmcli, refreshed only when `nmcli monitor` reports a
@@ -37,26 +38,50 @@ Singleton {
     readonly property var activeVpns: vpns.filter(item => item.active)
     property string address: ""
 
-    readonly property string summary: !wifiUsable && !wiredConnected ? "Off"
-        : current ? current.name : wiredConnected ? "Wired" : "Not connected"
+    // NetworkManager's connectivity check (Arch: ping.archlinux.org, every
+    // few minutes and on each change): whether the connection reaches the
+    // internet. "unknown" where no check is configured - never shown.
+    readonly property string connectivity: {
+        switch (Networking.connectivity) {
+        case NetworkConnectivity.Full: return "full"
+        case NetworkConnectivity.Limited: return "limited"
+        case NetworkConnectivity.Portal: return "portal"
+        case NetworkConnectivity.None: return "none"
+        default: return "unknown"
+        }
+    }
+    // Connected, but not to the internet: the glyph takes a "!", the line
+    // says why (SignalLogic.note).
+    readonly property bool limited: connected && Signal.limited(connectivity)
+    readonly property string note: connected ? Signal.note(connectivity) : ""
 
+    readonly property string summary: (!wifiUsable && !wiredConnected ? "Off"
+        : current ? current.name : wiredConnected ? "Wired" : "Not connected")
+        + (note.length ? " \u00b7 " + note : "")
+
+    // A network of the list, by its strength in NetworkManager's four steps
+    // (SignalLogic) - the one in use through `wifiIcon`, which knows about
+    // the internet as well.
     function signalIcon(strength) {
-        if (strength === undefined) return "󰤨"
-        return strength > 0.75 ? "󰤨" : strength > 0.5 ? "󰤥" : strength > 0.25 ? "󰤢" : "󰤟"
+        return Signal.glyph(strength, false, false)
     }
 
     // The bars glyph (NetworkWidget, `options.glyph: "bars"`): of `total`, how
     // many are lit. Every one when wired, none when off or not connected, and
-    // never none while connected.
+    // never none while connected - the same steps as the glyphs.
     function signalBars(total) {
         if (!wifiUsable && !wiredConnected) return 0
-        if (current) return Math.max(1, Math.min(total, Math.ceil(Number(current.signalStrength || 0) * total)))
+        if (current) return Math.max(1, Signal.lit(current.signalStrength, total, true))
         return wiredConnected ? total : 0
     }
 
+    // Wi-Fi as the bar shows it: off, the connected network's strength (with
+    // a "!" while it does not reach the internet), or not connected.
+    readonly property string wifiIcon: !wifiUsable ? "󰤮"
+        : current ? Signal.glyph(current.signalStrength, limited, true) : "󰤯"
     readonly property string icon: !wifiUsable && !wiredConnected ? "󰤮"
         : wiredConnected && !current ? "󰈀"
-        : current ? signalIcon(current.signalStrength) : "󰤯"
+        : wifiIcon
 
     // ---- secured networks and hotspot (scripts/network-helper.py) -----------
     // Secrets go to the helper on stdin, never as process arguments.

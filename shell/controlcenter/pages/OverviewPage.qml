@@ -188,8 +188,7 @@ ColumnLayout {
             // Ethernet plug while the wire carried the connection - a Wi-Fi
             // switch with a cable on it. The wire is still named, in the line
             // under the title ("Wired"), which says what carries the traffic.
-            icon: !NetworkService.wifiUsable ? "󰤮"
-                : NetworkService.current ? NetworkService.signalIcon(NetworkService.current.signalStrength) : "󰤯"
+            icon: NetworkService.wifiIcon
             title: "Wi-Fi"
             subtitle: NetworkService.summary
             checked: NetworkService.wifiEnabled

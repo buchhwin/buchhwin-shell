@@ -33,8 +33,7 @@ ColumnLayout {
             // on each page and jumped sideways on every switch.
             ShellIcon {
                 Layout.preferredWidth: Metrics.iconXl
-                glyph: !root.wifiUsable ? "󰤮" : NetworkService.current
-                    ? NetworkService.signalIcon(NetworkService.current.signalStrength) : "󰤯"
+                glyph: NetworkService.wifiIcon
                 size: Metrics.iconLg
                 color: NetworkService.current ? Colors.accentForeground : Colors.mutedText
             }

@@ -14,8 +14,7 @@ PopupPanel {
     detail: NetworkService.summary + (NetworkService.connected && NetworkService.address.length ? " · " + NetworkService.address : "")
     // Wi-Fi's own glyph under a "Wi-Fi" heading, as on the control center's
     // tile: the wire is in the line beside it and in its own card below.
-    glyph: !root.wifiUsable ? "󰤮" : NetworkService.current
-        ? NetworkService.signalIcon(NetworkService.current.signalStrength) : "󰤯"
+    glyph: NetworkService.wifiIcon
     glyphActive: NetworkService.current !== null
     hasToggle: true
     toggleChecked: NetworkService.wifiEnabled
