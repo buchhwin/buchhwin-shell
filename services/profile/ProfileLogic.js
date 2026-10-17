@@ -244,6 +244,18 @@ function settingLeaves(tree, home) {
     return result
 }
 
+// What a profile is entered with: every setting a profile owns, the ones its
+// state (or a shipped profile) names as named and every other one at its
+// default (`defaults`: settingLeaves of SettingsService.defaults). A state
+// stored before a setting existed - every state from before the dock - used
+// to leave that setting as it was in the profile left, so the dock switched
+// on in one profile came along into the other and was stored there on the
+// next switch (17.10.). A profile's settings are its own now: what it does
+// not name is the default, never the other profile's.
+function completeLeaves(leaves, defaults) {
+    return Object.assign({}, defaults || {}, leaves || {})
+}
+
 // The same leaves as a tree again, the form a profile's state keeps them in:
 // settings.json's own shape, so the file stays readable next to it.
 function profileSettings(tree, home) {

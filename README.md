@@ -135,6 +135,7 @@ zsh and Starship setup and backs up existing files.
 | `Super` `Shift` `C` | Pick a color off the screen |
 | `Super` `Shift` `W` | Wallpaper picker |
 | `Super` `Shift` `D` | Dock (turns it on, then shows it) |
+| `Super` `Space` | Start menu (with the Taskbar's start button) |
 | `Super` `P` · `Alt` `P` | Profiles and modes · next mode |
 | `Super` `Alt` `D` | Desktop shape: widgets → bar → notch |
 | `Super` `Alt` `E` | Layout editor |

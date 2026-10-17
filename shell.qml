@@ -212,6 +212,18 @@ ShellRoot {
             return true
         }
         function close(): void { PanelService.close("startMenu") }
+        // The start menu's key (Super+Space, Settings > Shortcuts): a press
+        // of the start button. Only while the dock is on and has one - the
+        // taskbar -, and it opens what the button opens (the start menu, or
+        // the launcher: Settings > Dock > Start button), out of the button;
+        // pressed again, it closes it. Anywhere else it does nothing (false).
+        function key(): bool {
+            if (SettingsService.value("dock.enabled") !== true || !LayoutService.dockHasStart) return false
+            const panel = WidgetRegistry.actionOf("start")
+            if (PanelService.isOpen(panel)) PanelService.close(panel)
+            else root.openFromStart(panel, "home")
+            return true
+        }
         function get(): string {
             const menu = startMenuLoader.item
             return JSON.stringify(Object.assign({ loaded: menu !== null && menu !== undefined },
@@ -1101,7 +1113,11 @@ ShellRoot {
     // the screen otherwise. PanelService builds it first if it is not.
     // DockService only with a dock that is on (testing.md pitfall 101: the
     // service is not made for one that is off), whose button it is.
-    function openStartMenu(view) {
+    function openStartMenu(view) { openFromStart("startMenu", view) }
+    // A panel out of the dock's start button on the focused screen, when
+    // there is one there - the start menu, or the launcher the button may
+    // open instead -, else where the panel opens on its own.
+    function openFromStart(panel, view) {
         const screen = PanelService.focusedScreen()
         const name = screen ? screen.name : ""
         const button = SettingsService.value("dock.enabled") === true ? LayoutService.dockItemRect(name, "start") : null
@@ -1109,7 +1125,7 @@ ShellRoot {
         if (button) Object.assign(args, DockLogic.panelAnchor(SettingsService.value("dock.position"), button,
                                                               Metrics.dockPanelGap, DockService.placeOf(name)),
                                   { originX: button.x, originY: button.y, originWidth: button.width, originHeight: button.height })
-        PanelService.open("startMenu", args)
+        PanelService.open(panel, args)
     }
     ColorPickerPopup {}
     ColorPickerOverlay {}

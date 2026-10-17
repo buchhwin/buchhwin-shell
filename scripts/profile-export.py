@@ -52,6 +52,10 @@ DROP = {
     "display", "input.kbLayout", "input.kbVariant",
     "desktop.settingsMoveX", "desktop.settingsMoveY",
     "power", "lock.fingerprint", "dock.screens",
+    # A shipped profile has the dock off (the default dock and dock.* at
+    # their defaults, ProfileLogic.completeLeaves): the dock is switched on
+    # by whoever wants it, in the profile they want it in.
+    "dock",
 }
 # Folders that are kept, home-relative.
 PATHS = {"wallpaper.folder", "wallpaper.slideshowFolder", "recording.folder"}

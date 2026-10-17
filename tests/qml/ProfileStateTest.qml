@@ -80,6 +80,11 @@ ShellRoot {
         T.eq(L.restoreStateLayout(withNotch, partial).notch, withNotch.notch, "and restoring leaves that part as it is")
         T.eq(L.restoreStateLayout(withNotch, { notch: L.defaultNotch(), lock: null }).notch, L.defaultNotch(),
              "a part it names replaces the one in use")
+        const docked = L.sanitize({ dock: { center: [{ id: "dock-apps", items: [{ type: "apps" }] }], pins: ["x"] }, profiles: { a: { modes: {} } } })
+        T.eq(L.restoreStateLayout(docked, partial).dock, L.defaultDock(), "the dock is the profile's: a state without one gets the default")
+        T.eq(L.applyBuiltinLayout(docked, { notch: null }).dock, L.defaultDock(), "and so does a shipped profile without one")
+        T.eq(P.completeLeaves({ "dock.enabled": true }, { "dock.enabled": false, "dock.margin": 8 }),
+             { "dock.enabled": true, "dock.margin": 8 }, "a profile's settings: what it names, the default for the rest")
 
         // ---- the profile operations -----------------------------------------------
         const copy = L.duplicateProfile(config, "default", "Copy")
@@ -199,28 +204,38 @@ ShellRoot {
         }
     }
 
-    // A setting the state does not name - added after it was stored - keeps
-    // the value it has; duplicating and removing the profile in use.
+    // A setting the state does not name - added after it was stored, as the
+    // dock was after every state of before round 11 - is the default there,
+    // not what the profile left had: the dock switched on in one profile does
+    // not come along into the other (17.10.). Duplicating and removing the
+    // profile in use.
     Timer {
         id: missing
         interval: 50
         onTriggered: {
             const trimmed = JSON.parse(JSON.stringify(L.stateOf(LayoutService.config, root.studio)))
             delete trimmed.settings.terminal.fontSize
+            delete trimmed.settings.dock
+            delete trimmed.dock
             // As an older shell stored it: with power and the fingerprint
             // reader in it, past the sanitizer.
             const older = JSON.parse(JSON.stringify(L.withState(LayoutService.config, root.studio, trimmed)))
             older.profiles[root.studio].state.settings.power = { ac: { lidAction: "suspend" } }
             older.profiles[root.studio].state.settings.lock = { fingerprint: "auto" }
             LayoutService.config = older
-            SettingsService.set("terminal.fontSize", 17)
+            SettingsService.setAll({ "terminal.fontSize": 17, "dock.enabled": true, "dock.visibility": "always" })
+            LayoutService.dockPin("org.example.App")
             T.eq(LayoutService.setActiveProfile(root.studio), true, "into Studio again")
             T.eq(SettingsService.value("appearance.panelColor"), "#303030", "its panel colour is back")
-            T.eq(SettingsService.value("terminal.fontSize"), 17, "a setting its state does not name is not reset")
+            const fontDefault = SettingsService.defaultOf("terminal.fontSize")
+            T.eq(SettingsService.value("terminal.fontSize"), fontDefault, "a setting its state does not name is the default")
+            T.eq([SettingsService.value("dock.enabled"), SettingsService.value("dock.visibility")],
+                 [false, SettingsService.defaultOf("dock.visibility")], "a state from before the dock: the dock off, not Default's")
+            T.eq(LayoutService.dockLayout, L.defaultDock(), "and the default dock, not Default's pins")
             T.eq([SettingsService.value("power.ac.lidAction"), SettingsService.value("lock.fingerprint")], ["nothing", "on"],
                  "a state stored with power and the fingerprint reader in it does not put them back")
             const twin = LayoutService.duplicateProfile(root.studio, "Studio copy")
-            T.eq(L.stateOf(LayoutService.config, twin).settings.terminal.fontSize, 17,
+            T.eq(L.stateOf(LayoutService.config, twin).settings.terminal.fontSize, fontDefault,
                  "a duplicate of the profile in use takes the settings as they are now")
             // An undo step keeps only what undo puts back: the states, the
             // saved notch presets and the markers come from the config at hand.

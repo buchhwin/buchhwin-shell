@@ -14,12 +14,13 @@ ShellRoot {
         T.eq([S.runsOn("launcher.toggle", true), S.runsOn("launcher.toggle", false),
               S.runsOn("switcher.confirm", true), S.runsOn("switcher.confirm", false)],
              [true, false, false, true], "a key acts on press, the confirm on release")
-        T.eq(S.names().length, 53, "28 shell actions, 2 x 9 workspace keys and 7 swipes")
-        // The start menu has a name to be bound by, and no key of its own:
-        // Settings > Shortcuts offers it (round 12).
-        T.ok(S.names().indexOf("startMenu.toggle") >= 0, "the start menu can be a shortcut")
-        T.eq([S.bindable("startMenu toggle"), S.bindable("launcher toggle"), S.bindable("")], [true, false, false],
-             "only the actions without a key are offered for one")
+        T.eq(S.names().length, 54, "29 shell actions, 2 x 9 workspace keys and 7 swipes")
+        // The start menu's key (Super+Space) acts only with the taskbar's
+        // start button; that action is the one Settings > Shortcuts offers for
+        // a key of one's own, not IPC's toggle, which works without a dock.
+        T.ok(S.names().indexOf("startMenu.key") >= 0 && S.names().indexOf("startMenu.toggle") >= 0, "the start menu's key and IPC's toggle")
+        T.eq([S.bindable("startMenu key"), S.bindable("startMenu toggle"), S.bindable("launcher toggle"), S.bindable("")],
+             [true, false, false, false], "only the start menu's key is offered for one")
         T.eq(S.shortcutName("startMenu toggle"), "buchhwin:startMenu.toggle", "the global shortcut a bind sends")
         T.ok(S.names().indexOf("brightness.up") >= 0 && S.names().indexOf("brightness.down") >= 0, "the brightness keys")
         T.ok(S.names().indexOf("gestures.run.closePanel") >= 0, "the swipes")

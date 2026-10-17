@@ -114,11 +114,33 @@ ColumnLayout {
             }
         }
 
+        // A step builds the rows anew (every row is made again) and the
+        // button pressed goes with its row, so the keyboard lost its place
+        // after Earlier or Later. The focus comes back to the same button on
+        // the pin's new row, as on Settings > Dock.
         Repeater {
+            id: pinRepeater
             model: LauncherService.pinnedApps
+            function stepPin(id, index, delta, keepFocus) {
+                LauncherService.movePinned(id, delta)
+                const target = Math.max(0, Math.min(LauncherService.pinnedApps.length - 1, index + delta))
+                if (keepFocus) Qt.callLater(() => {
+                    const row = pinRepeater.itemAt(target)
+                    if (row) row.focusStep(delta)
+                })
+            }
             ListRow {
+                id: pinRow
                 required property var modelData
+                required property int index
                 readonly property string id: modelData.id
+                // At an end now, the button that still moves it.
+                function focusStep(delta) {
+                    const wanted = delta < 0 ? earlierButton : laterButton
+                    const other = delta < 0 ? laterButton : earlierButton
+                    const button = wanted.enabledState ? wanted : other
+                    button.forceActiveFocus()
+                }
                 interactive: false
                 Layout.fillWidth: true
                 compact: true
@@ -128,23 +150,26 @@ ColumnLayout {
                 RowLayout {
                     spacing: Metrics.spaceXxs
                     ShellButton {
+                        id: earlierButton
                         focusOnTab: true
                         icon: Icons.raise
                         variant: "ghost"
                         compact: true
                         toolTip: "Earlier in the row"
-                        enabledState: LauncherService.pinnedApps.length > 1 && LauncherService.pinnedApps[0].id !== id
-                        onClicked: LauncherService.movePinned(id, -1)
+                        enabledState: LauncherService.pinnedApps.length > 1 && LauncherService.pinnedApps[0].id !== pinRow.id
+                        // A click takes no focus, so the focus says the keyboard pressed it.
+                        onClicked: pinRepeater.stepPin(pinRow.id, pinRow.index, -1, activeFocus)
                     }
                     ShellButton {
+                        id: laterButton
                         focusOnTab: true
                         icon: Icons.collapse
                         variant: "ghost"
                         compact: true
                         toolTip: "Later in the row"
                         enabledState: LauncherService.pinnedApps.length > 1
-                            && LauncherService.pinnedApps[LauncherService.pinnedApps.length - 1].id !== id
-                        onClicked: LauncherService.movePinned(id, 1)
+                            && LauncherService.pinnedApps[LauncherService.pinnedApps.length - 1].id !== pinRow.id
+                        onClicked: pinRepeater.stepPin(pinRow.id, pinRow.index, 1, activeFocus)
                     }
                     // Asks first, like the other removes in a list here.
                     ShellButton {
@@ -155,7 +180,7 @@ ColumnLayout {
                         toolTip: "Unpin from the launcher and the start menu"
                         confirm: true
                         confirmText: "Unpin?"
-                        onClicked: LauncherService.togglePin(id)
+                        onClicked: LauncherService.togglePin(pinRow.id)
                     }
                 }
             }

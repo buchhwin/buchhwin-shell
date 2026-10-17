@@ -51,6 +51,8 @@ ShellRoot {
              "the dock's key in the conf dialect, which has no description")
         T.eq(S.describeExec("quickshell --path /opt/b ipc call startMenu toggle"), { title: "Start menu", group: "panels" },
              "the start menu, once a key is put on it")
+        T.eq(S.describeExec("quickshell --path /opt/b ipc call startMenu key"), { title: "Start menu", group: "panels" },
+             "and its own key in the conf dialect")
         T.eq([S.describeExec("quickshell --path /opt/b ipc call recording toggle region").title,
               S.describeExec("quickshell --path /opt/b ipc call recording toggle screen").title,
               S.describeExec("quickshell --path /opt/b ipc call recording toggle screen").group],
@@ -153,7 +155,7 @@ ShellRoot {
             { mods: ["SUPER"], key: "Y", app: "bad;id" },
             { mods: ["SUPER"], key: "U", app: "-x" },
             { mods: ["SUPER"], key: "R", app: "Citrix_subscribed_XenApp 7.x.RDS-Buchhwin $S101-255" },
-            { mods: ["SUPER"], key: "S", shell: "startMenu toggle" },
+            { mods: ["SUPER"], key: "S", shell: "startMenu key" },
             { mods: ["SUPER"], key: "V", shell: "launcher toggle" }
         ] }))
         T.eq(store, [
@@ -161,14 +163,16 @@ ShellRoot {
             { mods: ["SUPER"], key: "T", command: "kitty --hold" },
             { mods: [], key: "F9", command: "notify-send nine" },
             { mods: ["SUPER"], key: "R", app: "Citrix_subscribed_XenApp 7.x.RDS-Buchhwin $S101-255" },
-            { mods: ["SUPER"], key: "S", shell: "startMenu toggle" }
+            { mods: ["SUPER"], key: "S", shell: "startMenu key" }
         ], "store validated and deduplicated: a Citrix id with spaces and `$` is kept, a shell action only from the offered ones")
         T.eq([S.validAppId("org.kde.dolphin"), S.validAppId("Citrix_subscribed_XenApp 7.x.RDS-Buchhwin $S101-255"),
               S.validAppId("a;b"), S.validAppId("a\nb"), S.validAppId("--unit"), S.validAppId("a/b"), S.validAppId(""), S.validAppId(3)],
              [true, true, false, false, false, false, false, false], "desktop ids a bind can carry")
-        T.eq(S.shellActions(), [{ value: "startMenu toggle", label: "Start menu" }], "the start menu is offered as a shell action")
-        T.eq(S.entryLabel({ mods: ["SUPER"], key: "S", shell: "startMenu toggle" }), "Start menu", "a shell action named by its panel")
-        T.eq(S.descriptionFor({ mods: ["SUPER"], key: "S", shell: "startMenu toggle" }), "Custom: Start menu", "and described so")
+        T.eq(S.shellActions(), [{ value: "startMenu key", label: "Start menu" }], "the start menu is offered as a shell action")
+        T.eq(S.normalizeEntry({ mods: ["SUPER"], key: "S", shell: "startMenu toggle" }), { mods: ["SUPER"], key: "S", shell: "startMenu key" },
+             "a shortcut stored with the old action is the key's")
+        T.eq(S.entryLabel({ mods: ["SUPER"], key: "S", shell: "startMenu key" }), "Start menu", "a shell action named by its panel")
+        T.eq(S.descriptionFor({ mods: ["SUPER"], key: "S", shell: "startMenu key" }), "Custom: Start menu", "and described so")
         T.eq(S.parseStore("{"), [], "broken store")
         T.eq(S.parseStore(S.serializeStore(store)), store, "store round trip")
         // The watch reads back every save of the service's own (pitfall 77):
@@ -218,14 +222,14 @@ ShellRoot {
              "/s/launch-app.sh dbus-only gtk-launch dbus-only", "an entry without a command line the same")
         // A shell action's bind is the global shortcut itself, like the
         // built-in keys: pressed and released, and the shell acts on the press.
-        const startMenu = { mods: ["SUPER", "ALT"], key: "S", shell: "startMenu toggle" }
+        const startMenu = { mods: ["SUPER", "ALT"], key: "S", shell: "startMenu key" }
         T.eq(S.globalBind(startMenu), {
-            legacy: "keyword bindd SUPER ALT,S,Custom: Start menu,global,buchhwin:startMenu.toggle", legacyEmpty: [],
-            lua: "hl.bind(\"SUPER + ALT + S\", hl.dsp.global(\"buchhwin:startMenu.toggle\"), { description = \"Custom: Start menu\" })" },
+            legacy: "keyword bindd SUPER ALT,S,Custom: Start menu,global,buchhwin:startMenu.key", legacyEmpty: [],
+            lua: "hl.bind(\"SUPER + ALT + S\", hl.dsp.global(\"buchhwin:startMenu.key\"), { description = \"Custom: Start menu\" })" },
              "a shell action binds its global shortcut in both dialects")
-        T.eq(S.commandFor(startMenu, {}), "global buchhwin:startMenu.toggle", "and is remembered by it")
+        T.eq(S.commandFor(startMenu, {}), "global buchhwin:startMenu.key", "and is remembered by it")
         T.throwsError(() => S.globalBind({ mods: ["SUPER"], key: "S", shell: "launcher toggle" }), "only the offered actions")
-        T.throwsError(() => S.globalBind({ mods: ["SUPER"], key: "S,exec", shell: "startMenu toggle" }), "the key checked as for any bind")
+        T.throwsError(() => S.globalBind({ mods: ["SUPER"], key: "S,exec", shell: "startMenu key" }), "the key checked as for any bind")
         T.eq(S.commandFor({ mods: ["SUPER"], key: "T", command: "kitty --hold" }, start(null)), "kitty --hold", "a command as typed")
         T.eq([S.shellWord("plain-word_1.2,x=y:z@%+/"), S.shellWord(""), S.shellWord("a b"), S.shellWord("~/x"), S.shellWord("#x")],
              ["plain-word_1.2,x=y:z@%+/", "''", "'a b'", "'~/x'", "'#x'"], "only plain words stay bare")

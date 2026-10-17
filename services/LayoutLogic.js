@@ -335,7 +335,10 @@ function settleAction(config, name, hasShipped, fresh) {
 function restoreStateLayout(config, state) {
     const next = copyConfig(config)
     if (state && state.notch) next.notch = copyNotch(state.notch)
-    if (state && state.dock) next.dock = copyDock(state.dock)
+    // The dock is the profile's like its settings (ProfileLogic.completeLeaves):
+    // a state from before the dock gets the default one, not the dock of the
+    // profile left.
+    next.dock = state && state.dock ? copyDock(state.dock) : defaultDock()
     if (state && state.lock) next.lock = sanitizeLock(JSON.parse(JSON.stringify(state.lock)))
     return sanitize(next)
 }
@@ -575,6 +578,9 @@ function applyBuiltinLayout(config, data) {
     if (!data || typeof data !== "object") return sanitize(next)
     next.notch = copyNotch(data.notch || defaultNotch())
     next.lock = sanitizeLock(JSON.parse(JSON.stringify(data.lock || defaultLock())))
+    // A shipped profile without a dock of its own (both, so far) has the
+    // default one - and its settings the dock off (completeLeaves).
+    next.dock = data.dock && typeof data.dock === "object" ? sanitizeDock(data.dock) : defaultDock()
     const shipped = sanitizeNotchPresets(data.notchPresets)
     const ids = shipped.map(preset => preset.id)
     next.notchPresets = shipped.concat(sanitizeNotchPresets(next.notchPresets).filter(preset => ids.indexOf(preset.id) < 0))

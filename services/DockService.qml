@@ -286,11 +286,16 @@ Singleton {
         else delete next[name]
         rectsOn = next
     }
+    // A screen's dock that is gone (the screen unplugged, the dock moved off
+    // it): every report it made goes with it.
     function forget(name) {
         reportBody(name, null)
         reportRects(name, null)
         reportShown(name, false)
         reportPlace(name, null)
+        reportOrigin(name, null)
+        reportAppsRoom(name, null)
+        reportAppsRest(name, null)
         edgePointer(name, false)
     }
 
@@ -299,6 +304,13 @@ Singleton {
     property var originOn: ({})
     function reportOrigin(name, point) {
         const current = originOn[name]
+        if (!point) {
+            if (!current) return
+            const rest = Object.assign({}, originOn)
+            delete rest[name]
+            originOn = rest
+            return
+        }
         if (current && current.x === point.x && current.y === point.y) return
         const next = Object.assign({}, originOn)
         next[name] = { x: point.x, y: point.y }
@@ -319,9 +331,10 @@ Singleton {
     // -1 for none: the apps widget fits its icons into it.
     property var appsRoomOn: ({})
     function reportAppsRoom(name, room) {
-        if (appsRoomOn[name] === room) return
+        if (appsRoomOn[name] === room || (room === null && !(name in appsRoomOn))) return
         const next = Object.assign({}, appsRoomOn)
-        next[name] = room
+        if (room === null) delete next[name]
+        else next[name] = room
         appsRoomOn = next
     }
     // How long the apps are at rest, unmagnified: the dock reports its body
@@ -329,9 +342,10 @@ Singleton {
     // the magnified icons.
     property var appsRestOn: ({})
     function reportAppsRest(name, length) {
-        if (appsRestOn[name] === length) return
+        if (appsRestOn[name] === length || (length === null && !(name in appsRestOn))) return
         const next = Object.assign({}, appsRestOn)
-        next[name] = length
+        if (length === null) delete next[name]
+        else next[name] = length
         appsRestOn = next
     }
     // The pointer at the outer edge of a bar that shares the dock's edge: the

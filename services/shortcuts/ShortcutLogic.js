@@ -388,20 +388,23 @@ function validAppId(id) {
 }
 
 // { mods, key, app }, { mods, key, shell } (a shell action from
-// ShellShortcuts.BINDABLE: "startMenu toggle") or { mods, key, command }.
+// ShellShortcuts.BINDABLE: "startMenu key") or { mods, key, command }. A
+// shortcut stored as "startMenu toggle" (offered for a few hours in round 12)
+// is read as the key's action.
 function normalizeEntry(item) {
     if (!item || typeof item !== "object" || !Array.isArray(item.mods)) return null
     const mods = modifiers.map(mod => mod.name).filter(name => item.mods.map(mod => String(mod).toUpperCase()).indexOf(name) >= 0)
     if (item.mods.length !== mods.length || comboError(mods, item.key)) return null
     const key = String(item.key)
     if (typeof item.app === "string" && validAppId(item.app)) return { mods: mods, key: key, app: item.app }
-    if (typeof item.shell === "string" && Shell.bindable(item.shell)) return { mods: mods, key: key, shell: item.shell }
+    const shell = item.shell === "startMenu toggle" ? "startMenu key" : item.shell
+    if (typeof shell === "string" && Shell.bindable(shell)) return { mods: mods, key: key, shell: shell }
     if (typeof item.command === "string" && !commandError(item.command)) return { mods: mods, key: key, command: item.command.trim() }
     return null
 }
 
 // What a shell action is called on the sheet and in the list: the panel it
-// opens ("startMenu toggle" is "Start menu").
+// opens ("startMenu key" is "Start menu").
 function shellTitle(action) {
     const target = String(action || "").trim().split(/\s+/)[0]
     return Object.prototype.hasOwnProperty.call(panelTitles, target) ? panelTitles[target] : String(action || "")

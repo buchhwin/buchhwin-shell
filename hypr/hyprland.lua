@@ -282,6 +282,9 @@ hl.bind(keyFor("SUPER + M"), shell("powerMenu toggle"), { description = "Session
 hl.bind(keyFor("SUPER + W"), shell("overview toggle"), { description = "Overview" })
 hl.bind(keyFor("SUPER + SHIFT + W"), shell("wallpaperPicker toggle"), { description = "Wallpaper picker" })
 hl.bind(keyFor("SUPER + SHIFT + D"), shell("dock toggle"), { description = "Dock" })
+-- The start menu, only while the dock has a start button (the taskbar): what a
+-- click on it opens, out of it. Anywhere else the key does nothing.
+hl.bind(keyFor("SUPER + SPACE"), shell("startMenu key"), { description = "Start menu" })
 hl.bind(keyFor("SUPER + SHIFT + C"), shell("colorPicker pick"), { description = "Pick a color off the screen" })
 -- Alt+Tab switcher: releasing Alt focuses the selection (transparent, so apps
 -- still see the release; a confirm without an open switcher does nothing).

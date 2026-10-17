@@ -1213,9 +1213,17 @@ Singleton {
     // The settings of a state (or of a shipped profile) this shell knows and
     // would take - the right type, an allowed value - and that differ from
     // what is set. A key from a newer shell is left out here rather than
-    // warned about one by one in SettingsService; a key the state does not
-    // name is not in `leaves` at all and keeps its value, so a setting added
-    // after the state was stored is not reset by restoring it.
+    // warned about one by one in SettingsService. `leaves` come complete
+    // (profileLeaves): a key the state does not name is there at its default.
+    // A state's or a shipped profile's settings, every one a profile owns:
+    // what it names, and the default for what it does not
+    // (ProfileLogic.completeLeaves) - the dock of the profile left must not
+    // come along.
+    function profileLeaves(tree) {
+        return Profile.completeLeaves(Profile.settingLeaves(tree, Paths.home),
+                                      Profile.settingLeaves(SettingsService.defaults, Paths.home))
+    }
+
     function knownValues(leaves) {
         const values = {}
         for (const path of Object.keys(leaves || {})) {
@@ -1264,8 +1272,9 @@ Singleton {
     // changed: the state of the profile left stored (setActiveProfile), or
     // the profile left removed (removeProfile).
     //
-    // Into a profile with a state: its settings, notch and lock screen are
-    // put back. Into one without: a profile of the user's keeps what is set
+    // Into a profile with a state: its settings - all a profile owns, the
+    // default for one the state does not name (profileLeaves) -, notch, dock
+    // and lock screen are put back. Into one without: a profile of the user's keeps what is set
     // and takes it as its state (a new profile starts from the session it was
     // made in, not from defaults); a built-in one gets its shipped setup
     // (startBuiltin), which becomes its state once it is in. The mode-scoped
@@ -1292,7 +1301,7 @@ Singleton {
         if (!stored && !shipped) next.profiles[name].state = currentState()
         config = stored ? Logic.restoreStateLayout(next, stored) : Logic.sanitize(next)
         if (stored) {
-            const values = knownValues(Profile.settingLeaves(stored.settings, Paths.home))
+            const values = knownValues(profileLeaves(stored.settings))
             if (Object.keys(values).length) SettingsService.setAll(values)
         }
         ensureScreens()
@@ -1694,7 +1703,7 @@ Singleton {
         // the shipped settings.
         undoStack = []
         // The settings this shell knows, in one write.
-        const values = knownValues(Profile.settingLeaves(data.settings, Paths.home))
+        const values = knownValues(profileLeaves(data.settings))
         // The cursor theme only where it is installed (profile-apply.py
         // looks where Xcursor does): a name nothing answers to leaves
         // Hyprland and every toolkit to a fallback cursor of its own.

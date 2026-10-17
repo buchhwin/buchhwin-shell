@@ -45,12 +45,18 @@ Rectangle {
         : vertical ? anchorRect.y + anchorRect.height / 2 - height / 2
         : anchorRect.y - height - Metrics.dockLabelGap
     // Where the parent's corner is in the area it is kept in: read whenever
-    // the place is, which is when the label moves to another icon.
+    // the place is, which is when the label moves to another icon. Kept in
+    // along the dock only - the first app's name at a taskbar's end -: that
+    // offset does not move while the dock slides, which runs across it, and
+    // across it the label stands in the room the dock keeps for it (Dock.qml
+    // `headroom`), so a mapping read before the slide cannot push it there.
     function areaOffset() {
         return area && parent && area !== parent && anchorRect !== null ? parent.mapToItem(area, 0, 0) : Qt.point(0, 0)
     }
-    x: { const at = areaOffset(); return Math.max(-at.x, Math.min((area ? area.width : 0) - at.x - width, wantedX)) }
-    y: { const at = areaOffset(); return Math.max(-at.y, Math.min((area ? area.height : 0) - at.y - height, wantedY)) }
+    x: { if (vertical) return wantedX
+         const at = areaOffset(); return Math.max(-at.x, Math.min((area ? area.width : 0) - at.x - width, wantedX)) }
+    y: { if (!vertical) return wantedY
+         const at = areaOffset(); return Math.max(-at.y, Math.min((area ? area.height : 0) - at.y - height, wantedY)) }
 
     ShellText {
         id: name
