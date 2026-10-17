@@ -2,7 +2,30 @@
   "configVersion": 2,
   "name": "laptop",
   "label": "Laptop",
-  "description": "Clock, battery and Wi-Fi",
+  "description": "A slim bar along the top: workspaces, the time and the battery with its percent; tighter gaps",
+  "mode": "pills",
+  "bar": {
+    "reserve": true,
+    "fullscreen": "hide",
+    "scale": 0.9,
+    "style": "bar",
+    "position": "attached",
+    "edge": "top",
+    "panelSpot": "widget",
+    "notificationSpot": "widget",
+    "screens": [],
+    "left": [
+      { "id": "pill-1", "items": [{ "type": "workspace", "display": "full", "options": {} }] }
+    ],
+    "center": [
+      { "id": "pill-2", "items": [{ "type": "clock", "display": "full", "options": {} }] }
+    ],
+    "right": [
+      { "id": "pill-3", "items": [{ "type": "volume", "display": "icon", "options": {} }, { "type": "network", "display": "icon", "options": {} }, { "type": "battery", "display": "full", "options": {} }] },
+      { "id": "pill-4", "items": [{ "type": "quickPanel", "display": "icon", "options": {} }] }
+    ]
+  },
+  "effects": { "gapsIn": 4, "gapsOut": 8 },
   "widgets": [
     { "key": "network", "type": "network", "screen": "*" },
     { "key": "battery", "type": "battery", "screen": "*" },

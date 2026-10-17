@@ -2,8 +2,29 @@
   "configVersion": 2,
   "name": "gaming",
   "label": "Gaming",
-  "description": "Do Not Disturb, reduced interface, clock hidden",
-  "effects": { "dnd": "manual", "animationMode": "reduced" },
+  "description": "The notch only, Do Not Disturb, reduced motion and no blur",
+  "mode": "notch",
+  "bar": {
+    "reserve": true,
+    "fullscreen": "hide",
+    "scale": 1,
+    "style": "pills",
+    "position": "floating",
+    "edge": "top",
+    "panelSpot": "widget",
+    "notificationSpot": "widget",
+    "screens": [],
+    "left": [
+      { "id": "pill-1", "items": [{ "type": "workspace", "display": "full", "options": {} }] }
+    ],
+    "center": [
+      { "id": "pill-2", "items": [{ "type": "clock", "display": "full", "options": {} }] }
+    ],
+    "right": [
+      { "id": "pill-3", "items": [{ "type": "network", "display": "icon", "options": {} }, { "type": "battery", "display": "icon", "options": {} }] }
+    ]
+  },
+  "effects": { "dnd": "manual", "animationMode": "reduced", "blurStrength": 0 },
   "widgets": [
     { "key": "clock", "type": "clock", "screen": "*", "anchorX": "right", "x": 0.985, "y": 0.02, "size": "small", "style": "minimal", "visible": false }
   ]

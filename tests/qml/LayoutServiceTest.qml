@@ -15,7 +15,7 @@ import "../../services/LayoutLogic.js" as L
 // a widget window reports its rectangle on every change of its geometry, and
 // the same rectangle twice must not announce itself twice. Then the notch
 // options: settings, but changed where an undo is within reach (the editor,
-// Bar & Notch), so `changeNotch` takes an undo step and `undo` brings them
+// Bar & notch), so `changeNotch` takes an undo step and `undo` brings them
 // back. And its own write, read back by the file's watch, is not loaded again.
 // Then a mode switch undone, and an automatic one that is no undo step (its
 // widgets kept by the undo). Then the dock: a preset undone with its
@@ -187,6 +187,9 @@ ShellRoot {
             T.eq(L.modeConfig(LayoutService.config, LayoutService.activeProfile, first).appearance.gapsOut, 7,
                  "a mode-scoped setting belongs to the mode in use")
             T.eq(LayoutService.setActiveMode(others[0]), true, "into a second mode")
+            T.eq(L.modeConfig(LayoutService.config, LayoutService.activeProfile, others[0]).desktopMode,
+                 ({ work: "pills", laptop: "pills", docked: "pills", minimal: "widgets" })[others[0]],
+                 "a mode used for the first time takes its surface from its template (round 13)")
             SettingsService.set("appearance.gapsOut", 3)
             const depth = LayoutService.undoStack.length
             LayoutService.undo()

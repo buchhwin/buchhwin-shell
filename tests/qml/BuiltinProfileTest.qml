@@ -83,6 +83,18 @@ ShellRoot {
             .map(group => group.items[0]).find(item => item.type === type).h
         T.eq([heightOf("weather"), heightOf("clock") + heightOf("calendar")], [4, heightOf("weather") + heightOf("events")],
              "minimal mode's dashboard columns are balanced: weather 4, clock + calendar = weather + events")
+        // Each mode a surface of its own (round 13: the four were the same
+        // placeholder, the widgets and the default bar), minimal as it was.
+        T.eq(["minimal", "work", "gaming", "laptop", "docked"].map(name => shipped.modes[name].desktopMode),
+             ["notch", "pills", "notch", "pills", "pills"], "minimal and gaming the notch, work, laptop and docked a bar")
+        T.eq([shipped.modes.work.bar.style, shipped.modes.laptop.bar.style, shipped.modes.laptop.bar.position, shipped.modes.laptop.bar.scale],
+             ["pills", "bar", "attached", 0.9], "work floats its pills, laptop has a slim attached bar")
+        T.eq(shipped.modes.work.bar.left[0].items[0].type === "workspace" && shipped.modes.work.bar.left[0].items[0].options.style, "dots",
+             "its bars draw the workspaces as dots, like its island")
+        T.eq([raw.modes.gaming.appearance.animationMode, raw.modes.gaming.appearance.blurStrength,
+              raw.modes.laptop.appearance.gapsIn, raw.modes.laptop.appearance.gapsOut], ["reduced", 0, 4, 8],
+             "gaming: reduced motion and no blur; laptop: tighter gaps")
+        T.eq([raw.modes.work.screens, raw.modes.docked.widgets], [[], []], "their widgets come from the templates on the first entry")
         T.eq(L.sanitizeBuiltinProfile({ label: "x" }, "x"), null, "a file without modes is nothing to add")
         T.eq(L.sanitizeBuiltinProfile(raw, "Not A Slug"), null, "nor is one under an id that is not a profile name")
         T.eq(L.sanitizeBuiltinProfile({ modes: {}, defaultApps: { terminal: "../evil.desktop", files: "x" } }, "y").defaultApps,

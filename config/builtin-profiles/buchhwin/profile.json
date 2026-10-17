@@ -358,7 +358,7 @@
       "widgets": [],
       "groups": [],
       "screens": [],
-      "desktopMode": "widgets",
+      "desktopMode": "pills",
       "bar": {
         "reserve": true,
         "fullscreen": "hide",
@@ -374,11 +374,20 @@
             "id": "pill-1",
             "items": [
               {
-                "type": "nowPlaying",
-                "display": "icon",
-                "size": "small",
-                "w": 1,
-                "h": 1,
+                "type": "workspace",
+                "display": "full",
+                "options": {
+                  "style": "dots"
+                }
+              }
+            ]
+          },
+          {
+            "id": "pill-2",
+            "items": [
+              {
+                "type": "activeWindow",
+                "display": "full",
                 "options": {}
               }
             ]
@@ -386,14 +395,11 @@
         ],
         "center": [
           {
-            "id": "pill-2",
+            "id": "pill-3",
             "items": [
               {
                 "type": "clock",
                 "display": "full",
-                "size": "small",
-                "w": 1,
-                "h": 1,
                 "options": {}
               }
             ]
@@ -401,14 +407,46 @@
         ],
         "right": [
           {
-            "id": "pill-3",
+            "id": "pill-4",
             "items": [
+              {
+                "type": "nowPlaying",
+                "display": "icon",
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-5",
+            "items": [
+              {
+                "type": "volume",
+                "display": "icon",
+                "options": {}
+              },
               {
                 "type": "network",
                 "display": "icon",
-                "size": "small",
-                "w": 1,
-                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "battery",
+                "display": "full",
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-6",
+            "items": [
+              {
+                "type": "notificationIndicator",
+                "display": "icon",
+                "options": {}
+              },
+              {
+                "type": "quickPanel",
+                "display": "icon",
                 "options": {}
               }
             ]
@@ -730,7 +768,7 @@
       "widgets": [],
       "groups": [],
       "screens": [],
-      "desktopMode": "widgets",
+      "desktopMode": "notch",
       "bar": {
         "reserve": true,
         "fullscreen": "hide",
@@ -746,12 +784,11 @@
             "id": "pill-1",
             "items": [
               {
-                "type": "nowPlaying",
-                "display": "icon",
-                "size": "small",
-                "w": 1,
-                "h": 1,
-                "options": {}
+                "type": "workspace",
+                "display": "full",
+                "options": {
+                  "style": "dots"
+                }
               }
             ]
           }
@@ -763,9 +800,6 @@
               {
                 "type": "clock",
                 "display": "full",
-                "size": "small",
-                "w": 1,
-                "h": 1,
                 "options": {}
               }
             ]
@@ -778,9 +812,11 @@
               {
                 "type": "network",
                 "display": "icon",
-                "size": "small",
-                "w": 1,
-                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "battery",
+                "display": "icon",
                 "options": {}
               }
             ]
@@ -1086,7 +1122,7 @@
         ]
       },
       "appearance": {
-        "blurStrength": 0.5,
+        "blurStrength": 0,
         "panelOpacity": 0.74,
         "animationMode": "reduced",
         "animationSpeed": 1,
@@ -1102,13 +1138,13 @@
       "widgets": [],
       "groups": [],
       "screens": [],
-      "desktopMode": "widgets",
+      "desktopMode": "pills",
       "bar": {
         "reserve": true,
         "fullscreen": "hide",
-        "scale": 1,
-        "style": "pills",
-        "position": "floating",
+        "scale": 0.9,
+        "style": "bar",
+        "position": "attached",
         "edge": "top",
         "panelSpot": "widget",
         "notificationSpot": "widget",
@@ -1118,12 +1154,11 @@
             "id": "pill-1",
             "items": [
               {
-                "type": "nowPlaying",
-                "display": "icon",
-                "size": "small",
-                "w": 1,
-                "h": 1,
-                "options": {}
+                "type": "workspace",
+                "display": "full",
+                "options": {
+                  "style": "dots"
+                }
               }
             ]
           }
@@ -1135,9 +1170,6 @@
               {
                 "type": "clock",
                 "display": "full",
-                "size": "small",
-                "w": 1,
-                "h": 1,
                 "options": {}
               }
             ]
@@ -1148,11 +1180,28 @@
             "id": "pill-3",
             "items": [
               {
+                "type": "volume",
+                "display": "icon",
+                "options": {}
+              },
+              {
                 "type": "network",
                 "display": "icon",
-                "size": "small",
-                "w": 1,
-                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "battery",
+                "display": "full",
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-4",
+            "items": [
+              {
+                "type": "quickPanel",
+                "display": "icon",
                 "options": {}
               }
             ]
@@ -1466,15 +1515,15 @@
         "shellRadius": 20,
         "borderEnabled": true,
         "borderSize": 1,
-        "gapsIn": 6,
-        "gapsOut": 12
+        "gapsIn": 4,
+        "gapsOut": 8
       }
     },
     "docked": {
       "widgets": [],
       "groups": [],
       "screens": [],
-      "desktopMode": "widgets",
+      "desktopMode": "pills",
       "bar": {
         "reserve": true,
         "fullscreen": "hide",
@@ -1490,11 +1539,20 @@
             "id": "pill-1",
             "items": [
               {
-                "type": "nowPlaying",
-                "display": "icon",
-                "size": "small",
-                "w": 1,
-                "h": 1,
+                "type": "workspace",
+                "display": "full",
+                "options": {
+                  "style": "dots"
+                }
+              }
+            ]
+          },
+          {
+            "id": "pill-2",
+            "items": [
+              {
+                "type": "activeWindow",
+                "display": "full",
                 "options": {}
               }
             ]
@@ -1502,14 +1560,16 @@
         ],
         "center": [
           {
-            "id": "pill-2",
+            "id": "pill-3",
             "items": [
               {
                 "type": "clock",
                 "display": "full",
-                "size": "small",
-                "w": 1,
-                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "date",
+                "display": "full",
                 "options": {}
               }
             ]
@@ -1517,14 +1577,56 @@
         ],
         "right": [
           {
-            "id": "pill-3",
+            "id": "pill-4",
             "items": [
+              {
+                "type": "weather",
+                "display": "full",
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-5",
+            "items": [
+              {
+                "type": "nowPlaying",
+                "display": "icon",
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-6",
+            "items": [
+              {
+                "type": "volume",
+                "display": "icon",
+                "options": {}
+              },
               {
                 "type": "network",
                 "display": "icon",
-                "size": "small",
-                "w": 1,
-                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "battery",
+                "display": "full",
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-7",
+            "items": [
+              {
+                "type": "notificationIndicator",
+                "display": "icon",
+                "options": {}
+              },
+              {
+                "type": "quickPanel",
+                "display": "icon",
                 "options": {}
               }
             ]
