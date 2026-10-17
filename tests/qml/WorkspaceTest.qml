@@ -79,6 +79,51 @@ ShellRoot {
         T.eq(ids(W.entries("gapless", 5, null, "DP-1", -1)), [1], "and so does nothing at all")
         T.eq(ids(W.entries("nonsense", 5, holed, "DP-1", 1)), [1, 3], "an unknown mode is Open, as it was")
 
+        // ---- a workspace on its way out ---------------------------------
+
+        // 1 → 2 → 3 with 2 empty: the shell hears 3 come and be shown ~2 ms
+        // before it hears 2 go, and the row was "1 2 3" in between (nested
+        // trace, round 13). An empty one its screen does not show is gone.
+        const passing = [{ id: 1, name: "1", windows: 1, toplevels: 1, screen: "DP-1" },
+                         { id: 2, name: "2", windows: 0, toplevels: 0, screen: "DP-1" },
+                         { id: 3, name: "3", windows: 0, toplevels: 0, screen: "DP-1" }]
+        T.eq(ids(W.entries("open", 5, passing, "DP-1", 3)), [1, 3], "the empty one left behind is not drawn")
+        T.eq(ids(W.entries("open", 5, passing, "DP-1", 2)), [1, 2], "nor the empty one not shown yet")
+        T.eq(ids(W.entries("gapless", 5, passing, "DP-1", 3)), [1, 2, 3], "no gaps still fills the hole it leaves")
+        T.eq(ids(W.entries("fixed", 2, passing, "DP-1", 2)), [1, 2], "fixed: an empty one above the count is not drawn")
+        T.eq(ids(W.entries("open", 5, passing, "DP-1", -1)), [1, 2, 3], "nothing shown known yet: everything stays")
+        T.eq(ids(W.entries("open", 5, passing.map(item => Object.assign({}, item, { toplevels: undefined })), "DP-1", 3)), [1, 2, 3],
+             "without a window count everything stays, as before")
+        T.eq(ids(W.entries("open", 5, [{ id: 1, name: "1", windows: 1, toplevels: 1, screen: "DP-1" },
+                                       { id: 4, name: "4", windows: 0, toplevels: 1, screen: "DP-1" }], "DP-1", 1)), [1, 4],
+             "a hidden helper's window keeps a workspace that the row counts as empty")
+        T.eq(ids(W.entries("open", 5, passing.map(item => Object.assign({}, item, { kept: true })), "DP-1", 3)), [1, 2, 3],
+             "one held open stays, empty and not shown")
+        T.eq([W.leaving(null, 3), W.leaving({ id: 2, toplevels: 0 }, "x"), W.leaving({ id: 2, toplevels: "0" }, 3)],
+             [false, false, true], "leaving: no workspace, an unknown active one, a count as text")
+
+        // ---- held open, and closed again ---------------------------------
+
+        T.eq([W.closeTarget([1, 2, 3], 2), W.closeTarget([3, 1, 2], 1), W.closeTarget([1, 3], 3)], [1, 2, 1],
+             "the one before it on its monitor, else the one after")
+        T.eq([W.closeTarget([1], 1), W.closeTarget([1, 2], 5), W.closeTarget(null, 1)], [-1, -1, -1],
+             "the only one, one not there, nothing known: nothing to close into")
+        T.eq(W.closeTarget([11, 12, 12, -98], 12), 11, "duplicates and special workspaces are not neighbours")
+        // What is held open: with the monitor each one is on, so the rule
+        // never moves it - a nested run without that had 670 workspaces.
+        const standing = [{ id: 1, monitor: "DP-3" }, { id: 2, monitor: "DP-3" }, { id: 12, monitor: "DP-1" },
+                          { id: 3, monitor: "DP-1" }, { id: 5, monitor: "" }, { id: -98, monitor: "DP-3" }]
+        T.eq(W.keepPlan(standing, {}, [], ["DP-3", "DP-1"], 30), { 1: "DP-3", 2: "DP-3", 12: "DP-1" },
+             "each on its monitor; not 3 (the blocks are moving it), not one without a monitor, no special one")
+        T.eq(W.keepPlan(standing, {}, [], [], 30), { 1: "DP-3", 2: "DP-3", 3: "DP-1", 12: "DP-1" },
+             "without per-monitor blocks nothing is about to move")
+        T.eq(W.keepPlan(standing, { 1: "DP-3", 12: "DP-3" }, [2], ["DP-3", "DP-1"], 30), { 12: "DP-1" },
+             "one held already is not sent again, one moved since is, one being closed is not")
+        T.eq(W.keepPlan(standing, { 1: "DP-3" }, [], [], 3), { 2: "DP-3", 3: "DP-1" }, "no more than the limit held")
+        T.eq(W.keepPlan(standing, { 1: "DP-2" }, [], [], 1), { 1: "DP-3" }, "a moved one still gets its rule at the limit")
+        T.eq([W.keepPlan(null, null, null, null, 5), W.keepPlan([{ id: 1, monitor: "A" }], {}, [], [], 0)], [{}, {}], "nothing to hold")
+        T.eq([W.keepLimit(1), W.keepLimit(3), W.keepLimit(0), W.keepLimit("x")], [20, 40, 20, 20], "a block per monitor and one more")
+
         // ---- numbers, dots, or a dot for the active one -------------------
 
         const plain = { id: 2, name: "2", active: false }

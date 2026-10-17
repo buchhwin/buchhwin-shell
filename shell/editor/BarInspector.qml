@@ -5,7 +5,7 @@ import qs.services
 import qs.shell.components
 
 // Options of the selected bar pill and its items inside the layout editor.
-// Mirrors the list editor on Settings > Bar & Notch and uses the same
+// Mirrors the list editor on Settings > Bar & notch and uses the same
 // LayoutService.bar* operations.
 EditorPanel {
     id: panel

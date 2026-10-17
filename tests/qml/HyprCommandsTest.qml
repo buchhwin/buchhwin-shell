@@ -149,6 +149,32 @@ ShellRoot {
              "release workspace rules, Lua")
         T.eq([released.legacy, released.legacyEmpty], ["", []], "the legacy dialect has nothing to send")
         T.eq([0, -3, "x", null].map(id => H.releaseWorkspaceRule(id).lua), ["", "", "", ""], "nonsense ids are not sent")
+        // Empty workspaces held open: `persistent`, merged into the rule the
+        // workspace has, always naming the monitor it is on (a rule naming
+        // none moved it to the focused one, and the emptied monitor's new
+        // workspace was held and moved in turn), and let go the same way - in
+        // both dialects, unlike the release above.
+        T.eq([H.keepWorkspaceRule(3, true, "DP-1").legacy, H.keepWorkspaceRule(3, false).legacy],
+             ["keyword workspace 3,monitor:DP-1,persistent:true", "keyword workspace 3,persistent:false"], "keep and let go, legacy")
+        T.eq([H.keepWorkspaceRule("12", true, "eDP-1").lua, H.keepWorkspaceRule(12, false, "eDP-1").lua],
+             ["hl.workspace_rule({ workspace = \"12\", monitor = \"eDP-1\", persistent = true })",
+              "hl.workspace_rule({ workspace = \"12\", persistent = false })"], "keep and let go, Lua; letting go names no monitor")
+        T.eq([0, -1, "x"].map(id => [H.keepWorkspaceRule(id, true, "DP-1").legacy, H.keepWorkspaceRule(id, true, "DP-1").lua]),
+             [["", ""], ["", ""], ["", ""]], "no workspace number, nothing kept")
+        T.eq([H.keepWorkspaceRule(3, true).legacy, H.keepWorkspaceRule(3, true, "").lua], ["", ""],
+             "never held open without a monitor")
+        let refused = false
+        try { H.keepWorkspaceRule(3, true, "DP-1 ; exit") } catch (error) { refused = true }
+        T.ok(refused, "a monitor name that is not one word is refused")
+        // Held open first, then shown, in one request.
+        const keptThenShown = H.withDispatch(H.keepWorkspaceRule(4, true, "DP-1"), H.workspace(4))
+        T.eq(keptThenShown.legacy, "keyword workspace 4,monitor:DP-1,persistent:true ; dispatch workspace 4", "kept, then shown, legacy batch")
+        T.eq(keptThenShown.lua, "hl.workspace_rule({ workspace = \"4\", monitor = \"DP-1\", persistent = true })\nhl.exec_scheduled_prop_refresh_immediately()\nhl.dispatch(hl.dsp.focus({ workspace = 4 }))",
+             "kept, then shown, one Lua eval")
+        T.eq(H.withDispatch(H.keepWorkspaceRule(0, true, "DP-1"), H.workspace(4)).legacy, "dispatch workspace 4",
+             "without a rule only the dispatch is sent")
+        T.eq(H.withDispatch(H.keepWorkspaceRule(0, true, "DP-1"), H.workspace(4)).lua, "hl.dispatch(hl.dsp.focus({ workspace = 4 }))",
+             "and in Lua as well")
         // And the move a rule cannot make: a workspace that already exists.
         T.eq(H.moveWorkspaceToMonitor(3, "DP-1").legacy, "moveworkspacetomonitor 3 DP-1",
              "move a workspace to a monitor, legacy")

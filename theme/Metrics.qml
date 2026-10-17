@@ -325,7 +325,7 @@ Singleton {
     readonly property int barGroupGap: 9
     readonly property int barSeparatorWidth: 1
     readonly property int barSeparatorHeight: 14
-    // Bar sketch in Settings > Bar & Notch.
+    // Bar sketch in Settings > Bar & notch.
     readonly property int barPreviewHeight: 96
     // One arrow-key press on the display arrangement, in logical pixels, and
     // the same number as the snap threshold for it: an edge closer than one

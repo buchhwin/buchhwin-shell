@@ -13,7 +13,7 @@ import qs.shell.components
 // them, because the notch is its own layer surface and this editor covers it.
 //
 // What is left here is the frame around the notch, the row that adds what is
-// not on it yet, and the options it shares with Settings > Bar & Notch.
+// not on it yet, and the options it shares with Settings > Bar & notch.
 //
 // The options go through LayoutService.changeNotch, so Ctrl+Z in the editor
 // reaches them: they live in settings.json rather than in the layout file, and
@@ -192,14 +192,14 @@ Item {
 
         ShellText {
             Layout.fillWidth: true
-            text: "A fixed element at the top center: the time, and a small overview on hover. Applies to all profiles."
+            text: "A fixed element at the top center: the time, and a small overview on hover. Applies to every mode of this profile."
             role: "small"; muted: true; wrapMode: Text.Wrap
         }
 
         ShellText { Layout.fillWidth: true; text: "Presets"; role: "label" }
         NotchPresetPicker { Layout.fillWidth: true }
 
-        // Every option the Bar & Notch page has, not a subset of it: two places
+        // Every option the Bar & notch page has, not a subset of it: two places
         // that show different halves of one thing are worse than one place.
         // The size is not among them any more - it is dragged on the notch.
         SettingRow {

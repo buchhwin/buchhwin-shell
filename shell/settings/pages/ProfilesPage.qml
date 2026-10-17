@@ -234,7 +234,7 @@ ColumnLayout {
                 muted: true; wrapMode: Text.Wrap
             }
             ShellButton { focusOnTab: true; icon: Icons.arrange; text: "Widgets"; compact: true; onClicked: PanelService.open("settings", { page: "widgets" }) }
-            ShellButton { focusOnTab: true; icon: "󰘔"; text: "Bar & Notch"; compact: true; onClicked: PanelService.open("settings", { page: "bar" }) }
+            ShellButton { focusOnTab: true; icon: "󰘔"; text: "Bar & notch"; compact: true; onClicked: PanelService.open("settings", { page: "bar" }) }
         }
 
         // The settings a mode owns, named rather than implied: a user who

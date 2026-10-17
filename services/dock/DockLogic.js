@@ -160,6 +160,19 @@ function build(pins, windows, lookup, options) {
     return items
 }
 
+// The focused window's address while it is the one in front: on the focused
+// workspace, on a special one (open over it), pinned to all of them, or with
+// nothing known to say otherwise; else "". Quickshell keeps the last window
+// as Hyprland's `activeToplevel` when an empty workspace takes the focus.
+// window: { address, workspace, pinned }.
+function frontAddress(window, focusedId) {
+    if (!window || !window.address) return ""
+    const workspace = Number(window.workspace)
+    const focused = Number(focusedId)
+    if (!(focused > 0) || !(workspace > 0) || window.pinned === true) return String(window.address)
+    return workspace === focused ? String(window.address) : ""
+}
+
 // What a click on an app does: start it (no window), focus its window used
 // last (the app is not the active one), the next of its windows (it is, and
 // has more than one), or nothing. The next is by when they appeared: the

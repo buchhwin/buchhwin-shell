@@ -87,13 +87,30 @@ function normalizeCount(count) {
 // them with no active pip at all. `focusedId` still marks the one that has the
 // keyboard.
 //
-// workspaces: [{ id, name, windows, screen }]; ids <= 0 (special) are ignored.
-// Returns [{ id, label, name, active, focused, occupied }] sorted by id; never
-// empty. `label` is what to draw: a named workspace keeps its name, everything
-// else shows the number *of its own monitor*.
+// A workspace on its way out. Hyprland destroys an empty workspace in the
+// same call that leaves it, but the shell hears the two halves apart: the new
+// one comes and is shown (`createworkspace`, `workspace`) ~2 ms before the
+// old one goes (`destroyworkspace`) - a nested trace of 1 → 2 → 3 had the row
+// at "1 2 3" for those 2 ms, and a frame that fell in them drew a third pip
+// and moved the notch for nothing (round 13). One with no window at all
+// (`toplevels`, every window - a helper the row does not count still keeps a
+// workspace alive), not the one its screen shows, and not held open
+// (`kept`: the setting, or a persistent rule) is already gone. Unknown counts
+// and an unknown active one leave everything as it was.
+function leaving(item, activeId) {
+    const active = Number(activeId)
+    return !!item && active > 0 && item.id !== active && item.kept !== true
+        && item.toplevels !== undefined && item.toplevels !== null && Number(item.toplevels) === 0
+}
+
+// workspaces: [{ id, name, windows, screen, toplevels?, kept? }]; ids <= 0
+// (special) are ignored, and so is one `leaving`. Returns [{ id, label, name,
+// active, focused, occupied }] sorted by id; never empty. `label` is what to
+// draw: a named workspace keeps its name, everything else shows the number
+// *of its own monitor*.
 function entries(mode, count, workspaces, screen, activeId, offset, focusedId) {
     const existing = (Array.isArray(workspaces) ? workspaces : [])
-        .filter(item => item && typeof item.id === "number" && item.id > 0)
+        .filter(item => item && typeof item.id === "number" && item.id > 0 && !leaving(item, activeId))
     const byId = {}
     for (const item of existing) byId[item.id] = item
     const onScreen = existing.filter(item => item.screen === screen).map(item => item.id)
@@ -274,4 +291,65 @@ function ruledIds(upTo) {
     const ids = []
     for (let id = 1; isFinite(count) && id <= count; ++id) ids.push(id)
     return ids
+}
+
+// ---- Empty workspaces held open (workspaces.keepEmpty) ------------------------
+//
+// Hyprland forgets an empty workspace the moment no monitor shows it. With the
+// setting on, the shell holds each one open with a `persistent` rule, and the
+// overview's × closes it again.
+
+// Where a closed workspace's windows go, and the view with them: the one
+// before it on its monitor, else the one after; -1 when it is the monitor's
+// only one, which has nothing to close into (and no ×). `siblings` are the
+// ids on that monitor.
+function closeTarget(siblings, id) {
+    const ids = (Array.isArray(siblings) ? siblings : [])
+        .filter(item => typeof item === "number" && isFinite(item) && item > 0)
+        .filter((item, index, list) => list.indexOf(item) === index)
+        .sort((a, b) => a - b)
+    const at = ids.indexOf(Number(id))
+    if (at < 0 || ids.length < 2) return -1
+    return at > 0 ? ids[at - 1] : ids[at + 1]
+}
+
+// What to hold open now, as { id: monitor }: each workspace that may stay
+// where it is, with the monitor it is on. A persistent rule names a monitor,
+// and Hyprland moves a workspace standing on another one there; the monitor
+// left empty gets the next free number - which was held open in turn, moved,
+// and the next one after it: a nested run had 670 workspaces within seconds
+// (round 13). So the rule always names the monitor the workspace is on, and
+// nothing is held that has no monitor yet, that the per-monitor blocks are
+// about to move (`order`: the monitors' order with workspaces.perMonitor on,
+// else empty), that is being closed, or past `limit` workspaces held.
+// `existing` is [{ id, monitor }], `kept` the { id: monitor } sent so far; a
+// kept one whose monitor changed is sent again with the new one.
+function keepPlan(existing, kept, closing, order, limit) {
+    const held = kept && typeof kept === "object" ? kept : {}
+    const going = Array.isArray(closing) ? closing : []
+    const cap = Math.max(0, Math.round(Number(limit)) || 0)
+    const list = (Array.isArray(existing) ? existing : [])
+        .filter(item => item && typeof item.id === "number" && item.id > 0
+                && String(item.monitor || "").length > 0 && going.indexOf(item.id) < 0)
+        .sort((a, b) => a.id - b.id)
+    const wrong = misplaced(order, list).map(move => move.id)
+    const plan = {}
+    let count = Object.keys(held).length
+    for (const item of list) {
+        if (wrong.indexOf(item.id) >= 0 || held[item.id] === item.monitor || plan[item.id] !== undefined) continue
+        if (held[item.id] === undefined) {
+            if (count >= cap) continue
+            count += 1
+        }
+        plan[item.id] = String(item.monitor)
+    }
+    return plan
+}
+
+// How many workspaces may be held open at most: a block per monitor and one
+// more. Only a person opens them, one key at a time; past this something is
+// opening them on its own, and holding each would feed it.
+function keepLimit(monitors) {
+    const count = Math.round(Number(monitors))
+    return perMonitorBlock * (isFinite(count) && count > 0 ? count : 1) + perMonitorBlock
 }

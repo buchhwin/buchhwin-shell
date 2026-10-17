@@ -305,6 +305,9 @@ ShellPanel {
                                 readonly property bool dropHover: drop.containsDrag
                                 width: window.workspaceWidth
                                 spacing: Metrics.spaceSm
+                                // The pointer anywhere on the card brings its
+                                // × up from faint.
+                                HoverHandler { id: cardHover }
 
                                 RowLayout {
                                     Layout.fillWidth: true
@@ -325,6 +328,78 @@ ShellPanel {
                                         text: card.modelData.monitor
                                         role: "caption"
                                         color: Colors.scrimMutedText
+                                    }
+                                    // Held open (Settings > Bar & notch > Keep
+                                    // empty workspaces open), a workspace is
+                                    // closed here. Its windows go to the one
+                                    // before it (HyprlandService.closeWorkspace),
+                                    // so on one with windows the first click
+                                    // only asks, as ShellButton's `confirm`
+                                    // does - drawn in the scrim's inks, which a
+                                    // ShellButton has not got: the scrim stays
+                                    // dark in both themes. Not on the new
+                                    // workspace card, nor on a monitor's only
+                                    // workspace, which has nothing to close
+                                    // into - there it keeps its place, unseen,
+                                    // or that card's frame started 14 px higher
+                                    // than its neighbours'. Faint until the card
+                                    // is pointed at.
+                                    Rectangle {
+                                        id: closeMark
+                                        readonly property int windowCount: (card.modelData.windows || []).length
+                                        readonly property bool closable: !card.placeholder && row.modelData.workspaces.length > 1
+                                        property bool armed: false
+                                        visible: HyprlandService.keepsEmpty
+                                        implicitHeight: Metrics.controlHeightSm
+                                        implicitWidth: armed ? armedLabel.implicitWidth + Metrics.controlPaddingSm * 2 : implicitHeight
+                                        radius: height / 2
+                                        color: closeMouse.pressed ? Colors.scrimPressed
+                                            : closeMouse.containsMouse || armed ? Colors.scrimHover : "transparent"
+                                        opacity: !closable ? 0 : cardHover.hovered || armed ? 1 : Effects.mutedOpacity
+                                        Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
+                                        Behavior on opacity { NumberAnimation { duration: Animations.hover; easing.type: Animations.easing } }
+
+                                        ShellIcon {
+                                            anchors.centerIn: parent
+                                            visible: !closeMark.armed
+                                            glyph: Icons.close
+                                            size: Metrics.iconSm
+                                            color: closeMouse.containsMouse ? Colors.scrimText : Colors.scrimMutedText
+                                        }
+                                        ShellText {
+                                            id: armedLabel
+                                            anchors.centerIn: parent
+                                            visible: closeMark.armed
+                                            text: closeMark.windowCount === 1 ? "Move 1 window and close"
+                                                : "Move " + closeMark.windowCount + " windows and close"
+                                            role: "small"
+                                            color: Colors.dangerOnDark
+                                        }
+                                        Timer {
+                                            id: disarm
+                                            interval: Animations.confirmTimeout
+                                            onTriggered: closeMark.armed = false
+                                        }
+                                        MouseArea {
+                                            id: closeMouse
+                                            anchors.fill: parent
+                                            enabled: closeMark.closable
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (closeMark.windowCount > 0 && !closeMark.armed) {
+                                                    closeMark.armed = true
+                                                    disarm.restart()
+                                                    return
+                                                }
+                                                disarm.stop()
+                                                closeMark.armed = false
+                                                HyprlandService.closeWorkspace(card.modelData.id)
+                                            }
+                                        }
+                                        Accessible.ignored: !closable
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: closeMark.armed ? armedLabel.text : "Close workspace " + card.modelData.label
                                     }
                                 }
 

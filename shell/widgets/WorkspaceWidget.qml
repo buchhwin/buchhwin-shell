@@ -8,7 +8,7 @@ import "../../services/hypr/HiddenWindows.js" as Hidden
 import "../../services/model/KeyedLogic.js" as Keyed
 
 // Workspaces of this widget's monitor; the focused one is highlighted. Settings
-// > Bar & Notch chooses which workspaces are shown (the open ones, the open
+// > Bar & notch chooses which workspaces are shown (the open ones, the open
 // ones with the gaps filled, or a fixed number of slots - empty slots are
 // dimmed and clicking one creates it) and how they are drawn (numbers, dots,
 // or a dot for the one you are on).
@@ -46,6 +46,10 @@ Grid {
                 appId: toplevel.wayland ? toplevel.wayland.appId : "",
                 ipcClass: toplevel.lastIpcObject ? toplevel.lastIpcObject.class : ""
             }))),
+            // Every window, the hidden helpers too, and whether it is held
+            // open: what tells a workspace on its way out (Logic.leaving).
+            toplevels: workspace.toplevels.values.length,
+            kept: HyprlandService.keeps(workspace),
             screen: workspace.monitor ? workspace.monitor.name : ""
         })),
         instance ? instance.screen : "",

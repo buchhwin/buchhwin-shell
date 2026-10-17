@@ -185,7 +185,11 @@ Singleton {
             // screen it is the behaviour that was always there - offset 0,
             // ids 1-10, the same keys - so it only differs once there is
             // something to differ about.
-            "perMonitor": true
+            "perMonitor": true,
+            // Off: Hyprland forgets an empty workspace the moment no monitor
+            // shows it, as it always did. On: each one stays until the
+            // overview's x closes it (HyprlandService.keepsEmpty).
+            "keepEmpty": false
         },
         "wallpaper": {
             "path": "",

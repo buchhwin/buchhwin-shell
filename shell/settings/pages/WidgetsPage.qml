@@ -138,7 +138,7 @@ ColumnLayout {
             : "The bar replaces the desktop widgets. Switch to Widgets to place them on the wallpaper again; the current widget layout is kept."
         ShellButton {
             focusOnTab: true
-            icon: "󰘔"; text: "Open Bar & Notch"
+            icon: "󰘔"; text: "Open Bar & notch"
             onClicked: PanelService.open("settings", { page: "bar" })
         }
     }

@@ -6,7 +6,7 @@ import qs.services
 // Notch presets: the built-in ones and the user's own, each a whole notch -
 // both lists and how it opens. Applying one is a single undo step; the
 // current notch can be saved as a new one, and saved ones renamed or deleted.
-// The same list in the layout editor and on the Bar & Notch page.
+// The same list in the layout editor and on the Bar & notch page.
 ColumnLayout {
     id: root
     spacing: Metrics.spaceSm

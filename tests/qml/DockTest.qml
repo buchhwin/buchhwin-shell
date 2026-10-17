@@ -95,6 +95,17 @@ ShellRoot {
         const three = { entryId: "c", windows: [{ address: "0x1" }, { address: "0x2" }, { address: "0x3" }] }
         T.eq(D.clickTarget({ entryId: "a", windows: [] }, "", []), { action: "launch", address: "" }, "not running: start it")
         T.eq(D.clickTarget({ entryId: "", windows: [] }, "", []), { action: "none", address: "" }, "nothing to start")
+        // An empty workspace in front: Quickshell still names the last window
+        // as active, and the click on its app did nothing (round 13).
+        T.eq(D.frontAddress({ address: "0x1", workspace: 1 }, 2), "", "a window on a workspace behind is not in front")
+        T.eq(D.frontAddress({ address: "0x1", workspace: 2 }, 2), "0x1", "on the focused workspace it is")
+        T.eq([D.frontAddress({ address: "0x1", workspace: -98 }, 2), D.frontAddress({ address: "0x1", workspace: 1, pinned: true }, 2)],
+             ["0x1", "0x1"], "a special workspace's window and a pinned one are in front wherever")
+        T.eq([D.frontAddress({ address: "0x1", workspace: 1 }, 0), D.frontAddress({ address: "0x1" }, 2),
+              D.frontAddress(null, 2), D.frontAddress({ address: "", workspace: 2 }, 2)], ["0x1", "0x1", "", ""],
+             "nothing known: as before; no window: none")
+        T.eq(D.clickTarget({ entryId: "code", windows: [{ address: "0x1" }] }, D.frontAddress({ address: "0x1", workspace: 1 }, 2), []),
+             { action: "focus", address: "0x1" }, "so its app's click goes to that window")
         T.eq(D.clickTarget(three, "0x9", ["0x8", "0x2", "0x1"]), { action: "focus", address: "0x2" }, "not active: the window used last")
         T.eq(D.clickTarget(three, "0x9", []), { action: "focus", address: "0x1" }, "no history: its first window")
         T.eq(D.clickTarget(three, "0x2", ["0x2"]), { action: "focus", address: "0x3" }, "active: the next of its windows")

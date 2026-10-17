@@ -61,7 +61,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Notch"
-        description: "Hover the notch for the time, weather, events, media and status. Hotkey panels open below it. Applies to all profiles."
+        description: "Hover the notch for the time, weather, events, media and status. Hotkey panels open below it. Applies to every mode of this profile."
         visible: LayoutService.notchShown
 
         SettingRow {
@@ -335,7 +335,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Workspaces"
-        description: "Which workspaces the workspace pill, the widget and the window overview show. Applies to all profiles."
+        description: "Which workspaces the workspace pill, the widget and the window overview show. Applies to every mode of this profile."
 
         SettingRow {
             Layout.fillWidth: true
@@ -348,6 +348,17 @@ ColumnLayout {
                 focusOnTab: true
                 checked: SettingsService.value("workspaces.perMonitor") === true
                 onToggled: value => SettingsService.set("workspaces.perMonitor", value)
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Keep empty workspaces open"
+            hint: "Hyprland closes a workspace the moment it is empty and you switch away. With this on, every workspace you open stays until you close it with \u00D7 on its card in the overview (" + ShortcutService.keyHint("SUPER + W", true) + "); a workspace with windows hands them to its neighbour first, nothing is closed."
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("workspaces.keepEmpty") === true
+                onToggled: value => SettingsService.set("workspaces.keepEmpty", value)
             }
         }
         SettingRow {

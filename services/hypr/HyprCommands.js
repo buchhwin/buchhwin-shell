@@ -199,6 +199,48 @@ function releaseWorkspaceRule(id) {
     }
 }
 
+// Held open or let go (Settings > Bar & notch > Keep empty workspaces open):
+// `persistent`, which Hyprland 0.56 merges into the rule it already has for
+// that workspace - and never `releaseWorkspaceRule`, whose set_enabled(false)
+// would take a per-monitor block's monitor along. Held open, it names the
+// monitor the workspace is on: a persistent rule moves its workspace to the
+// rule's monitor, and without one that is the focused monitor - which emptied
+// the other, Hyprland filled it with a new workspace, and holding that one
+// open too ran away (round 13, nested). Let go, an empty workspace no monitor
+// shows goes at once; one on screen goes when it is left. Both dialects take
+// it at runtime (probed nested 17.10., `hyprctl -j workspacerules`). An id
+// that is no workspace number sends nothing; neither does holding one open
+// without a monitor.
+function keepWorkspaceRule(id, on, monitorName) {
+    const number = Math.round(Number(id))
+    const monitor = on ? String(monitorName || "") : ""
+    const valid = isFinite(number) && number >= 1 && (!on || monitor.length > 0)
+    if (!valid) return { legacy: "", legacyEmpty: [], lua: "" }
+    const name = monitor.length ? checkWord(monitor) : ""
+    return {
+        legacy: "keyword workspace " + number + (name.length ? ",monitor:" + name : "") + ",persistent:" + (on ? "true" : "false"),
+        legacyEmpty: [],
+        lua: "hl.workspace_rule({ workspace = " + luaString(String(number))
+            + (name.length ? ", monitor = " + luaString(name) : "") + ", persistent = " + (on ? "true" : "false") + " })"
+    }
+}
+
+// A configuration change and then a dispatcher, in one request, so the second
+// can rely on the first: a workspace held open before it is switched to, not
+// a moment after (two `hyprctl` runs are not promised to arrive in order).
+// Lua: one eval, the rules applied at once rather than at the next idle pass
+// (`exec_scheduled_prop_refresh_immediately`); legacy: one batch, whose
+// `keyword` is applied before the dispatch is read.
+function withDispatch(config, command) {
+    const legacy = [config.legacy, command.legacy.length ? "dispatch " + command.legacy : ""].filter(text => text.length)
+    const lua = config.lua.length ? [config.lua, "hl.exec_scheduled_prop_refresh_immediately()"] : []
+    return {
+        legacy: legacy.join(" ; "),
+        legacyEmpty: config.legacyEmpty || [],
+        lua: lua.concat(["hl.dispatch(" + command.lua + ")"]).join("\n")
+    }
+}
+
 // A workspace onto a monitor: what a rule would have done had the workspace
 // been created after it. `hl.dsp.workspace.move` is the dispatcher's Lua name
 // (found by listing `hl.dsp.workspace` in the running compositor - the wiki

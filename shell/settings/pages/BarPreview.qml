@@ -4,7 +4,7 @@ import qs.services
 import qs.shell.components
 import "../../../services/bar/BarLogic.js" as BarLogic
 
-// Small live sketch of the bar in Settings > Bar & Notch: the screen edge the
+// Small live sketch of the bar in Settings > Bar & notch: the screen edge the
 // bar is on, with pills or the continuous bar (floating or attached), and a
 // window that keeps clear of it while space is reserved. Colours follow the
 // panel colour.

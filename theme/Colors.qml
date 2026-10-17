@@ -251,6 +251,11 @@ Singleton {
     // Text directly on the dark overview scrim, in both themes.
     readonly property color scrimText: "#f5f6f8"
     readonly property color scrimMutedText: Qt.rgba(1, 1, 1, 0.7)
+    // A small control drawn straight on that scrim (the overview card's ×):
+    // the theme's hover tints are for panels and vanish on it in the light
+    // theme.
+    readonly property color scrimHover: Qt.rgba(1, 1, 1, 0.14)
+    readonly property color scrimPressed: Qt.rgba(1, 1, 1, 0.24)
     // Soft halo behind minimal widgets on the wallpaper: dark behind light
     // text, light behind the dark text of light panels (a dark shadow there
     // only smudged the glyphs). It follows the ink, so the panels' side.

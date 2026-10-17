@@ -57,7 +57,8 @@ ShellRoot {
         // Page titles are sentence case, like the section titles under them,
         // and the search ignores case, so the old spelling still finds them.
         const renamed = [["lockScreen", "Lock screen", "Lock Screen"], ["login", "Login screen", "Login Screen"],
-                         ["defaultApps", "Default apps", "Default Apps"], ["desktop", "Desktop extras", "Desktop Extras"]]
+                         ["defaultApps", "Default apps", "Default Apps"], ["desktop", "Desktop extras", "Desktop Extras"],
+                         ["bar", "Bar & notch", "Bar & Notch"]]
         T.eq(renamed.map(entry => N.pageById(entry[0]).title), renamed.map(entry => entry[1]), "page titles are sentence case")
         T.ok(renamed.every(entry => N.pageIds(N.rows(entry[2])).indexOf(entry[0]) >= 0), "the Title Case spelling still finds each page")
         T.eq(N.rows(undefined).length, all.length, "undefined query shows everything")
@@ -71,8 +72,8 @@ ShellRoot {
         T.eq(N.step(all, "login", 1), "profiles", "down skips the heading")
         T.eq(N.step(all, "lockScreen", 1), "login",
              "the lock screen and the login screen are the same kind of thing and sit together")
-        T.eq(N.step(all, "profiles", 1), "bar", "Bar & Notch comes right after Profiles: both shipped profiles run the notch")
-        T.eq(N.step(all, "bar", 1), "widgets", "Widgets follows Bar & Notch")
+        T.eq(N.step(all, "profiles", 1), "bar", "Bar & notch comes right after Profiles: both shipped profiles run the notch")
+        T.eq(N.step(all, "bar", 1), "widgets", "Widgets follows Bar & notch")
         T.eq(N.pageIds(N.rows("widgets")), ["widgets"], "searching for widgets finds the widget page")
         T.eq(N.step(all, "profiles", -1), "login", "up skips the heading")
         T.eq(N.step(all, "appearance", -1), "appearance", "up stops at the first page")

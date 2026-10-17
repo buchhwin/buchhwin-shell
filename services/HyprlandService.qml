@@ -6,6 +6,7 @@ import QtQuick
 import "hypr/HiddenWindows.js" as Hidden
 import "hypr/FullscreenLogic.js" as Fullscreen
 import "workspaces/WorkspaceLogic.js" as Workspaces
+import "overview/OverviewLogic.js" as Overview
 
 // Compositor state: focus, fullscreen, games and workspaces.
 Singleton {
@@ -151,7 +152,10 @@ Singleton {
     // place it sends nothing.
     Connections {
         target: Hyprland.workspaces
-        function onValuesChanged() { if (root.perMonitor) ruleTimer.restart() }
+        function onValuesChanged() {
+            if (root.perMonitor) ruleTimer.restart()
+            if (root.closing.length) root.closing = root.closing.filter(id => root.workspaces.some(item => item.id === id))
+        }
     }
     // Turned off, the rules that were sent are taken back (Lua config; see
     // HyprCommands.releaseWorkspaceRule), or a workspace created later still opens
@@ -247,7 +251,132 @@ Singleton {
         }
     }
 
+    // ---- Empty workspaces held open (workspaces.keepEmpty) ----------------
+    //
+    // Off, Hyprland forgets an empty workspace the moment no monitor shows it,
+    // as it always did. On, the shell holds every workspace open with a
+    // `persistent` rule naming the monitor it is on (Workspaces.keepPlan says
+    // why it must) until the overview's × closes it (closeWorkspace).
+    readonly property bool keepsEmpty: SettingsService.value("workspaces.keepEmpty") === true
+    // { id: monitor } the shell sent a rule for since the last config reload.
+    // Only these are let go again: a persistent workspace of the user's own
+    // config is never touched.
+    property var keptOn: ({})
+    // Ids the × is closing, held back from keepAll until they are gone.
+    property var closing: []
+    property bool keepCapped: false
+    // Where every workspace is: a new one, one gone or one moved to another
+    // monitor is looked at again (a moved one gets its rule anew).
+    readonly property string keptPlacement: keepsEmpty
+        ? workspaces.map(item => item.id + "@" + (item.monitor ? item.monitor.name : "")).join(",") : ""
+    onKeptPlacementChanged: if (keepsEmpty) Qt.callLater(root.keepAll)
+    // Whether a workspace stays when it is empty and not shown: every one
+    // with the setting on, else one a persistent rule holds (Hyprland's
+    // `ispersistent`, as last read).
+    function keeps(workspace) {
+        if (!workspace) return false
+        if (keepsEmpty) return closing.indexOf(workspace.id) < 0
+        const ipc = workspace.lastIpcObject
+        return !!(ipc && ipc.ispersistent === true)
+    }
+    function keepAll() {
+        if (!keepsEmpty || !HyprCompat.detected) return
+        const existing = workspaces.map(item => ({ id: item.id, monitor: item.monitor ? item.monitor.name : "" }))
+        const limit = Workspaces.keepLimit(monitorList.length)
+        const plan = Workspaces.keepPlan(existing, keptOn, closing, perMonitor ? Workspaces.monitorOrder(monitorList) : [], limit)
+        const ids = Object.keys(plan).map(Number)
+        const held = Object.keys(keptOn).length
+        if (!keepCapped && held + ids.filter(id => keptOn[id] === undefined).length >= limit) {
+            keepCapped = true
+            console.warn("buchhwin-shell: " + limit + " workspaces held open, holding no more")
+        }
+        if (!ids.length) return
+        keptOn = Object.assign({}, keptOn, plan)
+        HyprCompat.configure(HyprCompat.commands.combine(ids.map(id => HyprCompat.commands.keepWorkspaceRule(id, true, plan[id]))))
+    }
+    function releaseAll() {
+        const ids = Object.keys(keptOn).map(Number)
+        keptOn = ({})
+        closing = []
+        keepCapped = false
+        if (ids.length && HyprCompat.detected)
+            HyprCompat.configure(HyprCompat.commands.combine(ids.map(id => HyprCompat.commands.keepWorkspaceRule(id, false))))
+    }
+    onKeepsEmptyChanged: keepsEmpty ? keepAll() : releaseAll()
+    // A reload forgets the rules, and the empty workspaces they held go with
+    // them; sent again, each rule brings its workspace back on its monitor.
+    // After the block rules (ruleTimer).
+    Connections {
+        target: root
+        function onConfigReloaded() { if (root.keepsEmpty) keepTimer.restart() }
+    }
+    Timer {
+        id: keepTimer
+        interval: 600
+        onTriggered: {
+            const ids = Object.keys(root.keptOn).map(Number)
+            if (!root.keepsEmpty || !ids.length || !HyprCompat.detected) return
+            HyprCompat.configure(HyprCompat.commands.combine(ids.map(id =>
+                HyprCompat.commands.keepWorkspaceRule(id, true, root.keptOn[id]))))
+        }
+    }
+    Connections {
+        target: HyprCompat
+        function onDetectedChanged() { if (HyprCompat.detected && root.keepsEmpty) root.keepAll() }
+    }
+
+    // The overview's ×: its windows to the workspace before it on its monitor
+    // (else the one after), the view too when it is the one shown, and the
+    // workspace let go - never a window closed. False for the monitor's only
+    // workspace, which has nothing to close into.
+    function closeWorkspace(id) {
+        const workspace = Hyprland.workspaces.values.find(item => item.id === id)
+        if (!workspace || id <= 0) return false
+        const monitor = workspace.monitor ? workspace.monitor.name : ""
+        const target = Workspaces.closeTarget(workspaces
+            .filter(item => (item.monitor ? item.monitor.name : "") === monitor).map(item => item.id), id)
+        if (target < 0) return false
+        closing = closing.concat([id])
+        const left = Object.assign({}, keptOn)
+        delete left[id]
+        keptOn = left
+        const steps = []
+        for (const toplevel of workspace.toplevels.values) {
+            const address = "0x" + Overview.normalizeAddress(toplevel.address)
+            if (/^0x[0-9a-f]+$/.test(address)) steps.push(HyprCompat.commands.moveWindowSilent(target, address))
+        }
+        if (activeWorkspaceOn(monitor) === id) steps.push(HyprCompat.commands.workspace(target))
+        HyprCompat.dispatchInOrder(steps)
+        HyprCompat.configure(HyprCompat.commands.keepWorkspaceRule(id, false))
+        return true
+    }
+
+    // Shown, and held open first when the setting is on: a workspace kept a
+    // moment after it was switched to could already be gone again. Held on
+    // the monitor it is on, or - a new one - the one its block belongs to,
+    // else the focused one; one the blocks are about to move is not held.
+    function keepMonitorFor(id) {
+        const workspace = workspaces.find(item => item.id === id)
+        const order = perMonitor ? Workspaces.monitorOrder(monitorList) : []
+        if (workspace) {
+            const placed = [{ id: id, monitor: workspace.monitor ? workspace.monitor.name : "" }]
+            return Workspaces.misplaced(order, placed).length ? "" : placed[0].monitor
+        }
+        const index = Workspaces.monitorIndexOf(id)
+        return perMonitor && index < order.length ? order[index] : focusedMonitorName
+    }
     function focusWorkspace(id) {
+        const monitor = keepsEmpty && HyprCompat.detected && id > 0 && keptOn[id] === undefined
+            && closing.indexOf(id) < 0 && Object.keys(keptOn).length < Workspaces.keepLimit(monitorList.length)
+            ? keepMonitorFor(id) : ""
+        if (monitor.length) {
+            const next = Object.assign({}, keptOn)
+            next[id] = monitor
+            keptOn = next
+            HyprCompat.configure(HyprCompat.commands.withDispatch(HyprCompat.commands.keepWorkspaceRule(id, true, monitor),
+                                                                  HyprCompat.commands.workspace(id)))
+            return
+        }
         HyprCompat.dispatch(HyprCompat.commands.workspace(id))
     }
 }

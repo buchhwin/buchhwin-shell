@@ -98,8 +98,20 @@ Singleton {
     })).filter(window => window.address.length) : []
     // The window with the focus, from Hyprland's own record: the toplevels'
     // `activated` stayed false for every window in the nested checks, so a
-    // click on the active app focused the window it was already on.
-    readonly property string activeAddress: enabled && Hyprland.activeToplevel ? addressOf(Hyprland.activeToplevel) : ""
+    // click on the active app focused the window it was already on. And only
+    // while it is in front (DockLogic.frontAddress): on an empty workspace
+    // Hyprland focuses no window, but Quickshell keeps the last one as
+    // `activeToplevel` - it drops the empty `activewindowv2` (0.3.2) - so a
+    // click on VS Code from an empty workspace was a click on the app in
+    // front, with one window: nothing (round 13).
+    readonly property string activeAddress: {
+        const toplevel = enabled ? Hyprland.activeToplevel : null
+        if (!toplevel) return ""
+        const ipc = toplevel.lastIpcObject || {}
+        return Logic.frontAddress({ address: addressOf(toplevel), workspace: toplevel.workspace ? toplevel.workspace.id : 0,
+                                    pinned: ipc.pinned === true },
+                                  Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0)
+    }
 
     // ---- apps -----------------------------------------------------------------------
     // The desktop entries are read in the background after the start, and
