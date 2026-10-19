@@ -15,7 +15,8 @@
 //                    aside, which is the whole point of the exercise.
 //   insertIndexAt()  the index a drop would take, from the same rectangles.
 //   gridDropIndex()  the same question on a grid the user sizes, answered by
-//                    packing each candidate rather than reading rectangles.
+//                    packing each candidate rather than reading rectangles;
+//                    gridDropTarget() adds the rectangle the drop rests in.
 //
 // Everything is plain data: a cell going in is { id, span, contentHeight },
 // a cell coming out is { id, x, y, width, height }. No QML, no units beyond
@@ -354,9 +355,19 @@ function insertIndexAt(cells, x, y, skipId, vertical) {
 // { x, y, grabX, grabY } - where the pointer is, and where inside the cell it
 // took hold, so the cell is judged by the corner the hand is actually holding.
 function gridDropIndex(entries, dragId, point, grid) {
+    return gridDropTarget(entries, dragId, point, grid).index
+}
+
+// The same, with where the dragged cell would rest: `cell` is its rectangle
+// (gridLayout's, in the grid's own coordinates) in the very packing that won,
+// or null when there is nothing to drop. A marker drawn from it is where the
+// drop lands. A hairline after the list neighbour - the bar's marker - is not,
+// on a grid that floats a cell up into a hole: on the notch's overview it was
+// drawn past the grid's right edge for three drops in five.
+function gridDropTarget(entries, dragId, point, grid) {
     const list = (entries || []).filter(entry => entry && entry.id)
     const ids = list.map(entry => entry.id)
-    if (ids.indexOf(dragId) < 0) return 0
+    if (ids.indexOf(dragId) < 0) return { index: 0, cell: null }
     const byId = {}
     for (const entry of list) byId[entry.id] = entry
     const at = point || {}
@@ -366,6 +377,7 @@ function gridDropIndex(entries, dragId, point, grid) {
     const grabY = Number(at.grabY) || 0
     const box = grid || {}
     let best = 0
+    let bestCell = null
     let bestDistance = Infinity
     for (let index = 0; index < list.length; ++index) {
         const packed = gridLayout(previewOrder(ids, dragId, index).map(id => byId[id]),
@@ -380,9 +392,10 @@ function gridDropIndex(entries, dragId, point, grid) {
         if (distance < bestDistance) {
             bestDistance = distance
             best = index
+            bestCell = cell
         }
     }
-    return best
+    return { index: best, cell: bestCell }
 }
 
 // The gap a drop would open, as a rectangle to draw a marker in. An empty

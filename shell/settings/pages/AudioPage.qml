@@ -33,7 +33,12 @@ ColumnLayout {
         description: AudioService.ready ? "Speakers and headphones. The selected device plays all sound." : "PipeWire is not ready"
 
         Repeater {
-            model: AudioService.sinks
+            // Kept rows, not rebuilt ones: AudioService's lists are new
+            // whenever any PipeWire node comes or goes (a notification
+            // sound, a browser tab), and a rebuilt row ended a slider drag
+            // under the hand and took the keyboard focus. The nodes keep
+            // their identity (ScriptModel).
+            model: ScriptModel { values: AudioService.sinks }
             ListRow {
                 focusOnTab: true
                 level: 1
@@ -49,7 +54,7 @@ ColumnLayout {
                 onClicked: AudioService.setDefaultSink(modelData)
             }
         }
-        EmptyState { Layout.fillWidth: true; visible: AudioService.sinks.length === 0; icon: "󰓃"; title: "No output devices" }
+        EmptyState { Layout.fillWidth: true; row: true; visible: AudioService.sinks.length === 0; icon: "󰓃"; title: "No output devices" }
         SettingRow {
             label: "Volume"
             ShellButton {
@@ -76,7 +81,7 @@ ColumnLayout {
         description: AudioService.micInUse ? "A microphone is in use right now." : "Microphones. The selected device is used by all apps."
 
         Repeater {
-            model: AudioService.sources
+            model: ScriptModel { values: AudioService.sources }
             ListRow {
                 focusOnTab: true
                 level: 1
@@ -92,7 +97,7 @@ ColumnLayout {
                 onClicked: AudioService.setDefaultSource(modelData)
             }
         }
-        EmptyState { Layout.fillWidth: true; visible: AudioService.sources.length === 0; icon: "󰍬"; title: "No input devices" }
+        EmptyState { Layout.fillWidth: true; row: true; visible: AudioService.sources.length === 0; icon: "󰍬"; title: "No input devices" }
         SettingRow {
             label: "Input volume"
             ShellButton {
@@ -167,9 +172,9 @@ ColumnLayout {
         title: "Applications"
         description: "Volume and output of apps that are playing sound right now. The output is remembered for each app."
 
-        EmptyState { Layout.fillWidth: true; visible: AudioService.playbackStreams.length === 0; icon: "󰝛"; title: "No app is playing audio" }
+        EmptyState { Layout.fillWidth: true; row: true; visible: AudioService.playbackStreams.length === 0; icon: "󰝛"; title: "No app is playing audio" }
         Repeater {
-            model: AudioService.playbackStreams
+            model: ScriptModel { values: AudioService.playbackStreams }
             StreamRow { required property var modelData; node: modelData; Layout.fillWidth: true }
         }
     }

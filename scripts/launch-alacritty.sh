@@ -28,8 +28,10 @@ set -euo pipefail
 # an X11 embed), no runtime directory or display, or a daemon that did not
 # answer - one that is still alive is never replaced (its windows would go
 # with it), and one that never came up is not tried again in this login.
-# One process for the path, not three: this is on the path of every terminal.
-self=$(readlink -f -- "${BASH_SOURCE[0]}")
+# The path as it was called, and no process for it unless this file itself
+# is a link: this is on the path of every terminal (as in launch-default.sh).
+self=${BASH_SOURCE[0]}
+[[ $self == /* && ! -L $self ]] || self=$(readlink -f -- "$self")
 project_dir=${self%/*/*}
 # `--unit NAME` first, as for launch-kitty.sh: the window runs as a transient
 # user service of that name (scripts/launch-app.sh) - the terminals of

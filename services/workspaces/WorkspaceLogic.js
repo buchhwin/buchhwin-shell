@@ -1,4 +1,5 @@
 .pragma library
+.import "../display/DisplayLogic.js" as Display
 
 // Workspace indicator (widget and pill): which workspace numbers to show and
 // their state. Pure functions, unit tested in WorkspaceTest.qml.
@@ -92,7 +93,7 @@ function normalizeCount(count) {
 // one comes and is shown (`createworkspace`, `workspace`) ~2 ms before the
 // old one goes (`destroyworkspace`) - a nested trace of 1 → 2 → 3 had the row
 // at "1 2 3" for those 2 ms, and a frame that fell in them drew a third pip
-// and moved the notch for nothing (round 13). One with no window at all
+// and moved the notch for nothing. One with no window at all
 // (`toplevels`, every window - a helper the row does not count still keeps a
 // workspace alive), not the one its screen shows, and not held open
 // (`kept`: the setting, or a persistent rule) is already gone. Unknown counts
@@ -103,18 +104,33 @@ function leaving(item, activeId) {
         && item.toplevels !== undefined && item.toplevels !== null && Number(item.toplevels) === 0
 }
 
+// A workspace from another monitor's block that is empty and not shown, with
+// the blocks on (`blocks`): after an undock with "Keep empty workspaces open"
+// every held workspace of the gone screens lands on the laptop, and the row
+// grew by each of them (11, 12, 13, 21, 22 ...). They are still held and go
+// back with their monitor; the overview still shows them for its ×. One
+// with a window, the one shown and a named one stay. Without the blocks a
+// high number is no stray at all, only a workspace past ten.
+function idleStray(item, base, activeId, blocks) {
+    if (blocks !== true || !item) return false
+    const named = String(item.name || "") !== String(item.id)
+    const mine = item.id > base && item.id <= base + perMonitorBlock
+    return !named && !mine && item.id !== Number(activeId) && !(Number(item.windows) > 0)
+}
+
 // workspaces: [{ id, name, windows, screen, toplevels?, kept? }]; ids <= 0
-// (special) are ignored, and so is one `leaving`. Returns [{ id, label, name,
-// active, focused, occupied }] sorted by id; never empty. `label` is what to
-// draw: a named workspace keeps its name, everything else shows the number
-// *of its own monitor*.
-function entries(mode, count, workspaces, screen, activeId, offset, focusedId) {
+// (special) are ignored, and so is one `leaving` or, with `blocks`, an
+// `idleStray`. Returns [{ id, label, name, active, focused, occupied }]
+// sorted by id; never empty. `label` is what to draw: a named workspace keeps
+// its name, everything else shows the number *of its own monitor*.
+function entries(mode, count, workspaces, screen, activeId, offset, focusedId, blocks) {
+    const base = Math.max(0, Math.round(Number(offset)) || 0)
     const existing = (Array.isArray(workspaces) ? workspaces : [])
-        .filter(item => item && typeof item.id === "number" && item.id > 0 && !leaving(item, activeId))
+        .filter(item => item && typeof item.id === "number" && item.id > 0 && !leaving(item, activeId)
+                && !idleStray(item, base, activeId, blocks))
     const byId = {}
     for (const item of existing) byId[item.id] = item
     const onScreen = existing.filter(item => item.screen === screen).map(item => item.id)
-    const base = Math.max(0, Math.round(Number(offset)) || 0)
 
     const wanted = normalizeMode(mode)
     let ids = []
@@ -177,17 +193,30 @@ function entries(mode, count, workspaces, screen, activeId, offset, focusedId) {
 var perMonitorBlock = maxCount
 
 // The order monitors are numbered in: left to right, then top to bottom, then
-// by name so two monitors at the same place still get a stable answer.
+// by name so two monitors at the same place still get a stable answer - with
+// a laptop panel after every other screen while one is on.
 //
 // By *position*, because that is the order the Displays page numbers its
 // rectangles in (`DisplayLogic.parseMonitors` sorts the same way) and the
 // Identify overlay shows. Monitor 1 has to be the same monitor everywhere or
 // the numbers are worse than none.
+//
+// Except for the panel at a desk. It comes and goes with the lid, and
+// Hyprland's automatic layout puts it first (x 0), so numbered by its place it
+// took the first block whenever the lid was open: opening the lid moved every
+// block of workspaces, windows and all, one screen on, and closing it moved
+// them back. Last, the desk's screens keep their blocks with the lid open or
+// shut; a laptop on its own is unchanged. The Displays page still numbers by
+// place, so with the lid open at a desk the panel's number there is not its
+// block's.
 function monitorOrder(monitors) {
-    return (Array.isArray(monitors) ? monitors : [])
+    const list = (Array.isArray(monitors) ? monitors : [])
         .filter(item => item && typeof item.name === "string" && item.name.length)
-        .slice()
-        .sort((a, b) => (Number(a.x) || 0) - (Number(b.x) || 0)
+    const panelLast = list.some(item => !Display.isInternal(item.name))
+    const rank = item => panelLast && Display.isInternal(item.name) ? 1 : 0
+    return list.slice()
+        .sort((a, b) => rank(a) - rank(b)
+            || (Number(a.x) || 0) - (Number(b.x) || 0)
             || (Number(a.y) || 0) - (Number(b.y) || 0)
             || String(a.name).localeCompare(String(b.name)))
         .map(item => String(item.name))
@@ -248,14 +277,27 @@ function misplaced(order, workspaces) {
     return moves.sort((a, b) => a.id - b.id)
 }
 
-// The monitors that, once the moves are done, show a workspace that is not
-// one of their own - and which of their own they should show instead: the
-// lowest of theirs that exists on them, else their first. This is the half
-// `misplaced` cannot do. Moving a workspace off a monitor leaves it empty,
-// and Hyprland fills an empty monitor at once with the next free number -
-// 2 on the third screen after a reboot (2026-10-13) - which no monitor change
-// ever came back to look at. `actives` is `[{ monitor, id }]`, `placed` the
-// workspaces as `misplaced` takes them, after its moves. Unit tested.
+// Which workspace each screen shows once the moves are done, as
+// `[{ monitor, id }]` for the screens that need telling. This is the half
+// `misplaced` cannot do. `actives` is `[{ monitor, id }]` as the screens
+// stand before the moves, `placed` the workspaces as `misplaced` takes them
+// (`windows`, their window count, where known) and `moves` its answer.
+// Unit tested.
+//
+// A screen whose workspace is moved away, or that shows another block's: the
+// one of its own that some screen was showing (the view follows the
+// workspace it was on - docking moved 5 to the new first screen, and that
+// screen was sent to 3, the lowest of its own), else the lowest of its own,
+// else its first. Moving a workspace off a monitor leaves it empty, and
+// Hyprland fills an empty monitor at once with the next free number - 2 on
+// the third screen after a reboot (2026-10-13) - which no monitor change ever
+// came back to look at.
+//
+// And a screen a workspace is moved *to*: Hyprland shows the moved one there
+// without a word to the shell (no `workspace` event), so at a login with
+// three monitors the first one was left on 3 while the shell and its pips
+// said 1. It goes back to its own - unless one of the arrivals has windows
+// and was on screen, which is somebody's work arriving.
 //
 // A screen showing a workspace from beyond the blocks (a monitor that is
 // gone: undock, and Hyprland hands 11-20 to the laptop with their ids) is
@@ -263,23 +305,48 @@ function misplaced(order, workspaces) {
 // `entries` draws to be visited, and sending the screen home sent it away
 // 400 ms after the next workspace came or went - leaving an emptied one is
 // enough - so the undocked monitor's windows could not be stayed with.
-function homes(order, placed, actives) {
+function views(order, placed, actives, moves) {
     const monitors = Array.isArray(order) ? order : []
+    const moving = (Array.isArray(moves) ? moves : []).filter(move => move && typeof move.monitor === "string")
+    const movedIds = moving.map(move => Math.round(Number(move.id)))
+    const workspaces = (Array.isArray(placed) ? placed : []).filter(Boolean)
+    const ids = workspaces.map(item => Math.round(Number(item.id))).filter(id => id >= 1)
+    const shown = (Array.isArray(actives) ? actives : []).filter(Boolean)
+        .map(active => Math.round(Number(active.id))).filter(id => id >= 1)
+    const windowsOf = id => {
+        const item = workspaces.find(other => Math.round(Number(other.id)) === id)
+        return item ? Number(item.windows) || 0 : 0
+    }
     const result = []
     for (const active of (Array.isArray(actives) ? actives : [])) {
         if (!active) continue
         const index = monitors.indexOf(String(active.monitor || ""))
         if (index < 0) continue
+        const name = monitors[index]
         const id = Math.round(Number(active.id))
-        if (isFinite(id) && id >= 1 && monitorIndexOf(id) === index) continue
-        if (isFinite(id) && id >= 1 && monitorIndexOf(id) >= monitors.length) continue
-        const own = (Array.isArray(placed) ? placed : [])
-            .map(item => Math.round(Number(item && item.id)))
-            .filter(other => other >= 1 && monitorIndexOf(other) === index)
-            .sort((a, b) => a - b)
-        result.push({ monitor: monitors[index], id: own.length ? own[0] : globalId(1, index) })
+        const valid = isFinite(id) && id >= 1 && movedIds.indexOf(id) < 0
+        const own = ids.filter(other => monitorIndexOf(other) === index).sort((a, b) => a - b)
+        if (moving.some(move => move.monitor === name)) {
+            const arriving = movedIds.filter(other => monitorIndexOf(other) === index
+                                             && shown.indexOf(other) >= 0 && windowsOf(other) > 0)
+            if (arriving.length) { result.push({ monitor: name, id: Math.min.apply(null, arriving) }); continue }
+            if (valid && (monitorIndexOf(id) === index || monitorIndexOf(id) >= monitors.length)) {
+                result.push({ monitor: name, id: id })
+                continue
+            }
+        } else if (valid && (monitorIndexOf(id) === index || monitorIndexOf(id) >= monitors.length)) {
+            continue
+        }
+        const seen = own.filter(other => shown.indexOf(other) >= 0)
+        result.push({ monitor: name, id: seen.length ? seen[0] : own.length ? own[0] : globalId(1, index) })
     }
     return result
+}
+
+// `views` for screens without moves: `actives` with -1 for a workspace that
+// is being moved away (the form it had before the moves were its business).
+function homes(order, placed, actives) {
+    return views(order, placed, actives, [])
 }
 
 // The ids the per-monitor rules were sent for: every block up to the
@@ -318,7 +385,7 @@ function closeTarget(siblings, id) {
 // and Hyprland moves a workspace standing on another one there; the monitor
 // left empty gets the next free number - which was held open in turn, moved,
 // and the next one after it: a nested run had 670 workspaces within seconds
-// (round 13). So the rule always names the monitor the workspace is on, and
+// So the rule always names the monitor the workspace is on, and
 // nothing is held that has no monitor yet, that the per-monitor blocks are
 // about to move (`order`: the monitors' order with workspaces.perMonitor on,
 // else empty), that is being closed, or past `limit` workspaces held.
@@ -344,6 +411,21 @@ function keepPlan(existing, kept, closing, order, limit) {
         plan[item.id] = String(item.monitor)
     }
     return plan
+}
+
+// Whether a workspace stays when it is empty and not shown - WorkspaceWidget's
+// `kept`, which `leaving` spares. With the setting on (`keepEmpty`): one the
+// shell holds (`kept`, the { id: monitor } it sent) or a persistent rule
+// holds (`persistent`, Hyprland's `ispersistent`), never one the × is
+// closing. Counting every workspace as held while the setting was on, the
+// ones the limit left unheld too, brought the third pip of a passing switch
+// back for those (Super+2, then Super+3, from an empty 1). Off: the
+// persistent rule alone.
+function isKept(id, keepEmpty, kept, closing, persistent) {
+    const number = Math.round(Number(id))
+    if (keepEmpty !== true) return persistent === true
+    if (Array.isArray(closing) && closing.indexOf(number) >= 0) return false
+    return persistent === true || (!!kept && typeof kept === "object" && kept[number] !== undefined)
 }
 
 // How many workspaces may be held open at most: a block per monitor and one

@@ -93,7 +93,7 @@ Item {
         // Accent and opaque. At 11.5 % white whatever was under it showed
         // through and in the light theme it vanished on a card; a solid
         // neutral read as a hole punched in the tile.
-        color: item.sizing || resize.containsMouse ? Colors.accentHover : Colors.accent
+        color: item.sizing || resize.containsMouse ? Colors.accentHover : Colors.accent // style: an editor handle, ringed by its 3:1 line
         border.width: Metrics.borderWidth
         border.color: Colors.accentLine
 

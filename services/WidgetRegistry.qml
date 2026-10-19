@@ -62,7 +62,10 @@ Singleton {
         "vpn": { pillDisplay: "icon", label: "VPN", icon: "󰖂", category: "system", file: "VpnWidget.qml",
                  sizes: ["small", "medium"], action: "vpnPopup", available: true,
                  defaults: { anchorX: "right", x: 0.84, y: 0.02, style: "capsule" } },
-        "workspace": { label: "Workspace", icon: Icons.arrange, category: "desktop", file: "WorkspaceWidget.qml",
+        // A row of dots, as the workspaces are drawn on the island: the 2x2
+        // grid it had is the editor's own glyph (Icons.arrange), and beside
+        // the control center's four squares the two read as one.
+        "workspace": { label: "Workspace", icon: "\u{f01d8}", category: "desktop", file: "WorkspaceWidget.qml",
                        sizes: ["small"], action: "", available: true,
                        defaults: { anchorX: "left", x: 0.015, y: 0.02, style: "capsule" } },
         "activeWindow": { label: "Active window", icon: "󰖯", category: "desktop", file: "ActiveWindowWidget.qml",

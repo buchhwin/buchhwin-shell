@@ -36,8 +36,13 @@
 set -euo pipefail
 # The application gets the session's environment back, not the shell's own
 # settings (scripts/lib/app-env.sh). Without the file it runs as it did, and
-# without readlink too (the script's own path then).
-app_env=$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null) || app_env=${BASH_SOURCE[0]}
+# without readlink too (the script's own path then). The path as it was
+# called needs no readlink unless this file itself is a link (as in
+# launch-default.sh): every application start comes through here.
+app_env=${BASH_SOURCE[0]}
+if [[ $app_env != /* || -L $app_env ]]; then
+  app_env=$(readlink -f -- "$app_env" 2>/dev/null) || app_env=${BASH_SOURCE[0]}
+fi
 app_env="${app_env%/*}/lib/app-env.sh"
 # shellcheck source=lib/app-env.sh
 if [[ -r $app_env ]] && source "$app_env" && declare -F app_env_restore >/dev/null; then
@@ -102,8 +107,11 @@ unit_shorten() {
 if command -v systemd-run >/dev/null 2>&1 && manager_running; then
   if [[ -n $unit ]]; then
     forward=()
+    # A nested session's unit keeps the marks scripts/nested-session.sh stop
+    # finds the sandbox's processes by (BUCHHWIN_NESTED_MODE is the
+    # compositor's own); without them it would outlive the sandbox.
     for name in WAYLAND_DISPLAY DISPLAY XAUTHORITY HYPRLAND_INSTANCE_SIGNATURE XDG_CONFIG_HOME XDG_STATE_HOME \
-        XDG_CACHE_HOME XDG_DATA_HOME ZDOTDIR BUCHHWIN_SHELL_PATH BUCHHWIN_NESTED QT_QPA_PLATFORMTHEME \
+        XDG_CACHE_HOME XDG_DATA_HOME ZDOTDIR BUCHHWIN_SHELL_PATH BUCHHWIN_NESTED BUCHHWIN_NESTED_MODE QT_QPA_PLATFORMTHEME \
         LANG LANGUAGE $(compgen -e LC_); do
       if [[ -n ${!name:-} ]]; then forward+=("--setenv=$name=${!name}"); fi
     done

@@ -16,6 +16,13 @@ ShellCard {
     readonly property var actions: notification ? notification.actions : []
     readonly property var defaultAction: actions.find(action => action.identifier === "default") || null
     readonly property var visibleActions: actions.filter(action => action.identifier !== "default").slice(0, 3)
+    // When it came (ms since the epoch, 0 unknown) and the clock it is read
+    // against, for the centre's cards: "Build finished" from this morning
+    // and one from a minute ago looked the same. A popup has just come and
+    // says nothing.
+    property real receivedAt: 0
+    property real now: 0
+    readonly property string age: popup ? "" : NotificationLogic.ageLabel(receivedAt, now, SettingsService.twelveHourClock)
     signal closed()
 
     // A card with a default action is a button-shaped card and takes the
@@ -120,7 +127,11 @@ ShellCard {
                 spacing: Metrics.spaceXxs
                 RowLayout {
                     Layout.fillWidth: true
-                    ShellText { Layout.fillWidth: true; text: root.notification.appName || "Notification"; role: "caption" }
+                    ShellText {
+                        Layout.fillWidth: true
+                        text: (root.notification.appName || "Notification") + (root.age.length ? " · " + root.age : "")
+                        role: "caption"
+                    }
                     ShellButton {
                         toolTip: "Dismiss"
                         // The compact size the notification centre's group

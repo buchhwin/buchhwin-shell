@@ -26,8 +26,9 @@ Rectangle {
     // Tab / Shift+Tab move between fields that opt in (forms).
     property bool focusOnTab: false
     property bool selectAllOnFocus: false
-    // The hero field of a panel (the launcher): taller, card-shaped and set in
-    // the title size, but the same material as every other field.
+    // The hero field of a panel (the emoji picker's search; the launcher's
+    // is the plain field): taller, card-shaped and set in the title size,
+    // but the same material as every other field.
     property bool large: false
     // Whether keyboard focus draws the accent outline. Off for a field that
     // is the only input on its surface and holds the focus for as long as the

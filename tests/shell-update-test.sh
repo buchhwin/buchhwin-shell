@@ -67,13 +67,14 @@ EOF
 chmod +x "$work/bin"/*
 export PATH="$work/bin:$PATH" HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" XDG_STATE_HOME="$work/home/.local/state"
 # A Hyprland session of the test's own, socket and all, in a runtime directory
-# of the sandbox: the shell is only restarted inside one (round 12, scripts#0).
+# of the sandbox: the shell is only restarted inside one.
 export HYPRLAND_INSTANCE_SIGNATURE=shell-update-test XDG_RUNTIME_DIR="$work/run"
 mkdir -p -m 700 "$XDG_RUNTIME_DIR/hypr/shell-update-test"
 python3 -c "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])" "$XDG_RUNTIME_DIR/hypr/shell-update-test/.socket.sock"
 unset BUCHHWIN_NESTED BUCHHWIN_NESTED_DIR WAYLAND_DISPLAY BUCHHWIN_START_WITHOUT_HYPRLAND
 unset BUCHHWIN_SHELL_PATH
-unset MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME
+unset MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION \
+  QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME
 for tool in systemctl hyprctl quickshell notify-send systemd-run setsid busctl pgrep pkill; do
   if [[ $(command -v "$tool") != "$work/bin/$tool" ]]; then
     printf 'shell-update test: the %s stub is not first in PATH, refusing to run\n' "$tool" >&2
@@ -151,6 +152,43 @@ check 'grep -q "notify-send" "$work/calls.log"' 'the user was told'
 check '! grep -q "update failed" "$work/calls.log"' 'and not that it failed'
 check '[[ $(readlink -f "$HOME/.local/bin/buchhwin") == "$src/scripts/buchhwin" ]]' 'install.sh re-ran (the links exist)'
 check '[[ $(update apply 2>&1) == "Already up to date." ]]' 'a second apply has nothing to do'
+
+# what the update cannot bring by itself is said: a package the new version
+# lists and this system lacks (pacman -T is a stand-in that has one of the
+# two new names), and system files that only their installers put in place
+cat > "$work/bin/pacman" <<EOF
+#!/bin/sh
+echo "pacman \$*" >> "$work/calls.log"
+[ "\$1" = "-T" ] || exit 1
+shift
+status=0
+for name in "\$@"; do
+  case "\$name" in testpkg-installed) ;; *) echo "\$name"; status=127 ;; esac
+done
+exit \$status
+EOF
+chmod +x "$work/bin/pacman"
+sed -i 's/^packages=($/packages=(\n  testpkg-new testpkg-installed/' "$other/install/packages/arch.sh"
+echo "# test" >> "$other/session/buchhwin-shell-session-wrapper"
+echo "# test" >> "$other/session/pam/buchhwin-lock"
+gitc -C "$other" commit --quiet -am "feat: a package and system files"
+gitc -C "$other" push --quiet origin HEAD:main
+: > "$work/calls.log"
+out=$(BUCHHWIN_DISTRO=arch update apply 2>&1)
+check '[[ $(git -C "$src" rev-parse HEAD) == $(git -C "$other" rev-parse HEAD) ]]' "the update itself goes through ($out)"
+check 'grep -q "^pacman -T testpkg-new testpkg-installed$" "$work/calls.log"' "only the names the update added are asked about ($(grep ^pacman "$work/calls.log"))"
+check 'grep -qx "1 new package (testpkg-new): install/bootstrap.sh --apply" "$work/calls.log"' \
+  "the notification names the missing one and the command ($(grep -A3 "^notify-send" "$work/calls.log" | tr '\n' '|'))"
+check 'grep -qx "The session entry changed: sudo install/system-install.sh" "$work/calls.log"' "and the changed session entry"
+check 'grep -q "^The lock screen.s PAM files changed" "$work/calls.log"' "and the changed PAM files"
+check 'grep -qx "1 new package (testpkg-new): install/bootstrap.sh --apply" <<<"$out"' "and the run says it too"
+# an update that changes none of it says nothing more
+echo "// more" >> "$other/shell.qml"; gitc -C "$other" commit --quiet -am "feat: only the shell"
+gitc -C "$other" push --quiet origin HEAD:main
+: > "$work/calls.log"
+out=$(BUCHHWIN_DISTRO=arch update apply 2>&1)
+check '! grep -q "^pacman\|new package\|changed:" "$work/calls.log"' "a shell-only update names nothing else ($(grep -A2 "^notify-send" "$work/calls.log" | tr '\n' '|'))"
+rm -f "$work/bin/pacman"
 
 # an apply with no Hyprland session (a timer that fired while the user is in
 # Plasma, with the signature the user manager kept from the last login):

@@ -1,7 +1,8 @@
 # Hyprland patches
 
-Applied by `install/build-hyprland-leap.sh` to the pinned Hyprland checkout
-before building. Rebuild with `--rebuild` after adding or changing one.
+Applied by `install/build-hyprland-leap.sh` to a clean checkout of the pinned
+Hyprland before building. Adding, changing or removing one makes the build out
+of date (the build record keeps each patch's hash), so the next run rebuilds.
 
 - `0001-xwayland-cursor-monitor-scale.patch` (Hyprland 0.56.2): with
   `xwayland:force_zero_scaling` the X server draws in physical pixels, but its

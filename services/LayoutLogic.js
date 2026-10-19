@@ -6,6 +6,10 @@
 .import "launcher/LauncherCatalogue.js" as LauncherCatalogue
 .import "lock/LockCatalogue.js" as LockCatalogue
 .import "profile/ProfileLogic.js" as Profile
+.import "notch/NotchLogic.js" as NotchLogic
+.import "appearance/AnimationLogic.js" as AnimationLogic
+.import "wallpaper/WallpaperLogic.js" as WallpaperLogic
+.import "power/PowerSourceLogic.js" as PowerSourceLogic
 
 // Pure layout operations shared by LayoutService and the unit tests.
 var ANCHORS = ["left", "center", "right"]
@@ -185,15 +189,24 @@ function sanitizeMode(mode) {
     }
 }
 
-function sanitizeProfile(profile) {
+// `previous` is this profile in the config the caller started from, already
+// sanitized (see sanitize): a mode or a state still shared with it is taken
+// over unchecked, and one that comes out the same is that one.
+function sanitizeProfile(profile, previous) {
     const source = profile && typeof profile === "object" ? profile : {}
     const modes = source.modes && typeof source.modes === "object" ? source.modes : {}
+    const old = previous && typeof previous === "object" ? previous : null
+    const oldModes = old && old.modes ? old.modes : {}
     const result = { label: typeof source.label === "string" && source.label.length ? source.label : "",
                      modes: {} }
     // Only the five: a mode name the shell has no template for has nothing to
     // switch to it and nothing to reset it from.
-    for (const name of MODE_NAMES)
-        if (modes[name] !== undefined) result.modes[name] = sanitizeMode(modes[name])
+    for (const name of MODE_NAMES) {
+        if (modes[name] === undefined) continue
+        result.modes[name] = oldModes[name] !== undefined && modes[name] === oldModes[name]
+            ? oldModes[name] : keepParts(oldModes[name], sanitizeMode(modes[name]))
+    }
+    if (old && sameMembers(result.modes, oldModes)) result.modes = oldModes
     // Which shipped profile this is (config/builtin-profiles/<id>), so it can
     // be told from a profile of the user's that happens to carry the same
     // name. Only written when set: the user's own profiles stay as they were.
@@ -202,9 +215,39 @@ function sanitizeProfile(profile) {
     // Everything else the profile keeps (see sanitizeProfileState). Only
     // written once it has one: a profile that has never been left since
     // states existed simply has none yet.
-    const state = sanitizeProfileState(source.state)
+    const state = old && old.state && source.state === old.state
+        ? old.state : keep(old ? old.state : undefined, sanitizeProfileState(source.state))
     if (state) result.state = state
-    return result
+    return old && sameMembers(result, old) ? old : result
+}
+
+// ---- keeping what did not change ----------------------------------------------
+// The config is never changed in place: every change is a new object, handed
+// to LayoutService.config. A QML property given the very object it holds does
+// not notify, so a part that came out the same as before is handed back as
+// the object it was - and the notch, the dock and every mode's bar are not
+// re-read on every screen for an edit somewhere else.
+
+// `after`, or `before` when the two say the same.
+function keep(before, after) {
+    if (before === undefined || before === null || before === after) return after
+    return JSON.stringify(before) === JSON.stringify(after) ? before : after
+}
+
+// The same one level down: each part of `after` that equals the one in
+// `before` is that one, and when every part is, `before` itself.
+function keepParts(before, after) {
+    if (!before || typeof before !== "object" || !after || typeof after !== "object" || Array.isArray(after)) return after
+    const result = {}
+    for (const key of Object.keys(after)) result[key] = keep(before[key], after[key])
+    return sameMembers(result, before) ? before : result
+}
+
+// Whether two objects hold the very same members under the same keys.
+function sameMembers(a, b) {
+    const keys = Object.keys(a)
+    if (keys.length !== Object.keys(b).length) return false
+    return keys.every(key => Object.prototype.hasOwnProperty.call(b, key) && a[key] === b[key])
 }
 
 // ---- a profile's own state ---------------------------------------------------
@@ -218,8 +261,10 @@ function sanitizeProfile(profile) {
 // primitive leaves of a profile's settings (whether this version knows them
 // is SettingsService's question when they are restored, so a state written by
 // a newer shell keeps its keys), the notch and the lock screen go through
-// their own sanitizers. A part that is missing is null, and restoring leaves
-// that part as it is - the same as a setting the state does not name.
+// their own sanitizers. A part that is missing is null: restoring keeps the
+// notch or the lock screen in use for it and gives the default dock
+// (restoreStateLayout), the way a setting the state does not name gets its
+// default (ProfileLogic.completeLeaves).
 function sanitizeProfileState(state) {
     if (!state || typeof state !== "object" || Array.isArray(state)) return null
     return {
@@ -248,6 +293,58 @@ function withState(config, name, state) {
     return sanitize(next)
 }
 
+// ---- a state's settings, applied --------------------------------------------
+
+// The settings migrations settings.json goes through when it is read
+// (SettingsService.load), for a settings tree kept anywhere else: a profile's
+// stored state and a shipped profile. A state is a copy of settings.json taken
+// at a switch, and one taken before a migration still has the old form; read
+// without it, the old key was dropped, the new one got its default and the
+// user's choice was gone. Every step passes a tree it has nothing to do with
+// through unchanged.
+function migrateSettings(tree) {
+    return NotchLogic.migrate(AnimationLogic.migrate(WallpaperLogic.migrate(PowerSourceLogic.migrate(tree))))
+}
+
+// A state's or a shipped profile's settings as the leaves a switch writes:
+// every setting a profile owns - what `tree` names, the default (`defaults`,
+// SettingsService.defaults) for what it does not (ProfileLogic.completeLeaves).
+// A home path `tree` names is expanded (the export writes "~/"), but the
+// defaults are left as they are: expanded, "~/Videos/Recordings" became the
+// absolute path at the first switch and the folder was never at its default
+// again. A path the tree names that *is* the default once expanded - every
+// state stored since then, both shipped profiles - is that default.
+function profileLeaves(tree, defaults, home) {
+    const fallback = Profile.settingLeaves(defaults, "")
+    const leaves = Profile.settingLeaves(tree, home)
+    for (const path of Object.keys(leaves)) {
+        const value = fallback[path]
+        if (typeof value === "string" && value !== leaves[path] && Profile.expandHome(value, home) === leaves[path])
+            leaves[path] = value
+    }
+    return Profile.completeLeaves(leaves, fallback)
+}
+
+// Of those leaves, the ones to write: each one SettingsService knows (a
+// default that is not a group: `defaultOf`), as the value to set - the leaf,
+// or the default where this version refuses the leaf (the wrong type, a value
+// `allowed` does not list) - and only where that differs from what is set
+// (`valueOf`). A refused value used to be skipped, which kept the setting of
+// the profile just left, and the next switch stored that into this profile.
+function knownSettings(leaves, defaultOf, allowed, valueOf) {
+    const values = {}
+    const lists = allowed && typeof allowed === "object" ? allowed : {}
+    for (const path of Object.keys(leaves || {})) {
+        const fallback = defaultOf(path)
+        if (fallback === undefined || fallback === null || typeof fallback === "object") continue
+        const choices = lists[path]
+        const accepted = typeof leaves[path] === typeof fallback && (!choices || choices.indexOf(leaves[path]) >= 0)
+        const value = accepted ? leaves[path] : fallback
+        if (valueOf(path) !== value) values[path] = value
+    }
+    return values
+}
+
 // ---- undo ----------------------------------------------------------------
 // What LayoutService.undo decides, apart from the config the step holds.
 
@@ -272,8 +369,77 @@ function withUndoStates(stepConfig, config, handed) {
     return stepConfig
 }
 
-// The mode an undo step leaves in use. A step holds the whole config, the
-// mode in use with it, but only the step of a switch the user made
+// The config an undo step brings back, before it is sanitized. A step of the
+// profile level (adding, duplicating, renaming, removing or resetting a
+// profile) holds the whole layout without the states (LayoutService.
+// undoConfig); the stored states, the saved notch presets and the one-shot
+// markers are the config's at hand (withUndoStates and the lines below). Any
+// other step holds only what an edit can change - which mode was in use, that
+// mode and the one a switch went to (`modes.list`, null for one that was not
+// there yet), and the global surfaces (notch, dock, lock screen) - and is
+// laid over the config at hand: every other mode, every profile and every
+// state stays as it is now. A step of the whole layout per edit was 26 KB
+// with two profiles (19.10.), thirty steps deep, for a change to one pill.
+// Changes `step.config` of the step's own parsed copy; the rest of `config`
+// is shared, not changed.
+function undoTarget(step, config) {
+    const saved = step && step.config && typeof step.config === "object" ? step.config : {}
+    const current = config && typeof config === "object" ? config : {}
+    if (saved.profiles) {
+        saved.notchPresets = current.notchPresets || []
+        withUndoStates(saved, current, step.states)
+        saved.adopted = current.adopted || []
+        return saved
+    }
+    const next = Object.assign({}, current, { profiles: Object.assign({}, current.profiles || {}) })
+    for (const key of ["activeMode", "notch", "dock", "lock"])
+        if (saved[key] !== undefined) next[key] = saved[key]
+    const part = step && step.modes && typeof step.modes === "object" ? step.modes : {}
+    const profile = typeof part.profile === "string" ? next.profiles[part.profile] : undefined
+    if (profile && part.list && typeof part.list === "object") {
+        const modes = Object.assign({}, profile.modes || {})
+        for (const name of Object.keys(part.list)) {
+            if (part.list[name]) modes[name] = part.list[name]
+            else delete modes[name]
+        }
+        next.profiles[part.profile] = Object.assign({}, profile, { modes: modes })
+    }
+    return next
+}
+
+// The appearance every mode has now (`current`), on the config an undo step
+// brought back. A mode-scoped setting takes no undo step of its own - it is
+// changed in Settings, from the launcher, anywhere - so a Ctrl+Z in the editor
+// put back the gaps a mode had before an unrelated drag, while the gaps on
+// screen stayed: the next time the mode was entered, the user's change was
+// gone. Only a mode in both configs; one the step's own change replaced
+// (`owned`, { profile: [mode, ...] } - a Reset) keeps the step's, which is
+// what undoing it is for. Shares every other part with `config`.
+function withCurrentAppearance(config, current, owned) {
+    const mine = owned && typeof owned === "object" ? owned : {}
+    const profiles = config && config.profiles ? config.profiles : {}
+    let nextProfiles = null
+    for (const name of Object.keys(profiles)) {
+        const now = modesOf(current, name)
+        const modes = profiles[name].modes || {}
+        const skip = Array.isArray(mine[name]) ? mine[name] : []
+        let nextModes = null
+        for (const mode of Object.keys(modes)) {
+            if (!now[mode] || skip.indexOf(mode) >= 0) continue
+            const appearance = now[mode].appearance || {}
+            if (keep(appearance, modes[mode].appearance) === appearance) continue
+            if (!nextModes) nextModes = Object.assign({}, modes)
+            nextModes[mode] = Object.assign({}, modes[mode], { appearance: appearance })
+        }
+        if (!nextModes) continue
+        if (!nextProfiles) nextProfiles = Object.assign({}, profiles)
+        nextProfiles[name] = Object.assign({}, profiles[name], { modes: nextModes })
+    }
+    return nextProfiles ? Object.assign({}, config, { profiles: nextProfiles }) : config
+}
+
+// The mode an undo step leaves in use. Every step holds the mode that was in
+// use when it was taken, but only the step of a switch the user made
 // (`modeSwitch`) takes the mode back. Any other keeps the mode in use now: it
 // differs from the step's only after an automatic switch (a monitor plugged
 // in), which takes no step - the machine chose that mode, and undoing an edit
@@ -315,12 +481,20 @@ function undoSettings(step, keys) {
 // it as it is; else `{ mode, by }` for NotificationService.setDnd.
 function dndOnModeChange(by, active, from, to, toEffects) {
     if (from === to) return null
-    const wanted = toEffects && typeof toEffects.dnd === "string" && toEffects.dnd !== "off" ? toEffects.dnd : ""
+    const wanted = turnsDndOn(toEffects) ? toEffects.dnd : ""
     const owner = typeof by === "string" ? by : ""
     if (active && owner.length && owner === from)
         return wanted.length ? { mode: wanted, by: to } : { mode: "off", by: "" }
     if (!active && wanted.length) return { mode: wanted, by: to }
     return null
+}
+
+// Whether a mode's template turns Do Not Disturb on (`effects.dnd`, as
+// gaming's does). Only such a mode ever owns it (dndOnModeChange), so a switch
+// between two others has nothing to ask NotificationService - and a unit test
+// switching modes does not start the session's notification server.
+function turnsDndOn(effects) {
+    return !!(effects && typeof effects.dnd === "string" && effects.dnd.length && effects.dnd !== "off")
 }
 
 // What the profile in use gets once per start (LayoutService.settleActiveState):
@@ -339,40 +513,58 @@ function settleAction(config, name, hasShipped, fresh) {
 
 // A state put back: the notch and the lock screen it names replace the
 // global ones. Its settings are SettingsService's to write, not this file's.
-function restoreStateLayout(config, state) {
-    const next = copyConfig(config)
+// `previous` as for sanitize: the config `config` shares its parts with.
+function restoreStateLayout(config, state, previous) {
+    const next = previous ? Object.assign({}, config) : copyConfig(config)
     if (state && state.notch) next.notch = copyNotch(state.notch)
     // The dock is the profile's like its settings (ProfileLogic.completeLeaves):
     // a state from before the dock gets the default one, not the dock of the
     // profile left.
     next.dock = state && state.dock ? copyDock(state.dock) : defaultDock()
     if (state && state.lock) next.lock = sanitizeLock(JSON.parse(JSON.stringify(state.lock)))
-    return sanitize(next)
+    return sanitize(next, previous)
 }
 
 // Rebuild a v3 layout from whitelisted primitive fields only.
-function sanitize(config) {
-    // The notch and the lock screen sit outside `profiles` because they are
-    // the same on every one.
-    // A file without it simply gets the default, the way a mode without a
+//
+// `previous`, when given, is the config `config` was made from: a result of
+// this function, never changed in place since. A part of `config` that is
+// still one of previous's own objects - a profile, a mode or a state an edit
+// did not touch - is taken over as it is rather than checked again, and every
+// part that comes out the same as before is the previous object (see keep).
+// The result is the one a whole check would give; an edit of one pill used
+// to copy and check every profile's state and every mode.
+function sanitize(config, previous) {
+    const before = previous && typeof previous === "object" ? previous : {}
+    // The notch, the dock and the lock screen at the top level are the ones
+    // of the profile in use - each profile keeps its own copies in its state
+    // (restoreStateLayout puts them back) - and the notch presets and the
+    // adoption markers are global.
+    // A file without one of them simply gets the default, the way a mode without a
     // `quick` does, so no version bump and no migration step is needed.
     const result = { configVersion: 3, activeProfile: DEFAULT_PROFILE, activeMode: MODE_NAMES[0],
                      profiles: {}, notch: defaultNotch(), notchPresets: [], dock: defaultDock(), lock: defaultLock(), adopted: [] }
     if (!config || typeof config !== "object") return result
-    if (Array.isArray(config.adopted))
-        result.adopted = config.adopted.filter(name => typeof name === "string" && name.length).map(String)
-    if (config.notch) result.notch = sanitizeNotch(config.notch)
-    result.notchPresets = sanitizeNotchPresets(config.notchPresets)
+    // A part shared with `previous` is previous's; any other is checked.
+    const part = (key, check) => before[key] !== undefined && config[key] === before[key]
+        ? before[key] : keep(before[key], check(config[key]))
+    result.adopted = part("adopted", list => Array.isArray(list)
+        ? list.filter(name => typeof name === "string" && name.length).map(String) : [])
+    result.notch = part("notch", notch => notch ? sanitizeNotch(notch) : defaultNotch())
+    result.notchPresets = part("notchPresets", sanitizeNotchPresets)
     // The dock's zones and pins; a file without them gets the default dock.
-    result.dock = config.dock ? sanitizeDock(config.dock) : defaultDock()
-    if (config.lock) result.lock = sanitizeLock(config.lock)
+    result.dock = part("dock", dock => dock ? sanitizeDock(dock) : defaultDock())
+    result.lock = part("lock", lock => lock ? sanitizeLock(lock) : defaultLock())
     if (typeof config.activeProfile === "string" && config.activeProfile.length)
         result.activeProfile = config.activeProfile
     if (typeof config.activeMode === "string" && MODE_NAMES.indexOf(config.activeMode) >= 0)
         result.activeMode = config.activeMode
     const profiles = config.profiles && typeof config.profiles === "object" ? config.profiles : {}
-    for (const name of Object.keys(profiles))
-        result.profiles[String(name)] = sanitizeProfile(profiles[name])
+    const oldProfiles = before.profiles && typeof before.profiles === "object" ? before.profiles : {}
+    for (const name of Object.keys(profiles)) {
+        const old = oldProfiles[String(name)]
+        result.profiles[String(name)] = old !== undefined && profiles[name] === old ? old : sanitizeProfile(profiles[name], old)
+    }
     // A file with no profile at all still has one to be in, and the active
     // profile always names a profile that exists - otherwise every read falls
     // through to `emptyMode` and the user's desktop is simply gone.
@@ -380,6 +572,7 @@ function sanitize(config) {
         result.profiles[DEFAULT_PROFILE] = { label: DEFAULT_PROFILE_LABEL, modes: {} }
     if (!result.profiles[result.activeProfile])
         result.activeProfile = Object.keys(result.profiles)[0]
+    if (before.profiles && sameMembers(result.profiles, oldProfiles)) result.profiles = oldProfiles
     return result
 }
 
@@ -409,10 +602,65 @@ function modeConfig(config, profileName, modeName) {
 
 // ---- changing the profile level --------------------------------------------
 // All four return a new config and never mutate the input. None of them touches
-// the notch, the lock screen or the adoption markers: those are global.
+// the notch, the dock or the lock screen in use, the notch presets or the
+// adoption markers: the first three are the profile in use's (LayoutService
+// copies them into its state and back), the other two are global.
 
 function copyConfig(config) {
     return JSON.parse(JSON.stringify(config))
+}
+
+// ---- one mode at a time -------------------------------------------------------
+// Almost every change is to the mode in use or to the global surfaces beside
+// it. These change that much and share everything else with the config they
+// start from (a sanitize result), which sanitize then takes over unchecked.
+
+// One edit, the way LayoutService makes every edit: `callback(mode, next)`
+// changes `mode` - a copy of the mode `modeName` of the profile, an empty one
+// when it is not in the file yet - and may replace the global surfaces on
+// `next` (notch, dock, lock screen, notch presets, markers), which are copies
+// too. Nothing else on `next` is the callback's: the other modes and
+// profiles are `config`'s own objects. The result is the one a whole copy
+// and a whole check would give, with every part that did not change the
+// object it was.
+function edit(config, profileName, modeName, callback) {
+    const name = String(profileName)
+    const source = config && config.profiles ? config.profiles[name] : null
+    const profile = source || { label: DEFAULT_PROFILE_LABEL, modes: {} }
+    const modes = profile.modes || {}
+    const mode = copyConfig(modes[String(modeName)] || { widgets: [], groups: [], screens: [] })
+    const next = Object.assign({}, config)
+    for (const key of ["notch", "notchPresets", "dock", "lock", "adopted"])
+        if (config[key] !== undefined) next[key] = copyConfig(config[key])
+    next.profiles = Object.assign({}, config.profiles)
+    next.profiles[name] = Object.assign({}, profile, { modes: Object.assign({}, modes, { [String(modeName)]: mode }) })
+    callback(mode, next)
+    return sanitize(next, config)
+}
+
+// The config with one mode replaced (and checked), the rest shared.
+function withMode(config, profileName, modeName, mode) {
+    const name = String(profileName)
+    const source = config && config.profiles ? config.profiles[name] : null
+    const profile = source || { label: DEFAULT_PROFILE_LABEL, modes: {} }
+    const next = Object.assign({}, config, { profiles: Object.assign({}, config.profiles) })
+    next.profiles[name] = Object.assign({}, profile,
+        { modes: Object.assign({}, profile.modes || {}, { [String(modeName)]: mode }) })
+    return sanitize(next, config)
+}
+
+// A mode entered for the first time, before its widgets are made: the desktop
+// mode and the bar of its factory template. Without them a mode that is in
+// the file but has never been entered - one the appearance adoption made -
+// showed widgets where its template has a bar or the notch.
+function freshMode(template) {
+    const mode = { widgets: [], groups: [], screens: [] }
+    // `desktopMode`, the layout file's own word for it; `mode` is what the
+    // templates called it before.
+    const desktop = template ? template.desktopMode || template.mode : ""
+    if (desktop) mode.desktopMode = desktop
+    if (template && template.bar) mode.bar = copyConfig(template.bar)
+    return mode
 }
 
 // A new profile starts with **no** modes. Each one is then materialized from
@@ -741,8 +989,9 @@ function sanitizeZones(config, zoneNames, maxH) {
 // ---- the notch --------------------------------------------------------
 // Two zones on the same zone -> pill -> item shape as the bar: the strip that
 // is always on screen, and the overview it opens into on hover. They live at
-// the top level of the layout file rather than inside a profile, because the
-// notch is deliberately the same on every profile.
+// the top level of the layout file rather than inside a mode, because the
+// notch is the same in all five; each profile keeps its own copy in its state,
+// put back when the profile is entered (restoreStateLayout).
 //
 // They cannot live in settings.json, where the rest of the notch's options
 // are: SettingsService rebuilds every stored object with Object.keys, which
@@ -807,6 +1056,20 @@ function sanitizeNotch(notch) {
     const shape = {}
     for (const zone of NOTCH_ZONES)
         shape[zone] = zones[zone].map(pill => ({ id: pill.id, items: [pill.items[0]] }))
+    // The strip draws no media, events or status block (NotchLogic.
+    // stripTakes): one stored there - before the editor refused it, or by
+    // hand - drew nothing and kept the type out of the overview. It goes
+    // back to the overview, or away when the overview has that block already.
+    const refused = shape.collapsed.filter(pill => !NotchLogic.stripTakes(pill.items[0].type))
+    if (refused.length) {
+        shape.collapsed = shape.collapsed.filter(pill => NotchLogic.stripTakes(pill.items[0].type))
+        const there = shape.expanded.map(pill => pill.items[0].type)
+        for (const pill of refused) {
+            if (there.indexOf(pill.items[0].type) >= 0) continue
+            shape.expanded.push(pill)
+            there.push(pill.items[0].type)
+        }
+    }
     // An empty overview is a notch that does nothing on hover, which is a
     // choice; an empty strip is a notch that is not there, which is not.
     if (!shape.collapsed.length) shape.collapsed = notchList(NOTCH_COLLAPSED_DEFAULT)
@@ -843,8 +1106,8 @@ function notchItems(notch, zone) {
 // outline, how it opens, and the collapsed body's height, corner radius and
 // padding - Classic's 32 / 11 / 16 against Island's 34 / 14 / 22). The
 // built-in ones are files in config/notch-presets/ written in a short form;
-// the user's own live in the layout file beside the notch itself, global like
-// it. Applying one is a single undo step (LayoutService.applyNotchPreset).
+// the user's own live in the layout file beside the notch itself, and unlike
+// it they are global: one library for every profile. Applying one is a single undo step (LayoutService.applyNotchPreset).
 var NOTCH_PRESET_OPTIONS = ["shape", "collapsedWidth", "expandedWidth", "expandedHeight",
                             "hoverMode", "openDelay", "closeDelay", "clickAction", "middleAction", "rightAction", "swipe", "panelOrigin", "accentGlyphs", "eventCount",
                             "bodyHeight", "bodyRadius", "bodyPadding"]
@@ -962,6 +1225,9 @@ function moveNotchItemTo(notch, id, zone, index) {
     if (NOTCH_ZONES.indexOf(zone) < 0) return next
     const place = notchZoneOf(next, id)
     if (!place) return next
+    // Never into the strip for a block it cannot draw (the overview tile's
+    // arrow, a drag): it would be an empty spot there.
+    if (zone === "collapsed" && !NotchLogic.stripTakes(next[place.zone][place.index].items[0].type)) return next
     const moved = next[place.zone].splice(place.index, 1)[0]
     next[zone].splice(Math.max(0, Math.min(next[zone].length, index)), 0, moved)
     return sanitizeNotch(next)
@@ -983,6 +1249,7 @@ function addNotchItem(notch, type, zone) {
     for (const each of NOTCH_ZONES)
         if (notchTypes(next, each).indexOf(name) >= 0) return next
     const target = NOTCH_ZONES.indexOf(zone) >= 0 ? zone : "expanded"
+    if (target === "collapsed" && !NotchLogic.stripTakes(name)) return next
     const taken = []
     for (const each of NOTCH_ZONES) for (const pill of next[each]) taken.push(pill.id)
     const size = notchSize(name)
@@ -1080,9 +1347,9 @@ const DASHBOARD = {
     leastOf: DashboardLogic.minSize,
     knows: DashboardLogic.isKnown
 }
-// The lock screen's own surface. It sits outside `profiles` for the same
-// reason the notch does: there is one lock screen, whatever the desktop
-// profile says about monitors. Its login block is not in here - avatar, name
+// The lock screen's own surface. It sits outside the modes for the same
+// reason the notch does: there is one lock screen, whatever a mode says about
+// monitors; each profile keeps its own copy in its state, like the notch. Its login block is not in here - avatar, name
 // and password field stay where they are, because the animation that carries
 // them to the centre while you type is an anchor margin, and an arranged cell
 // is an x and a y. Mixing the two is a whole afternoon.

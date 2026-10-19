@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
@@ -43,20 +44,26 @@ PopupPanel {
         }
 
         Repeater {
-            model: [
-                { label: "Devices", list: BluetoothService.connected.concat(BluetoothService.paired), action: "" },
-                { label: "Nearby", list: BluetoothService.nearby, action: "Pair" }
-            ]
+            // The sections by name, built once, and the rows kept by device
+            // (ScriptModel; BlueZ's device objects keep their identity). Built
+            // from a list of new objects, both lists and every row were made
+            // again whenever discovery found a device: the Nearby list jumped
+            // back to its top and a row lost its hover or focus mid-click.
+            model: ["devices", "nearby"]
             ScrollList {
                 id: section
-                required property var modelData
+                required property string modelData
+                readonly property bool nearby: modelData === "nearby"
+                readonly property var list: nearby ? BluetoothService.nearby
+                    : BluetoothService.connected.concat(BluetoothService.paired)
                 Layout.fillWidth: true
-                visible: BluetoothService.enabled && (modelData.list.length > 0 || modelData.action.length > 0)
-                title: section.modelData.label
+                // Nearby stays while it is empty and says it is looking.
+                visible: BluetoothService.enabled && (list.length > 0 || nearby)
+                title: nearby ? "Nearby" : "Devices"
                 maxHeight: Metrics.popupListHeight / 2 + Metrics.rowHeight
 
                 EmptyState {
-                    visible: section.modelData.list.length === 0
+                    visible: section.list.length === 0
                     // Inset like the rows (ListRow's spaceLg), so its icon lines
                     // up with theirs instead of sitting at the card's padding.
                     x: Metrics.spaceLg
@@ -66,7 +73,7 @@ PopupPanel {
                     title: BluetoothService.discovering ? "Searching …" : "No devices found"
                 }
                 Repeater {
-                    model: section.modelData.list
+                    model: ScriptModel { values: section.list }
                     ListRow {
                         focusOnTab: true
                         level: 1
@@ -93,7 +100,7 @@ PopupPanel {
         ShellText {
             Layout.fillWidth: true
             Layout.leftMargin: Metrics.spaceSm
-            visible: BluetoothService.enabled && BluetoothService.agentAllowed && !BluetoothService.agentReady
+            visible: BluetoothService.agentStarting
             text: "Pairing service is starting … Devices that need a confirmation code can be paired in a moment."
             role: "caption"
             wrapMode: Text.Wrap

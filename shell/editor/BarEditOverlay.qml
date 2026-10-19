@@ -101,6 +101,14 @@ Item {
         dropZone = ""
         dropIndex = -1
     }
+    // Hidden or gone with a pill still held - the desktop mode switched, the
+    // editor closed under the hand - the drag ends here, as the notch's
+    // does: `editorDragging` stayed set, and `editor get` went on reporting
+    // a drag. The release that follows finds no pill and moves nothing. Only
+    // its own drag: every monitor has an overlay, and one that goes (a
+    // monitor unplugged) must not clear the pill another one holds.
+    onVisibleChanged: if (!visible && dragPill.length) cancelDrag()
+    Component.onDestruction: if (dragPill.length) cancelDrag()
 
     // The three drop thirds, only while something is being dragged: a frame
     // around the whole bar at rest would compete with the pills' own frames.

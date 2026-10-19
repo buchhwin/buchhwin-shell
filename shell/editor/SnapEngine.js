@@ -54,3 +54,15 @@ function snap(rect, others, opts) {
     y = Math.max(0, Math.min(opts.screenHeight - rect.height, y))
     return { x: x, y: y, guides: guides }
 }
+
+// Which side the widget inspector stands on: the half of the screen away from
+// the selected widget, so it never covers what it edits - on the left for a
+// widget in the right half, on the right for one in the left half. The picker
+// opens on the left, so while it is open the inspector keeps to the right.
+// With no single widget selected (none, or several) it is the left.
+//   rect: { x, width } of the selected widget, or null
+function inspectorOnLeft(rect, screenWidth, pickerOpen) {
+    if (pickerOpen) return false
+    if (!rect) return true
+    return rect.x + rect.width / 2 > screenWidth / 2
+}

@@ -88,6 +88,23 @@ GridLayout {
             ]
             onSelected: value => SettingsService.set("appearance.theme", value)
         }
+        // Qt reads the icon theme once, when the shell starts, and
+        // scripts/start-shell.sh picks it by the panels' brightness: after a
+        // switch some app icons keep the old theme's ink (light grey on
+        // light cards) until a restart (SessionService.iconThemeStale).
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            visible: SessionService.iconThemeStale
+            label: "App icons need a restart"
+            hint: "Some app icons keep the previous theme's color until the shell restarts."
+            ShellButton {
+                focusOnTab: true
+                compact: true
+                text: "Restart shell"
+                onClicked: { PanelService.close(); SessionService.restartShell() }
+            }
+        }
 
         // Opt-in: switches the colour scheme shared with Plasma (AppThemeService).
         SettingRow {
@@ -140,6 +157,8 @@ GridLayout {
             ShellText { text: "From wallpaper"; role: "small"; muted: true }
             ShellToggle {
                 focusOnTab: true
+                // Its own name: SettingRow would give it the row's, "Accent color".
+                accessibleName: "Accent color from wallpaper"
                 checked: SettingsService.value("appearance.accentFromWallpaper")
                 onToggled: value => SettingsService.set("appearance.accentFromWallpaper", value)
             }
@@ -321,6 +340,7 @@ GridLayout {
             onPreview: value => PanelStyleService.setPreview("default", value)
             onCommit: value => PanelStyleService.setDefaultOpacity(value)
         }
+        ScopeNote { path: "appearance.panelOpacity" }
 
         Divider {}
 
@@ -387,12 +407,14 @@ GridLayout {
         Layout.alignment: Qt.AlignTop
         title: "Windows & effects"
         description: "Blur, corners, borders, gaps and animations"
+        // Most of these are the mode's own; the two that are not say so.
+        scope: "appearance.blurStrength"
 
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
             label: "Dim behind panels"
-            hint: "The rest of the screen darkens a little while a panel is open. One setting for all of them: they share a single scrim."
+            hint: "The rest of the screen darkens a little while a panel is open. One setting for all of them: they share a single scrim. It is the same in every mode."
             ShellToggle {
                 focusOnTab: true
                 checked: SettingsService.value("appearance.panelScrim")
@@ -409,27 +431,30 @@ GridLayout {
             }
             ShellText { text: Math.round(SettingsService.blurStrength * 100) + "%"; role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl }
         }
+        // The pixel sliders below take whole steps (IntegerSlider): the
+        // slider's own step is a twentieth of the range, and rounded it went
+        // nowhere on Border width and unevenly on the gaps.
         SettingRow {
             label: "Window corners"
             hint: "App windows"
-            ShellSlider {
+            IntegerSlider {
                 focusOnTab: true
                 Layout.fillWidth: true
                 from: 0; to: 32
                 value: SettingsService.windowRadius
-                onReleased: value => SettingsService.set("appearance.windowRadius", Math.round(value))
+                onPicked: value => SettingsService.set("appearance.windowRadius", value)
             }
             ShellText { text: SettingsService.windowRadius + " px"; role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl }
         }
         SettingRow {
             label: "Shell corners"
             hint: "Panels, popups, cards and buttons"
-            ShellSlider {
+            IntegerSlider {
                 focusOnTab: true
                 Layout.fillWidth: true
                 from: 0; to: 32
                 value: SettingsService.value("appearance.shellRadius")
-                onReleased: value => SettingsService.set("appearance.shellRadius", Math.round(value))
+                onPicked: value => SettingsService.set("appearance.shellRadius", value)
             }
             ShellText { text: SettingsService.value("appearance.shellRadius") + " px"; role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl }
         }
@@ -437,7 +462,7 @@ GridLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Round the screen corners"
-            hint: "The display itself takes the window rounding, like a laptop bezel"
+            hint: "The display itself takes the window rounding, like a laptop bezel. It is the same in every mode."
             ShellToggle {
                 focusOnTab: true
                 checked: AppearanceService.screenCorners
@@ -456,35 +481,35 @@ GridLayout {
         }
         SettingRow {
             label: "Border width"
-            ShellSlider {
+            IntegerSlider {
                 focusOnTab: true
                 Layout.fillWidth: true
                 from: 1; to: 8
                 enabledState: SettingsService.borderEnabled
                 value: SettingsService.borderSize
-                onReleased: value => SettingsService.set("appearance.borderSize", Math.round(value))
+                onPicked: value => SettingsService.set("appearance.borderSize", value)
             }
             ShellText { text: SettingsService.borderSize + " px"; role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl }
         }
         SettingRow {
             label: "Gap between windows"
-            ShellSlider {
+            IntegerSlider {
                 focusOnTab: true
                 Layout.fillWidth: true
                 from: 0; to: 30
                 value: SettingsService.gapsIn
-                onReleased: value => SettingsService.set("appearance.gapsIn", Math.round(value))
+                onPicked: value => SettingsService.set("appearance.gapsIn", value)
             }
             ShellText { text: SettingsService.gapsIn + " px"; role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl }
         }
         SettingRow {
             label: "Gap to screen edge"
-            ShellSlider {
+            IntegerSlider {
                 focusOnTab: true
                 Layout.fillWidth: true
                 from: 0; to: 60
                 value: SettingsService.gapsOut
-                onReleased: value => SettingsService.set("appearance.gapsOut", Math.round(value))
+                onPicked: value => SettingsService.set("appearance.gapsOut", value)
             }
             ShellText { text: SettingsService.gapsOut + " px"; role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl }
         }

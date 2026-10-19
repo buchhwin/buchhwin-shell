@@ -4,7 +4,7 @@
   checks.py json              validate every JSON file in config/ and tests/fixtures/
   checks.py binds             duplicate Hyprland key combinations, two keys for one
                               shell action, and the conf and Lua binding different keys
-  checks.py style [--strict]  report hardcoded style values outside theme/
+  checks.py style [--strict]  report hardcoded style values outside theme/ and the raw accent as a fill
   checks.py handlers          signal handlers using injected parameters, and
                               Connections handlers that match no signal
   checks.py icons             glyphs written out although theme/Icons.qml names them
@@ -263,6 +263,12 @@ def _bind_problems(binds):
     return problems, seen, actions
 
 
+# Keys the Lua dialect sends to the shell while the conf dialect runs the
+# backend itself: an IPC client per repeat would cost more there than the
+# backend (wpctl), so the two differ on purpose.
+CONF_RUNS_BACKEND = {"audio up", "audio down", "audio mute", "audio micMute"}
+
+
 def bind_drift(conf, lua):
     """The two dialects binding different keys, or one key to different actions.
 
@@ -280,6 +286,8 @@ def bind_drift(conf, lua):
     conf_actions = {namespace: action for namespace, _, action, _ in conf}
     for namespace, _, action, where in lua:
         if namespace in conf_actions and conf_actions[namespace] != action:
+            if conf_actions[namespace] is None and action in CONF_RUNS_BACKEND:
+                continue
             problems.append(f"{' + '.join(filter(None, namespace[1:]))}: conf calls {conf_actions[namespace]!r}, Lua calls {action!r} ({where})")
     return problems
 
@@ -365,7 +373,9 @@ STYLE_PATTERNS = [
 # "transparent" is a real value, not a colour choice, and 0 spacing or margins
 # say "none" rather than picking a size. A line that ends in `// style: <reason>`
 # is a deliberate exception and has to say why.
-STYLE_ALLOW = re.compile(r':\s*"transparent"|:\s*0\b|//\s*style:\s*\S')
+STYLE_ALLOW_VALUE = re.compile(r':\s*"transparent"|:\s*0\b')
+STYLE_REASON = re.compile(r'//\s*style:\s*\S')
+STYLE_ALLOW = re.compile(STYLE_ALLOW_VALUE.pattern + "|" + STYLE_REASON.pattern)
 
 # theme/ owns the values; tests/ and fixtures/ assert against literals on
 # purpose; the SDDM theme cannot import the singletons (its own drift is
@@ -376,6 +386,29 @@ STYLE_ROOTS = ["shell", "services", "shell.qml", "lock.qml"]
 # writes colours into Kitty and Starship configs, and the contrast helper is
 # maths over colours, not a choice of them.
 STYLE_SKIP = ("services/terminal/", "services/appearance/ContrastLogic.js")
+
+# The raw accent is for decoration. A fill that says a thing is on or that
+# carries a label - a popup header's tile, a primary button, today in a
+# month, a badge - takes Colors.accentFill, with Colors.accentFillText on it:
+# on a light panel the raw teal was 1.3:1 beside the 3.9:1 of the switch next
+# to it. The layout editor's handles and frames keep the raw accent, and so do
+# the notch and the lock screen, which are dark in both themes; anywhere
+# else a line that keeps it says why (`// style: ...`).
+RAW_ACCENT = re.compile(r"\bColors\.accent(?![A-Za-z])")
+RAW_ACCENT_KEPT = ("shell/editor/", "shell/lock/", "shell/notch/")
+
+
+def raw_accent_lines(relative, text):
+    """Line numbers of a shell/ file that fill with the raw accent."""
+    if not relative.startswith("shell/") or relative.startswith(RAW_ACCENT_KEPT):
+        return []
+    found = []
+    for number, line in enumerate(text.splitlines(), 1):
+        if line.strip().startswith("//") or STYLE_REASON.search(line):
+            continue
+        if RAW_ACCENT.search(line):
+            found.append(number)
+    return found
 
 
 def _style_files():
@@ -396,11 +429,41 @@ def _style_files():
 # a cross in one half of a file and a trash can in the other, and that is what
 # theme/Icons.qml exists to stop.
 ICON_NAME = re.compile(r'readonly property string (\w+): "(.+?)"')
+# A glyph can be written out or as an escape (`"\u{f1888}"`, the dock's in
+# Icons.qml itself); both are the same glyph to this check.
+UNICODE_ESCAPE = re.compile(r"\\u\{([0-9a-fA-F]+)\}|\\u([0-9a-fA-F]{4})")
+
+
+def unescape(text):
+    """TEXT with its \\u{...} and \\uXXXX escapes as the characters they are."""
+    decoded = UNICODE_ESCAPE.sub(lambda match: chr(int(match.group(1) or match.group(2), 16)), text)
+    # Two \\uXXXX halves of one character came out as a surrogate pair.
+    return decoded.encode("utf-16", "surrogatepass").decode("utf-16", "surrogatepass")
 
 
 def named_icons():
     text = (ROOT / "theme" / "Icons.qml").read_text()
-    return {match.group(2): match.group(1) for match in ICON_NAME.finditer(text)}
+    return {unescape(match.group(2)): match.group(1) for match in ICON_NAME.finditer(text)}
+
+
+# A logic file cannot reach the Icons singleton (a `.pragma library` script
+# has no QML context), so a .js file that hands one of its glyphs to the UI
+# names it on the same line: `icon: "<glyph>", // Icons.settingsApp`. The
+# comment is held to the glyph, and a page that borrows another meaning's
+# glyph says so where it does.
+ICON_COMMENT = re.compile(r"//.*?\bIcons\.(\w+)")
+
+
+def icon_files():
+    """shell/ and services/, QML and JS, and the two top-level shells.
+
+    shell.qml and the .js files were not read for a long time, and shell.qml
+    wrote the arrange grid out where it meant the widgets mode.
+    """
+    found = [ROOT / name for name in ("shell.qml", "lock.qml") if (ROOT / name).is_file()]
+    for entry in ("shell", "services"):
+        found += sorted((ROOT / entry).rglob("*.qml")) + sorted((ROOT / entry).rglob("*.js"))
+    return found
 
 
 # A ShellButton that is only a glyph has no name unless it has a tip: the tip
@@ -439,17 +502,26 @@ def check_icons():
         for number in unnamed_buttons(path.read_text()):
             print("%s:%d: an icon-only ShellButton needs a toolTip (its name)" % (path.relative_to(ROOT), number))
             failed += 1
-    for path in sorted(list((ROOT / "shell").rglob("*.qml")) + list((ROOT / "services").rglob("*.qml"))):
+    for path in icon_files():
+        script = path.suffix == ".js"
         for number, line in enumerate(path.read_text().splitlines(), 1):
             # Only the allowed token is taken out, not the line around it:
             # `x: 0; text: "<glyph>"` used to pass because the `: 0` made the
             # whole line invisible.
-            rest = STYLE_ALLOW.sub("", line)
+            rest = unescape(STYLE_ALLOW.sub("", line))
+            named = ICON_COMMENT.findall(line) if script else []
             for glyph, name in icons.items():
-                if '"%s"' % glyph in rest:
+                if '"%s"' % glyph not in rest and "'%s'" % glyph not in rest:
+                    continue
+                if name in named:
+                    continue
+                if script:
+                    print("%s:%d uses the glyph of Icons.%s without saying so (`// Icons.%s` on the line)"
+                          % (path.relative_to(ROOT), number, name, name))
+                else:
                     print("%s:%d uses the glyph of Icons.%s instead of the name"
                           % (path.relative_to(ROOT), number, name))
-                    failed += 1
+                failed += 1
     print("checked %d named glyphs" % len(icons))
     return failed
 
@@ -460,16 +532,25 @@ def check_style(strict):
         relative = path.relative_to(ROOT).as_posix()
         if any(relative.startswith(skip) for skip in STYLE_SKIP):
             continue
-        for number, line in enumerate(path.read_text().splitlines(), 1):
+        text = path.read_text()
+        for number, line in enumerate(text.splitlines(), 1):
             stripped = line.strip()
-            if stripped.startswith("//"):
+            if stripped.startswith("//") or STYLE_REASON.search(line):
                 continue
+            # Only the allowed value is taken out, not the line around it (as
+            # in the icons check): `radius: 8; x: 0` passed because of its
+            # `: 0`, and `opacity: 0.5` hid a font size beside it.
+            rest = STYLE_ALLOW_VALUE.sub("", line)
             for label, pattern in STYLE_PATTERNS:
-                if pattern.search(line) and not STYLE_ALLOW.search(line):
+                if pattern.search(rest):
                     total += 1
                     if strict:
                         print(f"{path.relative_to(ROOT)}:{number}: {label}: {stripped}")
                     break
+        for number in raw_accent_lines(relative, text):
+            total += 1
+            if strict:
+                print(f"{relative}:{number}: the raw accent as a fill (Colors.accentFill, or say why with // style:)")
     print(f"hardcoded style values outside theme/: {total}")
     return total if strict else 0
 
@@ -1037,6 +1118,151 @@ def _lua_layer_rules(text):
     return values
 
 
+def _conf_env(text):
+    """NAME -> value, from `env = NAME,VALUE` lines."""
+    values = {}
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        match = re.match(r"env\s*=\s*([^,\s]+)\s*,\s*(.*)$", line)
+        if match:
+            values[match.group(1)] = match.group(2).strip()
+    return values
+
+
+def _lua_env(source):
+    """The same map, from hl.env("NAME", "VALUE")."""
+    text = _strip_lua_comments(source)
+    return {match.group(1): match.group(2)
+            for match in re.finditer(r'hl\.env\(\s*"([^"]+)"\s*,\s*"([^"]*)"\s*\)', text)}
+
+
+def _rule_value(value):
+    value = str(value).strip().strip('"')
+    if value in ("on", "true", "yes"):
+        return "true"
+    if value in ("off", "false", "no"):
+        return "false"
+    return _fmt(value)
+
+
+def _conf_window_rules(text):
+    """name -> {field: value}, from `windowrule { ... }` blocks."""
+    rules = {}
+    fields = None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if re.match(r"windowrule\s*\{$", line):
+            fields = {}
+            continue
+        if fields is None:
+            continue
+        if line == "}":
+            rules[fields.pop("name", f"unnamed-{len(rules)}")] = fields
+            fields = None
+            continue
+        if "=" in line:
+            key, value = (part.strip() for part in line.split("=", 1))
+            fields[key] = value if key == "name" else _rule_value(value)
+    return rules
+
+
+def _lua_window_rules(source):
+    """The same map, from hl.window_rule({ ... })."""
+    text = _strip_lua_comments(source)
+    rules = {}
+    for match in re.finditer(r"hl\.window_rule\(\s*\{", text):
+        scalars = _lua_scalars(_lua_block(text, match.end() - 1), [], {})
+        fields = {key: _rule_value(value) for key, value in scalars.items() if key != "name"}
+        rules[str(scalars.get("name", f"unnamed-{len(rules)}"))] = fields
+    return rules
+
+
+def window_rule_drift(conf_rules, lua_rules):
+    """Messages for window rules the two dialects write differently."""
+    problems = []
+    for name in sorted(set(conf_rules) | set(lua_rules)):
+        if name not in lua_rules:
+            problems.append(f"window rule {name}: only in the conf dialect")
+        elif name not in conf_rules:
+            problems.append(f"window rule {name}: only in hyprland.lua")
+        elif conf_rules[name] != lua_rules[name]:
+            conf_fields, lua_fields = conf_rules[name], lua_rules[name]
+            for key in sorted(set(conf_fields) | set(lua_fields)):
+                if conf_fields.get(key) != lua_fields.get(key):
+                    problems.append(f"window rule {name}: {key} conf {conf_fields.get(key)!r} vs lua {lua_fields.get(key)!r}")
+    return problems
+
+
+def env_drift(conf_env, lua_env):
+    problems = []
+    for name in sorted(set(conf_env) | set(lua_env)):
+        if conf_env.get(name) != lua_env.get(name):
+            problems.append(f"env {name}: conf {conf_env.get(name)!r} vs lua {lua_env.get(name)!r}")
+    return problems
+
+
+# Panels animate themselves (ShellPanel's card fade and morph); Hyprland's
+# layers fade on top of that doubled the first frames of every open and faded
+# an empty buffer out after every close, which is why their namespaces are in
+# a no_anim layer rule - and a new panel has to join it, or it gets both
+# silently. The colour picker's namespace is shared with the full-screen
+# picking overlay, which does not animate itself.
+PANEL_ID = re.compile(r'\bpanelId:\s*"(\w+)"')
+NO_ANIM_EXCEPT = {"colorPicker"}
+
+
+def panel_ids():
+    found = set()
+    for path in (ROOT / "shell").rglob("*.qml"):
+        found.update(PANEL_ID.findall(path.read_text()))
+    return found
+
+
+def no_anim_problems(ids, layers, dialect):
+    """Panels (buchhwin-<panelId>) no `no_anim` layer rule of LAYERS matches."""
+    patterns = [key[len("layer:"):].rsplit(":", 1)[0] for key, value in layers.items()
+                if key.startswith("layer:") and key.endswith(":no_anim") and str(value) in ("1", "1.0")]
+    problems = []
+    for panel in sorted(ids - NO_ANIM_EXCEPT):
+        namespace = "buchhwin-" + panel
+        if not any(_matches(pattern, namespace) for pattern in patterns):
+            problems.append(f"panel {panel}: its namespace {namespace} is in no no_anim layer rule of {dialect}")
+    return problems
+
+
+def _matches(pattern, text):
+    try:
+        return re.search(pattern, text) is not None
+    except re.error:
+        return False
+
+
+# Helper windows the session keeps running but never shows: the shell skips
+# the classes in services/hypr/HiddenWindows.js, and the rule of this name
+# hides them in both dialects. A class in one list and not in the other is a
+# black window on workspace 1, or one the shell counts.
+HIDDEN_RULE = "buchhwin-hidden-windows"
+
+
+def hidden_window_classes(source):
+    match = re.search(r"\bvar classes\s*=\s*\[(.*?)\]", source, re.S)
+    return re.findall(r'"([^"]+)"', match.group(1)) if match else []
+
+
+def hidden_window_problems(classes, conf_rules, lua_rules):
+    problems = [] if classes else ["services/hypr/HiddenWindows.js: no classes read"]
+    for dialect, rules in (("hyprland.conf", conf_rules), ("hyprland.lua", lua_rules)):
+        rule = rules.get(HIDDEN_RULE)
+        if rule is None:
+            problems.append(f"{dialect}: no window rule {HIDDEN_RULE}")
+            continue
+        pattern = str(rule.get("match:class", ""))
+        for name in classes:
+            if not _matches(pattern, name):
+                problems.append(f"{dialect}: {HIDDEN_RULE} does not match {name} (HiddenWindows.js)")
+    return problems
+
+
 def check_hypr():
     conf = _hypr_conf((ROOT / "hypr" / "hyprland.conf").read_text())
     lua = _hypr_lua((ROOT / "hypr" / "hyprland.lua").read_text())
@@ -1054,6 +1280,20 @@ def check_hypr():
     lua.update(_lua_layer_rules(lua_text))
 
     problems = hypr_drift(conf, lua)
+
+    # What the settings above do not cover and nothing else compared: the
+    # environment both dialects set, the window rules (Citrix's dialogs, the
+    # hidden helpers), every panel's place in the no_anim rule, and the
+    # hidden classes the shell skips.
+    conf_env, lua_env = _conf_env(conf_text), _lua_env(lua_text)
+    problems += env_drift(conf_env, lua_env)
+    conf_rules, lua_rules = _conf_window_rules(conf_text), _lua_window_rules(lua_text)
+    problems += window_rule_drift(conf_rules, lua_rules)
+    ids = panel_ids()
+    problems += no_anim_problems(ids, conf, "the conf dialect")
+    problems += no_anim_problems(ids, lua, "hyprland.lua")
+    hidden = hidden_window_classes((ROOT / "services" / "hypr" / "HiddenWindows.js").read_text())
+    problems += hidden_window_problems(hidden, conf_rules, lua_rules)
 
     # The shell's own copy of the animation table, which it re-emits when the
     # animation mode changes. A leaf that drifts here is a mode switch that
@@ -1076,7 +1316,8 @@ def check_hypr():
 
     for problem in problems:
         print(problem)
-    print(f"compared {len(set(conf) | set(lua))} Hyprland settings across both dialects")
+    print(f"compared {len(set(conf) | set(lua))} Hyprland settings, {len(set(conf_env) | set(lua_env))} env lines, "
+          f"{len(set(conf_rules) | set(lua_rules))} window rules and {len(ids)} panels across both dialects")
     return bool(problems)
 
 
@@ -1306,7 +1547,15 @@ def check_reserved():
 # is plain; every `Text {` and `component X: Text` written by hand says its
 # format too, glyphs and digits included - it costs nothing and keeps the rule
 # one rule. tests/python/plain_text_test.py checks the scanner.
-TEXT_START = re.compile(r"(?:^|[\s:])Text\s*\{")
+#
+# Qt Quick Controls' Label is a Text, AutoText by default as well, and a
+# qualified `QtQuick.Text {` is the same element; both are read. Nothing in
+# shell/ imports the Controls, and a file that starts to has to say why on
+# the import line (`// plaintext: <reason>`), so a Label does not come in
+# unseen with it.
+TEXT_START = re.compile(r"(?:^|[\s:.])(?:Text|Label)\s*\{")
+CONTROLS_IMPORT = re.compile(r"^\s*import\s+QtQuick\.Controls\b")
+CONTROLS_REASON = re.compile(r"//\s*plaintext:\s*\S")
 
 
 def _without_strings(line):
@@ -1340,13 +1589,23 @@ def check_plaintext():
     failed = 0
     checked = 0
     for path in files:
-        for line, has_format in raw_texts(path.read_text(encoding="utf-8")):
+        source = path.read_text(encoding="utf-8")
+        for line, has_format in raw_texts(source):
             checked += 1
             if not has_format:
                 print(f"{path.relative_to(ROOT)}:{line}: a raw Text without textFormat (Text.PlainText, or ShellText)")
                 failed += 1
+        for line in controls_imports(source):
+            print(f"{path.relative_to(ROOT)}:{line}: imports QtQuick.Controls without saying why (`// plaintext: <reason>`)")
+            failed += 1
     print(f"checked {checked} raw Text elements for a text format")
     return failed
+
+
+def controls_imports(source):
+    """Lines that import QtQuick.Controls without a reason on the line."""
+    return [number for number, line in enumerate(source.splitlines(), 1)
+            if CONTROLS_IMPORT.match(line) and not CONTROLS_REASON.search(line)]
 
 
 # ---- private data -------------------------------------------------------------

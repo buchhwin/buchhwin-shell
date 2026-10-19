@@ -16,7 +16,7 @@ ColumnLayout {
             model: [
                 { mode: "off", label: "Off", icon: "󰂚" },
                 { mode: "1h", label: "For 1 hour", icon: Icons.busy },
-                { mode: "tomorrow", label: "Until tomorrow morning", icon: "󰖔" },
+                { mode: "tomorrow", label: "Until tomorrow morning", icon: Icons.untilMorning },
                 { mode: "manual", label: "Until I turn it off", icon: "󰂛" }
             ]
             ListRow {
@@ -24,10 +24,16 @@ ColumnLayout {
                 Layout.fillWidth: true
                 level: 1
                 icon: modelData.icon
-                title: modelData.label
                 selected: (modelData.mode === "off" && !NotificationService.dndActive)
                     || (NotificationService.dndActive && NotificationService.dndMode === modelData.mode)
-                subtitle: selected && NotificationService.dndActive ? NotificationService.dndLabel : ""
+                // A Do Not Disturb that a mode turned on (gaming) ends with
+                // the mode, not when the user turns it off: the selected row
+                // says so in its title, rather than "Until I turn it off"
+                // over a line that said otherwise. A click makes it the
+                // user's own, which that title then names.
+                readonly property bool owned: selected && modelData.mode === "manual" && NotificationService.dndBy.length > 0
+                title: owned ? NotificationService.dndLabel : modelData.label
+                subtitle: selected && NotificationService.dndActive && !owned ? NotificationService.dndLabel : ""
                 onClicked: NotificationService.setDnd(modelData.mode)
             }
         }
@@ -48,7 +54,9 @@ ColumnLayout {
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
-            label: "Mute automatically while gaming"
+            // A game's window in front (Steam, gamescope), which is not the
+            // Gaming mode: that one has a Do Not Disturb of its own.
+            label: "Mute automatically while a game is focused"
             ShellToggle {
                 checked: SettingsService.value("notifications.suppressGames")
                 onToggled: value => SettingsService.set("notifications.suppressGames", value)

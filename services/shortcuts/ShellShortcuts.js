@@ -19,6 +19,7 @@ var ACTIONS = [
     "colorPicker pick", "switcher next", "switcher previous", "switcher confirm",
     "clipboard toggle", "emoji toggle", "recording toggle region", "recording toggle screen",
     "kbdBacklight up", "kbdBacklight down", "kbdBacklight toggle", "brightness up", "brightness down",
+    "audio up", "audio down", "audio mute", "audio micMute",
     "dock toggle", "startMenu toggle", "startMenu key"
 ].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "workspaces switchTo " + n))
  .concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "workspaces move " + n))

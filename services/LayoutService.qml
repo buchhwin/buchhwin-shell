@@ -23,10 +23,23 @@ Singleton {
     id: root
 
     property var config: Migrations.emptyConfig()
+    // Counts the changes to `config`, for the two readers that act on each
+    // one (the editor's selection, Settings > Widgets). Everything else here
+    // reads `config` itself, which is a new object with every change - never
+    // changed in place - so reading this beside it only ran each of those
+    // bindings twice.
     property int revision: 0
     property bool loaded: false
     property bool readOnly: false
     property string readOnlyReason: ""
+    // Why layout.json is there but could not be read (its mode, a file root
+    // owns, a directory in its place), "" otherwise. That is no fresh layout:
+    // read-only like a file from a newer version, so the next change is not
+    // written over it; the watch reading it later ends it (SettingsService
+    // does the same for settings.json).
+    property string unreadableReason: ""
+    // A write that fails says so once a start.
+    property bool saveFailedWarned: false
     property bool editMode: false
     property var undoStack: []
     property var templates: ({})
@@ -34,7 +47,7 @@ Singleton {
     // first list is fixed (each one has a factory template), the second is the
     // user's.
     readonly property var modeNames: Logic.MODE_NAMES
-    readonly property var profileNames: (revision, Logic.profileNames(config))
+    readonly property var profileNames: Logic.profileNames(config)
     readonly property string activeProfile: config.activeProfile || Logic.DEFAULT_PROFILE
     readonly property string activeMode: config.activeMode || Logic.MODE_NAMES[0]
     readonly property string activeProfileLabel: Logic.profileLabel(config, activeProfile)
@@ -49,12 +62,9 @@ Singleton {
     // used by notification popups to appear below the clock.
     property var placementRects: ({})
 
-    signal changed()
-
     // The active mode of the active profile. A mode that is not in the file
     // yet reads as an empty one rather than as nothing at all.
     function modeConfig() {
-        const unused = revision
         return Logic.modeConfig(config, activeProfile, activeMode)
     }
 
@@ -91,8 +101,13 @@ Singleton {
     function changeBar(operation) {
         if (readOnly) return false
         const args = Array.prototype.slice.call(arguments, 1)
+        const after = operation.apply(null, [JSON.parse(JSON.stringify(bar))].concat(args))
+        // Nothing changed (a display or a size it has already, an item moved
+        // past its end): true as before, but no undo step and no write, as
+        // changeDockLayout does.
+        if (JSON.stringify(after) === JSON.stringify(bar)) return true
         beginChange()
-        mutate(mode => { mode.bar = operation.apply(null, [mode.bar || Logic.defaultBar()].concat(args)) })
+        mutate(mode => { mode.bar = after })
         save()
         return true
     }
@@ -220,7 +235,7 @@ Singleton {
         if (!preset || readOnly) return false
         const before = { "dock.enabled": SettingsService.value("dock.enabled") }
         for (const key of Logic.DOCK_PRESET_OPTIONS) before["dock." + key] = SettingsService.value("dock." + key)
-        beginChange(null, null, before)
+        beginChange(null, before)
         mutate((mode, next) => { next.dock = Logic.dockFromPreset(next.dock, preset.layout) })
         const values = {}
         for (const key of Object.keys(preset.options)) values["dock." + key] = preset.options[key]
@@ -311,7 +326,6 @@ Singleton {
         if (!result.id.length) return ""
         config = Logic.sanitize(result.config)
         revision++
-        changed()
         save()
         return result.id
     }
@@ -319,14 +333,12 @@ Singleton {
         if (readOnly) return false
         config = Logic.sanitize(Logic.renameNotchPreset(config, id, label))
         revision++
-        changed()
         return save()
     }
     function removeNotchPreset(id) {
         if (readOnly) return false
         config = Logic.sanitize(Logic.removeNotchPreset(config, id))
         revision++
-        changed()
         return save()
     }
 
@@ -492,6 +504,8 @@ Singleton {
         if (key === "position" && BarLogic.POSITIONS.indexOf(value) < 0) return false
         if (key === "edge" && BarLogic.EDGES.indexOf(value) < 0) return false
         if (key === "fullscreen" && Logic.FULLSCREEN.indexOf(value) < 0) return false
+        // The value it has already: no undo step that undoes nothing, no write.
+        if (JSON.stringify(bar[key]) === JSON.stringify(value)) return true
         beginChange()
         mutate(mode => {
             const next = JSON.parse(JSON.stringify(mode.bar || Logic.defaultBar()))
@@ -639,7 +653,6 @@ Singleton {
     }
 
     function placementIds(screenName, includeHidden) {
-        const unused = revision
         return Logic.placements(modeConfig(), screenName, includeHidden === true)
             .filter(id => {
                 const entry = root.widget(id)
@@ -648,12 +661,10 @@ Singleton {
     }
 
     function widget(id) {
-        const unused = revision
         return modeConfig().widgets.find(item => item.id === id) || null
     }
 
     function group(id) {
-        const unused = revision
         return modeConfig().groups.find(item => item.id === id) || null
     }
 
@@ -690,10 +701,10 @@ Singleton {
             return
         }
         fileText = text
-        readOnly = result.readOnly
-        readOnlyReason = result.error || ""
-        if (result.readOnly)
-            console.warn("buchhwin-shell: layout is read-only:", result.error)
+        readOnly = result.readOnly || unreadableReason.length > 0
+        readOnlyReason = unreadableReason.length ? unreadableReason : result.error || ""
+        if (readOnly)
+            console.warn("buchhwin-shell: layout is read-only:", readOnlyReason)
         // Every migration keeps the file it read, named after the version it
         // was. It used to be v1 only, which was right while v1 was the only
         // migration there had ever been; a migration that turns out to be
@@ -703,11 +714,12 @@ Singleton {
         backupVersion = migrated ? result.from : 0
         config = Logic.sanitize(result.config)
         notchStored = !!(result.config && result.config.notch)
-        if (!loaded) layoutWasEmpty = result.ok && !text.trim().length
+        if (!loaded) layoutWasEmpty = result.ok && !text.trim().length && !unreadableReason.length
         loaded = true
         decideFresh()
         ensureScreens()
         adoptOnce()
+        resumeDndOnce()
         ensureBuiltinProfiles()
         revision++
         if (migrated) {
@@ -808,7 +820,6 @@ Singleton {
         next.adopted = Logic.withAdopted(next, "dashboardAgenda")
         config = Logic.sanitize(next)
         revision++
-        changed()
         return true
     }
 
@@ -845,7 +856,6 @@ Singleton {
         next.adopted = Logic.withAdopted(next, "launcherCategories")
         config = Logic.sanitize(next)
         revision++
-        changed()
         return true
     }
 
@@ -871,7 +881,6 @@ Singleton {
         if (freshLayout) {
             config = Logic.sanitize(Object.assign({}, config, { adopted: Logic.withAdopted(config, "modeAppearance") }))
             revision++
-            changed()
             return true
         }
         if (modeNames.some(name => !templates[name])) return false
@@ -884,7 +893,12 @@ Singleton {
                 for (const leaf of Profile.MODE_SCOPED)
                     appearance[leaf] = effects[leaf] !== undefined
                         ? effects[leaf] : SettingsService.value(Profile.modeScopedPath(leaf))
-                if (!modes[name]) modes[name] = { widgets: [], groups: [], screens: [] }
+                // A mode not in the file yet is made as entering it would
+                // make it - with its template's desktop mode and bar - or it
+                // would count as entered and show widgets for good: a
+                // layout.json lost beside the settings gave every mode of
+                // Default that placeholder.
+                if (!modes[name]) modes[name] = Logic.freshMode(templates[name])
                 modes[name].appearance = Object.assign(appearance, modes[name].appearance || {})
             }
             next.profiles[profileName].modes = modes
@@ -892,7 +906,6 @@ Singleton {
         next.adopted = Logic.withAdopted(next, "modeAppearance")
         config = Logic.sanitize(next)
         revision++
-        changed()
         return true
     }
 
@@ -918,10 +931,13 @@ Singleton {
     // writes the same way). The text is taken when the write is asked for,
     // not when it runs, so a reload that lands in between cannot put an
     // older layout back on disk.
+    // `config` is a sanitize result whenever it is set here (load, every
+    // edit, every profile operation), so it is written as it is: checking it
+    // a second time was a third of every edit's cost.
     property string pendingText: ""
     function save() {
         if (readOnly || !loaded) return false
-        pendingText = JSON.stringify(Logic.sanitize(config), null, 2) + "\n"
+        pendingText = JSON.stringify(config, null, 2) + "\n"
         writeTimer.restart()
         return true
     }
@@ -936,18 +952,16 @@ Singleton {
 
     // Every edit lands in the active mode of the active profile. The callback
     // gets that mode and the whole config, because a few things it may change -
-    // the notch, the adoption markers - are global.
+    // the notch, the dock, the lock screen, the adoption markers - are global.
+    // Those and the mode are the callback's own copies; everything else is
+    // shared with the config as it was and must not be changed
+    // (LayoutLogic.edit). Each edit used to copy and check the whole layout,
+    // every profile's state and every mode, and handed a new notch, dock and
+    // bar to every screen for a change to one of them.
     function mutate(callback) {
         if (readOnly) return false
-        const next = JSON.parse(JSON.stringify(config))
-        if (!next.profiles[activeProfile])
-            next.profiles[activeProfile] = { label: Logic.DEFAULT_PROFILE_LABEL, modes: {} }
-        const modes = next.profiles[activeProfile].modes
-        if (!modes[activeMode]) modes[activeMode] = { widgets: [], groups: [], screens: [] }
-        callback(modes[activeMode], next)
-        config = Logic.sanitize(next)
+        config = Logic.edit(config, activeProfile, activeMode, callback)
         revision++
-        changed()
         return true
     }
 
@@ -981,6 +995,10 @@ Singleton {
     // change took away with the steps kept, and that change hands it to its
     // step (`states`): removeProfile the removed profile's, resetProfile that
     // of a built-in one not in use (LayoutLogic.withUndoStates).
+    //
+    // This whole layout is a step of the profile level only
+    // (beginProfileChange). Every other step holds the one mode an edit can
+    // change and the global surfaces (beginChange, LayoutLogic.undoTarget).
     function undoConfig() {
         const kept = Object.assign({}, config)
         delete kept.notchPresets
@@ -995,17 +1013,44 @@ Singleton {
         return kept
     }
 
-    // `modeSwitch` marks the step of a mode switch the user made, the only
-    // step whose undo takes the mode back (LayoutLogic.modeAfterUndo).
-    // `settings` are settings this step's change alone takes along, by path,
-    // as they were before it (applyDockPreset; LayoutLogic.undoSettings).
-    function beginChange(states, modeSwitch, settings) {
+    // A step before an edit: which mode is in use, that mode as it is now and
+    // the global surfaces beside it (notch, dock, lock screen) - all an edit
+    // can change (mutate). `modeSwitch` marks the step of a mode switch the
+    // user made, the only step whose undo takes the mode back
+    // (LayoutLogic.modeAfterUndo); it holds the mode switched to as well, as
+    // it was (none, when it is entered the first time). `settings` are
+    // settings this step's change alone takes along, by path, as they were
+    // before it (applyDockPreset; LayoutLogic.undoSettings).
+    function beginChange(modeSwitch, settings) {
         if (readOnly) return
-        const next = undoStack.slice()
-        const step = { config: undoConfig(), notch: notchSnapshot() }
-        if (states) step.states = states
+        const modes = Logic.modesOf(config, activeProfile)
+        const list = {}
+        for (const name of [activeMode].concat(modeSwitch && modeSwitch.to ? [modeSwitch.to] : []))
+            list[name] = modes[name] || null
+        const step = { config: { activeMode: activeMode, notch: config.notch, dock: config.dock, lock: config.lock },
+                       modes: { profile: activeProfile, list: list }, notch: notchSnapshot() }
         if (modeSwitch) step.modeSwitch = modeSwitch
         if (settings && Object.keys(settings).length) step.settings = settings
+        pushStep(step)
+    }
+
+    // A step before a change to the profiles themselves - one added,
+    // duplicated, renamed, removed or reset: the whole layout (undoConfig).
+    // `states` are the stored states the change takes away, which undo brings
+    // back (LayoutLogic.withUndoStates). `appearance` names the modes whose
+    // appearance the change replaces ({ profile: [mode, ...] }): undone, those
+    // get the step's back, while every other mode keeps the appearance it has
+    // then (LayoutLogic.withCurrentAppearance).
+    function beginProfileChange(states, appearance) {
+        if (readOnly) return
+        const step = { config: undoConfig(), notch: notchSnapshot() }
+        if (states) step.states = states
+        if (appearance) step.appearance = appearance
+        pushStep(step)
+    }
+
+    function pushStep(step) {
+        const next = undoStack.slice()
         next.push(JSON.stringify(step))
         if (next.length > 30) next.shift()
         undoStack = next
@@ -1015,6 +1060,9 @@ Singleton {
     // own rather than going through changeBar/mutate.
     function changeNotch(key, value) {
         if (notchKeys.indexOf(key) < 0) return false
+        // The value it has already (the editor's segments re-emit the one they
+        // show): no undo step that undoes nothing.
+        if (JSON.stringify(SettingsService.value(key)) === JSON.stringify(value)) return true
         beginChange()
         SettingsService.set(key, value)
         return true
@@ -1024,27 +1072,29 @@ Singleton {
         if (!undoStack.length || readOnly) return
         const next = undoStack.slice()
         const step = JSON.parse(next.pop())
+        const before = config
         // Saved notch presets are not part of an edit: saving, renaming or
         // deleting one takes no undo step, so undoing the drag before it must
         // not take the preset with it (or bring a deleted one back).
-        step.config.notchPresets = config.notchPresets || []
         // Nor are the profiles' stored states and the one-shot markers. A
         // state is what a profile was left with, or what entering a built-in
         // one applied: Ctrl+Z right after that took the applied state away,
         // and the next switch stored nothing for it. A marker says a
         // migration has run, and an older list would run it again. A state
         // the step's change took away (a removal, a Reset of a built-in one
-        // not in use) comes back from the step, which was handed it.
-        Logic.withUndoStates(step.config, config, step.states)
-        step.config.adopted = config.adopted || []
+        // not in use) comes back from the step, which was handed it. A step
+        // of one mode holds none of these, and every other mode and profile
+        // stays as it is now (LayoutLogic.undoTarget).
+        const target = Logic.undoTarget(step, before)
         // Nor is the mode, unless the step is the switch itself and its mode
         // still in use: an automatic switch takes no step, and undoing an
         // edit or a switch from before it keeps the mode the machine chose.
         const modeBefore = activeMode
-        step.config.activeMode = Logic.modeAfterUndo(step, modeBefore)
+        const appearanceBefore = Logic.modeConfig(before, activeProfile, modeBefore).appearance
+        target.activeMode = Logic.modeAfterUndo(step, modeBefore)
         // Nor are the built-in profiles: a step taken before one was added
         // must not take it away again.
-        config = Logic.addBuiltinProfiles(Logic.sanitize(step.config),
+        config = Logic.addBuiltinProfiles(Logic.sanitize(target, before),
                                           builtinProfileNames.map(id => builtinProfiles[id]).filter(data => !!data)).config
         // The widgets of every monitor the mode in use has now. The step is
         // from before whatever was materialized since without a step of its
@@ -1053,15 +1103,26 @@ Singleton {
         // this the desktop of that mode or monitor stayed empty until the
         // next screen change. Returns at once when nothing is missing.
         ensureScreens()
+        // Nor is a mode's appearance, which every mode-scoped setting changes
+        // without a step: each mode keeps the one it has now - unless the
+        // step's own change replaced it (a Reset), which is what undoing that
+        // brings back. After ensureScreens, so a mode it made again keeps its
+        // appearance too.
+        config = Logic.withCurrentAppearance(config, before, step.appearance)
         // A switch undone is a switch back, with all that entering the mode
         // does: its widgets on every monitor (above), its appearance (gaps,
         // blur, animations) and Do Not Disturb - off again when the mode
         // undone turned it on. Without it the settings stayed those of the
         // mode undone, and the next mode-scoped edit was stored in the mode
-        // restored.
+        // restored. A Reset undone in the mode in use puts the appearance it
+        // had back on screen too: before, the file had the old gaps and the
+        // screen kept the reset's until the next switch.
         if (activeMode !== modeBefore) {
             applyModeSettings(activeMode)
             modeDndTransition(modeBefore, activeMode)
+        } else if (JSON.stringify(Logic.modeConfig(config, activeProfile, activeMode).appearance)
+                   !== JSON.stringify(appearanceBefore)) {
+            applyModeSettings(activeMode)
         }
         const restored = Logic.undoSettings(step, undoKeys)
         if (Object.keys(restored).length) SettingsService.setAll(restored)
@@ -1083,19 +1144,12 @@ Singleton {
         const template = templates[activeMode]
         const missing = Quickshell.screens.map(screen => screen.name).filter(name => target.screens.indexOf(name) < 0)
         if (!missing.length || !template) return
-        // Materialized in memory; written with the next edit.
-        const next = JSON.parse(JSON.stringify(config))
-        if (!next.profiles[activeProfile])
-            next.profiles[activeProfile] = { label: Logic.DEFAULT_PROFILE_LABEL, modes: {} }
-        const modes = next.profiles[activeProfile].modes
-        const fresh = !modes[activeMode]
-        const nextMode = modes[activeMode] || { widgets: [], groups: [], screens: [] }
+        // Materialized in memory; written with the next edit. Only this mode
+        // is copied; the rest of the layout stays the objects it was.
+        const stored = Logic.modesOf(config, activeProfile)[activeMode]
         // A mode used for the first time takes its desktop mode and its bar
         // from the template too.
-        if (fresh) {
-            if (template.mode) nextMode.desktopMode = template.mode
-            if (template.bar) nextMode.bar = template.bar
-        }
+        const nextMode = stored ? JSON.parse(JSON.stringify(stored)) : Logic.freshMode(template)
         for (const screen of missing) {
             const made = Logic.materialize(template, screen, nextMode.widgets.map(w => w.id)
                 .concat(nextMode.groups.map(g => g.id)), type => WidgetRegistry.type(type) !== null)
@@ -1103,8 +1157,7 @@ Singleton {
             nextMode.groups = nextMode.groups.concat(made.groups)
             nextMode.screens.push(screen)
         }
-        modes[activeMode] = nextMode
-        config = Logic.sanitize(next)
+        config = Logic.withMode(config, activeProfile, activeMode, nextMode)
         revision++
     }
 
@@ -1118,15 +1171,21 @@ Singleton {
     // (see undo). `automatic` is one the machine makes (AdaptiveService, a
     // monitor plugged in or taken away): it takes no step, so Ctrl+Z after
     // docking undoes the last edit rather than the dock, and keeps the mode.
+    //
+    // The mode in use asked for again (a click on the segment that is already
+    // chosen) changes nothing and takes no step: it used to push an empty
+    // step out of the thirty and write both files.
     function setActiveMode(name, automatic) {
         if (modeNames.indexOf(name) < 0 || readOnly) return false
+        if (name === activeMode) return true
         // The step names the mode it goes to, so an automatic switch since
         // keeps its own (Logic.modeAfterUndo).
-        if (automatic !== true) beginChange(null, { to: name })
+        if (automatic !== true) beginChange({ to: name })
         const modeBefore = activeMode
-        const next = JSON.parse(JSON.stringify(config))
-        next.activeMode = name
-        config = Logic.sanitize(next)
+        // Only the mode in use changes: the notch, the dock, the lock screen
+        // and every mode stay the objects they were, so nothing that shows
+        // them hears of the switch.
+        config = Logic.sanitize(Object.assign({}, config, { activeMode: name }), config)
         ensureScreens()
         applyModeSettings(name)
         modeDndTransition(modeBefore, name)
@@ -1140,7 +1199,11 @@ Singleton {
     // they just came from.
     property bool applyingMode: false
 
-    function applyModeSettings(name) {
+    // What entering mode `name` sets, by path: only what differs from what
+    // is set now. Two modes with the same appearance (buchhwin's work and
+    // docked) used to write all ten settings at every switch between them,
+    // which replaced every setting and re-ran every binding on one.
+    function modeSettings(name) {
         const stored = Logic.modeConfig(config, activeProfile, name).appearance || {}
         const template = templates[name] || {}
         const effects = template.effects ? template.effects : {}
@@ -1159,8 +1222,19 @@ Singleton {
             else if (effects[leaf] !== undefined) values[path] = effects[leaf]
             else if (adopted) values[path] = SettingsService.defaultOf(path)
         }
+        const changed = {}
+        for (const path of Object.keys(values))
+            if (SettingsService.value(path) !== values[path]) changed[path] = values[path]
+        return changed
+    }
+
+    // `extra` are settings to write in the same go (a profile's own,
+    // enterProfile): one write and one change of every setting, not two.
+    function applyModeSettings(name, extra) {
+        const values = Object.assign({}, extra || {}, modeSettings(name))
+        if (!Object.keys(values).length) return
         applyingMode = true
-        if (Object.keys(values).length) SettingsService.setAll(values)
+        SettingsService.setAll(values)
         applyingMode = false
     }
 
@@ -1170,11 +1244,39 @@ Singleton {
     // when it finds it off, and turns it off again when it is left - unless
     // the user changed it in between (Logic.dndOnModeChange; NotificationService
     // keeps whose it is across shell restarts).
+    //
+    // Only a mode whose template turns it on can own it, so between two
+    // others there is nothing to ask - and NotificationService is not made
+    // for it: a unit test switching modes started the session's notification
+    // server on the user's bus (pitfall 82). A template not read yet is asked
+    // about as before.
     function modeDndTransition(from, to) {
+        if (from === to) return
+        const known = templates[from] !== undefined && templates[to] !== undefined
+        if (known && !Logic.turnsDndOn((templates[from] || {}).effects) && !Logic.turnsDndOn((templates[to] || {}).effects)) return
         if (typeof NotificationService === "undefined" || !NotificationService.setDnd) return
         const effects = (templates[to] || {}).effects || {}
         const change = Logic.dndOnModeChange(NotificationService.dndBy, NotificationService.dndActive, from, to, effects)
         if (change) NotificationService.setDnd(change.mode, change.by)
+    }
+
+    // A reboot ends a manual Do Not Disturb, a mode's own with it
+    // (NotificationLogic.dndAtBoot). Once the layout and the template of the
+    // mode in use are both in, that mode is asked once and takes its own back
+    // while it is still the one in use (NotificationService.resumeModeDnd):
+    // gaming came back from a reboot without it. Only a mode whose template
+    // turns Do Not Disturb on asks, so a start in any other mode - and every
+    // unit test that stays out of gaming - never makes NotificationService
+    // (pitfall 82).
+    property bool dndResumeAsked: false
+    function resumeDndOnce() {
+        if (dndResumeAsked || !loaded) return
+        const template = templates[activeMode]
+        if (template === undefined) return
+        dndResumeAsked = true
+        if (!Logic.turnsDndOn(template.effects)) return
+        if (typeof NotificationService === "undefined" || !NotificationService.resumeModeDnd) return
+        NotificationService.resumeModeDnd(activeMode)
     }
 
     // A setting a mode owns, changed anywhere in the shell, belongs to the mode
@@ -1186,6 +1288,8 @@ Singleton {
             if (root.applyingMode || root.readOnly || !root.loaded) return
             const leaf = Profile.modeScopedLeaf(path)
             if (!leaf.length) return
+            // A value the mode has already is no change to it, and no write.
+            if ((root.modeConfig().appearance || {})[leaf] === value) return
             root.mutate(mode => {
                 const appearance = Object.assign({}, mode.appearance || {})
                 appearance[leaf] = value
@@ -1210,30 +1314,27 @@ Singleton {
                                             lock: config.lock })
     }
 
-    // The settings of a state (or of a shipped profile) this shell knows and
-    // would take - the right type, an allowed value - and that differ from
-    // what is set. A key from a newer shell is left out here rather than
-    // warned about one by one in SettingsService. `leaves` come complete
-    // (profileLeaves): a key the state does not name is there at its default.
     // A state's or a shipped profile's settings, every one a profile owns:
     // what it names, and the default for what it does not
     // (ProfileLogic.completeLeaves) - the dock of the profile left must not
-    // come along.
+    // come along. Through the migrations settings.json goes through first, so
+    // a state stored before one keeps the user's choice (LayoutLogic.
+    // migrateSettings), and with the defaults' home paths as they are
+    // (LayoutLogic.profileLeaves).
     function profileLeaves(tree) {
-        return Profile.completeLeaves(Profile.settingLeaves(tree, Paths.home),
-                                      Profile.settingLeaves(SettingsService.defaults, Paths.home))
+        return Logic.profileLeaves(Logic.migrateSettings(tree), SettingsService.defaults, Paths.home)
     }
 
+    // The settings of a state (or of a shipped profile) this shell knows, as
+    // it would take them - a value it refuses (the wrong type, one `allowed`
+    // does not list) is the default rather than the setting of the profile
+    // left - and that differ from what is set. A key from a newer shell is
+    // left out here rather than warned about one by one in SettingsService.
+    // `leaves` come complete (profileLeaves): a key the state does not name
+    // is there at its default.
     function knownValues(leaves) {
-        const values = {}
-        for (const path of Object.keys(leaves || {})) {
-            const fallback = SettingsService.defaultOf(path)
-            if (fallback === undefined || typeof fallback === "object" || typeof leaves[path] !== typeof fallback) continue
-            const choices = SettingsService.allowed[path]
-            if (choices && choices.indexOf(leaves[path]) < 0) continue
-            if (SettingsService.value(path) !== leaves[path]) values[path] = leaves[path]
-        }
-        return values
+        return Logic.knownSettings(leaves, path => SettingsService.defaultOf(path), SettingsService.allowed,
+                                   path => SettingsService.value(path))
     }
 
     // A built-in profile without a state has not had its shipped one yet:
@@ -1262,8 +1363,10 @@ Singleton {
         // A state taken before settings.json has been read would be the
         // defaults, stored over the profile being left.
         if (!loaded || !SettingsService.loaded) return false
-        const next = JSON.parse(JSON.stringify(config))
-        if (!waitingForShipped(activeProfile)) next.profiles[activeProfile].state = currentState()
+        // A copy of the top two levels: enterProfile changes nothing deeper.
+        const next = Object.assign({}, config, { profiles: Object.assign({}, config.profiles) })
+        if (!waitingForShipped(activeProfile))
+            next.profiles[activeProfile] = Object.assign({}, config.profiles[activeProfile], { state: currentState() })
         enterProfile(next, name)
         return true
     }
@@ -1281,8 +1384,12 @@ Singleton {
     // appearance comes from the mode, as before.
     //
     // One save of layout.json, and one write of settings.json: the state's
-    // `setAll` and the mode's go through the same zero-interval timer in the
-    // same turn (pitfall 3).
+    // settings and the mode's go in one `setAll` (pitfall 3), which also
+    // re-runs every binding on a setting once rather than twice.
+    //
+    // `next` is the caller's own copy of the top level and of `profiles`;
+    // the profiles in it may still be the config's own objects, so nothing
+    // below them is changed here.
     function enterProfile(next, name) {
         const stored = next.profiles[name] ? next.profiles[name].state || null : null
         const id = Logic.builtinOf(next, name)
@@ -1298,16 +1405,17 @@ Singleton {
         // as its state. Undo starts again in every profile.
         undoStack = []
         next.activeProfile = name
-        if (!stored && !shipped) next.profiles[name].state = currentState()
-        config = stored ? Logic.restoreStateLayout(next, stored) : Logic.sanitize(next)
-        if (stored) {
-            const values = knownValues(profileLeaves(stored.settings))
-            if (Object.keys(values).length) SettingsService.setAll(values)
+        if (!stored && !shipped) {
+            next.profiles = Object.assign({}, next.profiles)
+            next.profiles[name] = Object.assign({}, next.profiles[name], { state: currentState() })
         }
+        // Every mode and state the switch does not touch stays the object it
+        // was (LayoutLogic.sanitize with the config it came from).
+        config = stored ? Logic.restoreStateLayout(next, stored, config) : Logic.sanitize(next, config)
+        const values = stored ? knownValues(profileLeaves(stored.settings)) : {}
         ensureScreens()
-        applyModeSettings(activeMode)
+        applyModeSettings(activeMode, values)
         revision++
-        changed()
         save()
         if (shipped) startBuiltin(id, name)
     }
@@ -1373,7 +1481,6 @@ Singleton {
         if (action === "current") next.profiles[name].state = currentState()
         config = Logic.sanitize(next)
         revision++
-        changed()
         save()
         if (action === "shipped") startBuiltin(id, name)
     }
@@ -1431,7 +1538,6 @@ Singleton {
 
     // A profile's own name, for a list that is not the active one.
     function profileLabelOf(name) {
-        const unused = revision
         return Logic.profileLabel(config, name)
     }
 
@@ -1439,7 +1545,6 @@ Singleton {
     // card. A mode that is not in the file has never been entered, so saying
     // "five modes" for a profile that has one would be a lie.
     function modeSummary(name) {
-        const unused = revision
         const set = modeNames.filter(entry => Logic.modesOf(config, name)[entry] !== undefined)
         // A count rather than the names: this sits in a row that elides, and
         // three names elided after the first says less than a number.
@@ -1455,11 +1560,10 @@ Singleton {
     // settings, notch and lock screen in use then (enterProfile).
     function addProfile(label) {
         if (readOnly) return ""
-        beginChange()
+        beginProfileChange()
         const step = Logic.addProfile(config, label)
         config = step.config
         revision++
-        changed()
         save()
         return step.name
     }
@@ -1468,22 +1572,20 @@ Singleton {
     // set now, any other with the state it was left with.
     function duplicateProfile(name, label) {
         if (readOnly) return ""
-        beginChange()
+        beginProfileChange()
         const state = name === activeProfile && SettingsService.loaded ? currentState() : null
         const step = Logic.duplicateProfile(config, name, label, state)
         config = step.config
         revision++
-        changed()
         save()
         return step.name
     }
 
     function renameProfile(name, label) {
         if (readOnly) return false
-        beginChange()
+        beginProfileChange()
         config = Logic.renameProfile(config, name, label)
         revision++
-        changed()
         save()
         return true
     }
@@ -1503,10 +1605,9 @@ Singleton {
         const removed = config.profiles[name]
         const states = {}
         if (removed && removed.state) states[name] = removed.state
-        beginChange(Object.keys(states).length ? states : null)
+        beginProfileChange(Object.keys(states).length ? states : null)
         config = Logic.removeProfile(config, name)
         revision++
-        changed()
         ensureScreens()
         applyModeSettings(activeMode)
         save()
@@ -1540,11 +1641,12 @@ Singleton {
         // first, as Restore takes one for the same forgetting (applyBuiltin).
         const dropped = id.length && all && name !== activeProfile ? Logic.stateOf(config, name) : null
         if (dropped) backupToday()
-        beginChange(dropped ? { [name]: dropped } : null)
+        // The modes reset are the step's, appearance and all: undone, they
+        // come back as they were (LayoutLogic.withCurrentAppearance).
+        beginProfileChange(dropped ? { [name]: dropped } : null, { [name]: all ? modeNames.slice() : [String(modeName)] })
         config = Logic.resetProfile(config, name, modeName || "", shipped)
         if (id.length && all && name !== activeProfile) config = Logic.withState(config, name, null)
         revision++
-        changed()
         ensureScreens()
         applyModeSettings(activeMode)
         save()
@@ -1584,7 +1686,6 @@ Singleton {
     }
 
     function builtinOf(name) {
-        const unused = revision
         return Logic.builtinOf(config, name)
     }
     function isBuiltinProfile(name) { return builtinOf(name).length > 0 }
@@ -1611,7 +1712,6 @@ Singleton {
             applyModeSettings(activeMode)
         }
         revision++
-        changed()
         save()
     }
 
@@ -1634,7 +1734,6 @@ Singleton {
         // it would be a step that takes nothing back.
         config = Logic.withState(config, holder, null)
         revision++
-        changed()
         save()
         return true
     }
@@ -1688,7 +1787,6 @@ Singleton {
             if (!readOnly && SettingsService.loaded && activeProfile === forProfile && waitingForShipped(forProfile)) {
                 config = Logic.withState(config, forProfile, currentState())
                 revision++
-                changed()
                 save()
             }
             return
@@ -1717,7 +1815,6 @@ Singleton {
         // the shipped setup.
         config = Logic.withState(config, activeProfile, currentState())
         revision++
-        changed()
         save()
         // Only what the script found installed: default-apps.py refuses an id
         // that is not, and that refusal would be the page's error line.
@@ -1785,14 +1882,24 @@ Singleton {
     }
 
     function removeItem(id) {
+        return removeItems([id])
+    }
+
+    // Several at once - the editor's selection - in one edit rather than one
+    // per item.
+    function removeItems(ids) {
+        const list = (Array.isArray(ids) ? ids : []).map(String)
+        if (!list.length) return false
         return mutate(mode => {
-            const target = mode.groups.find(entry => entry.id === id)
-            if (target) {
-                mode.widgets = mode.widgets.filter(entry => target.members.indexOf(entry.id) < 0)
-                mode.groups = mode.groups.filter(entry => entry.id !== id)
-            } else {
-                mode.widgets = mode.widgets.filter(entry => entry.id !== id)
-                for (const entry of mode.groups) entry.members = entry.members.filter(member => member !== id)
+            for (const id of list) {
+                const target = mode.groups.find(entry => entry.id === id)
+                if (target) {
+                    mode.widgets = mode.widgets.filter(entry => target.members.indexOf(entry.id) < 0)
+                    mode.groups = mode.groups.filter(entry => entry.id !== id)
+                } else {
+                    mode.widgets = mode.widgets.filter(entry => entry.id !== id)
+                    for (const entry of mode.groups) entry.members = entry.members.filter(member => member !== id)
+                }
             }
         })
     }
@@ -1970,11 +2077,23 @@ Singleton {
         atomicWrites: true
         watchChanges: true
         printErrors: false
-        onLoaded: { root.load(); root.adoptOnce(); root.keepPrivate(false) }
-        // Missing at startup means a fresh layout; later it is a replacement in progress.
-        onLoadFailed: if (!root.loaded) root.load()
+        onLoaded: { root.unreadableReason = ""; root.load(); root.adoptOnce(); root.keepPrivate(false) }
+        // Missing at startup means a fresh layout; later it is a replacement in
+        // progress. Any other failure is a file that is there (unreadableReason).
+        onLoadFailed: error => {
+            if (root.loaded) return
+            if (error !== FileViewError.FileNotFound)
+                root.unreadableReason = "layout.json cannot be read (" + FileViewError.toString(error) + ")"
+            root.load()
+        }
         onFileChanged: reload()
         onSaved: root.keepPrivate(true)
+        onSaveFailed: error => {
+            if (root.saveFailedWarned) return
+            root.saveFailedWarned = true
+            console.warn("buchhwin-shell: layout.json could not be written (" + FileViewError.toString(error)
+                         + "): changes are lost when the shell restarts")
+        }
     }
 
     // The version the backup below is of. 0 while nothing has been migrated,
@@ -2078,6 +2197,7 @@ Singleton {
                     root.templates = next
                     root.ensureScreens()
                     root.adoptOnce()
+                    root.resumeDndOnce()
                 } catch (error) {
                     console.warn("buchhwin-shell: mode template unreadable:", modelData, error)
                 }

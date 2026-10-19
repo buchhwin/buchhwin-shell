@@ -91,7 +91,7 @@ function contentText(account) {
 
 function icon(account) {
     const kind = primaryKind(account)
-    return kind === "mail" ? "󰇮" : kind === "calendar" ? "󰸗" : kind === "contacts" ? "󰀄" : "󰒓"
+    return kind === "mail" ? "󰇮" : kind === "calendar" ? "󰸗" : kind === "contacts" ? "󰀄" : "󰒓" // Icons.settingsApp
 }
 
 // One @instance section plus its @type section → account row.
@@ -122,9 +122,15 @@ function account(id, data, types) {
     }
 }
 
-// Whole snapshot → { known, server, tools, accounts }.
+// Every agent instance id of an @agents line, sorted.
+function agentList(arg) {
+    return String(arg || "").split(/\s+/).filter(validId).sort()
+}
+
+// Whole snapshot → { known, server, tools, agents, accounts }. `agents` is
+// null when the snapshot did not list them (the sample, an older helper).
 function parseStatus(text) {
-    const result = { known: false, server: false, tools: [], accounts: [] }
+    const result = { known: false, server: false, tools: [], agents: null, accounts: [] }
     const types = {}
     const instances = []
     for (const section of sections(text)) {
@@ -133,6 +139,8 @@ function parseStatus(text) {
             result.server = section.arg === "running"
         } else if (section.name === "tools") {
             result.tools = section.arg.split(/\s+/).filter(name => hasTool(name))
+        } else if (section.name === "agents") {
+            result.agents = agentList(section.arg)
         } else if (section.name === "type" && validId(section.arg)) {
             types[section.arg] = fields(section.lines)
         } else if (section.name === "instance" && validId(section.arg)) {
@@ -141,6 +149,53 @@ function parseStatus(text) {
     }
     result.accounts = sortAccounts(instances.map(entry => account(entry.id, entry.data, types)))
     return result
+}
+
+// ---- the poll between whole snapshots ----------------------------------------
+// The page polls every 10 s with `accounts-status.sh --status ID…`: @server,
+// @agents and, per instance, only what changes while it runs (name, status,
+// message, online, progress). Types, icons, MIME types and capabilities stay
+// those of the last whole snapshot.
+
+// Whether a snapshot can be brought up to date by a status poll: it has to be
+// a whole one of a running server that listed its agents.
+function canPoll(status) {
+    return !!status && status.known === true && status.server === true && Array.isArray(status.agents)
+}
+
+// The instance ids a status poll asks for.
+function pollIds(status) {
+    return canPoll(status) ? status.accounts.map(item => item.id).filter(validId) : []
+}
+
+// A status poll's answer laid over the last whole snapshot, or null when it
+// cannot be: the server stopped, the answer is broken, or an agent instance
+// came or went - then the next read has to be a whole one. An account the
+// answer says nothing about (a call that timed out) keeps what it showed.
+function mergeStatus(previous, text) {
+    if (!canPoll(previous)) return null
+    let server = null
+    let agents = null
+    const updates = {}
+    for (const section of sections(text)) {
+        if (section.name === "server") server = section.arg === "running"
+        else if (section.name === "agents") agents = agentList(section.arg)
+        else if (section.name === "instance" && validId(section.arg)) updates[section.arg] = fields(section.lines)
+    }
+    if (server !== true || agents === null || agents.join(" ") !== previous.agents.join(" ")) return null
+    const accounts = previous.accounts.map(item => {
+        const values = updates[item.id]
+        if (!values) return item
+        const name = typeof values.name === "string" ? values.name.trim() : ""
+        return Object.assign({}, item, {
+            name: name.length ? name : item.typeName.length ? item.typeName : item.id,
+            status: typeof values.status === "number" ? values.status : STATUS_IDLE,
+            statusMessage: typeof values.message === "string" ? values.message : "",
+            online: values.online === true,
+            progress: typeof values.progress === "number" && values.progress > 0 ? Math.round(values.progress) : 0
+        })
+    })
+    return Object.assign({}, previous, { accounts: sortAccounts(accounts) })
 }
 
 // Broken first (they need attention), then offline, then by name; resources
@@ -205,7 +260,7 @@ function lastSyncText(timestamp, now) {
     const seconds = Math.max(0, Math.round((reference - stamp) / 1000))
     if (seconds < 60) return "just now"
     const minutes = Math.floor(seconds / 60)
-    if (minutes < 60) return minutes + " min ago"
+    if (minutes < 60) return minutes + (minutes === 1 ? " minute ago" : " minutes ago")
     const hours = Math.floor(minutes / 60)
     if (hours < 24) return hours + (hours === 1 ? " hour ago" : " hours ago")
     const days = Math.floor(hours / 24)

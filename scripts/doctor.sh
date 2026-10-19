@@ -4,16 +4,81 @@ set -u
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=install/lib/distro.sh
 . "$project_dir/install/lib/distro.sh"
-distro=$(distro_detect 2>/dev/null) || distro=fedora
-package_tool=dnf5
-[[ $distro == opensuse-leap ]] && package_tool=zypper
-# Arch: the update check is checkupdates (pacman-contrib), not pacman itself.
-[[ $distro == arch ]] && package_tool=checkupdates
+# The family, not the installers' strict answer: an Arch derivative is Arch
+# here (CachyOS was told to install dnf5, with Fedora's package names), and a
+# system nobody knows gets no other system's commands - only package names.
+distro=$(distro_family 2>/dev/null) || distro=""
+package_tool=""
+case $distro in
+  fedora) package_tool=dnf5 ;;
+  opensuse-leap) package_tool=zypper ;;
+  # Arch: the update check is checkupdates (pacman-contrib), not pacman itself.
+  arch) package_tool=checkupdates ;;
+esac
 # shellcheck source=lib/hyprland-prefix.sh
 if [[ -r "$project_dir/scripts/lib/hyprland-prefix.sh" ]]; then . "$project_dir/scripts/lib/hyprland-prefix.sh"; fi
+# /usr/lib64 on Fedora and openSUSE, /usr/lib on Arch (where lib64 is a link
+# to it, but the real path reads better in a check). BUCHHWIN_QT6_DIR points
+# at another tree (tests).
+qt6_dir=/usr/lib64/qt6
+[[ -d $qt6_dir ]] || qt6_dir=/usr/lib/qt6
+[[ $distro == arch ]] && qt6_dir=/usr/lib/qt6
+qt6_dir=${BUCHHWIN_QT6_DIR:-$qt6_dir}
 status=0
+# What fails the run: what the session cannot start without. Everything else
+# that is missing is said and the run goes on - except with
+# BUCHHWIN_DOCTOR_STRICT=1, for a machine the whole package list was
+# installed on (CI), where any missing line fails it unless its id is in
+# BUCHHWIN_DOCTOR_ALLOW (words, e.g. "brave-browser", which the AUR has).
+strict=${BUCHHWIN_DOCTOR_STRICT:-0}
+allowed=" ${BUCHHWIN_DOCTOR_ALLOW:-} "
+# missing ID TEXT [required]
+missing() {
+  printf 'missing  %s\n' "$2"
+  if [[ ${3:-} == required ]] || [[ $strict == 1 && $allowed != *" $1 "* ]]; then status=1; fi
+}
+# The package a command comes in, where its name is not the command's; Arch's
+# names (the closest to upstream's) for a system nobody knows.
+package_of() {
+  case ${distro:-arch}:$1 in
+    *:wpctl) printf 'wireplumber' ;;
+    arch:pw-metadata) printf 'pipewire' ;;
+    arch:pw-record) printf 'pipewire-audio' ;;
+    fedora:pw-metadata | fedora:pw-record) printf 'pipewire-utils' ;;
+    opensuse-leap:pw-metadata | opensuse-leap:pw-record) printf 'pipewire-tools' ;;
+    arch:nmcli) printf 'networkmanager' ;;
+    *:nmcli) printf 'NetworkManager' ;;
+    arch:udevadm) printf 'systemd' ;;
+    fedora:udevadm) printf 'systemd-udev' ;;
+    opensuse-leap:udevadm) printf 'udev' ;;
+    *:checkupdates) printf 'pacman-contrib' ;;
+    opensuse-leap:plasma-discover) printf 'discover6' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+# The package per distribution: Arch's (and upstream's) name, Fedora's,
+# openSUSE's.
+package_for() {
+  case $distro in
+    fedora) printf '%s' "$2" ;;
+    opensuse-leap) printf '%s' "$3" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+for command_name in Hyprland hyprctl quickshell setpriv kitty zsh; do
+  if command -v "$command_name" >/dev/null 2>&1; then
+    printf 'ok       %s: %s\n' "$command_name" "$(command -v "$command_name")"
+  else
+    missing "$command_name" "$command_name" required
+  fi
+done
+
+# The browser and the file manager the keys start by default. A machine set
+# up with --minimal or --skip-apps, or with Firefox and another file manager
+# as its default apps, runs the session without them - said, not failed.
+printf '\nApplications (optional)\n'
 # Brave is brave-browser from Brave's own packages, brave from Arch's AUR.
-for command_name in Hyprland hyprctl quickshell setpriv kitty zsh brave-browser dolphin; do
+for command_name in brave-browser dolphin; do
   if [[ $command_name == brave-browser ]] && ! command -v brave-browser >/dev/null 2>&1 \
       && command -v brave >/dev/null 2>&1; then
     command_name=brave
@@ -21,14 +86,32 @@ for command_name in Hyprland hyprctl quickshell setpriv kitty zsh brave-browser 
   if command -v "$command_name" >/dev/null 2>&1; then
     printf 'ok       %s: %s\n' "$command_name" "$(command -v "$command_name")"
   else
-    printf 'missing  %s\n' "$command_name"
-    status=1
+    package=$command_name
+    [[ $distro == arch && $command_name == brave-browser ]] && package=brave-bin
+    missing "$command_name" "$command_name (optional; $(distro_install_hint "$distro" "$package"))"
   fi
 done
 
 printf '\nVersions\n'
 Hyprland --version 2>/dev/null | sed -n '1p' || true
 quickshell --version 2>/dev/null || true
+# A note, not a miss: the shell is made on Quickshell 0.3, and Fedora's own
+# 0.2.1 snapshot (which CI's Fedora job runs) still works with differences.
+qs_line=$(quickshell --version 2>/dev/null) || qs_line=""
+if [[ $qs_line =~ ([0-9]+)\.([0-9]+)\.[0-9]+ ]] && (( BASH_REMATCH[1] == 0 && BASH_REMATCH[2] < 3 )); then
+  printf 'note     Quickshell %s is older than 0.3.0, the version the shell is made on; expect differences\n' "${BASH_REMATCH[0]}"
+fi
+# Which allocator quickshell links, and so which of start-shell.sh's two
+# arena settings it reads. Read into a variable first (pitfall 15).
+qs_path=$(command -v quickshell 2>/dev/null) || qs_path=""
+if [[ -n $qs_path ]] && command -v readelf >/dev/null 2>&1; then
+  qs_needed=$(readelf -d "$qs_path" 2>/dev/null) || qs_needed=""
+  if [[ $qs_needed == *"NEEDED"*"libjemalloc"* ]]; then
+    printf 'ok       quickshell allocates with jemalloc (start-shell.sh sets MALLOC_CONF)\n'
+  elif [[ $qs_needed == *"NEEDED"* ]]; then
+    printf 'ok       quickshell allocates with glibc malloc (start-shell.sh sets MALLOC_ARENA_MAX)\n'
+  fi
+fi
 kitty --version 2>/dev/null || true
 zsh --version 2>/dev/null || true
 
@@ -47,18 +130,24 @@ for config_path in \
 done
 
 printf '\nShell backends\n'
-for command_name in brightnessctl wpctl pw-metadata pw-record playerctl nmcli udevadm plocate jq swaylock curl gammastep "$package_tool" flatpak plasma-discover; do
+backends=(brightnessctl wpctl pw-metadata pw-record playerctl nmcli udevadm plocate jq swaylock curl gammastep)
+[[ -n $package_tool ]] && backends+=("$package_tool")
+backends+=(flatpak)
+# Discover is the Updates page's way to upgrade, except on Arch, where the
+# page runs the upgrade in a terminal (UpdatesLogic): not looked for there.
+[[ $distro == arch ]] || backends+=(plasma-discover)
+for command_name in "${backends[@]}"; do
   if command -v "$command_name" >/dev/null 2>&1; then
     printf 'ok       %s\n' "$command_name"
   else
-    printf 'missing  %s (some shell features stay unavailable)\n' "$command_name"
+    missing "$command_name" "$command_name (some shell features stay unavailable; $(distro_install_hint "$distro" "$(package_of "$command_name")"))"
   fi
 done
 # Hyprland shows its dialogs (and a startup notice when missing) with these.
 if command -v hyprland-dialog >/dev/null 2>&1; then
   printf 'ok       hyprland-guiutils\n'
 else
-  printf 'missing  hyprland-guiutils (Hyprland dialogs and startup notice; %s)\n' "$(distro_install_hint "$distro" hyprland-guiutils)"
+  missing hyprland-guiutils "hyprland-guiutils (Hyprland dialogs and startup notice; $(distro_install_hint "$distro" hyprland-guiutils))"
 fi
 # A default app without a launcher of its own (Firefox, Konsole, foot,
 # Nautilus … in Settings > Default apps) and an app shortcut start through
@@ -67,35 +156,18 @@ fi
 if command -v gtk-launch >/dev/null 2>&1; then
   printf 'ok       gtk-launch\n'
 else
-  gtk_package=gtk3
-  [[ $distro == opensuse-leap ]] && gtk_package=gtk3-tools
-  printf 'missing  gtk-launch (default apps without a launcher of their own and app shortcuts do nothing; %s)\n' \
-    "$(distro_install_hint "$distro" "$gtk_package")"
+  missing gtk-launch "gtk-launch (default apps without a launcher of their own and app shortcuts do nothing; $(distro_install_hint "$distro" "$(package_for gtk3 gtk3 gtk3-tools)"))"
 fi
-# /usr/lib64 on Fedora and openSUSE, /usr/lib on Arch (where lib64 is a link
-# to it, but the real path reads better in a check).
-qt6_dir=/usr/lib64/qt6
-[[ -d $qt6_dir ]] || qt6_dir=/usr/lib/qt6
-[[ $distro == arch ]] && qt6_dir=/usr/lib/qt6
 # The QML modules services/CalendarService.qml imports. Without any one of
 # them the service fails to load and takes the whole shell with it, so each
 # is required: PimCalendars (kdepim-addons), the Plasma calendar
 # (plasma-workspace), KItemModels and Akonadi (merkuro pulls it in; on Fedora
 # akonadi-server ships it). The package for the hint differs per distribution.
-package_for() {
-  case $distro in
-    arch) printf '%s' "$1" ;;
-    opensuse-leap) printf '%s' "$3" ;;
-    *) printf '%s' "$2" ;;
-  esac
-}
 while IFS='|' read -r module label package; do
   if [[ -d $qt6_dir/qml/$module ]]; then
     printf 'ok       %s QML module (%s)\n' "$label" "${module//\//.}"
   else
-    printf 'missing  %s QML module %s (the shell does not load without it; %s)\n' \
-      "$label" "${module//\//.}" "$(distro_install_hint "$distro" "$package")"
-    status=1
+    missing "qml:${module//\//.}" "$label QML module ${module//\//.} (the shell does not load without it; $(distro_install_hint "$distro" "$package"))" required
   fi
 done <<MODULES
 org/kde/plasma/PimCalendars|KDE PIM calendar|kdepim-addons
@@ -108,24 +180,45 @@ MODULES
 if [[ -r $qt6_dir/plugins/plasmacalendarplugins/pimevents.so ]]; then
   printf 'ok       KDE calendar plugin (pimevents)\n'
 else
-  printf 'missing  KDE calendar plugin pimevents (dashboard events stay empty; %s)\n' "$(distro_install_hint "$distro" kdepim-addons)"
+  missing calendar-plugin "KDE calendar plugin pimevents (dashboard events stay empty; $(distro_install_hint "$distro" kdepim-addons))"
 fi
 # The Python bindings only write events, and Leap and Arch do not package
-# them - optional.
+# them - optional, and where nobody packages them nothing is missing.
 if python3 -c 'import AkonadiCore' >/dev/null 2>&1; then
   printf 'ok       Akonadi Python bindings (writing calendar events)\n'
 elif [[ $distro == fedora ]]; then
-  printf 'missing  Akonadi Python bindings (writing events unavailable; Fedora: python3-kf6-kcoreaddons python3-kf6-kcalendarcore)\n'
+  missing akonadi-python "Akonadi Python bindings (writing events unavailable; $(distro_install_hint fedora "python3-kf6-kcoreaddons python3-kf6-kcalendarcore"))"
 else
-  printf 'missing  Akonadi Python bindings (not packaged for %s: events are shown, not written)\n' "$distro"
+  printf 'note     Akonadi Python bindings are not packaged for %s: events are shown, not written\n' "${distro:-this system}"
 fi
 # From the bus's list, not with `busctl status`, which starts the daemon it
-# asks about. An activatable name counts: the shell's first call starts it.
-power_profiles=$(busctl --system --auto-start=no --no-pager list 2>/dev/null) || power_profiles=""
-if awk '$1 == "net.hadess.PowerProfiles" { found = 1 } END { exit !found }' <<<"$power_profiles"; then
-  printf 'ok       power profiles D-Bus service\n'
+# asks about. A system bus that does not answer (a container) says nothing
+# about the services on it.
+system_bus=$(busctl --system --auto-start=no --no-pager list 2>/dev/null) || system_bus=""
+if [[ -z $system_bus ]]; then
+  printf 'skip     the system bus did not answer: power profiles, NetworkManager and BlueZ not checked\n'
 else
-  printf 'missing  power profiles D-Bus service (profile controls hidden)\n'
+  # An activatable name counts for the power profiles: the shell's first
+  # call starts the daemon. Fedora's is tuned's.
+  if awk '$1 == "net.hadess.PowerProfiles" { found = 1 } END { exit !found }' <<<"$system_bus"; then
+    printf 'ok       power profiles D-Bus service\n'
+  else
+    missing power-profiles "power profiles D-Bus service (profile controls hidden; $(distro_install_hint "$distro" "$(package_for power-profiles-daemon tuned-ppd power-profiles-daemon)"))"
+  fi
+  # NetworkManager and BlueZ have to be running: nothing in the package
+  # lists enables them, Arch enables no service a package brings, and the
+  # network and Bluetooth panels then stay empty without a word.
+  running_on_bus() { awk -v name="$1" '$1 == name && $2 ~ /^[0-9]+$/ { found = 1 } END { exit !found }' <<<"$system_bus"; }
+  if running_on_bus org.freedesktop.NetworkManager; then
+    printf 'ok       NetworkManager\n'
+  else
+    missing networkmanager "NetworkManager is not running (the network panels stay empty; sudo systemctl enable --now NetworkManager)"
+  fi
+  if running_on_bus org.bluez; then
+    printf 'ok       BlueZ\n'
+  else
+    missing bluez "BlueZ is not running (no Bluetooth; $(distro_install_hint "$distro" bluez), then sudo systemctl enable --now bluetooth)"
+  fi
 fi
 
 printf '\nSession integration\n'
@@ -133,7 +226,7 @@ portal_conf="${XDG_CONFIG_HOME:-$HOME/.config}/xdg-desktop-portal/buchhwin-shell
 if [[ -r "$portal_conf" ]] && grep -q 'Secret=kwallet' "$portal_conf"; then
   printf 'ok       portal routing (KWallet secrets): %s\n' "$portal_conf"
 else
-  printf 'missing  portal routing: %s (run install/install.sh --apply)\n' "$portal_conf"
+  missing portal-routing "portal routing: $portal_conf (run install/install.sh --apply)"
 fi
 # Fedora activates it through a D-Bus service file; openSUSE's kwalletd6
 # registers the name itself and ships only the portal file.
@@ -141,7 +234,7 @@ if [[ -r /usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.kwallet.
       || -r /usr/share/xdg-desktop-portal/portals/kwallet.portal ]]; then
   printf 'ok       KWallet secret portal backend\n'
 else
-  printf 'missing  KWallet secret portal backend (kf6-kwallet)\n'
+  missing kwallet-portal "KWallet secret portal backend ($(distro_install_hint "$distro" "$(package_for kwallet kf6-kwallet kf6-kwallet)"))"
 fi
 
 printf '\nSession terminal\n'
@@ -150,7 +243,7 @@ fastfetch_config="$config_home/buchhwin-shell/fastfetch.jsonc"
 if command -v fastfetch >/dev/null 2>&1; then
   printf 'ok       fastfetch: %s\n' "$(command -v fastfetch)"
 else
-  printf 'missing  fastfetch (optional)\n'
+  missing fastfetch "fastfetch (optional; $(distro_install_hint "$distro" fastfetch))"
 fi
 # Terminal extras that follow the shell accent (Settings > Terminal writes
 # their configuration): both from Fedora's and Arch's repositories, only cava
@@ -160,14 +253,13 @@ for extra in cmatrix cava xclip; do
   if command -v "$extra" >/dev/null 2>&1; then
     printf 'ok       %s: %s\n' "$extra" "$(command -v "$extra")"
   else
-    printf 'missing  %s (optional; %s)\n' "$extra" "$(distro_install_hint "$distro" "$extra")"
+    missing "$extra" "$extra (optional; $(distro_install_hint "$distro" "$extra"))"
   fi
 done
 if [[ -r "$project_dir/zsh/.zshrc" ]]; then
   printf 'ok       session zshrc: %s\n' "$project_dir/zsh/.zshrc"
 else
-  printf 'missing  session zshrc: %s\n' "$project_dir/zsh/.zshrc"
-  status=1
+  missing session-zshrc "session zshrc: $project_dir/zsh/.zshrc" required
 fi
 if [[ -r "$fastfetch_config" ]]; then
   printf 'present  %s\n' "$fastfetch_config"
@@ -175,7 +267,7 @@ if [[ -r "$fastfetch_config" ]]; then
   if [[ -n "$logo" && -r "${logo/#\~/$HOME}" ]]; then
     printf 'present  Fastfetch logo image\n'
   elif [[ -n "$logo" ]]; then
-    printf 'missing  Fastfetch logo image: %s\n' "$logo"
+    missing fastfetch-logo "Fastfetch logo image: $logo"
   fi
 else
   printf 'absent   %s (run install/install.sh --apply to copy it)\n' "$fastfetch_config"
@@ -205,6 +297,31 @@ if command -v plocate >/dev/null 2>&1; then
       printf '         (the index may be new or empty): sudo systemctl start plocate-updatedb.service\n'
     fi
   fi
+fi
+
+# A folder of the user's own icons (Brave puts its web apps' in
+# ~/.local/share/icons/hicolor) without a current icon-theme.cache: Qt then
+# tries every directory the theme's index names, twice per icon name the first
+# time it is looked up - 39,000 failed file checks on the first launcher open
+# of a session here (19.10., strace). The cache is the user's file, and the
+# next web app makes it stale again, so it is said rather than written. Bash
+# only: the test runs this with a PATH of stand-ins.
+icon_dirs=()
+for theme_dir in "${XDG_DATA_HOME:-$HOME/.local/share}"/icons/*/; do
+  theme_dir=${theme_dir%/}
+  compgen -G "$theme_dir/*/*/*.png" >/dev/null || compgen -G "$theme_dir/*/*/*.svg" >/dev/null || continue
+  cache=$theme_dir/icon-theme.cache
+  for sub in "$theme_dir"/*/ "$theme_dir"/*/*/; do
+    [[ -d $sub ]] || continue
+    if [[ ! -e $cache || $sub -nt $cache ]]; then icon_dirs+=("$theme_dir"); break; fi
+  done
+done
+if (( ${#icon_dirs[@]} )); then
+  printf '\nIcons\n'
+  for theme_dir in "${icon_dirs[@]}"; do
+    printf 'note     %s has icons but no current icon-theme.cache, so the first lookup of each icon checks every folder of the theme:\n' "$theme_dir"
+    printf '         gtk-update-icon-cache -f -t %s\n' "$theme_dir"
+  done
 fi
 
 # A machine setting, said rather than changed: with transparent huge pages

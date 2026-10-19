@@ -29,6 +29,16 @@ ColumnLayout {
     property var rowMods: []
 
     readonly property var groups: ShortcutService.grouped(query)
+    // The list is keyed by strings - the groups by id, the rows by
+    // ShortcutService.rowKeys - and each one reads its data from here. A
+    // Repeater on the groups themselves built every group and every row still
+    // shown again on each letter typed into the search (about 120 ms for 60
+    // rows), and on every fresh read of the binds when the page opens.
+    readonly property var groupById: {
+        const table = {}
+        for (const group of root.groups) table[group.id] = group
+        return table
+    }
     readonly property var appOptions: DesktopEntries.applications.values
         .filter(app => app && !app.noDisplay)
         .map(app => ({ value: app.id, label: app.name || app.id }))
@@ -125,6 +135,7 @@ ColumnLayout {
         EmptyState {
             Layout.fillWidth: true
             visible: ShortcutService.custom.length === 0
+            row: true
             icon: "󰥻"
             title: "No shortcuts of your own yet"
         }
@@ -307,28 +318,39 @@ ColumnLayout {
         EmptyState {
             Layout.fillWidth: true
             visible: root.groups.length === 0
+            row: true
             icon: ShortcutService.binds.length ? Icons.search : Icons.busy
             title: ShortcutService.binds.length ? "No shortcut matches" : "Loading …"
         }
 
         Repeater {
-            model: root.groups
+            model: ScriptModel { values: root.groups.map(group => group.id) }
             ColumnLayout {
                 id: groupColumn
-                required property var modelData
+                required property string modelData
+                // Gone in the same turn as its column: an empty one until then.
+                readonly property var group: root.groupById[modelData] || ({ id: modelData, title: "", rows: [] })
+                readonly property var keys: ShortcutService.rowKeys(group.rows)
+                readonly property var rowByKey: {
+                    const table = {}
+                    keys.forEach((key, at) => table[key] = group.rows[at])
+                    return table
+                }
                 Layout.fillWidth: true
                 Layout.topMargin: Metrics.spaceXs
                 spacing: Metrics.spaceXs
 
-                SectionLabel { text: groupColumn.modelData.title }
+                SectionLabel { text: groupColumn.group.title }
                 Repeater {
-                    model: groupColumn.modelData.rows
+                    model: ScriptModel { values: groupColumn.keys }
                     RowLayout {
                         id: bindRow
-                        required property var modelData
-                        readonly property string defaultCombo: ShortcutService.defaultCombo(modelData.modmask, modelData.key)
+                        required property string modelData
+                        readonly property var entry: groupColumn.rowByKey[modelData]
+                            || ({ modmask: 0, key: "", keys: [], combo: "", title: "", raw: false })
+                        readonly property string defaultCombo: ShortcutService.defaultCombo(entry.modmask, entry.key)
                         readonly property bool movable: defaultCombo.length > 0
-                        readonly property string movedFrom: ShortcutService.movedFrom(modelData.modmask, modelData.key)
+                        readonly property string movedFrom: ShortcutService.movedFrom(entry.modmask, entry.key)
                         // Both empty compare equal, and the rows that stand
                         // for nine bindings at once ("Go to workspace 1-9")
                         // have no single combination - so they all showed
@@ -350,9 +372,9 @@ ColumnLayout {
                         onFocusChanged: if (focus) forceActiveFocus()
                         ShellText {
                             Layout.fillWidth: true
-                            text: bindRow.modelData.title
-                            font.family: bindRow.modelData.raw ? Typography.monoFamily : Typography.family
-                            color: bindRow.modelData.raw ? Colors.mutedText : Colors.text
+                            text: bindRow.entry.title
+                            font.family: bindRow.entry.raw ? Typography.monoFamily : Typography.family
+                            color: bindRow.entry.raw ? Colors.mutedText : Colors.text
                         }
                         // What a moved shortcut started on, so the list says
                         // so instead of quietly reading differently than the
@@ -365,7 +387,7 @@ ColumnLayout {
                         KeyChips {
                             Layout.alignment: Qt.AlignVCenter
                             visible: !bindRow.editing
-                            keys: bindRow.modelData.keys
+                            keys: bindRow.entry.keys
                         }
 
                         // While one is being moved the row becomes its editor,

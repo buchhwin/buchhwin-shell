@@ -7,6 +7,8 @@ import qs.services
 import qs.shell.components
 import "../../services/LayoutLogic.js" as Logic
 import "../../services/profile/ProfileLogic.js" as Profile
+import "SnapEngine.js" as Snap
+import "EditLogic.js" as EditLogic
 
 // Super+Alt+E layout editor for every desktop mode. Widgets: add, remove,
 // move, scale, group, style, show or hide them, move them between monitors.
@@ -225,14 +227,12 @@ Variants {
             function otherRects(id) {
                 return Object.keys(rects).filter(key => key !== id).map(key => rects[key])
             }
-            function change(callback) {
-                LayoutService.beginChange()
-                callback()
-                LayoutService.save()
-            }
+            // One undo step and a write, or neither when the edit changed
+            // nothing (EditLogic).
+            function change(callback) { EditLogic.change(LayoutService, callback) }
             function removeSelection() {
                 if (!selection.length) return
-                change(() => selection.slice().forEach(id => LayoutService.removeItem(id)))
+                change(() => LayoutService.removeItems(selection.slice()))
                 selection = []
             }
 
@@ -242,7 +242,7 @@ Variants {
             Keys.onEscapePressed: {
                 // A drag is what Escape cancels first, everywhere: closing the
                 // editor out from under a held item would write the drop.
-                if (LayoutService.arrangeDragging.length) notchOverlay.cancelAll()
+                if (dragRunning()) cancelDrags()
                 // A control Tab reached hands the keys back to the editor.
                 else if (editorRoot.Window.activeFocusItem !== editorRoot) takeFocus()
                 // Only a picker that is on screen: it stays "open" in notch
@@ -253,7 +253,41 @@ Variants {
                 else if (barPill.length) selectBar("", -1)
                 else LayoutService.editMode = false
             }
-            Keys.onDeletePressed: zonesMode ? removeBarSelection() : removeSelection()
+            // Not from a control that has the keys (Ctrl+Tab took them
+            // there): what it ignores does not remove what is selected, as
+            // Keys.onPressed below has it for every other key. That rule
+            // never reached Delete: a key's own handler runs first and takes
+            // the key.
+            Keys.onDeletePressed: event => {
+                if (editorRoot.Window.activeFocusItem !== editorRoot) {
+                    event.accepted = false
+                    return
+                }
+                zonesMode ? removeBarSelection() : removeSelection()
+            }
+
+            // Every drag the editor can have running: the notch's (its
+            // overlay sets arrangeDragging), a pill's (editorDragging) and a
+            // widget card's move or resize. Escape ends them, before
+            // anything else it does.
+            function dragRunning() {
+                if (LayoutService.arrangeDragging.length || LayoutService.editorDragging.length) return true
+                for (let index = 0; index < cards.count; ++index) {
+                    const card = cards.itemAt(index)
+                    if (card && (card.dragging || card.resizing)) return true
+                }
+                return false
+            }
+            function cancelDrags() {
+                if (LayoutService.arrangeDragging.length) notchOverlay.cancelAll()
+                barOverlay.cancelDrag()
+                for (let index = 0; index < cards.count; ++index) {
+                    const card = cards.itemAt(index)
+                    if (!card) continue
+                    card.cancelDrag()
+                    card.cancelResize()
+                }
+            }
             function cycleSelection(step) {
                 const ids = LayoutService.placementIds(screenName, true)
                 if (!ids.length) return
@@ -381,6 +415,7 @@ Variants {
             }
 
             Repeater {
+                id: cards
                 model: editorRoot.widgetsMode ? LayoutService.placementIds(editorRoot.screenName, true) : []
                 WidgetCard {
                     required property string modelData
@@ -653,7 +688,11 @@ Variants {
             // Options of the selected pill (desktop mode "Bar").
             BarInspector {
                 editor: editorRoot
-                // Opposite the selected pill, so the inspector never covers it.
+                // On the side of the selected pill's zone (the right zone's on
+                // the right, the others' on the left, and on the right while
+                // the picker takes the left), below the bar or beside it:
+                // contentTop, contentLeft and contentRight keep it clear of
+                // the bar, so it never covers the pill.
                 x: editorRoot.pickerOpen || !editorRoot.barPlace || editorRoot.barPlace.zone === "right"
                     ? editorRoot.width - width - editorRoot.contentRight : editorRoot.contentLeft
                 y: Math.max(editorRoot.contentTop, (toolbar.y - height) / 2)
@@ -665,11 +704,13 @@ Variants {
             EditorPanel {
                 id: inspector
                 visible: editorRoot.widgetsMode && editorRoot.selectedItems.length > 0
-                // Vertically centred on the side away from the selection.
-                readonly property var selectedRect: editorRoot.primary ? editorRoot.rects[editorRoot.primary.id] : null
-                readonly property bool onLeft: selectedRect !== null && selectedRect !== undefined
-                    && selectedRect.x + selectedRect.width / 2 > editorRoot.width * 0.75 && !editorRoot.pickerOpen
-                    ? false : selectedRect && selectedRect.x + selectedRect.width / 2 > editorRoot.width / 2 ? false : !editorRoot.pickerOpen
+                // Vertically centred on the side away from the selection
+                // (SnapEngine.inspectorOnLeft); it used to open on the
+                // selected widget's own side, over it. A dragged widget takes
+                // it across once it is dropped: the drop changes the stored
+                // widget, and selectedRect is read again with it.
+                readonly property var selectedRect: editorRoot.primary ? editorRoot.rects[editorRoot.primary.id] || null : null
+                readonly property bool onLeft: Snap.inspectorOnLeft(selectedRect, editorRoot.width, editorRoot.pickerOpen)
                 x: onLeft ? editorRoot.contentLeft : editorRoot.width - width - editorRoot.contentRight
                 y: Math.max(editorRoot.contentTop, (toolbar.y - height) / 2)
                 width: Metrics.editorSidebarWidth

@@ -2,7 +2,7 @@
   "configVersion": 1,
   "id": "island",
   "label": "Island",
-  "description": "A small pill with the workspaces, the time and the status; on hover an island with the time and date, the app, music, notifications and status.",
+  "description": "A slim notch with the workspaces, the time and the status; on hover the time and date, the app and workspaces, music, notifications and status.",
   "collapsed": [
     {
       "type": "workspace",
@@ -42,7 +42,10 @@
     {
       "type": "media",
       "w": 2,
-      "h": 2
+      "h": 2,
+      "options": {
+        "hideEmpty": true
+      }
     },
     {
       "type": "notificationIndicator",

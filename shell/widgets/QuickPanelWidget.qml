@@ -22,7 +22,7 @@ WidgetBase {
     // Do Not Disturb wins the glyph when it is on: it is the one that changes
     // whether the machine may interrupt you, which is the thing you would want
     // to be reminded of.
-    icon: root.dnd ? "󰂛" : root.nightLight ? "󰖔" : root.wifiOff ? "󰤮" : "󰕮"
+    icon: root.dnd ? "󰂛" : root.nightLight ? Icons.nightLight : root.wifiOff ? "󰤮" : "󰕮"
     iconColor: root.dnd || root.wifiOff ? root.warningInk : root.glyphInk
     label: ""
 

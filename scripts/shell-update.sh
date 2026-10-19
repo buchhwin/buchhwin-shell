@@ -6,7 +6,8 @@ set -euo pipefail
 # remote it follows.
 #
 #   shell-update.sh check [--offline]   what the remote has that this has not
-#   shell-update.sh apply               fast-forward, re-run install.sh, reload
+#   shell-update.sh apply               fast-forward, re-run install.sh, reload,
+#                                       and say what else the new version needs
 #
 # `check` prints "@NAME EXIT" sections the way updates-check.sh does, parsed by
 # services/updates/UpdatesLogic.js:
@@ -71,6 +72,77 @@ notify_failure() {
     "It stopped with exit $code; journalctl --user -u buchhwin-shell-update says why." 2>/dev/null || true
 }
 
+# What an update cannot do by itself, one line each, for the notification:
+# install.sh --apply links the user's side, but the packages a newer version
+# lists (install/packages/) need bootstrap.sh, and the system's copies of the
+# session entry, the lock screen's PAM files and, on Leap, the Hyprland build
+# need their own installers with root rights. An update used to bring none of
+# it - the Citrix clipboard bridge arrived without the xclip it reads with,
+# a fixed PAM file never reached /etc/pam.d. Only what the update changed is
+# named: a package the new version adds and this system does not have yet.
+update_notes() {
+  local from=$1 to=$2 changed distro name joined count=0
+  local -a missing=() names_from=() names_to=()
+  changed=$(g diff --name-only "$from" "$to" 2>/dev/null) || return 0
+  # shellcheck source=../install/lib/distro.sh
+  distro=$(source "$dir/install/lib/distro.sh" && distro_detect 2>/dev/null) || distro=""
+  if [[ -n $distro ]] && grep -q "^install/packages/$distro\.sh$" <<<"$changed"; then
+    mapfile -t names_from < <(package_names "$from" "$distro")
+    mapfile -t names_to < <(package_names "$to" "$distro")
+    local -A had=()
+    for name in "${names_from[@]}"; do [[ -n $name ]] && had[$name]=1; done
+    local -a added=()
+    for name in "${names_to[@]}"; do
+      [[ -n $name && -z ${had[$name]:-} ]] && added+=("$name")
+    done
+    if (( ${#added[@]} )); then mapfile -t missing < <(not_installed "$distro" "${added[@]}"); fi
+    count=${#missing[@]}
+    if (( count )); then
+      printf -v joined '%s, ' "${missing[@]}"
+      if (( count == 1 )); then
+        printf '1 new package (%s): install/bootstrap.sh --apply\n' "${joined%, }"
+      else
+        printf '%d new packages (%s): install/bootstrap.sh --apply\n' "$count" "${joined%, }"
+      fi
+    fi
+  fi
+  if grep -qE '^session/(buchhwin-shell-session-wrapper|buchhwin-shell\.desktop\.in)$' <<<"$changed"; then
+    printf 'The session entry changed: sudo install/system-install.sh\n'
+  fi
+  if grep -q '^session/pam/' <<<"$changed"; then
+    printf "The lock screen's PAM files changed: compare /etc/pam.d/buchhwin-lock* with session/pam/\n"
+  fi
+  if [[ $distro == opensuse-leap ]] && grep -q '^install/build-hyprland-leap\.sh$' <<<"$changed"; then
+    printf "Hyprland's build changed: install/build-hyprland-leap.sh --apply\n"
+  fi
+}
+# The names a version of the distribution's list installs with every run of
+# bootstrap.sh (--minimal too): its bootstrap, core, package and font lists
+# (the fonts unless --skip-fonts). The
+# list is shell code of the repository's own; read in a subshell.
+package_names() {
+  (
+    bootstrap_packages=() core=() packages=() font_packages=()
+    # shellcheck disable=SC1090
+    source <(g show "$1:install/packages/$2.sh" 2>/dev/null) >/dev/null 2>&1 || exit 0
+    printf '%s\n' "${bootstrap_packages[@]}" "${core[@]}" "${packages[@]}" "${font_packages[@]}"
+  )
+}
+# Of the names given, those this system has nothing installed for.
+not_installed() {
+  local distro=$1
+  shift
+  case $distro in
+    arch)
+      # `pacman -T` prints every dependency nothing installed satisfies.
+      command -v pacman >/dev/null 2>&1 || return 0
+      pacman -T "$@" 2>/dev/null || true ;;
+    *)
+      command -v rpm >/dev/null 2>&1 || return 0
+      rpm -q --whatprovides "$@" 2>/dev/null | sed -n 's/^no package provides //p' || true ;;
+  esac
+}
+
 case "$action" in
   check)
     if ! is_checkout; then
@@ -114,10 +186,15 @@ case "$action" in
     g merge --ff-only --quiet '@{u}'
     "$dir/install/install.sh" --apply >/dev/null
     printf 'Updated %s: %s -> %s\n' "$dir" "$(g rev-parse --short "$from")" "$(g rev-parse --short "$to")"
+    # A question that fails costs the notes, never the update.
+    notes=$(update_notes "$from" "$to" 2>/dev/null) || notes=""
+    if [[ -n $notes ]]; then printf '%s\n' "$notes"; fi
     reload_for_changes "$dir" "$from" "$to"
     if command -v notify-send >/dev/null 2>&1; then
+      body=$(g log -1 --format=%s)
+      if [[ -n $notes ]]; then body+=$'\n'$notes; fi
       notify-send --app-name=Updates --icon=system-software-update -- \
-        "buchhwin-shell updated" "$(g log -1 --format=%s)" 2>/dev/null || true
+        "buchhwin-shell updated" "$body" 2>/dev/null || true
     fi
     ;;
   *)

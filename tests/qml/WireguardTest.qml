@@ -24,8 +24,8 @@ ShellRoot {
              "the form as a wg-quick file")
         T.eq([W.nameFromPath("/home/x/office-vpn.conf"), W.nameFromPath("")], ["office-vpn", "WireGuard"], "a file's name")
         T.eq(W.nameFromPath("/home/x/home.config"), "home", "a .config file loses its extension too")
-        // The public key belongs to the private key it was made from
-        // (ui-b#6): a pasted key of the provider's hides the generated one's.
+        // The public key belongs to the private key it was made from: a
+        // pasted key of the provider's hides the generated one's.
         const tag = text => "tag:" + text
         T.eq(W.publicFor(key, "PUB", tag(key), tag), "PUB", "the key it was made from shows it")
         T.eq(W.publicFor("  " + key + "\n", "PUB", tag(key), tag), "PUB", "outer spaces do not matter")

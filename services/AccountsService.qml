@@ -8,8 +8,11 @@ import "accounts/AccountsLogic.js" as Logic
 // their credentials; the shell has no OAuth and stores no tokens. A read-only
 // snapshot comes from scripts/accounts-status.sh (busctl on the AgentManager,
 // never starting Akonadi); Sync now, Settings … and Remove call the same
-// interface. Nothing runs unless the page tracks the service; it then refreshes
-// every 10 s. Actions only run in the real session, nested sessions and the
+// interface. Nothing runs unless the page tracks the service; it then reads
+// the whole snapshot as the page opens and after every action, and only the
+// accounts' status every 10 s in between (`--status`, about a third of the
+// calls: types and icons do not change while an account exists). Actions only
+// run in the real session, nested sessions and the
 // preview show the command instead. Account names stay in the UI: they are
 // never logged and never leave through IPC.
 Singleton {
@@ -75,11 +78,26 @@ Singleton {
     }
 
     // ---- snapshot -------------------------------------------------------------
+    // The whole snapshot.
     function refresh() {
         preview = false
         now = Date.now()
         if (statusProc.running) { refreshQueued = true; return }
         loading = true
+        statusProc.partial = false
+        statusProc.command = [Paths.script("accounts-status.sh")]
+        statusProc.running = true
+    }
+
+    // The poll: the status of the accounts already shown, laid over the last
+    // whole snapshot - or the whole one again when that cannot be done.
+    function poll() {
+        now = Date.now()
+        if (statusProc.running) return
+        if (!Logic.canPoll(liveStatus)) { refresh(); return }
+        loading = true
+        statusProc.partial = true
+        statusProc.command = [Paths.script("accounts-status.sh"), "--status"].concat(Logic.pollIds(liveStatus))
         statusProc.running = true
     }
 
@@ -102,12 +120,21 @@ Singleton {
     Process {
         id: statusProc
         stderr: ErrorLog { label: "AccountsService.statusProc" }
-        command: [Paths.script("accounts-status.sh")]
+        // A status poll (`--status`) rather than the whole snapshot.
+        property bool partial: false
         stdout: StdioCollector {
             onStreamFinished: {
                 root.loading = false
                 root.now = Date.now()
-                root.applyStatus(Logic.parseStatus(text))
+                if (!statusProc.partial) {
+                    root.applyStatus(Logic.parseStatus(text))
+                } else {
+                    const merged = Logic.mergeStatus(root.liveStatus, text)
+                    // An account came or went, or the server stopped: the
+                    // whole snapshot says what is there now.
+                    if (merged) root.applyStatus(merged)
+                    else root.refreshQueued = true
+                }
                 if (root.refreshQueued) {
                     root.refreshQueued = false
                     Qt.callLater(root.refresh)
@@ -121,7 +148,7 @@ Singleton {
         interval: 10000
         repeat: true
         running: root.trackers > 0 && !root.preview
-        onTriggered: root.refresh()
+        onTriggered: root.poll()
     }
 
     Timer {
@@ -273,9 +300,10 @@ Singleton {
         previewSync = stamps
     }
 
+    // Read only for the preview, like the other services' samples.
     FileView {
         id: sampleFile
-        path: Paths.shellFile("tests/fixtures/accounts-status.txt")
+        path: root.preview ? Paths.shellFile("tests/fixtures/accounts-status.txt") : ""
         printErrors: false
         onLoaded: if (root.preview) root.applySample(text())
     }

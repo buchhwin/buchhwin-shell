@@ -105,11 +105,29 @@ function lockProcess(shellId) {
     return String(shellId || "") === LOCK_SHELL_ID
 }
 
-// Only nested test sessions may use the test PAM services (tests/fixtures/pam).
-var TEST_SERVICES = ["test-permit", "test-deny", "test-fingerprint"]
+// The test hooks - a PAM fixture instead of the real service, the lid
+// override, the preview windows instead of a session lock - need more than
+// BUCHHWIN_NESTED=1. A flag can leak into a real session's environment (the
+// user manager's, or a shell restarted from a terminal set up for nested
+// tests), and a lock that then took test-permit would accept any password
+// without a word. The lock directory says who started it:
+// scripts/session-action.sh names it `…/lock` for the real session and
+// `…/lock-nested` for a nested one, so a directory that is not the nested
+// one refuses the hooks. A lock started by hand (nested screenshots, with
+// `quickshell -p lock.qml`) has none, and keeps them - the real session's
+// lock is only ever started by session-action.sh.
+function testHooksAllowed(nested, lockDir) {
+    if (nested !== true) return false
+    var dir = String(lockDir || "")
+    return !dir.length || /\/lock-nested\/?$/.test(dir)
+}
 
-function pamService(nested, requested) {
-    if (nested && TEST_SERVICES.indexOf(requested) >= 0) return requested
+// Only nested test sessions may use the test PAM services (tests/fixtures/pam).
+// `hooks` is testHooksAllowed.
+var TEST_SERVICES = ["test-permit", "test-deny", "test-fingerprint", "test-password", "test-fingerprint-late"]
+
+function pamService(hooks, requested) {
+    if (hooks === true && TEST_SERVICES.indexOf(requested) >= 0) return requested
     return "buchhwin-lock"
 }
 
@@ -117,11 +135,45 @@ function pamService(nested, requested) {
 // when the password is submitted while the fingerprint reader still blocks the
 // prompt. `installed`: /etc/pam.d/buchhwin-lock-password exists; without it
 // the main service is kept (the password is checked after the reader gives up).
-// The nested fixture test-fingerprint pairs with test-permit.
+// The nested fixture test-fingerprint pairs with test-permit, and
+// test-fingerprint-late with test-password.
 function passwordService(service, installed) {
     if (service === "buchhwin-lock") return installed ? "buchhwin-lock-password" : "buchhwin-lock"
     if (service === "test-fingerprint") return "test-permit"
+    if (service === "test-fingerprint-late") return "test-password"
     return service
+}
+
+// A password submitted before the conversation had said anything waits to be
+// asked for (`pending`). When the reader then announces itself instead, the
+// password prompt would only come after the reader gives up - pam_fprintd
+// waits 30 s for a finger, with every key dropped meanwhile. pam_fprintd
+// speaks ~0.6 s after a conversation starts, and one starts 1 s after every
+// rejected attempt, so a quick retry after a typo landed in that gap. The
+// password then goes the password-only way at once, as it does when it is
+// submitted while the reader waits - when there is such a service.
+function passwordInstead(stage, pending, service, passwordOnlyService) {
+    return stage === true && pending === true && passwordOnlyService !== service
+}
+
+// Whether the fastfetch logo (the `logo` object of the shell's
+// fastfetch.jsonc) can be a picture, which the lock shows as the avatar.
+// Only scripts/fastfetch-image.py can say for certain - with no type
+// ("auto") fastfetch decides by what the file holds - and asking it costs a
+// Python start at every lock (~76 ms) for an answer the configuration often
+// gives itself: no source, a named logo, a text one (the buchhwin profile's
+// saturn.txt) or a .txt file is no picture. The types as logo_kind reads them.
+var LOGO_NAMED_TYPES = ["builtin", "small", "none"]
+var LOGO_TEXT_TYPES = ["file", "file-raw", "data", "data-raw"]
+var LOGO_IMAGE_TYPES = ["kitty", "kitty-direct", "kitty-icat", "sixel", "iterm", "chafa", "raw"]
+
+function logoMayBePicture(logo) {
+    if (!logo || typeof logo !== "object") return false
+    var source = typeof logo.source === "string" ? logo.source : ""
+    var type = typeof logo.type === "string" && logo.type.length ? logo.type.toLowerCase() : "auto"
+    if (!source.length || LOGO_NAMED_TYPES.indexOf(type) >= 0 || LOGO_TEXT_TYPES.indexOf(type) >= 0) return false
+    if (LOGO_IMAGE_TYPES.indexOf(type) >= 0) return true
+    return !/\.txt$/i.test(source)
 }
 
 // Fingerprint unlock mode (setting lock.fingerprint): "auto" offers the reader
@@ -142,9 +194,9 @@ function parseLidClosed(output, exitCode) {
 }
 
 // Nested test hook BUCHHWIN_LOCK_LID_CLOSED=1|0: true/false, otherwise null
-// (read UPower). Ignored outside nested sessions.
-function lidOverride(nested, value) {
-    if (!nested) return null
+// (read UPower). Ignored without the test hooks (`hooks`, testHooksAllowed).
+function lidOverride(hooks, value) {
+    if (hooks !== true) return null
     if (value === "1") return true
     if (value === "0") return false
     return null

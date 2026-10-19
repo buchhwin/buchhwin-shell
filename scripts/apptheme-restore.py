@@ -11,14 +11,20 @@ keys of [General] and [KDE]) that plasma-apply-colorscheme rewrites.
 scripts/session-action.sh logout runs this helper before the compositor exits,
 and a Plasma autostart entry (OnlyShowIn=KDE) runs it again as a safety net
 after a crash. When the shell changed the values and "Restore Plasma colors at
-logout" is on, kdeglobals gets exactly the backed-up entries back through
-kwriteconfig6 (entries added since are deleted), apps are told the palette
-changed, the GNOME keys are set again and, when all of that succeeded, the
-state file forgets the saved values (the next login saves them again). Only
-kwriteconfig6 on kdeglobals colour entries, plasma-apply-colorscheme (older
-state files without a backup), the palette notification and the three gsettings
-keys the shell sets are run, and the GTK files below are written back. Nested
-test sessions never run anything.
+logout" is on, kdeglobals gets exactly the backed-up entries back (entries
+added since are deleted), apps are told the palette changed, the GNOME keys
+are set again and, when all of that succeeded, the state file forgets the
+saved values (the next login saves them again). Only kwriteconfig6 on
+kdeglobals colour entries, plasma-apply-colorscheme (older state files without
+a backup), the palette notification and the three gsettings keys the shell
+sets are run, and the GTK files below are written back. Nested test sessions
+never run anything.
+
+At the shell's logout, kdeglobals is written in one pass instead (see
+one_pass_text): kwriteconfig6 is one process per entry, and after "Apps follow
+theme" that was up to ~120 of them, one after another, while the desktop
+waited for the compositor to exit. Inside Plasma (the autostart run) and for
+a file the one pass does not edit safely, kwriteconfig6 does it as before.
 
 `--snapshot` prints the colour entries of kdeglobals as JSON (read-only); the
 shell stores that output as the backup.
@@ -34,10 +40,12 @@ through a symbolic link to the file it names, with its permissions kept.
 """
 
 import argparse
+import fcntl
 import json
 import os
 import pathlib
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -188,6 +196,168 @@ def kde_restore_commands(backup, current):
     commands = [kwrite_command(list(group), key) for (group, key) in now if (group, key) not in wanted]
     commands += [kwrite_command(list(group), key, value) for (group, key), value in wanted.items() if now.get((group, key)) != value]
     return commands
+
+
+def one_pass_text(text, backup):
+    """kdeglobals with its colour entries turned into `backup` in one pass, or None.
+
+    The same change kde_restore_commands makes with kwriteconfig6: an entry of
+    the backup that differs or is missing is set, a colour entry the backup
+    does not have is deleted, everything else is left alone. And left alone
+    byte for byte - other groups, comments, blank lines, the order - where
+    KConfig would write the whole file anew. A missing entry goes after the
+    last entry of its group, a missing group to the end.
+
+    None for a file whose shape this does not edit safely, which kwriteconfig6
+    then edits: a group that appears twice, a colour key that is localized or
+    carries KConfig flags, the same key twice, a flagged group header ([$i])
+    of a group the backup writes to. The result is read back, and anything
+    but exactly the backup's entries is None as well.
+    """
+    wanted, order = {}, []
+    for group, key, value in backup:
+        name = (tuple(group), key)
+        if name not in wanted:
+            order.append(name)
+        wanted[name] = value
+    current = {(tuple(group), key) for group, key, _value in parse_kdeglobals(text)}
+    if text and not text.endswith("\n"):
+        text += "\n"
+    out = []
+    seen = set()
+    done = set()
+    last_entry = {}
+    group = None
+    for raw in text.splitlines(keepends=True):
+        line = raw.strip()
+        if line.startswith("["):
+            parts = re.findall(r"\[([^\]]*)\]", line)
+            if not parts or "".join(f"[{part}]" for part in parts) != line:
+                return None
+            base = tuple(part for part in parts if not part.startswith("$"))
+            if len(base) != len(parts):
+                # Immutable or otherwise flagged: not ours, unless the backup
+                # writes to that group.
+                if any(name[0] == base for name in wanted):
+                    return None
+                group = None
+            else:
+                if base in seen:
+                    return None
+                seen.add(base)
+                group = base
+                last_entry[group] = len(out)
+            out.append(raw)
+            continue
+        if group is None or not line or line.startswith("#") or "=" not in line:
+            out.append(raw)
+            continue
+        key = line.split("=", 1)[0].strip()
+        value = line.split("=", 1)[1].strip()
+        plain_key = key.split("[", 1)[0]
+        if plain_key != key and managed(list(group), plain_key):
+            return None
+        name = (group, key)
+        if not managed(list(group), key):
+            out.append(raw)
+            last_entry[group] = len(out)
+            continue
+        if name in done:
+            return None
+        done.add(name)
+        if name in wanted:
+            out.append(raw if value == wanted[name] else f"{key}={wanted[name]}\n")
+            last_entry[group] = len(out)
+        elif name not in current:
+            # A colour key the backup could never hold (an escaped value):
+            # kwriteconfig6 would not have touched it either.
+            out.append(raw)
+            last_entry[group] = len(out)
+    inserts, new_groups = {}, {}
+    for name in order:
+        if name in done:
+            continue
+        line = f"{name[1]}={wanted[name]}\n"
+        if name[0] in seen:
+            inserts.setdefault(last_entry[name[0]], []).append(line)
+        else:
+            new_groups.setdefault(name[0], []).append(line)
+    result = []
+    for index in range(len(out) + 1):
+        result.extend(inserts.get(index, []))
+        if index < len(out):
+            result.append(out[index])
+    for group_name, lines in new_groups.items():
+        if result and result[-1].strip():
+            result.append("\n")
+        result.append("".join(f"[{part}]" for part in group_name) + "\n")
+        result.extend(lines)
+    edited = "".join(result)
+    expected = {name: wanted[name] for name in order}
+    if {(tuple(group), key): value for group, key, value in parse_kdeglobals(edited)} != expected:
+        return None
+    return edited
+
+
+def restore_kde_one_pass(backup, path=None):
+    """kdeglobals restored from `backup` in one pass; False when it cannot be here.
+
+    KConfig's own lock is taken for the write, the way its writers take it
+    (QLockFile: `<file>.lock`, made exclusively, with the pid, the program and
+    the host in it), so a KDE program writing kdeglobals at the same moment
+    waits rather than writing its copy over this one. QLockFile counts a lock
+    as stale, and removes it, when the program it names is not the executable
+    running under its pid - kwriteconfig6 took over a lock that said
+    "apptheme-restore" at once - and it flocks a lock before it removes one.
+    So the lock names the executable and stays flocked for as long as it is
+    there (kwriteconfig6 then waited for it, checked in a sandbox). A lock
+    that is there already, a file that is not, or a shape one_pass_text
+    refuses: False, and kwriteconfig6 does it.
+    """
+    path = path or config_home() / "kdeglobals"
+    try:
+        real = path.resolve(strict=True)
+        if one_pass_text(real.read_text(), backup) is None:
+            return False
+    except (OSError, RuntimeError, ValueError):
+        return False
+    lock = pathlib.Path(str(real) + ".lock")
+    try:
+        handle = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        os.write(handle, f"{os.getpid()}\n{process_name()}\n{socket.gethostname()}\n".encode())
+        # Read again under the lock: a writer may have finished just before it.
+        text = real.read_text()
+        edited = one_pass_text(text, backup)
+        if edited is None:
+            return False
+        if edited != text:
+            write_kept(real, edited)
+        return True
+    except (OSError, ValueError):
+        return False
+    finally:
+        # Gone before the flock is: no moment in which the file is there for
+        # another writer to take as stale.
+        lock.unlink(missing_ok=True)
+        os.close(handle)
+
+
+def process_name():
+    """This process as QLockFile names it: the file name of /proc/self/exe."""
+    try:
+        return os.path.basename(os.readlink("/proc/self/exe"))
+    except OSError:
+        return os.path.basename(sys.executable or "python3")
+
+
+def one_pass_here():
+    """Not inside Plasma: its own programs may be writing kdeglobals while it
+    starts, and there kwriteconfig6 goes through KConfig as before."""
+    return "KDE" not in os.environ.get("XDG_CURRENT_DESKTOP", "").split(":")
 
 
 def valid_command(command):
@@ -490,6 +660,10 @@ def main(argv=None):
 
     status = 0
     env = command_environment()
+    if not args.dry_run and one_pass_here() and any(command[0] == "kwriteconfig6" for command in commands):
+        backup = backup_entries(state.get("saved"))
+        if backup is not None and restore_kde_one_pass(backup):
+            commands = [command for command in commands if command[0] != "kwriteconfig6"]
     for command in commands:
         if args.dry_run:
             print(json.dumps(command))

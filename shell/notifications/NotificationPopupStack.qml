@@ -68,7 +68,7 @@ PanelWindow {
     // The dock beyond the bar, or beside the corner: the stack stands clear
     // of it rather than over it - a bottom bar's popups came up right where
     // the dock stands beyond it, and the corner ones covered a right dock
-    // (round 12, ui-rest#4; the OSD already did this). Read only while the
+    // (the OSD already did this). Read only while the
     // dock is on, so a popup never starts the dock's service (pitfall 101).
     readonly property var dockState: SettingsService.value("dock.enabled") === true
         ? Object.assign({ position: DockService.position, shown: DockService.shownOn[screenName] === true,
@@ -83,14 +83,25 @@ PanelWindow {
     // The notch can be the display itself, and then the newest popup appears
     // *in* it and this stack stays away. Only the newest: the notch is a strip
     // and a stack of three in it would be the overview with notifications in
-    // it, which is the thing this replaces.
-    readonly property var newest: NotificationService.popups.length
-        ? NotificationService.popups[0] : null
+    // it, which is the thing this replaces. The notch's click holds the same
+    // one (NotificationService.notchPopup).
+    readonly property var newest: NotificationService.notchPopup
     readonly property bool inNotch: newest !== null
         && !PanelService.isOpen("notifications")
         && NotchService.takesDisplay("notification", screenName)
     onInNotchChanged: publish()
     onNewestChanged: publish()
+    // The notch shows what `publish` took from the notification at that
+    // moment; a sender that replaces it in place (replaces_id) changes the
+    // object, and the notch kept the old words while the card had the new.
+    Connections {
+        target: window.newest
+        function onSummaryChanged() { window.publish() }
+        function onBodyChanged() { window.publish() }
+        function onImageChanged() { window.publish() }
+        function onAppIconChanged() { window.publish() }
+        function onUrgencyChanged() { window.publish() }
+    }
     // Worked out from what `newest` is *now*, not from `inNotch`: this runs
     // from `onNewestChanged`, and `inNotch` is a binding on `newest` that has
     // not been re-evaluated yet when the handler fires - so the popup that
@@ -103,7 +114,8 @@ PanelWindow {
             && !PanelService.isOpen("notifications")
             && NotchService.takesDisplay("notification", screenName)
         NotchService.setDisplay("notification", screenName,
-            shown ? Logic.notchContent(notification, name => Quickshell.iconPath(name, true)) : null)
+            shown ? Logic.notchContent(notification, name => Quickshell.iconPath(name, true),
+                                       NotificationService.isCritical(notification)) : null)
     }
 
     screen: targetScreen
@@ -168,11 +180,21 @@ PanelWindow {
                 }
 
                 Timer {
+                    id: expiry
                     readonly property int timeout: card.modelData.expireTimeout > 0
                         ? card.modelData.expireTimeout : SettingsService.value("notifications.popupTimeoutMs")
                     interval: timeout
                     running: !card.critical && !card.hovered && NotificationService.heldPopup !== card.modelData
                     onTriggered: NotificationService.hidePopup(card.modelData)
+                }
+                // Replaced in place while it is up (a new message in the same
+                // thread): the new words get the whole time again. Only a
+                // running timer - one held by the pointer or the notch stays
+                // held.
+                Connections {
+                    target: card.modelData
+                    function onSummaryChanged() { if (expiry.running) expiry.restart() }
+                    function onBodyChanged() { if (expiry.running) expiry.restart() }
                 }
             }
         }

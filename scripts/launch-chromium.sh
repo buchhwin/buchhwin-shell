@@ -38,7 +38,11 @@ set -euo pipefail
 #     (components/dbus/xdg/systemd.cc) in every session, Plasma included. The
 #     scope launch-app.sh makes is harmless and keeps other applications
 #     named; it was never the key that went missing.
-project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+# The path as it was called, resolved only when this file itself is a link
+# (as in launch-default.sh): two processes and two subshells less per start.
+self=${BASH_SOURCE[0]}
+[[ $self == /* && ! -L $self ]] || self=$(readlink -f -- "$self")
+project_dir=${self%/*/*}
 id=${1:?usage: launch-chromium.sh <desktop-id> <command> [args...]}
 exe=${2:?usage: launch-chromium.sh <desktop-id> <command> [args...]}
 shift 2

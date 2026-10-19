@@ -3,12 +3,14 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../services/notch/NotchLogic.js" as NotchLogic
 
 // Desktop mode "Notch" inside the layout editor. The notch itself is a fixed
 // element at the top center - it cannot be moved - but what it carries can be
-// arranged, and that happens on the real notch: while this is open the notch
-// holds itself expanded and draws both of its lists at once, the always
-// visible strip above its header and the hover overview below it.
+// arranged, and that happens on the real notch, one of its two lists at a
+// time: the zone switch picks the always visible strip, arranged on the
+// collapsed notch, or the hover overview, for which the notch holds itself
+// expanded while this is open (follow).
 // NotchEditOverlay puts the frames, the drop marker and the ghost on top of
 // them, because the notch is its own layer surface and this editor covers it.
 //
@@ -23,11 +25,17 @@ Item {
     id: root
     required property string screenName
     readonly property var notch: LayoutService.notchRect(screenName)
-    // The catalogue minus what is already on the notch. A type sits in one
-    // zone or the other, never in both, which is what addNotchItem enforces.
-    readonly property var missing: NotchService.catalogue().filter(entry =>
-        NotchService.collapsedTypes.indexOf(entry.type) < 0
-        && NotchService.expandedTypes.indexOf(entry.type) < 0)
+    // The catalogue minus what is already on the notch - a type sits in one
+    // zone or the other, never in both, which is what addNotchItem enforces -
+    // and for the strip minus the blocks it cannot draw: an Events block put
+    // there drew nothing and could not go back into the overview either.
+    readonly property var missing: NotchLogic.offered(NotchService.catalogue(),
+        NotchService.collapsedTypes.concat(NotchService.expandedTypes), LayoutService.notchEditZone)
+    // In groups, the notch's own blocks first and then the registry's
+    // categories, each a heading over named rows: a wall of glyphs to hover
+    // one by one told the workspaces from the control center by tooltip only.
+    readonly property var missingGroups: NotchLogic.catalogueGroups(root.missing,
+        WidgetRegistry.categories.filter(category => !category.dockOnly))
     // The notch reports its collapsed rectangle for the panels to align to and
     // its live size separately; while the editor holds it expanded, the frame
     // and the chips have to follow the expanded one.
@@ -48,10 +56,12 @@ Item {
     // where it happens. It goes back to its own behaviour when the editor
     // closes; `forcedScreens` is the same handle the IPC preview uses, one
     // entry per monitor, so every monitor's editor arranges its own notch.
-    // Not `visible` alone: the editor's window is built once and only hidden,
-    // so this item is visible from the moment the desktop mode is "notch",
-    // whether or not the editor is open. Binding the notch's state to it left
-    // the notch collapsed the second time the editor was opened.
+    // While this item is visible in the editor: it exists only while the
+    // editor is open (EditLayer is built for edit mode), and it is visible
+    // when the desktop mode is "notch". The editMode half is from when the
+    // editor's window was built once and only hidden - binding the notch's
+    // state to `visible` alone then left the notch collapsed the second time
+    // the editor was opened - and it stays harmless.
     readonly property bool active: visible && LayoutService.editMode
     // One width for the switch, the picker and the options card: three
     // different widths stacked under the notch read as three separate things.
@@ -111,39 +121,22 @@ Item {
             id: fields
             width: panels.columnWidth
             height: panels.height
-            title: "What it carries"
 
+            // The card's title with its two ways back beside it, in the
+            // header rather than among the things to add, where they read
+            // as two more items. Arranging pushes undo steps like every other
+            // editor does, so it offers the way back like every other editor.
             // Tab stops in reading order: this card top to bottom, then the
             // options beside it, then the editor's toolbar.
-            SegmentedControl {
-                id: zoneSwitch
-                focusOnTab: true
-                accessibleName: "Which part to arrange"
-                Layout.fillWidth: true
-                current: LayoutService.notchEditZone
-                options: [{ value: "collapsed", label: "Strip" }, { value: "expanded", label: "On hover" }]
-                onSelected: value => LayoutService.notchEditZone = value
-            }
-
-            Flow {
-                id: picker
+            RowLayout {
                 Layout.fillWidth: true
                 spacing: Metrics.spaceXs
-
-                Repeater {
-                    model: root.missing
-                    ShellButton {
-                        required property var modelData
-                        focusOnTab: true
-                        icon: modelData.icon
-                        variant: "surface"
-                        compact: true
-                        toolTip: "Add " + modelData.label
-                        onClicked: LayoutService.notchAdd(modelData.type, LayoutService.notchEditZone)
-                    }
+                ShellText {
+                    Layout.fillWidth: true
+                    text: "What it carries"
+                    role: "title"
+                    elide: Text.ElideRight
                 }
-                // Arranging pushes undo steps like every other editor
-                // does, so it offers the way back like every other editor.
                 ShellButton {
                     focusOnTab: true
                     icon: Icons.undo
@@ -161,6 +154,47 @@ Item {
                     toolTip: "Back to the default notch"
                     onClicked: LayoutService.notchResetLayout()
                 }
+            }
+
+            SegmentedControl {
+                id: zoneSwitch
+                focusOnTab: true
+                accessibleName: "Which part to arrange"
+                Layout.fillWidth: true
+                current: LayoutService.notchEditZone
+                options: [{ value: "collapsed", label: "Strip" }, { value: "expanded", label: "On hover" }]
+                onSelected: value => LayoutService.notchEditZone = value
+            }
+
+            // What can still be added to the part being arranged, one named
+            // row each, under its group's heading; a click adds it there.
+            Repeater {
+                model: root.missingGroups
+                ColumnLayout {
+                    id: group
+                    required property var modelData
+                    Layout.fillWidth: true
+                    spacing: Metrics.spaceXxs
+                    SectionLabel { text: group.modelData.label; Layout.topMargin: Metrics.spaceSm; Layout.leftMargin: Metrics.spaceSm }
+                    Repeater {
+                        model: group.modelData.entries
+                        ListRow {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            compact: true
+                            focusOnTab: true
+                            icon: modelData.icon
+                            title: modelData.label
+                            onClicked: LayoutService.notchAdd(modelData.type, LayoutService.notchEditZone)
+                        }
+                    }
+                }
+            }
+            ShellText {
+                Layout.fillWidth: true
+                visible: root.missingGroups.length === 0
+                text: "Everything it can carry is on it"
+                role: "small"; muted: true; wrapMode: Text.Wrap
             }
         }
     }

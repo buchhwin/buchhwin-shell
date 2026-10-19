@@ -3,6 +3,7 @@ import QtQuick
 import qs.services
 import qs.theme
 import qs.shell.widgets
+import qs.shell.components
 import "Harness.js" as T
 import "../../services/appearance/ContrastLogic.js" as C
 import "../../services/appearance/PanelStyleLogic.js" as P
@@ -11,7 +12,8 @@ import "../../services/appearance/PanelStyleLogic.js" as P
 // panels' inks follow the panel colour rather than the theme (a black panel
 // in the light theme was dark ink on black), the light panel's floor and the
 // inks measured on it, the accent tint a selected row can be seen by, the
-// inks on that tint, the fills of switches and sliders, the labels on accent
+// inks on that tint, the fills of switches and sliders - and of buttons and
+// header tiles, the same fill with its own words -, the labels on accent
 // buttons, the swatches, and the media cover's strength. Only Settings and
 // the panel style are touched: no service with a side effect (pitfall 82).
 ShellRoot {
@@ -21,6 +23,17 @@ ShellRoot {
     // A level widget as it is drawn on a panel (no service: WidgetBase
     // alone), for the meter's colour.
     property Item meterWidget: WidgetBase { sizeClass: "medium"; meter: 0.5 }
+    // The fills that mark a state or carry a label, as the components draw
+    // them: a popup header's tile while its thing is on and a primary
+    // button. Both wore the raw accent, 1.3:1 for the teal on a light panel
+    // beside the switch's own 3.9:1.
+    property Item headerTile: PanelHeader { icon: "x"; iconTile: true; iconActive: true; title: "Wi-Fi" }
+    property Item accentButton: ShellButton { variant: "accent"; text: "Connect" }
+    function tileOf(header) {
+        for (const child of header.children)
+            if (child instanceof Rectangle && child.visible) return child
+        return null
+    }
 
     // A colour property or a "#rrggbb" string (Colors.flat gives strings) as
     // "#rrggbb", without its alpha.
@@ -116,6 +129,15 @@ ShellRoot {
                 // A switch that is on and a slider's level stand off the card.
                 T.ok(contrast(Colors.accentFill, Colors.cardBase) >= (theme === "light" ? 3 : 1.5), label + ": the accent fill on a card")
                 T.ok(contrast(Colors.knob, Colors.accentFill) >= (theme === "light" ? 3 : 1), label + ": the knob on the fill")
+                // The same fill carries the words of a primary button and
+                // the glyph of a header's tile: 4.5:1 for them, and the tile
+                // stands off the panel it sits on.
+                T.ok(contrast(Colors.accentFillText, Colors.accentFill) >= 4.5,
+                     label + ": a label on the accent fill " + contrast(Colors.accentFillText, Colors.accentFill))
+                T.ok(contrast(Colors.accentFillText, Colors.accentFillHover) >= 4.5,
+                     label + ": and under the pointer " + contrast(Colors.accentFillText, Colors.accentFillHover))
+                T.ok(contrast(Colors.accentFill, Colors.panelBase) >= 3,
+                     label + ": the header tile on the panel " + contrast(Colors.accentFill, Colors.panelBase))
                 // The fastfetch Saturn: two colours that read on the panel
                 // and from each other.
                 T.ok(contrast(Colors.saturnPlanet, Colors.contrastBase) >= (theme === "light" ? 4.5 : 3), label + ": the Saturn's planet " + hex(Colors.saturnPlanet))
@@ -134,10 +156,21 @@ ShellRoot {
                 T.ok(C.contrast(mutedOnScrim, hex(Colors.overviewBackdrop)) >= 4.5, label + ": and its grey labels " + C.contrast(mutedOnScrim, hex(Colors.overviewBackdrop)))
             }
         }
+        // What the components draw. Their colours glide (a Behavior on each),
+        // so with motion off: a glide in flight is not what they settle on.
+        SettingsService.set("appearance.animationMode", "off")
+        for (const theme of ["light", "dark"]) {
+            set(theme, "auto", "#50e2cb")
+            const tile = root.tileOf(root.headerTile)
+            T.ok(tile !== null && Qt.colorEqual(tile.color, Colors.accentFill), theme + ": the header tile is the accent fill")
+            T.ok(Qt.colorEqual(root.accentButton.color, Colors.accentFill)
+                 && Qt.colorEqual(root.accentButton.foreground, Colors.accentFillText), theme + ": so is a primary button, with its words")
+            T.ok(contrast(tile.color, Colors.panelBase) >= 3, theme + ": the teal's tile on the panel " + contrast(tile.color, Colors.panelBase))
+        }
+        SettingsService.set("appearance.animationMode", "full")
         set("dark", "auto", "#50e2cb")
         T.eq(hex(Colors.overviewAccent), "#50e2cb", "the shipped teal on the dark overview scrim stays as it is")
-        // A level is drawn in the accent made for a fill (round 12,
-        // ui-rest#2): the raw teal was 1.08:1 on a light track.
+        // A level is drawn in the accent made for a fill: the raw teal was 1.08:1 on a light track.
         T.ok(Qt.colorEqual(root.meterWidget.meterColor, Colors.accentFill), "a dark panel's meter: the accent itself")
         set("light", "auto", "#50e2cb")
         T.ok(Qt.colorEqual(root.meterWidget.meterColor, Colors.accentFill) && !Qt.colorEqual(Colors.accentFill, Colors.accent),
@@ -151,7 +184,13 @@ ShellRoot {
         T.eq(hex(Colors.saturnRingMix), "#afd7ff", "ff's ring colour for the logo's own blue")
         T.eq([hex(Colors.saturnPlanet), hex(Colors.saturnRing)], ["#5fafff", "#afd7ff"], "on a dark panel the Saturn is fastfetch's")
         set("light", "auto", "#4f8ff7")
-        T.eq(hex(Colors.accentFill), hex(Colors.accentLine), "light switches and sliders fill with the 3:1 line")
+        T.eq(hex(Colors.accentFill), C.readable(hex(Colors.accentLine), "#ffffff", 4.5),
+             "light switches and sliders fill with the 3:1 line, darkened until white words on it read")
+        T.ok(contrast(Colors.accentFill, Colors.accentLine) < 1.05, "which for the blue is a hair: " + hex(Colors.accentFill))
+        set("light", "auto", "#50e2cb")
+        T.eq(hex(Colors.accentFill), hex(Colors.accentLine), "the teal's line already carries white words")
+        T.eq(hex(Colors.accentFillText), "#ffffff", "and they are white")
+        set("light", "auto", "#4f8ff7")
         T.near(Colors.accentSoft.a, 0.26, "the light tint is the line at 0.26", 0.005)
         T.eq(hex(Colors.accentText), hex(Colors.onAccentDark), "body labels on the blue are dark: white is 3.2:1")
         T.ok(Colors.segmentBorder.a >= 0.15, "the selected segment has an edge on the light trough")

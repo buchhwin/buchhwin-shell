@@ -12,8 +12,9 @@ import "../../services/dock/DockLogic.js" as Logic
 // an icon, beside it on the dock's screen (DockService.openMenu); it does not
 // dim the screen, as a menu does not, and a click anywhere else closes it.
 //
-// The body is only built while it is open: the panel exists from the start,
-// and the dock's service is not asked anything while the dock is off.
+// Built on the first open (shell.qml's LazyLoader, PanelService.demanded) and
+// let go with the dock; the body only while it is open, so the dock's
+// service is not asked anything while the dock is off.
 //
 // Opened by the menu key while the dock has the keyboard, it holds the keys
 // for the dock (DockService.keysWithMenu), and an Escape gives them back.
@@ -38,7 +39,9 @@ ShellPanel {
                 id: column
                 spacing: Metrics.spaceXs
                 readonly property string key: String(root.openArgs.key || "")
-                readonly property var app: DockService.itemFor(key)
+                // As the dock it came out of shows it: its own screen's
+                // windows when the docks show their screen's apps.
+                readonly property var app: DockService.itemFor(key, root.dockScreen)
                 readonly property var entry: DockService.entryOf(app)
                 readonly property var rows: Logic.menuRows(app, entry ? entry.actions : [], LayoutService.dockPinsFull,
                                                            Metrics.dockMenuWindows, entry ? entry.command : [])
@@ -79,7 +82,7 @@ ShellPanel {
                             : modelData.kind === "unpin" ? "Unpin"
                             : modelData.kind === "close" ? (modelData.count > 1 ? "Close " + modelData.count + " windows" : "Close window")
                             : ""
-                        subtitle: modelData.kind === "window" ? "Workspace " + modelData.workspace
+                        subtitle: modelData.kind === "window" ? Logic.workspaceLabel(modelData.workspace, modelData.workspaceName)
                             : modelData.kind === "pin" && modelData.reason === "hidden" ? "Not shown in the app list"
                             : modelData.kind === "pin" && modelData.enabled === false ? "At most " + LayoutService.dockPinLimit + " apps on the dock" : ""
                         interactive: modelData.kind !== "more" && !(modelData.kind === "pin" && modelData.enabled === false)
@@ -90,6 +93,9 @@ ShellPanel {
         }
     }
 
+    // The screen of the dock the menu came out of.
+    readonly property string dockScreen: String(openArgs.onScreen || "")
+
     function run(row) {
         const key = String(openArgs.key || "")
         switch (row.kind) {
@@ -97,7 +103,7 @@ ShellPanel {
         case "new": DockService.newWindow(key); break
         case "action": DockService.runAction(key, row.id); break
         case "pin": case "unpin": DockService.togglePin(key); break
-        case "close": DockService.closeWindows(key); break
+        case "close": DockService.closeWindows(key, dockScreen); break
         }
         if (row.kind !== "window") PanelService.close("dockMenu")
     }

@@ -359,9 +359,11 @@ Singleton {
         result = state.result || Logic.emptyResult()
     }
 
+    // Read only for the preview: every start used to read the sample and keep
+    // its text, preview or not.
     FileView {
         id: sampleFile
-        path: Paths.shellFile("tests/fixtures/updates-report.txt")
+        path: root.preview ? Paths.shellFile("tests/fixtures/updates-report.txt") : ""
         printErrors: false
         onLoaded: if (root.preview) root.result = Logic.parseReport(text())
     }

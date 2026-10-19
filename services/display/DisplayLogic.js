@@ -164,6 +164,36 @@ function changed(before, after) {
     return JSON.stringify(before.map(ruleFor)) !== JSON.stringify(after.map(ruleFor))
 }
 
+// The draft after the monitors were read again: on every open of Settings >
+// Displays, after a config reload (moving a shortcut is one) and on monitor
+// events. A draft without changes follows the monitors. One with changes not
+// applied yet is kept while the same monitors are there - it used to be
+// replaced without a word: a monitor whose state changed underneath (the
+// lid, another tool) takes its new state, the others keep the user's edits.
+// It cannot be kept with a monitor added or gone, or when a monitor the
+// user changed was changed underneath as well (a reload puts every monitor
+// back to the config's catch-all until the saved layout is applied again),
+// and `dropped` says so. In the order of the monitors as read, as `dirty`
+// compares them.
+function refreshedDraft(previous, live, draft) {
+    const before = previous || []
+    const now = live || []
+    const edited = draft || []
+    if (!edited.length || !changed(before, edited)) return { draft: now.slice(), dropped: false }
+    const lost = { draft: now.slice(), dropped: true }
+    const names = list => list.map(monitor => monitor.name).sort().join("\n")
+    if (names(now) !== names(edited) || names(now) !== names(before)) return lost
+    const next = []
+    for (const is of now) {
+        const was = before.find(monitor => monitor.name === is.name)
+        const mine = edited.find(monitor => monitor.name === is.name)
+        if (!changed([was], [is])) next.push(mine)
+        else if (!changed([was], [mine])) next.push(is)
+        else return lost
+    }
+    return { draft: next, dropped: false }
+}
+
 // Shift enabled monitors so the layout starts at 0,0.
 function normalize(monitors) {
     const enabled = monitors.filter(monitor => !monitor.disabled)
@@ -318,6 +348,53 @@ function isInternal(name) {
 function lidPlan(monitors, internalName) {
     if (!monitors.some(monitor => monitor.name === internalName)) return "none"
     return monitors.some(monitor => monitor.name !== internalName && !monitor.disabled) ? "disable" : "dpms"
+}
+
+// What closing the lid does (IdleService), as { panel, lock, suspend }:
+// `panel` hands the display half to DisplayService.setLidClosed, which takes
+// the panel off (lidPlan). At a desk - another screen on - the panel always
+// goes off and the laptop stays awake, whatever the action, as Settings >
+// Power promises: logind's docked exception never comes into it, because the
+// shell holds the lid switch itself, and "Sleep" suspended the whole desk two
+// seconds after the lid went down while "Nothing" left the panel on behind
+// it, with the first block of workspaces. "Lock" still locks. The laptop on
+// its own does what the action says: "Screen off" the panel, "Lock",
+// "Sleep" (after a moment, IdleService), "Nothing" nothing.
+function lidClose(action, monitors, internalName) {
+    const docked = lidPlan(Array.isArray(monitors) ? monitors : [], internalName) === "disable"
+    return {
+        panel: docked || action === "screenOff",
+        lock: action === "lock",
+        suspend: !docked && action === "suspend"
+    }
+}
+
+// The laptop panel as it comes back when the lid opens, or null when there
+// is nothing to switch on. `restore` is the panel before the lid took it
+// (DisplayService.lidRestore), `saved` the monitors file. A panel switched
+// off with the lid open (a saved "off" with `lidOpen`) stays off: the lid did
+// not take it and does not bring it back - it came on for the 800 ms until
+// the saved layout took it again. Beside other screens it goes to its saved
+// place where that is free, which is where the saved layout puts it a moment
+// later anyway, else after them (placeAfter): back at its old automatic
+// place, x 0, it came first in the monitor order.
+function lidOpenTarget(monitors, saved, internalName, restore) {
+    const list = Array.isArray(monitors) ? monitors : []
+    const panel = list.find(monitor => monitor.name === internalName)
+    if (!panel) return null
+    const entries = saved && saved.version === 1 && saved.monitors && typeof saved.monitors === "object" ? saved.monitors : {}
+    const key = matchKey(entries, panel, list)
+    const entry = key !== null ? entries[key] : null
+    if (entry && entry.disabled === true && entry.lidOpen === true) return null
+    const before = restore && restore.name === panel.name ? restore : null
+    if (!before && !panel.disabled) return null
+    const on = Object.assign({}, before || panel, { disabled: false })
+    const others = list.filter(monitor => monitor.name !== panel.name && !monitor.disabled)
+    if (!others.length) return on
+    const placed = entry ? withEntry(on, entry, internalName) : on
+    const layout = others.concat([placed])
+    if (entry && !overlapping(layout)) return placed
+    return Object.assign({}, placed, placeAfter(layout, panel.name))
 }
 
 // The target layout while the lid is closed: the internal panel is disabled

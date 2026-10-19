@@ -201,7 +201,10 @@ ColumnLayout {
         SettingRow {
             labelFills: true
             label: "Layout"
-            hint: "What the dock holds - its apps, a start button, the clock, status and any other widget the bar can carry - and where: in the layout editor (Super+Alt+E, \"Dock\")."
+            // The keys as they are bound now: a shortcut moved in Settings >
+            // Shortcuts is named here under its new keys.
+            hint: "What the dock holds - its apps, a start button, the clock, status and any other widget the bar can carry - and where: in the layout editor ("
+                + ShortcutService.keyHint("SUPER + ALT + E", true) + ", \"Dock\")."
             ShellButton {
                 focusOnTab: true
                 icon: Icons.arrange; text: "Edit in the editor"; compact: true
@@ -224,7 +227,7 @@ ColumnLayout {
         SettingRow {
             labelFills: true
             label: "Show the dock"
-            hint: "Super+Shift+D turns it on as well, and after that shows it and gives it the keyboard."
+            hint: ShortcutService.keyHint("SUPER + SHIFT + D", true) + " turns it on as well, and after that shows it and gives it the keyboard."
             ShellToggle {
                 focusOnTab: true
                 checked: page.enabled
@@ -329,12 +332,14 @@ ColumnLayout {
                 }
             }
         }
+        // Hidden with one screen, like the row.
+        ScopeNote { path: Quickshell.screens.length > 1 ? "dock.screens" : "" }
     }
 
     SettingsSection {
         Layout.fillWidth: true
         title: "Apps"
-        description: "The dock keeps its own pinned apps: pin and unpin them on the dock (right click) or in the list below. Drag a pinned app along the dock to move it, or a running one among the pins to pin it. Files, terminal and browser follow Settings > Default apps. The start menu's pinned apps are its own, under Settings > Launcher."
+        description: "Pin and unpin apps on the dock (right-click) or below; drag a pin to move it, a running app among the pins to pin it. Files, terminal and browser follow Settings > Default apps; the start menu's pins are under Settings > Launcher."
 
         SettingRow {
             labelFills: true
@@ -345,6 +350,22 @@ ColumnLayout {
                 enabledState: page.enabled
                 checked: SettingsService.value("dock.showRunning") !== false
                 onToggled: value => SettingsService.set("dock.showRunning", value)
+            }
+        }
+        // With docks on more than one screen: every screen's running apps on
+        // each, or each dock its own screen's - a taskbar per screen.
+        SettingRow {
+            visible: Quickshell.screens.length > 1 && SettingsService.value("dock.showRunning") !== false
+            label: "Running apps of"
+            hint: "Every dock lists the running apps of all screens, or each lists only those with a window on its own screen. Pinned apps are on every dock either way."
+            SegmentedControl {
+                focusOnTab: true
+                enabledState: page.enabled
+                Layout.fillWidth: true
+                accessibleName: "Running apps of"
+                current: SettingsService.value("dock.runningOn") === "screen" ? "screen" : "all"
+                options: [{ value: "all", label: "Every screen" }, { value: "screen", label: "Its own screen" }]
+                onSelected: value => SettingsService.set("dock.runningOn", value)
             }
         }
         SettingRow {
@@ -393,11 +414,11 @@ ColumnLayout {
                 muted: true
             }
             // A page of this panel, so the forward glyph, as for the other
-            // jumps inside Settings; leavesPanel is for what opens Settings
-            // from somewhere else.
+            // jumps inside Settings, after the words where it reads as going
+            // on; leavesPanel is for what opens Settings from somewhere else.
             ShellButton {
                 focusOnTab: true
-                icon: Icons.forward; text: "Default apps"; variant: "ghost"; compact: true
+                trailingIcon: Icons.forward; text: "Default apps"; variant: "ghost"; compact: true
                 onClicked: PanelService.open("settings", { page: "defaultApps" })
             }
         }
@@ -513,6 +534,6 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Keyboard"
-        description: ShortcutService.keyHint("SUPER + SHIFT + D") + " shows the dock and gives it the keys: the arrow keys move along it, Enter starts or raises an app, Shift+Enter opens a new window, the menu key opens the app's menu, Esc gives the keys back."
+        description: ShortcutService.keyHint("SUPER + SHIFT + D", true) + " shows the dock and gives it the keys: the arrow keys move along it - the apps, the start button and on a taskbar its status, notifications and clock -, Enter starts or raises an app or opens what an item opens, Shift+Enter opens a new window, the menu key opens the app's menu, Esc gives the keys back."
     }
 }

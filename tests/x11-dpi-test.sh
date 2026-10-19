@@ -22,19 +22,31 @@ Q
 # The cursor script also talks to the compositor, systemd and dconf (through
 # gsettings); record and agree - the real gsettings would change this
 # machine's desktop.
-for stub in hyprctl systemctl dbus-update-activation-environment gsettings; do
+for stub in hyprctl systemctl dbus-update-activation-environment; do
   printf '#!/usr/bin/env bash\nprintf "%%s %%s\\n" "%s" "$*" >> "$CALLS"\n' "$stub" > "$SB/bin/$stub"
 done
+# gsettings: `get` answers what the stand-in dconf holds, one file per key,
+# written the way gsettings prints it; nothing there reads as unset.
+cat > "$SB/bin/gsettings" <<'Q'
+#!/usr/bin/env bash
+printf 'gsettings %s\n' "$*" >> "$CALLS"
+if [[ $1 == get && -r $DCONF/$3 ]]; then cat "$DCONF/$3"; fi
+Q
 chmod +x "$SB/bin/"*
 # The sandbox is the whole environment: a nested session's files in the
 # default BUCHHWIN_NESTED_DIR, or a stray BUCHHWIN_NESTED, would turn every
 # ordinary case below into the refusal and read as a pass.
-mkdir -p "$SB/no-nested"
+# The cursor script keeps its last run in the runtime directory, so that is
+# the sandbox's too, with a compositor signature of its own: the live
+# session's would mix the two.
+mkdir -p "$SB/no-nested" "$SB/run" "$SB/dconf"
 unset BUCHHWIN_NESTED
 export PATH="$SB/bin:$PATH" DB="$SB/xrdb.db" CALLS="$SB/calls" DISPLAY=:9 XDG_CONFIG_HOME="$SB/config" \
-  BUCHHWIN_NESTED_DIR="$SB/no-nested"
+  BUCHHWIN_NESTED_DIR="$SB/no-nested" XDG_RUNTIME_DIR="$SB/run" HYPRLAND_INSTANCE_SIGNATURE=sig-test DCONF="$SB/dconf"
 fail=0
 check() { if eval "$1"; then :; else printf 'FAIL: %s\n' "$2"; fail=1; fi; }
+# Forget the cursor script's last run, for a case that repeats an earlier one.
+fresh() { rm -f -- "$XDG_RUNTIME_DIR/buchhwin-shell/cursor-applied"; }
 
 # on: the key is merged in
 printf 'Xcursor.theme:\tmacOS\nXcursor.size:\t24\n' > "$DB"
@@ -86,10 +98,13 @@ BUCHHWIN_NESTED_DIR="$SB/nested" WAYLAND_DISPLAY=wayland-1 HYPRLAND_INSTANCE_SIG
 check 'grep -q "^Xft.dpi: 144$" "$DB"' 'a display and signature that are not the nested ones still write'
 
 # the cursor script: the X resource gets the X11 size, the compositor the real one
-: > "$DB"; : > "$CALLS"
+: > "$DB"; : > "$CALLS"; fresh
 bash ./scripts/apply-cursor-env.sh macOS 24 36
 check 'grep -q "^Xcursor.size: 36$" "$DB"' 'Xcursor.size is the X11 size'
-check 'grep -q "XCURSOR_SIZE,24\|XCURSOR_SIZE=24" "$CALLS"' 'the compositor and systemd get 24'
+check 'grep -q "XCURSOR_SIZE,24" "$CALLS" && grep -q "^dbus-update-activation-environment --systemd .*XCURSOR_SIZE=24" "$CALLS"' \
+  'the compositor and systemd (through dbus-update-activation-environment --systemd) get 24'
+check '! grep -q "^systemctl" "$CALLS"' 'and no separate systemctl set-environment'
+check 'grep -q "^xrdb -merge -nocpp -$" "$CALLS"' 'xrdb merges without the C preprocessor'
 check '! grep -q "36" "$CALLS"' 'and never the X11 size'
 check 'grep -q "^gsettings set org.gnome.desktop.interface cursor-theme macOS$" "$CALLS" && grep -q "^gsettings set org.gnome.desktop.interface cursor-size 24$" "$CALLS"' \
   'the Settings portal (dconf) gets the theme and the real size, for Flatpak applications'
@@ -117,8 +132,56 @@ check 'grep -q "^gtk-cursor-theme-name=breeze_cursors$" "$ini.buchhwin-backup"' 
 check '[[ $(ls "${ini%/*}" | wc -l) == 2 ]]' 'no timestamped backups and no temporary files are left beside it'
 mkdir -p "$XDG_CONFIG_HOME/gtk-4.0"
 printf '[Settings]\ngtk-application-prefer-dark-theme=1\n' > "$XDG_CONFIG_HOME/gtk-4.0/settings.ini"
+fresh
 bash ./scripts/apply-cursor-env.sh Adwaita 24
 check 'grep -q "^gtk-cursor-theme-name=Adwaita$" "$XDG_CONFIG_HOME/gtk-4.0/settings.ini" && grep -q "prefer-dark-theme=1" "$XDG_CONFIG_HOME/gtk-4.0/settings.ini"' 'a file without the keys gets them appended'
+
+# a theme name the C preprocessor would have taken apart ("linux" is one of
+# its macros) reaches the database as it is
+: > "$DB"; : > "$CALLS"; fresh
+bash ./scripts/apply-cursor-env.sh linux-cursors 24
+check 'grep -q "^Xcursor.theme: linux-cursors$" "$DB"' 'a theme named linux-cursors reaches the database unchanged'
+
+# the second run with the same values in the same session: the compositor's
+# environment again (a config reload resets it), and nothing else at all
+: > "$DB"; : > "$CALLS"; fresh
+bash ./scripts/apply-cursor-env.sh macOS 24 36 legacy
+check '[[ -s "$DB" ]] && grep -q "^gsettings set" "$CALLS"' 'the first run writes'
+: > "$DB"; : > "$CALLS"
+bash ./scripts/apply-cursor-env.sh macOS 24 36 legacy
+check 'grep -q "^hyprctl --batch keyword env XCURSOR_THEME,macOS" "$CALLS"' 'a repeated run still sets the compositor environment'
+check '[[ ! -s "$DB" ]] && ! grep -qE "^(xrdb|gsettings|dbus-update-activation-environment|systemctl)" "$CALLS"' \
+  'and makes no xrdb, gsettings or D-Bus call'
+: > "$CALLS"
+bash ./scripts/apply-cursor-env.sh macOS 32 32 legacy
+check 'grep -q "^xrdb -merge" "$CALLS" && grep -q "cursor-size 32" "$CALLS"' 'other values run in full'
+: > "$CALLS"
+HYPRLAND_INSTANCE_SIGNATURE=sig-next bash ./scripts/apply-cursor-env.sh macOS 32 32 legacy
+check 'grep -q "^xrdb -merge" "$CALLS"' 'and so does the same values in a new compositor session'
+check '[[ $(stat -c %a "$XDG_RUNTIME_DIR/buchhwin-shell") == 700 ]]' 'the runtime directory it makes is the user'"'"'s alone'
+
+# the dialect the shell hands over saves the probe: Lua gets hl.env, legacy
+# the keyword, and neither asks hyprctl which one it is
+: > "$CALLS"; fresh
+bash ./scripts/apply-cursor-env.sh macOS 24 24 lua
+check 'grep -q "^hyprctl eval hl.env" "$CALLS" && ! grep -q "return 1" "$CALLS"' 'lua: hl.env without a probe'
+: > "$CALLS"; fresh
+bash ./scripts/apply-cursor-env.sh macOS 24 24 unknown
+check 'grep -q "return 1" "$CALLS" && grep -q "^hyprctl --batch" "$CALLS"' 'unknown: the probe decides (legacy here)'
+
+# dconf already holding the values is not written again (each write is a
+# settings change every GTK and Flatpak application hears)
+printf "'macOS'\n" > "$DCONF/cursor-theme"; printf '24\n' > "$DCONF/cursor-size"
+: > "$CALLS"; fresh
+bash ./scripts/apply-cursor-env.sh macOS 24 24 legacy
+check 'grep -q "^gsettings get org.gnome.desktop.interface cursor-theme" "$CALLS" && ! grep -q "^gsettings set" "$CALLS"' \
+  'no gsettings set while dconf holds the values'
+printf '32\n' > "$DCONF/cursor-size"
+: > "$CALLS"; fresh
+bash ./scripts/apply-cursor-env.sh macOS 24 24 legacy
+check 'grep -q "^gsettings set org.gnome.desktop.interface cursor-size 24$" "$CALLS" && ! grep -q "set org.gnome.desktop.interface cursor-theme" "$CALLS"' \
+  'only the value that differs is set'
+rm -f -- "$DCONF/cursor-theme" "$DCONF/cursor-size"
 
 # the unscaled launcher: the reciprocal of what X11 is told, 1 when nothing is
 printf 'Xft.dpi:\t168\n' > "$DB"

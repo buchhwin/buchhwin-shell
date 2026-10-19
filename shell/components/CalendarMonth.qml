@@ -122,8 +122,8 @@ ColumnLayout {
     // Seven equal columns. Every cell asks for the same token width and
     // fills the rest: with no width of its own a day cell left the weekday
     // names to share the row out, and "Wed" took more than "Fri" and "Sat",
-    // which ended up squeezed together (column steps of 63/62/64/51/45/55 px;
-    // round 12, D7).
+    // which ended up squeezed together (column steps of 63/62/64/51/45/55
+    // px).
     GridLayout {
         Layout.fillWidth: true
         columns: 7
@@ -170,7 +170,7 @@ ColumnLayout {
                     width: Metrics.controlHeight
                     height: width
                     radius: width / 2
-                    color: cell.modelData.today ? Colors.accent
+                    color: cell.modelData.today ? Colors.accentFill
                         : cell.modelData.selected ? Colors.accentSoft
                         : dayMouse.containsMouse ? Colors.hover : "transparent"
                     border.width: cell.modelData.selected && !cell.modelData.today ? Metrics.borderWidth : 0
@@ -182,7 +182,7 @@ ColumnLayout {
                     text: cell.modelData.day
                     // A day of the next or last month is still a number to read:
                     // mutedText, not subtleText, which is for marks.
-                    color: cell.modelData.today ? Colors.accentText : cell.modelData.inMonth ? Colors.text : Colors.mutedText
+                    color: cell.modelData.today ? Colors.accentFillText : cell.modelData.inMonth ? Colors.text : Colors.mutedText
                 }
                 Rectangle {
                     visible: cell.modelData.hasEvents
@@ -192,9 +192,11 @@ ColumnLayout {
                     width: Metrics.spaceXs
                     height: width
                     radius: width / 2
-                    color: cell.modelData.today ? Colors.accentText
+                    // A mark: the accent's 3:1 line when no calendar names a
+                    // colour (the raw teal was 1.2:1 on a light card).
+                    color: cell.modelData.today ? Colors.accentFillText
                         : !cell.modelData.inMonth ? Colors.subtleText
-                        : cell.modelData.eventColor.length ? cell.modelData.eventColor : Colors.accent
+                        : cell.modelData.eventColor.length ? cell.modelData.eventColor : Colors.accentLine
                 }
                 MouseArea {
                     id: dayMouse

@@ -162,6 +162,12 @@ ShellRoot {
         T.eq(floating.background, { x: 6, y: 6, width: 1268, height: 32 }, "floating bar inset by the margin")
         T.eq(floating.radii, { topLeft: 12, topRight: 12, bottomLeft: 12, bottomRight: 12 }, "floating bar rounds every corner")
         T.eq(B.geometry("bar", "floating", "top", 1280, metrics, false).exclusiveZone, 0, "no reserve, no zone")
+        // Along the edge as far in as the windows' gap, off the edge by the margin.
+        const lined = B.geometry("bar", "floating", "top", 1280, Object.assign({}, metrics, { inset: 12 }), true)
+        T.eq([lined.content, lined.background, lined.thickness], [{ x: 12, y: 6, width: 1256, height: 32 },
+             { x: 12, y: 6, width: 1256, height: 32 }, 38], "a floating bar inset to the windows' gap")
+        T.eq(B.geometry("pills", "attached", "top", 1280, Object.assign({}, metrics, { inset: 12 }), true).content,
+             { x: 12, y: 6, width: 1256, height: 32 }, "and the pills")
         const attached = B.geometry("bar", "attached", "top", 1280, metrics, true)
         T.eq([attached.exclusiveZone, attached.inset], [32, 32], "attached bar reserves its height and no more")
         T.eq(attached.thickness, 44, "and reaches below it far enough to draw the corners")
@@ -296,6 +302,19 @@ ShellRoot {
         T.eq(B.segmentPadding(true, false, false, pads), { start: 1, end: 10 }, "cover at the start keeps the inset gap")
         T.eq(B.segmentPadding(true, true, true, pads), { start: 1, end: 1 }, "cover only")
         T.eq([B.anchorAlong(100, 40), B.anchorAlong(100.4, 41)], [120, 121], "popup centred on the item along the bar")
+
+        // Beside a taskbar: the readouts it shows already leave the bar's pills.
+        const zone = [{ id: "a", items: [{ type: "clock" }, { type: "date" }] },
+                      { id: "b", items: [{ type: "network" }, { type: "volume" }, { type: "battery" }] },
+                      { id: "c", items: [{ type: "workspace" }] }]
+        const kept = B.withoutTypes(zone, ["clock", "date", "network", "volume", "battery"])
+        T.eq(kept.map(pill => [pill.id, pill.items.map(item => item.type)]), [["c", ["workspace"]]],
+             "a pill of nothing but repeated readouts goes, the workspaces stay")
+        T.eq(B.withoutTypes(zone, ["date"]).map(pill => pill.items.map(item => item.type)),
+             [["clock"], ["network", "volume", "battery"], ["workspace"]], "a pill that keeps an item stays, without the rest")
+        T.ok(B.withoutTypes(zone, []) === zone, "nothing to leave out: the very list")
+        T.eq([B.withoutTypes(null, ["clock"]), B.withoutTypes([{ id: "x" }], ["clock"])], [[], []], "no list, or a pill without items")
+        T.eq(zone[0].items.length, 2, "and the layout's own pills are not touched")
         T.finish("BarTest")
     }
 }

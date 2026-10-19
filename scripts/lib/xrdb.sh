@@ -5,11 +5,17 @@
 # detached by the shell - can each write back a copy without the other's keys.
 # That is how the cursor came up as breeze_cursors 24 beside an Xft.dpi of
 # 144. Source this file and call xrdb_merge with the lines to merge.
+#
+# `-nocpp`: the lines are plain resources, and the C preprocessor xrdb runs by
+# default costs three processes per merge (sh, cpp, cc1) and expands its
+# predefined macros inside values - a cursor theme named "linux" reached the
+# database as "1". The flag comes after `-merge`, where the tests' stand-in
+# xrdb still finds the mode as its first argument.
 xrdb_merge() {
   local lock=${XDG_RUNTIME_DIR:-/tmp}/buchhwin-shell-xrdb.lock
   if command -v flock >/dev/null 2>&1; then
-    printf '%s\n' "$@" | flock -w 5 "$lock" xrdb -merge - 2>/dev/null || true
+    printf '%s\n' "$@" | flock -w 5 "$lock" xrdb -merge -nocpp - 2>/dev/null || true
   else
-    printf '%s\n' "$@" | xrdb -merge - 2>/dev/null || true
+    printf '%s\n' "$@" | xrdb -merge -nocpp - 2>/dev/null || true
   fi
 }

@@ -82,21 +82,33 @@ ShellRoot {
     WidgetHost {}
     PillBar {}
     Notch {}
-    // Before every panel, so its layer surface is created first and therefore
-    // sits **below** them: within one Wayland layer the order is the order
-    // they were created in. Declared after this and the scrim covers the
-    // panel's own card - which is what the power menu looked like when this
-    // was three lines further down.
     // A track change in the notch, for a few seconds. It has no surface of its
     // own: with no notch, or with the switch off, nothing happens.
     NotchTrackChange {}
     // The dock: no surfaces while it is off (Dock.qml).
     Dock {}
 
+    // The scrim is a Top surface and every panel an Overlay one, so the
+    // layers keep it under the panels whatever the order here
+    // (ScrimLayer.qml). Inside the Top layer the compositor stacks by
+    // creation, and the notch, the bar and the dock are made once the layout
+    // or the settings have loaded - after the scrim, so they sit above it and
+    // are never dimmed.
     ScrimLayer {}
 
     Launcher {}
-    EmojiPanel {}
+    // The panels in a LazyLoader on `PanelService.demanded` are built on their
+    // first open and kept for the rest of the session: a panel is built at the
+    // start whether it opens or not (testing.md pitfall 101), and these are
+    // opened rarely or never in a session - Settings, the dialogs, the power
+    // menu, the shortcut sheet, the pickers, the history panels. Built at the
+    // start, ten of them held 13.6 MB nested (19.10.); built on the first
+    // open, they add their build to it once - some 40 ms for Settings, 10-20
+    // for the event editor and the power menu, a few for the others (offscreen,
+    // without the window). PanelService.open asks for one that is not there
+    // and opens it once it has reported in (pitfall 110); each id is in
+    // PanelService.lazyPanels.
+    LazyLoader { active: PanelService.demanded.emoji === true; EmojiPanel {} }
     // The tour: built for the first start (until it has been seen), or when
     // Settings > About or IPC opens it again - not at every start for a panel
     // shown once per install (PanelService.lazyPanels). Opened once, it stays
@@ -108,9 +120,9 @@ ShellRoot {
     }
     ControlCenter {}
     NotificationPopupStack {}
-    NotificationCenter {}
-    PowerMenu {}
-    ShortcutSheet {}
+    LazyLoader { active: PanelService.demanded.notifications === true; NotificationCenter {} }
+    LazyLoader { active: PanelService.demanded.powerMenu === true; PowerMenu {} }
+    LazyLoader { active: PanelService.demanded.shortcutSheet === true; ShortcutSheet {} }
 
     IpcHandler {
         id: desktopIpc
@@ -265,7 +277,13 @@ ShellRoot {
         id: controlCenterIpc
         target: "controlCenter"
         function toggle(): void { PanelService.toggle("controlCenter") }
-        function openPage(page: string): void { PanelService.open("controlCenter", { page: page }) }
+        // A page that is not one of its seven (or "" for the overview) is
+        // refused, as `settings open` refuses one of Settings'.
+        function openPage(page: string): bool {
+            if (!IpcLogic.controlCenterPage(page)) return false
+            PanelService.open("controlCenter", { page: page })
+            return true
+        }
         function open(): void { PanelService.open("controlCenter") }
         function close(): void { PanelService.close("controlCenter") }
         // Arranging the tiles, the same as the pencil in the header.
@@ -372,17 +390,19 @@ ShellRoot {
             return ["network", "vpn", "bluetooth", "media", "volume", "battery",
                     "weather", "events", "privacy", "system", "profile"].indexOf(name) >= 0
         }
+        // An x that is no place (NaN, an infinity) is the default place too.
         function open(name: string, anchorX: real): bool {
             if (!isPopup(name)) return false
-            PanelService.open(name + "Popup", anchorX >= 0 ? { anchorX: anchorX } : {})
+            PanelService.open(name + "Popup", isFinite(anchorX) && anchorX >= 0 ? { anchorX: anchorX } : {})
             return true
         }
         // Like open, but the popup grows out of the given rect the way a pill
-        // click makes it grow out of the pill.
+        // click makes it grow out of the pill. A rect with a NaN or an
+        // infinity in it is refused (IpcLogic.originArgs).
         function openAt(name: string, x: real, y: real, width: real, height: real): bool {
-            if (!isPopup(name) || width <= 0 || height <= 0) return false
-            PanelService.open(name + "Popup", { anchorX: x + width / 2, anchorTop: y + height,
-                                                originX: x, originY: y, originWidth: width, originHeight: height })
+            const args = IpcLogic.originArgs(x, y, width, height)
+            if (!isPopup(name) || !args) return false
+            PanelService.open(name + "Popup", args)
             return true
         }
         function close(): void { PanelService.close() }
@@ -696,13 +716,16 @@ ShellRoot {
         // A shipped preset (taskbar, dock): layout, pins and options at once.
         function preset(name: string): bool { return LayoutService.applyDockPreset(name) }
         // By index, as `rects` lists them.
+        // An index into the focused dock's own list: the same as
+        // DockService.items unless dock.runningOn is "screen".
         function activate(index: int): bool {
-            const app = DockService.items[index]
-            return app ? DockService.activate(app.key) : false
+            const name = DockLogic.revealTarget(DockService.focusedName(), DockService.screenNames)
+            const app = DockService.itemsOn(name)[index]
+            return app ? DockService.activate(app.key, name) : false
         }
         function menu(index: int): bool {
-            const app = DockService.items[index]
             const name = DockLogic.revealTarget(DockService.focusedName(), DockService.screenNames)
+            const app = DockService.itemsOn(name)[index]
             const list = DockService.rectsOn[name] || []
             return app && list[index] ? DockService.openMenu(app.key, name, list[index]) : false
         }
@@ -787,9 +810,17 @@ ShellRoot {
         // these over IPC, the Lua binds as global shortcuts.
         function up(): void { BrightnessService.step(1) }
         function down(): void { BrightnessService.step(-1) }
-        // Anything that changes the backlight behind the shell's back: amdgpu
-        // sends no udev event for it, so the OSD would not notice otherwise.
+        // A change made outside the shell is seen through the udev monitor
+        // (BrightnessService), after its debounce; this is the read at once.
         function refresh(): void { BrightnessService.refresh() }
+        // Shows a level (0-1) without writing it, so the OSD can be seen in a
+        // nested session: the backlight belongs to the host, as the keyboard
+        // light does (kbdBacklight preview), and a test must never drive it.
+        // `refresh` puts the truth back.
+        function preview(value: real): void {
+            if (!BrightnessService.available || !isFinite(value)) return
+            BrightnessService.current = Math.round(Math.max(0, Math.min(1, value)) * BrightnessService.maximum)
+        }
         function get(): string { return JSON.stringify({ available: BrightnessService.available, value: BrightnessService.value }) }
     }
 
@@ -909,8 +940,11 @@ ShellRoot {
         }
         function reset(): bool { return LayoutService.resetBar() }
         // Workspace indicator: mode "open", "gapless" or "fixed", 1–10 slots.
+        // Both or neither: the mode used to be stored before a count out of
+        // range was refused.
         function setWorkspaces(mode: string, count: int): bool {
-            return SettingsService.set("workspaces.mode", mode) && SettingsService.set("workspaces.count", count)
+            const values = { "workspaces.mode": mode, "workspaces.count": count }
+            return IpcLogic.allAllowed(values, SettingsService.allowed) && SettingsService.setAll(values)
         }
         // How the pips are drawn, which is a separate question from which
         // workspaces are shown.
@@ -976,7 +1010,16 @@ ShellRoot {
     }
 
     IpcHandler {
+        id: audioIpc
         target: "audio"
+        // The volume keys (hypr/hyprland.lua sends them as global shortcuts;
+        // the conf dialect keeps wpctl): one 5 % step of the default output,
+        // up to 100 % as wpctl's -l 1.0 keeps it, and the two mutes. Without
+        // a bound default node yet, wpctl does it as before.
+        function up(): void { if (!AudioService.stepVolume(AudioService.sink, 0.05)) Quickshell.execDetached(["wpctl", "set-volume", "-l", "1.0", "@DEFAULT_AUDIO_SINK@", "5%+"]) }
+        function down(): void { if (!AudioService.stepVolume(AudioService.sink, -0.05)) Quickshell.execDetached(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%-"]) }
+        function mute(): void { if (AudioService.sink && AudioService.sink.audio) AudioService.toggleMute(AudioService.sink); else Quickshell.execDetached(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"]) }
+        function micMute(): void { if (AudioService.source && AudioService.source.audio) AudioService.toggleMute(AudioService.source); else Quickshell.execDetached(["wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle"]) }
         // Route an app stream (node id) to a sink, by its id (as `get` lists
         // them) or its node.name; "default" resets.
         function route(stream: string, sink: string): bool {
@@ -1022,9 +1065,14 @@ ShellRoot {
     function cycleMode(): string {
         const step = Profile.cycleMode(LayoutService.activeMode, LayoutService.modeNames,
                                        SettingsService.value("desktop.autoProfile"))
+        // Do Not Disturb before the switch: a mode can turn it on, and leaving
+        // it off again, and nothing else on screen says so.
+        const dndBefore = { active: NotificationService.dndActive, by: NotificationService.dndBy }
         if (!step || !LayoutService.setActiveMode(step.mode)) return LayoutService.activeMode
         if (step.autoChanged) SettingsService.set("desktop.autoProfile", step.auto)
-        osd.showMessage(Profile.osdText(Profile.label(step.mode, LayoutService.templates), step),
+        const dnd = Profile.dndChange(dndBefore, { active: NotificationService.dndActive, by: NotificationService.dndBy },
+                                      step.mode)
+        osd.showMessage(Profile.osdText(Profile.label(step.mode, LayoutService.templates), step, dnd),
                         Profile.icon(step.mode))
         return step.mode
     }
@@ -1060,22 +1108,24 @@ ShellRoot {
             const names = LayoutService.profileNames
             const next = Profile.nextProfile(LayoutService.activeProfile, names)
             if (!next.length || !LayoutService.setActiveProfile(next)) return LayoutService.activeProfile
-            osd.showMessage(LayoutService.activeProfileLabel, Profile.icon(LayoutService.activeMode))
+            osd.showMessage(LayoutService.activeProfileLabel, Profile.profileIcon())
             return next
         }
     }
 
     DashboardPanel {}
-    EventEditor {}
-    WifiDialog {}
-    PairingDialog {}
-    UnlockDialog {}
+    // The event editor keeps an unsaved draft in itself, one more reason it
+    // stays once built.
+    LazyLoader { active: PanelService.demanded.eventEditor === true; EventEditor {} }
+    LazyLoader { active: PanelService.demanded.wifiPassword === true; WifiDialog {} }
+    LazyLoader { active: PanelService.demanded.pairing === true; PairingDialog {} }
+    LazyLoader { active: PanelService.demanded.driveUnlock === true; UnlockDialog {} }
     Osd { id: osd }
-    ClipboardPanel {}
-    WallpaperPicker {}
+    LazyLoader { active: PanelService.demanded.clipboard === true; ClipboardPanel {} }
+    LazyLoader { active: PanelService.demanded.wallpaperPicker === true; WallpaperPicker {} }
     Overview {}
     Switcher {}
-    SettingsPanel {}
+    LazyLoader { active: PanelService.demanded.settings === true; SettingsPanel {} }
     NetworkPopup {}
     VpnPopup {}
     BluetoothPopup {}
@@ -1145,7 +1195,7 @@ ShellRoot {
         notifications: notificationsIpc, dashboard: dashboardIpc, powerMenu: powerMenuIpc,
         overview: overviewIpc, wallpaperPicker: wallpaperPickerIpc, colorPicker: colorPickerIpc,
         switcher: switcherIpc, clipboard: clipboardIpc, emoji: emojiIpc, recording: recordingIpc,
-        workspaces: workspacesIpc, kbdBacklight: kbdBacklightIpc, brightness: brightnessIpc,
+        workspaces: workspacesIpc, kbdBacklight: kbdBacklightIpc, brightness: brightnessIpc, audio: audioIpc,
         gestures: gesturesIpc, dock: dockIpc, startMenu: startMenuIpc
     })
     function runShortcut(name) {

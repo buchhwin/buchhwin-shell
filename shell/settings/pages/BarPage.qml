@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../../services/dock/DockLogic.js" as DockLogic
 
 // Desktop mode and pill bar editor: pills per zone, items per pill. Select an
 // item chip to move, restyle, split or remove it. Changes apply live and can
@@ -44,6 +45,21 @@ ColumnLayout {
         return entry ? entry.icon : "󰘔"
     }
 
+    // A pill moved by the keyboard keeps the keyboard. Inside its zone the
+    // card moves along with the pill (the cards are keyed by pill id); into
+    // the next zone it is a new card there, and the focus goes to the same
+    // button on it, or to the other one at the end of the bar.
+    function movePill(pillId, delta, keepFocus) {
+        if (!LayoutService.barMovePill(pillId, delta) || !keepFocus) return
+        Qt.callLater(() => {
+            for (let zone = 0; zone < zoneRepeater.count; ++zone) {
+                const section = zoneRepeater.itemAt(zone)
+                const card = section ? section.cardFor(pillId) : null
+                if (card) { card.focusMove(delta); return }
+            }
+        })
+    }
+
     DesktopModeSection { Layout.fillWidth: true }
 
     SettingsSection {
@@ -78,6 +94,34 @@ ColumnLayout {
                 text: "Open the editor"
                 icon: Icons.arrange
                 onClicked: { PanelService.close("settings"); LayoutService.editMode = true }
+            }
+        }
+        // notch.screens: every screen by default, as the bar's own list.
+        SettingRow {
+            id: notchScreens
+            visible: Quickshell.screens.length > 1
+            readonly property string stored: SettingsService.value("notch.screens")
+            readonly property var names: Quickshell.screens.map(screen => screen.name)
+            readonly property var shownOn: DockLogic.screensFor(stored, names)
+            label: "Show on"
+            hint: "Which displays have a notch. With all of them ticked a new display gets one too. The last one cannot be unticked."
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Metrics.spaceSm
+                Repeater {
+                    model: Quickshell.screens
+                    ChipButton {
+                        required property var modelData
+                        compact: true
+                        focusOnTab: true
+                        title: modelData.name
+                        active: notchScreens.shownOn.indexOf(modelData.name) >= 0
+                        onClicked: {
+                            const next = DockLogic.toggleScreen(notchScreens.stored, modelData.name, notchScreens.names)
+                            if (next !== null) SettingsService.set("notch.screens", next)
+                        }
+                    }
+                }
             }
         }
         SettingRow {
@@ -212,7 +256,7 @@ ColumnLayout {
             // Not gated on the bar style: a floating row of pills may sit at
             // the bottom of the screen just as well as a continuous bar can.
             label: "Edge"
-            hint: "Left and right turn the bar on its side: the three zones run from top to bottom, a pill stacks its items instead of placing them in a row, and a panel opens beside the bar rather than under it. Widgets there have room for an icon and little else."
+            hint: "Left and right stand the bar on its side: its zones run from top to bottom, a pill stacks its items, and panels open beside it. Widgets there have room for an icon and little else."
             SegmentedControl {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -226,7 +270,10 @@ ColumnLayout {
         SettingRow {
             visible: Quickshell.screens.length > 1
             label: "Show on"
-            hint: "Which displays carry the bar. Widgets could always be placed per monitor; the bar could not. With every display ticked a new one gets a bar too, which is why \"all\" is stored as \"all\" rather than as a list of the screens that happen to be here today."
+            // With every display ticked "all" is stored as "all", not as a
+            // list of the screens that happen to be here today, so a display
+            // plugged in later gets a bar as well.
+            hint: "Which displays carry the bar. With every display ticked, a new one gets a bar too."
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Metrics.spaceSm
@@ -258,7 +305,7 @@ ColumnLayout {
         }
         SettingRow {
             label: "Panels open"
-            hint: "Where a panel appears along the bar. By the widget is what the shell has always done - the control center under the tile you clicked. The other three pin every panel to one place whatever opened it, including the ones opened by a keyboard shortcut. On a vertical bar these run from top to bottom."
+            hint: "Where a panel appears along the bar: under the widget that opened it, or always at the start, center or end - from a shortcut too. On a vertical bar these run from top to bottom."
             SegmentedControl {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -270,7 +317,9 @@ ColumnLayout {
         }
         SettingRow {
             label: "Notifications open"
-            hint: "The same question for notification popups, asked separately: wanting the control center under your hand and the notifications out of the way is one wish, not two conflicting ones. By the widget means out of the notifications pill when the bar has one, and out of the bar's end when it does not."
+            // Asked apart from the panels: the control center under your hand
+            // and the notifications out of the way is one wish, not two.
+            hint: "The same for notification popups. By the widget means out of the notifications pill, or out of the bar's end without one."
             SegmentedControl {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -314,21 +363,17 @@ ColumnLayout {
                 onSelected: value => LayoutService.setBarOption("scale", Number(value))
             }
         }
+        // Edit layout and Undo are the Desktop mode section's, at the top of
+        // this page: here they were the same two buttons a second time.
         RowLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceSm
-            ShellButton {
-                focusOnTab: true
-                icon: Icons.arrange; text: "Edit layout"; variant: "accent"
-                onClicked: { PanelService.close(); LayoutService.editMode = true }
-            }
-            ShellButton { focusOnTab: true; icon: Icons.undo; text: "Undo"; enabledState: LayoutService.undoStack.length > 0; onClicked: LayoutService.undo() }
             ShellButton { focusOnTab: true; icon: Icons.reset; text: "Restore default"; onClicked: { page.select("", -1); LayoutService.resetBar() } }
-        }
-        ShellText {
-            Layout.fillWidth: true
-            text: ShortcutService.keyHint("SUPER + ALT + E") + " drags pills between the zones on the desktop itself; the list below does the same by hand."
-            role: "small"; muted: true; wrapMode: Text.Wrap
+            ShellText {
+                Layout.fillWidth: true
+                text: ShortcutService.keyHint("SUPER + ALT + E", true) + " drags pills between the zones on the desktop itself; the list below does the same by hand."
+                role: "small"; muted: true; wrapMode: Text.Wrap
+            }
         }
     }
 
@@ -341,9 +386,12 @@ ColumnLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Each monitor its own"
-            hint: "Hyprland keeps one set of workspaces and gives each of them a monitor, so " + ShortcutService.keyHint("SUPER + 3", true)
-                + " means \u201Cgo to whichever screen is holding 3\u201D \u2014 with several monitors a workspace becomes a monitor. With this on, every monitor has its own 1 to 9: "
-                + ShortcutService.keyHint("SUPER + 3", true) + " switches the screen your pointer is on and the focus never jumps to another one. Behind the scenes the monitors get blocks of ten ids, and the first monitor keeps 1 to 10, so with a single screen nothing changes at all."
+            // Hyprland keeps one set of workspaces and gives each a monitor,
+            // so Super+3 means "go to whichever screen holds 3". With this on
+            // the monitors get blocks of ten ids, and the first keeps 1 to
+            // 10, which is why a single screen sees no change at all.
+            hint: "Every monitor has its own 1 to 9: " + ShortcutService.keyHint("SUPER + 3", true)
+                + " switches the screen your pointer is on, and the focus never jumps to another one. With one screen nothing changes."
             ShellToggle {
                 focusOnTab: true
                 checked: SettingsService.value("workspaces.perMonitor") === true
@@ -363,7 +411,9 @@ ColumnLayout {
         }
         SettingRow {
             label: "Show"
-            hint: "Open shows only the workspaces that exist, which is what Hyprland keeps - a workspace disappears the moment its last window closes. No gaps fills the empty ones between them back in, so closing everything on 2 while 1 and 3 are in use does not renumber the row under your hand. A fixed number always shows 1 to N and dims the empty ones; occupied workspaces above N still appear."
+            // "Open" is what Hyprland keeps: a workspace goes once it is empty
+            // and left, unless "Keep empty workspaces open" above holds it.
+            hint: "Open: the workspaces that exist. No gaps: the empty ones between them too, so emptying 2 between 1 and 3 does not renumber the row. Fixed number: always 1 to N, the empty ones dimmed and busy ones above N as well."
             SegmentedControl {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -375,7 +425,7 @@ ColumnLayout {
         }
         SettingRow {
             label: "Style"
-            hint: "Numbers writes each workspace's number in its pip. Dots writes none of them, so the row becomes a row of pips and the one you are on is the filled one. A dot for the active one keeps the numbers of everywhere you could go and takes away only the number of where you already are. A workspace you have named keeps its name whichever of the three is chosen."
+            hint: "Numbers: each pip shows its number. Dots: plain pips, yours filled. Pills: narrow capsules, yours wider. Dot for the active one: a dot where you are, numbers everywhere else. A workspace you have named keeps its name in every style."
             SegmentedControl {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -388,18 +438,15 @@ ColumnLayout {
         SettingRow {
             visible: SettingsService.value("workspaces.mode") === "fixed"
             label: "Number"
-            ShellSlider {
+            // A key or wheel step is smaller than one slot, so it moves at
+            // least one (IntegerSlider).
+            IntegerSlider {
                 focusOnTab: true
                 id: countSlider
                 Layout.fillWidth: true
                 from: 1; to: 10
                 value: SettingsService.value("workspaces.count")
-                // A wheel step is smaller than one slot, so it moves at least one.
-                onReleased: value => {
-                    const delta = value - SettingsService.value("workspaces.count")
-                    const step = Math.abs(delta) < 1 && Math.abs(delta) > 0.01 ? Math.sign(delta) : Math.round(delta)
-                    SettingsService.set("workspaces.count", Math.max(1, Math.min(10, SettingsService.value("workspaces.count") + step)))
-                }
+                onPicked: value => SettingsService.set("workspaces.count", value)
             }
             ShellText {
                 text: String(Math.round(countSlider.pressed ? countSlider.liveValue : countSlider.value))
@@ -410,6 +457,7 @@ ColumnLayout {
     }
 
     Repeater {
+        id: zoneRepeater
         model: LayoutService.barShown ? LayoutService.zones : []
 
         SettingsSection {
@@ -421,6 +469,15 @@ ColumnLayout {
             Layout.fillWidth: true
             title: page.zoneLabels[zone]
 
+            // This zone's card for a pill, or null.
+            function cardFor(pillId) {
+                for (let at = 0; at < pillRepeater.count; ++at) {
+                    const card = pillRepeater.itemAt(at)
+                    if (card && card.modelData === pillId) return card
+                }
+                return null
+            }
+
             EmptyState {
                 Layout.fillWidth: true
                 visible: zoneSection.pills.length === 0
@@ -428,17 +485,34 @@ ColumnLayout {
                 icon: "󰘔"
                 title: page.unit === "group" ? "No groups yet" : "No pills yet"
             }
+            // Keyed by pill id: every change to the bar is a new list of new
+            // pills, and a Repeater over it built every card of the zone
+            // again, so after Move right, Merge or a display segment the
+            // keyboard's place was gone. A card stays with its pill now,
+            // through a move inside the zone too.
             Repeater {
-                model: zoneSection.pills
+                id: pillRepeater
+                model: ScriptModel { values: zoneSection.pills.map(pill => pill.id) }
 
                 ShellCard {
                     id: pillCard
                     // A card inside a settings section.
                     level: 2
-                    required property var modelData
+                    required property string modelData
                     required property int index
-                    readonly property var pill: modelData
+                    readonly property var pill: zoneSection.pills.find(entry => entry.id === modelData) || ({ id: modelData, items: [] })
                     readonly property bool selected: page.selectedPill === pill.id
+                    // After a move into another zone: the button that moved
+                    // it, or the other one where the bar ends.
+                    function focusMove(delta) {
+                        const wanted = delta < 0 ? moveLeftButton : moveRightButton
+                        const other = delta < 0 ? moveRightButton : moveLeftButton
+                        const zoneAt = LayoutService.zones.indexOf(zoneSection.zone)
+                        const atEnd = delta < 0 ? zoneAt === 0 && pillCard.index === 0
+                            : zoneAt === LayoutService.zones.length - 1 && pillCard.index === zoneSection.pills.length - 1
+                        const button = atEnd ? other : wanted
+                        button.forceActiveFocus()
+                    }
                     Layout.fillWidth: true
                     highlighted: selected
                     interactive: true
@@ -485,8 +559,9 @@ ColumnLayout {
                                 }
                             }
 
-                            ShellButton { focusOnTab: true; icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Move left"; onClicked: LayoutService.barMovePill(pillCard.pill.id, -1) }
-                            ShellButton { focusOnTab: true; icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Move right"; onClicked: LayoutService.barMovePill(pillCard.pill.id, 1) }
+                            // A click takes no focus, so the focus says the keyboard pressed it.
+                            ShellButton { id: moveLeftButton; focusOnTab: true; icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Move left"; onClicked: page.movePill(pillCard.pill.id, -1, activeFocus) }
+                            ShellButton { id: moveRightButton; focusOnTab: true; icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Move right"; onClicked: page.movePill(pillCard.pill.id, 1, activeFocus) }
                             ShellButton {
                                 focusOnTab: true
                                 visible: pillCard.index < zoneSection.pills.length - 1
@@ -517,17 +592,29 @@ ColumnLayout {
                                 options: itemActions.item ? WidgetRegistry.pillDisplays(itemActions.item.type) : []
                                 onSelected: value => LayoutService.barSetDisplay(pillCard.pill.id, page.selectedItem, value)
                             }
+                            // At an end, the keyboard goes on to the button
+                            // that still moves the item.
+                            function stepItem(delta, keepFocus) {
+                                LayoutService.barMoveItem(pillCard.pill.id, page.selectedItem, delta)
+                                page.selectedItem += delta
+                                if (!keepFocus) return
+                                const wanted = delta < 0 ? itemLeftButton : itemRightButton
+                                const button = wanted.enabledState ? wanted : delta < 0 ? itemRightButton : itemLeftButton
+                                button.forceActiveFocus()
+                            }
                             ShellButton {
+                                id: itemLeftButton
                                 focusOnTab: true
                                 icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Move item left"
                                 enabledState: page.selectedItem > 0
-                                onClicked: { LayoutService.barMoveItem(pillCard.pill.id, page.selectedItem, -1); page.selectedItem -= 1 }
+                                onClicked: itemActions.stepItem(-1, activeFocus)
                             }
                             ShellButton {
+                                id: itemRightButton
                                 focusOnTab: true
                                 icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Move item right"
                                 enabledState: page.selectedItem < pillCard.pill.items.length - 1
-                                onClicked: { LayoutService.barMoveItem(pillCard.pill.id, page.selectedItem, 1); page.selectedItem += 1 }
+                                onClicked: itemActions.stepItem(1, activeFocus)
                             }
                             ShellButton {
                                 focusOnTab: true

@@ -13,8 +13,18 @@ function logicalMonitor(monitor) {
         width: Math.round((rotated ? monitor.height : monitor.width) / scale),
         height: Math.round((rotated ? monitor.width : monitor.height) / scale),
         focused: monitor.focused === true,
-        activeWorkspace: monitor.activeWorkspace ? Number(monitor.activeWorkspace.id) : -1
+        activeWorkspace: monitor.activeWorkspace ? Number(monitor.activeWorkspace.id) : -1,
+        model: String(monitor.model || "")
     }
+}
+
+// What a monitor's row is called after its number: the model where the
+// monitor names one, since the connector (DP-8, DP-10) changes with the port
+// a dock hands out, and the connector where the model is a bare product code
+// (the laptop's own panel says "0x41B5") or missing.
+function monitorTitle(screen) {
+    const model = String(screen && screen.model || "").trim()
+    return model.length && !/^(0x)?[0-9a-f]+$/i.test(model) ? model : String(screen && screen.name || "")
 }
 
 function clamp01(value) {
@@ -35,11 +45,12 @@ function clamp01(value) {
 function build(clients, monitors, workspaces, mode, count, perMonitor) {
     const screens = (monitors || []).map(logicalMonitor)
     const byId = {}
-    const ensure = (id, name, monitorId) => {
+    const ensure = (id, name, monitorId, filled) => {
         if (!byId[id]) {
             const screen = screens.find(item => item.id === monitorId) || screens[0] || { name: "", x: 0, y: 0, width: 1920, height: 1080, activeWorkspace: -1 }
             byId[id] = { id: id, name: String(name || id), monitor: screen.name, active: screen.activeWorkspace === id,
-                         aspect: screen.height / Math.max(1, screen.width), windows: [], screen: screen }
+                         aspect: screen.height / Math.max(1, screen.width), windows: [], screen: screen,
+                         filled: filled === true }
         }
         return byId[id]
     }
@@ -64,14 +75,14 @@ function build(clients, monitors, workspaces, mode, count, perMonitor) {
                 .filter(entry => entry.monitor === order[index])
                 .map(entry => Workspaces.localId(entry.id))
             for (const local of wantedIds(mine, mode, count))
-                if (!byId[base + local]) ensure(base + local, String(base + local), screen ? screen.id : undefined)
+                if (!byId[base + local]) ensure(base + local, String(base + local), screen ? screen.id : undefined, true)
         }
     } else {
         const wanted = wantedIds(Object.keys(byId).map(id => byId[id].id), mode, count)
         if (wanted.length) {
             const home = screens.find(item => item.focused) || screens[0]
             for (const id of wanted)
-                if (!byId[id]) ensure(id, String(id), home ? home.id : undefined)
+                if (!byId[id]) ensure(id, String(id), home ? home.id : undefined, true)
         }
     }
     for (const client of clients || []) {
@@ -93,10 +104,19 @@ function build(clients, monitors, workspaces, mode, count, perMonitor) {
         })
     }
     const order = perMonitor ? Workspaces.monitorOrder(screens) : []
+    const fixed = Workspaces.normalizeMode(mode) === "fixed"
+    const slots = Workspaces.normalizeCount(count)
     return Object.keys(byId).map(Number).sort((a, b) => a - b).map(id => {
         const entry = byId[id]
         entry.windows.sort((a, b) => b.focusOrder - a.focusOrder)
         delete entry.screen
+        // `filled`: made up here, Hyprland has no such workspace (a window
+        // that turned up on it says otherwise). `slot`: one of Fixed's
+        // numbers, which the overview shows whether it exists or not. Neither
+        // can be closed: there is nothing to close, or it is filled back in
+        // the moment it goes, and an × on it would only read as broken.
+        entry.filled = entry.filled && !entry.windows.length
+        entry.slot = fixed && (perMonitor ? Workspaces.localId(id) : id) <= slots
         // What the card is called. With blocks that is the monitor's own
         // number, unless the workspace has a name somebody chose, or unless it
         // is sitting on a monitor whose block it does not belong to - then the
@@ -115,7 +135,16 @@ function build(clients, monitors, workspaces, mode, count, perMonitor) {
 // because that is where you look. One flow of every workspace of every monitor
 // is unreadable the moment there is more than one screen - and with blocks it
 // can be twenty-seven cards.
-function groups(entries, monitors) {
+//
+// Each row carries its "New workspace" card (`newCard`, or null). With a block
+// of numbers per monitor (`perMonitor`, the default) every row offers the next
+// free number of its own block. Without blocks the numbers are one count for
+// all monitors, and `workspace N` makes a new one on the focused monitor, so
+// only the focused row offers it, with the next number free anywhere: a row's
+// own next number was another monitor's existing workspace (the click jumped
+// to the other screen), and a block number had no block behind it.
+function groups(entries, monitors, perMonitor) {
+    const blocks = perMonitor !== false
     const screens = (monitors || []).map(logicalMonitor)
     const order = Workspaces.monitorOrder(screens)
     const focusedName = (screens.find(item => item.focused) || {}).name || ""
@@ -123,18 +152,25 @@ function groups(entries, monitors) {
     const result = []
     for (let index = 0; index < order.length; ++index) {
         const screen = screens.find(item => item.name === order[index])
+        const mine = list.filter(entry => entry.monitor === order[index])
+        // Each row's cards get their own screen's shape: a portrait monitor
+        // beside two landscape ones is exactly the case this is for, and one
+        // aspect for all three would draw the windows wrong.
+        const aspect = screen ? screen.height / Math.max(1, screen.width) : 0.5625
+        const focused = order[index] === focusedName
+        // Where this monitor's block of numbers starts, so the row's "New
+        // workspace" card offers the next free one *of this monitor*.
+        const base = blocks ? index * Workspaces.perMonitorBlock : 0
+        const offered = blocks ? nextFreeIn(mine, base) : focused ? nextFreeWorkspace(list) : -1
         result.push({
             monitor: order[index],
+            title: monitorTitle(screen),
             number: index + 1,
-            focused: order[index] === focusedName,
-            // Where this monitor's block of numbers starts, so the row's
-            // "New workspace" card offers the next free one *of this monitor*.
-            base: index * Workspaces.perMonitorBlock,
-            // Each row's cards get their own screen's shape: a portrait
-            // monitor beside two landscape ones is exactly the case this is
-            // for, and one aspect for all three would draw the windows wrong.
-            aspect: screen ? screen.height / Math.max(1, screen.width) : 0.5625,
-            workspaces: list.filter(entry => entry.monitor === order[index])
+            focused: focused,
+            base: base,
+            aspect: aspect,
+            workspaces: mine,
+            newCard: offered > 0 ? newCard(offered, order[index], aspect) : null
         })
     }
     // A workspace on a monitor the list does not know keeps a row of its own
@@ -142,7 +178,8 @@ function groups(entries, monitors) {
     // the one nobody is looking for.
     const orphans = list.filter(entry => order.indexOf(entry.monitor) < 0)
     if (orphans.length)
-        result.push({ monitor: "", number: 0, focused: false, base: 0, aspect: 0.5625, workspaces: orphans })
+        result.push({ monitor: "", title: "", number: 0, focused: false, base: 0, aspect: 0.5625, workspaces: orphans,
+                      newCard: blocks ? newCard(nextFreeIn(orphans, 0), "", 0.5625) : null })
     // **The rows stay in the monitors' own order**, left to right, and the
     // focused one is marked rather than moved. It used to be pulled to the
     // front, which made sense while there was a row per *workspace*; with a
@@ -153,6 +190,41 @@ function groups(entries, monitors) {
     // again. A row already says "Monitor 2 - DP-2" and draws that in
     // the accent colour when it is the focused one; that is enough to find it,
     // and it costs nothing to look for.
+    return result
+}
+
+// A row's "New workspace" card: shaped like the row's other cards, with the
+// number a click on it opens.
+function newCard(id, monitor, aspect) {
+    return { id: id, label: "", name: "", windows: [], aspect: aspect, active: false, monitor: monitor,
+             placeholder: true }
+}
+
+// Whether a card's × can close its workspace: a real one - not the new
+// workspace card, not one filled in or one of Fixed's numbers (`build`) - on
+// a monitor with another real workspace for its windows to go to
+// (HyprlandService.closeWorkspace moves them to the one before it).
+function closable(card, row) {
+    if (!card || card.placeholder === true || card.filled === true || card.slot === true) return false
+    return ((row && row.workspaces) || []).filter(entry => entry && entry.filled !== true).length > 1
+}
+
+// `hyprctl -j --batch "clients; monitors; workspaces"`: one process for the
+// three answers instead of a shell and three hyprctl. Hyprland writes the
+// answers one after another with blank lines between them, and pretty JSON
+// has no blank line inside (a string cannot hold a raw newline). `names` are
+// the commands in their order; the answer is { name: value } or null when it
+// is not exactly that many JSON documents, so the caller can fall back.
+function parseBatch(text, names) {
+    const keys = Array.isArray(names) ? names : []
+    const parts = String(text || "").split(/\n[ \t]*\n/).map(part => part.trim()).filter(part => part.length)
+    if (!keys.length || parts.length !== keys.length) return null
+    const result = {}
+    try {
+        for (let index = 0; index < keys.length; ++index) result[keys[index]] = JSON.parse(parts[index])
+    } catch (error) {
+        return null
+    }
     return result
 }
 

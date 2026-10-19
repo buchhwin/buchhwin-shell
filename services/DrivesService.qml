@@ -5,8 +5,10 @@ import QtQuick
 import "drives/DrivesLogic.js" as Logic
 
 // Removable drives (USB sticks, SD cards, external disks, LUKS volumes) and
-// MTP phones. scripts/drives.py watches UDisks2 and the gvfs volume monitor
-// read-only and prints the list plus added/removed events; mounting,
+// MTP phones. `scripts/drives.py list` reads UDisks2 and the gvfs volume
+// monitor read-only and prints the list; it runs whenever `udisksctl monitor`
+// or `gio mount -o` says something changed (see "watching" below), and what
+// came and went is worked out here (DrivesLogic.settle). Mounting,
 // unmounting, unlocking, locking and powering off run through udisksctl
 // (udisks' polkit rules allow them for the active session, no sudo), phones
 // through `gio mount`. A LUKS passphrase only reaches udisksctl over stdin
@@ -80,12 +82,12 @@ Singleton {
         busy = next
     }
 
-    function handleLine(line) {
-        const event = Logic.parseLine(line)
+    // One message of a read: the list, then what came and went since the read
+    // before (DrivesLogic.settle), or an error.
+    function handleMessage(event) {
         if (!event) return
         if (event.kind === "drives") {
             available = true
-            monitorFailures = 0
             liveDrives = event.drives
             livePhones = event.phones
             mtpAvailable = event.mtp
@@ -97,11 +99,13 @@ Singleton {
             if (drive) driveAdded(drive)
         } else if (event.kind === "removed") {
             dismissNotifications(event.id)
+            forgetAutoOpen(event.id)
         } else if (event.kind === "phoneAdded") {
             const phone = livePhones.find(item => item.id === event.id)
             if (phone) phoneAdded(phone)
         } else if (event.kind === "phoneRemoved") {
             dismissNotifications(event.id)
+            forgetAutoOpen(event.id)
             if (waitingPhone === event.id) waitingPhone = ""
         } else if (event.kind === "error") {
             available = false
@@ -111,14 +115,58 @@ Singleton {
     function driveAdded(drive) {
         if (!realSession) return
         // A locked volume needs the passphrase, so nothing is opened by itself.
-        if (autoOpen && !drive.volumes.every(Logic.locked)) openDrive(drive)
+        if (autoOpen && !drive.volumes.every(Logic.locked)) queueAutoOpen(drive.id)
         if (notifyEnabled) notifyConnected(drive)
     }
 
     function phoneAdded(phone) {
         if (!realSession) return
-        if (autoOpen) openPhone(phone)
+        if (autoOpen) queueAutoOpen(phone.id)
         if (notifyEnabled) notifyPhone(phone)
+    }
+
+    // ---- opening by itself, not behind the lock screen ---------------------------
+    // "Open automatically" waits while the screen is locked
+    // (DrivesLogic.autoOpenAction): the lock screen's marker file says so,
+    // and the drives waiting are opened once it is gone - looked at every
+    // 3 s, and only while something waits.
+    readonly property string lockMarker: Paths.runtimeDir + "/lock/locked"
+    property var autoOpenIds: []
+
+    function queueAutoOpen(id) {
+        if (autoOpenIds.indexOf(id) < 0) autoOpenIds = autoOpenIds.concat([id])
+        if (!lockCheck.running) lockCheck.running = true
+    }
+
+    function forgetAutoOpen(id) {
+        autoOpenIds = autoOpenIds.filter(item => item !== id)
+    }
+
+    function settleAutoOpen(screenLocked) {
+        const waiting = []
+        for (const id of autoOpenIds) {
+            const drive = find(id)
+            const phone = drive ? null : findPhone(id)
+            if (!drive && !phone) continue
+            const openable = phone !== null || !drive.volumes.every(Logic.locked)
+            const action = Logic.autoOpenAction(autoOpen, openable, screenLocked)
+            if (action === "wait") waiting.push(id)
+            else if (action === "open" && drive) openDrive(drive)
+            else if (action === "open") openPhone(phone)
+        }
+        autoOpenIds = waiting
+        if (waiting.length) lockPoll.restart()
+    }
+
+    Process {
+        id: lockCheck
+        command: ["test", "-e", root.lockMarker]
+        onExited: code => root.settleAutoOpen(code === 0)
+    }
+    Timer {
+        id: lockPoll
+        interval: 3000
+        onTriggered: if (root.autoOpenIds.length && !lockCheck.running) lockCheck.running = true
     }
 
     // ---- notifications (notify-send to the shell's own server) -------------
@@ -449,36 +497,135 @@ Singleton {
         previewPhones = event && event.kind === "drives" ? event.phones : []
     }
 
+    // Read only for the preview: every start used to read the sample and keep
+    // its text, preview or not.
     FileView {
         id: sampleFile
-        path: Paths.shellFile("tests/fixtures/drives-sample.json")
+        path: root.preview ? Paths.shellFile("tests/fixtures/drives-sample.json") : ""
         printErrors: false
         onLoaded: if (root.preview) root.applySample(text())
     }
 
-    // ---- monitor ----------------------------------------------------------------
-    // Crash restarts pause through a flag so the `running` binding survives.
-    property bool monitorPaused: false
-    property int monitorFailures: 0
+    // ---- watching ---------------------------------------------------------------
+    // Two small C watchers say when to read: `udisksctl monitor` for every
+    // UDisks2 object that comes, goes or changes (and udisksd going away and
+    // coming back), and `gio mount -o` for gvfs - phones, which UDisks2 never
+    // sees, and their mounts - only while gvfs-mtp is installed. Each line
+    // restarts a 400 ms wait, then `drives.py list` reads everything once.
+    // Before, a python process (drives.py monitor with PyGObject and
+    // dbus-python) stayed for the whole session to hear the same signals:
+    // ~20 MB for events that come a few times a week; the watchers hold
+    // about 1 MB each, and a plug or a mount costs one read of ~0.1-0.3 s.
+    // Bound to the shell (Paths.bound) like every long-running helper.
+    property var readState: Logic.emptyReadState()
+    property bool listed: false
+    property bool readQueued: false
+
+    function readSoon() { readDebounce.restart() }
+
+    function readNow() {
+        readRetry.stop()
+        if (listProc.running) { readQueued = true; return }
+        listProc.running = true
+    }
+
+    function applyRead(text) {
+        const step = Logic.settle(readState, Logic.readResult(text))
+        readState = step.state
+        if (step.say === "error") {
+            handleMessage({ kind: "error" })
+            // A watcher's line reads sooner (readSoon replaces this).
+            readRetry.interval = Logic.retryDelay(step.state.retries)
+            readRetry.restart()
+            return
+        }
+        if (step.say !== "drives") return
+        listed = true
+        handleMessage({ kind: "drives", drives: step.state.drives, phones: step.state.phones, mtp: step.state.mtp })
+        for (const event of step.events) handleMessage(event)
+    }
+
+    // The first read comes from here, merged with the watchers' first lines.
+    Component.onCompleted: readSoon()
+    Timer { id: readDebounce; interval: Logic.DEBOUNCE_MS; onTriggered: root.readNow() }
+    Timer { id: readRetry; onTriggered: root.readNow() }
 
     Process {
-        id: monitorProc
-        stderr: ErrorLog { label: "DrivesService.monitorProc" }
-        running: !root.monitorPaused
-        command: [Paths.script("drives.py"), "monitor"]
-        stdout: SplitParser { onRead: data => root.handleLine(data) }
-        onRunningChanged: {
-            if (running || root.monitorPaused) return
-            root.available = false
-            root.monitorFailures += 1
-            if (root.monitorFailures > 5) return
-            root.monitorPaused = true
-            monitorRestart.interval = 5000 * Math.pow(2, root.monitorFailures - 1)
-            monitorRestart.restart()
+        id: listProc
+        stderr: ErrorLog { label: "DrivesService.listProc" }
+        command: [Paths.script("drives.py"), "list"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.applyRead(text)
+                // Something changed while this read ran: read once more.
+                if (root.readQueued) {
+                    root.readQueued = false
+                    Qt.callLater(root.readNow)
+                }
+            }
         }
     }
-    Timer {
-        id: monitorRestart
-        onTriggered: root.monitorPaused = false
+
+    // A watcher that ends starts again after a growing pause, five times in a
+    // row at most; one that ran for a minute counts anew. Crash restarts pause
+    // through a flag so the `running` binding survives. A watcher started
+    // again may have missed something meanwhile, so a read follows.
+    property bool udisksPaused: false
+    property int udisksFailures: 0
+    Process {
+        id: udisksWatch
+        stderr: ErrorLog { label: "DrivesService.udisksWatch" }
+        running: !root.udisksPaused
+        command: Paths.bound(["udisksctl", "monitor"])
+        stdout: SplitParser { onRead: data => { if (Logic.watcherNews(data)) root.readSoon() } }
+        onRunningChanged: {
+            if (running) {
+                udisksHealthy.restart()
+                if (root.udisksFailures > 0) root.readSoon()
+                return
+            }
+            udisksHealthy.stop()
+            if (root.udisksPaused) return
+            root.udisksFailures += 1
+            const delay = Logic.watcherRestartDelay(root.udisksFailures)
+            // Given up: no drive would show up any more, so the page says the
+            // drives are unavailable rather than "appear here when you
+            // connect them" (the resident monitor's end said so too).
+            if (delay < 0) { root.available = false; return }
+            root.udisksPaused = true
+            udisksRestart.interval = delay
+            udisksRestart.restart()
+        }
     }
+    Timer { id: udisksRestart; onTriggered: root.udisksPaused = false }
+    Timer { id: udisksHealthy; interval: 60000; onTriggered: root.udisksFailures = 0 }
+
+    // Only once a read has said gvfs-mtp is there: without it phones cannot
+    // be listed at all, and nothing else needs gvfs' events.
+    property bool gioPaused: false
+    property int gioFailures: 0
+    Process {
+        id: gioWatch
+        stderr: ErrorLog { label: "DrivesService.gioWatch" }
+        running: root.listed && root.mtpAvailable && !root.gioPaused
+        command: Paths.bound(["gio", "mount", "-o"])
+        stdout: SplitParser { onRead: data => { if (Logic.watcherNews(data)) root.readSoon() } }
+        onRunningChanged: {
+            if (running) {
+                gioHealthy.restart()
+                if (root.gioFailures > 0) root.readSoon()
+                return
+            }
+            gioHealthy.stop()
+            if (root.gioPaused || !root.listed || !root.mtpAvailable) return
+            root.gioFailures += 1
+            const delay = Logic.watcherRestartDelay(root.gioFailures)
+            if (delay < 0) return
+            root.gioPaused = true
+            gioRestart.interval = delay
+            gioRestart.restart()
+        }
+    }
+    Timer { id: gioRestart; onTriggered: root.gioPaused = false }
+    Timer { id: gioHealthy; interval: 60000; onTriggered: root.gioFailures = 0 }
 }

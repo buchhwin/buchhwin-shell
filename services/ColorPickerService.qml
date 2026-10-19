@@ -10,7 +10,10 @@ import "color/ColorLogic.js" as Logic
 // those frames: a live screen and a sampled capture drift apart the moment
 // anything under the pointer animates, and then the swatch lies about what
 // was picked. `scripts/color-picker.py` holds the frames open and answers a
-// coordinate with a hex colour, one process rather than one per sample.
+// coordinate with a hex colour, one process rather than one per sample. The
+// frames are screenshots of whatever was on screen, so the helper removes
+// them as it ends - `close()` stops it - and a quick reopen waits for that
+// (`startQueued`) before the next capture writes the same names.
 //
 // The history is a comma-string in settings.json, because SettingsService
 // cannot store a list at all - `sanitizedNode` rebuilds every object with

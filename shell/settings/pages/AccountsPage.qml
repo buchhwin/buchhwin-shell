@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
@@ -102,35 +103,47 @@ ColumnLayout {
         }
     }
 
+    // Kept sections and rows, not rebuilt ones: during a sync the status is
+    // read anew every 10 s, `groups` is new each time, and a Repeater over it
+    // made every row again - the keyboard focus on Sync now or Remove went,
+    // and an armed Remove fell back to its first click. Keyed by plain
+    // strings (group key, account id; pitfall 76), and each section and row
+    // looks up what it currently says.
     Repeater {
-        model: AccountsService.groups
+        model: ScriptModel { values: AccountsService.groups.map(group => group.key) }
         SettingsSection {
             id: groupSection
-            required property var modelData
+            required property string modelData
+            readonly property var group: AccountsService.groups.find(item => item.key === modelData) || null
+            readonly property var accounts: group ? group.accounts : []
             Layout.fillWidth: true
-            title: groupSection.modelData.title
+            title: group ? group.title : ""
 
             Repeater {
-                model: groupSection.modelData.accounts
+                model: ScriptModel { values: groupSection.accounts.map(account => account.id) }
                 ColumnLayout {
                     id: accountItem
-                    required property var modelData
-                    readonly property bool busy: AccountsService.isBusy(accountItem.modelData)
+                    required property string modelData
+                    // The account under this id as the last read has it; null
+                    // for the moment a removed one is still on its way out
+                    // (the service's helpers take a null).
+                    readonly property var account: groupSection.accounts.find(item => item.id === modelData) || null
+                    readonly property bool busy: AccountsService.isBusy(accountItem.account)
                     Layout.fillWidth: true
                     spacing: Metrics.spaceXxs
 
                     ListRow {
                         interactive: false
                         Layout.fillWidth: true
-                        icon: AccountsService.icon(accountItem.modelData)
+                        icon: AccountsService.icon(accountItem.account)
                         // The accent marks activity, not simply being online.
-                        active: AccountsService.statusTone(accountItem.modelData) === "busy"
-                        title: accountItem.modelData.name
-                        subtitle: AccountsService.subtitle(accountItem.modelData)
+                        active: AccountsService.statusTone(accountItem.account) === "busy"
+                        title: accountItem.account ? accountItem.account.name : ""
+                        subtitle: AccountsService.subtitle(accountItem.account)
                         ShellText {
-                            text: AccountsService.statusText(accountItem.modelData)
+                            text: AccountsService.statusText(accountItem.account)
                             role: "small"
-                            color: root.toneColor(AccountsService.statusTone(accountItem.modelData))
+                            color: root.toneColor(AccountsService.statusTone(accountItem.account))
                         }
                     }
                     Flow {
@@ -143,7 +156,7 @@ ColumnLayout {
                             text: "Sync now"
                             compact: true
                             enabledState: !accountItem.busy
-                            onClicked: AccountsService.sync(accountItem.modelData)
+                            onClicked: AccountsService.sync(accountItem.account)
                         }
                         ShellButton {
                             focusOnTab: true
@@ -151,7 +164,7 @@ ColumnLayout {
                             text: "Settings …"
                             compact: true
                             enabledState: !accountItem.busy
-                            onClicked: AccountsService.configure(accountItem.modelData)
+                            onClicked: AccountsService.configure(accountItem.account)
                         }
                         ShellButton {
                             focusOnTab: true
@@ -162,12 +175,12 @@ ColumnLayout {
                             // one; the service's own second-click guard is
                             // satisfied up front so the confirmed click acts.
                             confirm: true
-                            confirmText: "Click again to remove"
+                            confirmText: "Remove?"
                             enabledState: !accountItem.busy
                             toolTip: "Takes the account out of KDE PIM; the account itself stays with its provider"
                             onClicked: {
-                                AccountsService.confirmRemoveId = accountItem.modelData.id
-                                AccountsService.remove(accountItem.modelData)
+                                AccountsService.confirmRemoveId = accountItem.modelData
+                                AccountsService.remove(accountItem.account)
                             }
                         }
                     }

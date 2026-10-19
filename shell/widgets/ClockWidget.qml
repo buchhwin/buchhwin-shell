@@ -2,9 +2,12 @@ import Quickshell
 import QtQuick
 import qs.theme
 import qs.services
+import qs.shell.components
 import "../../services/appearance/TimeFormat.js" as TimeFormat
+import "../../services/appearance/DateFormat.js" as DateFormat
 
-// 24-hour clock. small: time (date on hover), medium: time and short date,
+// The clock, in 24 or 12 hours (SettingsService.twelveHourClock). small: time
+// (date on hover), medium: time and short date,
 // large: time, weekday and date.
 Item {
     id: root
@@ -43,6 +46,9 @@ Item {
 
     // Context hints next to the time, only when something needs attention.
     readonly property bool showIndicators: !inGroup && SettingsService.value("desktop.clockIndicators")
+    // The event hint needs the calendar while this clock can draw it; the
+    // backend no longer starts for the setting alone (CalendarService.wanted).
+    readonly property CalendarDemand calendarDemand: CalendarDemand { active: root.showIndicators && CalendarService.hintActive }
     readonly property var indicators: {
         if (!showIndicators) return []
         const result = []
@@ -79,7 +85,7 @@ Item {
         + (detailShown ? detail.implicitHeight + Metrics.spaceXxs * scaleFactor : 0)
         + (secondaryShown ? secondary.implicitHeight : 0)
 
-    SystemClock { id: clock; precision: SystemClock.Minutes }
+    SystemClock { id: clock; precision: SystemClock.Minutes; enabled: WallClock.ticking }
 
     Row {
         id: indicatorRow
@@ -182,9 +188,9 @@ Item {
         visible: root.detailShown
         opacity: root.sizeClass !== "small" || root.showHoverDate ? 1 : 0
         text: root.sizeClass === "medium"
-            ? SettingsService.locale.toString(clock.date, "ddd, MMM d")
+            ? DateFormat.date(clock.date, SettingsService.locale, "short")
             : root.sizeClass === "large" ? SettingsService.locale.toString(clock.date, "dddd")
-            : SettingsService.locale.toString(clock.date, "dddd, MMMM d")
+            : DateFormat.date(clock.date, SettingsService.locale, "long")
         color: root.sizeClass === "large" ? root.textColor : root.mutedTextColor
         font.family: Typography.family
         font.pixelSize: (root.sizeClass === "large" ? Typography.headlineSize : Typography.bodySize) * root.scaleFactor
@@ -200,7 +206,7 @@ Item {
         width: root.width
         horizontalAlignment: root.textAlign
         visible: root.secondaryShown
-        text: SettingsService.locale.toString(clock.date, "MMMM d")
+        text: DateFormat.date(clock.date, SettingsService.locale, "day")
         color: root.mutedTextColor
         font.family: Typography.family
         font.pixelSize: Typography.titleSize * root.scaleFactor

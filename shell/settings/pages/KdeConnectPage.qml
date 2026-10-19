@@ -1,8 +1,10 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../../services/kdeconnect/KdeConnectLogic.js" as Logic
 
 // Settings > Phone: KDE Connect daemon, this device, pair requests, paired
 // phones with their actions and phones that can be paired. Every device shows
@@ -15,6 +17,20 @@ ColumnLayout {
     spacing: Metrics.pageGap
 
     readonly property var status: KdeConnectService.status
+    // Rows are keyed by the device's id, and each reads its device here. The
+    // 10-s poll brings a new snapshot whenever a battery level, the signal,
+    // a notification count or the media title changes, and a Repeater on the
+    // device list itself built every row again: an open "Send link or text"
+    // field lost what was typed, a reply its draft, and the keyboard the
+    // button it stood on (testing.md pitfall 76, the string-key way).
+    readonly property var deviceById: {
+        const table = {}
+        for (const item of KdeConnectService.status.devices) table[item.id] = item
+        return table
+    }
+    // A row whose device went in the same turn reads an empty one rather
+    // than nothing, until the model takes the row away.
+    function device(id) { return root.deviceById[id] || Logic.device({ id: id, name: "" }) }
 
     PageActivity {
         onOpened: KdeConnectService.track()
@@ -101,29 +117,32 @@ ColumnLayout {
         description: "Accept only if the key matches the one shown on the phone. Requests also appear as notifications."
 
         Repeater {
-            model: KdeConnectService.requests
+            model: ScriptModel { values: KdeConnectService.requests.map(item => item.id) }
             ListRow {
-                required property var modelData
+                id: requestRow
+                required property string modelData
+                readonly property var device: root.device(modelData)
                 interactive: false
                 Layout.fillWidth: true
-                icon: KdeConnectService.deviceIcon(modelData)
+                icon: KdeConnectService.deviceIcon(requestRow.device)
                 active: true
-                title: modelData.name
-                subtitle: modelData.verificationKey.length ? "Key " + modelData.verificationKey : KdeConnectService.stateText(modelData)
+                title: requestRow.device.name
+                subtitle: requestRow.device.verificationKey.length ? "Key " + requestRow.device.verificationKey
+                    : KdeConnectService.stateText(requestRow.device)
                 Row {
                     spacing: Metrics.spaceSm
                     ShellButton {
                         focusOnTab: true
                         text: "Reject"
                         compact: true
-                        onClicked: KdeConnectService.run("reject", modelData)
+                        onClicked: KdeConnectService.run("reject", requestRow.device)
                     }
                     ShellButton {
                         focusOnTab: true
                         text: "Accept"
                         compact: true
                         variant: "accent"
-                        onClicked: KdeConnectService.run("accept", modelData)
+                        onClicked: KdeConnectService.run("accept", requestRow.device)
                     }
                 }
             }
@@ -136,15 +155,16 @@ ColumnLayout {
         title: "My devices"
         description: "Paired phones and tablets. Actions need the device to be connected."
 
-        EmptyState { Layout.fillWidth: true; visible: KdeConnectService.paired.length === 0; icon: "󰄜"; title: "No paired devices" }
+        EmptyState { Layout.fillWidth: true; visible: KdeConnectService.paired.length === 0; row: true; icon: "󰄜"; title: "No paired devices" }
         Repeater {
-            model: KdeConnectService.paired
+            model: ScriptModel { values: KdeConnectService.paired.map(item => item.id) }
             ColumnLayout {
                 id: deviceItem
-                required property var modelData
-                readonly property bool connected: modelData.reachable
-                readonly property var player: modelData.media
-                readonly property bool notificationsOpen: KdeConnectService.notificationsId === modelData.id
+                required property string modelData
+                readonly property var device: root.device(modelData)
+                readonly property bool connected: device.reachable
+                readonly property var player: device.media
+                readonly property bool notificationsOpen: KdeConnectService.notificationsId === modelData
                 property bool commandsOpen: false
                 // Indent everything below the row under the device name.
                 readonly property real indent: Metrics.spaceMd + Metrics.iconLg + Metrics.spaceMd
@@ -153,25 +173,25 @@ ColumnLayout {
                 spacing: Metrics.spaceXxs
 
                 function sendShare() {
-                    KdeConnectService.sendText(deviceItem.modelData, shareField.text)
+                    KdeConnectService.sendText(deviceItem.device, shareField.text)
                     shareField.text = ""
                 }
 
                 ListRow {
                     interactive: false
                     Layout.fillWidth: true
-                    icon: KdeConnectService.deviceIcon(deviceItem.modelData)
+                    icon: KdeConnectService.deviceIcon(deviceItem.device)
                     active: deviceItem.connected
-                    title: deviceItem.modelData.name
-                    subtitle: KdeConnectService.stateText(deviceItem.modelData)
-                    trailingText: KdeConnectService.batteryText(deviceItem.modelData)
+                    title: deviceItem.device.name
+                    subtitle: KdeConnectService.stateText(deviceItem.device)
+                    trailingText: KdeConnectService.batteryText(deviceItem.device)
                     Row {
                         spacing: Metrics.spaceXs
-                        readonly property string signalLabel: KdeConnectService.signalText(deviceItem.modelData)
+                        readonly property string signalLabel: KdeConnectService.signalText(deviceItem.device)
                         ShellIcon {
                             anchors.verticalCenter: parent.verticalCenter
                             visible: parent.signalLabel.length > 0
-                            glyph: KdeConnectService.signalIcon(deviceItem.modelData)
+                            glyph: KdeConnectService.signalIcon(deviceItem.device)
                             size: Metrics.iconSm
                             color: Colors.mutedText
                         }
@@ -192,9 +212,9 @@ ColumnLayout {
                             // The pairing is gone; it has to be accepted on
                             // the phone again. Two clicks, as Bluetooth's Remove.
                             confirm: true
-                            confirmText: "Unpair"
+                            confirmText: "Unpair?"
                             toolTip: "Unpair"
-                            onClicked: KdeConnectService.run("unpair", deviceItem.modelData)
+                            onClicked: KdeConnectService.run("unpair", deviceItem.device)
                         }
                     }
                 }
@@ -208,24 +228,24 @@ ColumnLayout {
                         icon: "󰒊"
                         text: "Ping"
                         compact: true
-                        enabledState: KdeConnectService.supports(deviceItem.modelData, "ping")
-                        onClicked: KdeConnectService.run("ping", deviceItem.modelData)
+                        enabledState: KdeConnectService.supports(deviceItem.device, "ping")
+                        onClicked: KdeConnectService.run("ping", deviceItem.device)
                     }
                     ShellButton {
                         focusOnTab: true
                         icon: "󰂞"
                         text: "Find my phone"
                         compact: true
-                        enabledState: KdeConnectService.supports(deviceItem.modelData, "findmyphone")
-                        onClicked: KdeConnectService.run("ring", deviceItem.modelData)
+                        enabledState: KdeConnectService.supports(deviceItem.device, "findmyphone")
+                        onClicked: KdeConnectService.run("ring", deviceItem.device)
                     }
                     ShellButton {
                         focusOnTab: true
                         icon: "󰈔"
                         text: "Send files …"
                         compact: true
-                        enabledState: KdeConnectService.supports(deviceItem.modelData, "share")
-                        onClicked: KdeConnectService.sendFiles(deviceItem.modelData)
+                        enabledState: KdeConnectService.supports(deviceItem.device, "share")
+                        onClicked: KdeConnectService.sendFiles(deviceItem.device)
                     }
                     ShellButton {
                         focusOnTab: true
@@ -233,7 +253,7 @@ ColumnLayout {
                         text: "Send link or text …"
                         compact: true
                         variant: deviceItem.shareOpen ? "accent" : "surface"
-                        enabledState: KdeConnectService.supports(deviceItem.modelData, "share")
+                        enabledState: KdeConnectService.supports(deviceItem.device, "share")
                         onClicked: {
                             deviceItem.shareOpen = !deviceItem.shareOpen
                             if (deviceItem.shareOpen) shareField.focusInput()
@@ -244,60 +264,60 @@ ColumnLayout {
                         icon: "󰅍"
                         text: "Send clipboard"
                         compact: true
-                        enabledState: KdeConnectService.supports(deviceItem.modelData, "clipboard")
-                        onClicked: KdeConnectService.run("clipboard", deviceItem.modelData)
+                        enabledState: KdeConnectService.supports(deviceItem.device, "clipboard")
+                        onClicked: KdeConnectService.run("clipboard", deviceItem.device)
                     }
                     ShellButton {
                         focusOnTab: true
                         icon: "󰍡"
                         text: "Messages"
                         compact: true
-                        visible: KdeConnectService.supports(deviceItem.modelData, "sms")
+                        visible: KdeConnectService.supports(deviceItem.device, "sms")
                         toolTip: "Open the KDE Connect SMS app"
-                        onClicked: KdeConnectService.openSms(deviceItem.modelData)
+                        onClicked: KdeConnectService.openSms(deviceItem.device)
                     }
                     ShellButton {
                         focusOnTab: true
                         // What the button does: the open padlock to unlock,
                         // the shut one to lock (Icons.unlock, Icons.lock).
-                        icon: deviceItem.modelData.locked ? Icons.unlock : Icons.lock
-                        text: deviceItem.modelData.locked ? "Unlock phone" : "Lock phone"
+                        icon: deviceItem.device.locked ? Icons.unlock : Icons.lock
+                        text: deviceItem.device.locked ? "Unlock phone" : "Lock phone"
                         compact: true
-                        visible: KdeConnectService.supports(deviceItem.modelData, "lockdevice")
-                        onClicked: KdeConnectService.run(deviceItem.modelData.locked ? "unlock" : "lock", deviceItem.modelData)
+                        visible: KdeConnectService.supports(deviceItem.device, "lockdevice")
+                        onClicked: KdeConnectService.run(deviceItem.device.locked ? "unlock" : "lock", deviceItem.device)
                     }
                     ShellButton {
                         focusOnTab: true
                         icon: "󰂚"
                         text: deviceItem.notificationsOpen ? "Hide notifications"
-                            : KdeConnectService.notificationCountText(deviceItem.modelData.notificationCount)
+                            : KdeConnectService.notificationCountText(deviceItem.device.notificationCount)
                         compact: true
                         variant: deviceItem.notificationsOpen ? "accent" : "surface"
-                        visible: KdeConnectService.supports(deviceItem.modelData, "notifications")
-                            && deviceItem.modelData.notificationCount > 0
-                        onClicked: KdeConnectService.toggleNotifications(deviceItem.modelData)
+                        visible: KdeConnectService.supports(deviceItem.device, "notifications")
+                            && deviceItem.device.notificationCount > 0
+                        onClicked: KdeConnectService.toggleNotifications(deviceItem.device)
                     }
                     // The daemon mounts the phone over SFTP and opens the file
                     // manager itself, so this is one button and no path.
                     ShellButton {
                         focusOnTab: true
                         icon: Icons.folder
-                        text: deviceItem.modelData.mounted ? "Browse files" : "Browse files …"
+                        text: deviceItem.device.mounted ? "Browse files" : "Browse files …"
                         compact: true
                         toolTip: "Mounts the phone and opens it in the file manager"
-                        visible: KdeConnectService.supports(deviceItem.modelData, "sftp")
-                        onClicked: KdeConnectService.browseFiles(deviceItem.modelData)
+                        visible: KdeConnectService.supports(deviceItem.device, "sftp")
+                        onClicked: KdeConnectService.browseFiles(deviceItem.device)
                     }
                     ShellButton {
                         focusOnTab: true
                         icon: "󰆍"
                         text: deviceItem.commandsOpen ? "Hide commands"
-                            : deviceItem.modelData.commands.length + (deviceItem.modelData.commands.length === 1
+                            : deviceItem.device.commands.length + (deviceItem.device.commands.length === 1
                                 ? " command" : " commands")
                         compact: true
                         variant: deviceItem.commandsOpen ? "accent" : "surface"
-                        visible: KdeConnectService.supports(deviceItem.modelData, "runcommand")
-                            && deviceItem.modelData.commands.length > 0
+                        visible: KdeConnectService.supports(deviceItem.device, "runcommand")
+                            && deviceItem.device.commands.length > 0
                         onClicked: deviceItem.commandsOpen = !deviceItem.commandsOpen
                     }
                 }
@@ -310,20 +330,25 @@ ColumnLayout {
                     Layout.topMargin: Metrics.spaceXs
                     visible: deviceItem.connected && deviceItem.commandsOpen
                     spacing: Metrics.spaceXxs
+                    // By key as well: the device is new with every poll that
+                    // changes it, and so is its list of commands.
                     Repeater {
-                        model: deviceItem.commandsOpen ? deviceItem.modelData.commands : []
+                        model: ScriptModel { values: deviceItem.commandsOpen ? deviceItem.device.commands.map(entry => entry.key) : [] }
                         ListRow {
-                            required property var modelData
+                            id: commandRow
+                            required property string modelData
+                            readonly property var command: deviceItem.device.commands.find(entry => entry.key === modelData)
+                                || ({ key: modelData, name: "" })
                             interactive: false
                             Layout.fillWidth: true
                             icon: "󰆍"
-                            title: modelData.name
+                            title: commandRow.command.name
                             ShellButton {
                                 focusOnTab: true
                                 text: "Run"
                                 compact: true
                                 variant: "ghost"
-                                onClicked: KdeConnectService.runCommand(deviceItem.modelData, modelData)
+                                onClicked: KdeConnectService.runCommand(deviceItem.device, commandRow.command)
                             }
                         }
                     }
@@ -361,7 +386,7 @@ ColumnLayout {
                     Layout.fillWidth: true
                     Layout.leftMargin: deviceItem.indent
                     Layout.topMargin: Metrics.spaceXs
-                    visible: deviceItem.connected && KdeConnectService.hasMedia(deviceItem.modelData)
+                    visible: deviceItem.connected && KdeConnectService.hasMedia(deviceItem.device)
                     spacing: Metrics.spaceXs
 
                     RowLayout {
@@ -373,12 +398,12 @@ ColumnLayout {
                             spacing: 0
                             ShellText {
                                 Layout.fillWidth: true
-                                text: KdeConnectService.mediaTitle(deviceItem.modelData)
+                                text: KdeConnectService.mediaTitle(deviceItem.device)
                                 elide: Text.ElideRight
                             }
                             ShellText {
                                 Layout.fillWidth: true
-                                text: KdeConnectService.mediaSubtitle(deviceItem.modelData)
+                                text: KdeConnectService.mediaSubtitle(deviceItem.device)
                                 role: "small"
                                 muted: true
                                 elide: Text.ElideRight
@@ -387,7 +412,7 @@ ColumnLayout {
                         ShellButton {
                             focusOnTab: true
                             icon: Icons.previous; compact: true; variant: "ghost"; toolTip: "Previous"
-                            onClicked: KdeConnectService.media(deviceItem.modelData, "previous")
+                            onClicked: KdeConnectService.media(deviceItem.device, "previous")
                         }
                         ShellButton {
                             focusOnTab: true
@@ -395,12 +420,12 @@ ColumnLayout {
                             compact: true
                             variant: "accent"
                             toolTip: deviceItem.player && deviceItem.player.playing ? "Pause" : "Play"
-                            onClicked: KdeConnectService.media(deviceItem.modelData, "play")
+                            onClicked: KdeConnectService.media(deviceItem.device, "play")
                         }
                         ShellButton {
                             focusOnTab: true
                             icon: Icons.next; compact: true; variant: "ghost"; toolTip: "Next"
-                            onClicked: KdeConnectService.media(deviceItem.modelData, "next")
+                            onClicked: KdeConnectService.media(deviceItem.device, "next")
                         }
                     }
                     RowLayout {
@@ -414,7 +439,7 @@ ColumnLayout {
                             from: 0
                             to: 100
                             value: deviceItem.player ? deviceItem.player.volume : 0
-                            onReleased: volume => KdeConnectService.setMediaVolume(deviceItem.modelData, volume)
+                            onReleased: volume => KdeConnectService.setMediaVolume(deviceItem.device, volume)
                         }
                     }
                     ShellSelect {
@@ -425,7 +450,7 @@ ColumnLayout {
                             ? deviceItem.player.players.map(name => ({ value: name, label: name })) : []
                         current: deviceItem.player ? deviceItem.player.player : ""
                         placeholder: "Player on the phone"
-                        onSelected: name => KdeConnectService.setMediaPlayer(deviceItem.modelData, name)
+                        onSelected: name => KdeConnectService.setMediaPlayer(deviceItem.device, name)
                     }
                 }
 
@@ -445,11 +470,15 @@ ColumnLayout {
                         icon: KdeConnectService.notificationsLoading ? Icons.busy : "󰂚"
                         title: KdeConnectService.notificationsLoading ? "Reading notifications …" : "No notifications right now"
                     }
+                    // By the notification's id: a dismissed one takes its own
+                    // row and leaves an answer being typed under another.
                     Repeater {
-                        model: deviceItem.notificationsOpen ? KdeConnectService.notifications : []
+                        model: ScriptModel { values: deviceItem.notificationsOpen ? KdeConnectService.notifications.map(note => note.id) : [] }
                         ColumnLayout {
                             id: noteRow
-                            required property var modelData
+                            required property string modelData
+                            readonly property var note: KdeConnectService.notifications.find(item => item.id === modelData)
+                                || ({ id: modelData, appName: "", title: "", text: "", dismissable: false, replyId: "" })
                             Layout.fillWidth: true
                             spacing: Metrics.spaceXxs
                             // The answer field opens under the notification it
@@ -461,10 +490,10 @@ ColumnLayout {
                                 interactive: false
                                 Layout.fillWidth: true
                                 icon: "󰂚"
-                                title: noteRow.modelData.title.length ? noteRow.modelData.title : noteRow.modelData.appName
-                                subtitle: noteRow.modelData.appName.length && noteRow.modelData.text.length
-                                    ? noteRow.modelData.appName + " · " + noteRow.modelData.text
-                                    : noteRow.modelData.text.length ? noteRow.modelData.text : noteRow.modelData.appName
+                                title: noteRow.note.title.length ? noteRow.note.title : noteRow.note.appName
+                                subtitle: noteRow.note.appName.length && noteRow.note.text.length
+                                    ? noteRow.note.appName + " · " + noteRow.note.text
+                                    : noteRow.note.text.length ? noteRow.note.text : noteRow.note.appName
                                 // The trailing slot is a plain Item: two
                                 // buttons put straight into it sit on top of
                                 // each other, so they go in a Row like the
@@ -478,7 +507,7 @@ ColumnLayout {
                                         variant: "ghost"
                                         // Only where the phone says an answer is
                                         // possible: it refuses the rest.
-                                        visible: noteRow.modelData.replyId.length > 0
+                                        visible: noteRow.note.replyId.length > 0
                                         onClicked: {
                                             noteRow.answering = !noteRow.answering
                                             if (noteRow.answering) Qt.callLater(replyField.focusInput)
@@ -489,8 +518,8 @@ ColumnLayout {
                                         text: "Dismiss"
                                         compact: true
                                         variant: "ghost"
-                                        visible: noteRow.modelData.dismissable
-                                        onClicked: KdeConnectService.dismissNotification(deviceItem.modelData, noteRow.modelData)
+                                        visible: noteRow.note.dismissable
+                                        onClicked: KdeConnectService.dismissNotification(deviceItem.device, noteRow.note)
                                     }
                                 }
                             }
@@ -506,7 +535,7 @@ ColumnLayout {
                                     focusOnTab: true
                                     icon: "󰍡"
                                     placeholder: "Answer …"
-                                    onAccepted: if (KdeConnectService.replyToNotification(deviceItem.modelData, noteRow.modelData, text)) {
+                                    onAccepted: if (KdeConnectService.replyToNotification(deviceItem.device, noteRow.note, text)) {
                                         text = ""
                                         noteRow.answering = false
                                     }
@@ -517,7 +546,7 @@ ColumnLayout {
                                     variant: "accent"
                                     compact: true
                                     enabledState: replyField.text.trim().length > 0
-                                    onClicked: if (KdeConnectService.replyToNotification(deviceItem.modelData, noteRow.modelData, replyField.text)) {
+                                    onClicked: if (KdeConnectService.replyToNotification(deviceItem.device, noteRow.note, replyField.text)) {
                                         replyField.text = ""
                                         noteRow.answering = false
                                     }
@@ -545,21 +574,23 @@ ColumnLayout {
             description: "Open KDE Connect on the phone and press Refresh"
         }
         Repeater {
-            model: KdeConnectService.available
+            model: ScriptModel { values: KdeConnectService.available.map(item => item.id) }
             ListRow {
-                required property var modelData
+                id: availableRow
+                required property string modelData
+                readonly property var device: root.device(modelData)
                 interactive: false
                 Layout.fillWidth: true
-                icon: KdeConnectService.deviceIcon(modelData)
-                title: modelData.name
-                subtitle: KdeConnectService.stateText(modelData)
+                icon: KdeConnectService.deviceIcon(availableRow.device)
+                title: availableRow.device.name
+                subtitle: KdeConnectService.stateText(availableRow.device)
                 ShellButton {
                     focusOnTab: true
-                    text: modelData.requested ? "Requested" : "Pair"
+                    text: availableRow.device.requested ? "Requested" : "Pair"
                     compact: true
                     variant: "accent"
-                    enabledState: modelData.reachable && !modelData.requested
-                    onClicked: KdeConnectService.run("pair", modelData)
+                    enabledState: availableRow.device.reachable && !availableRow.device.requested
+                    onClicked: KdeConnectService.run("pair", availableRow.device)
                 }
             }
         }

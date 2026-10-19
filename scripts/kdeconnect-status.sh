@@ -16,13 +16,19 @@ set -uo pipefail
 #   @commands ID        the commands the phone offers, as its own JSON
 #   @sftp ID            whether the phone is mounted over SFTP
 # Nothing is queried while kdeconnectd is not running: the daemon is D-Bus
-# activatable, so a call would start it.
+# activatable, so a call would start it. Whether it runs is asked of the bus
+# itself (NameHasOwner, which starts nothing): the name is what every call
+# below needs, and pgrep read all of /proc for it - 15-20 ms of CPU on every
+# refresh. A daemon still starting up, before it has taken its name, reads as
+# stopped until the next refresh.
 bus=(busctl --user --json=short --auto-start=no --timeout=3)
 service=org.kde.kdeconnect
 daemon=(/modules/kdeconnect org.kde.kdeconnect.daemon)
 props=org.freedesktop.DBus.Properties
 
-if ! pgrep -u "$(id -u)" -x kdeconnectd >/dev/null 2>&1; then
+owner=$(busctl --user --auto-start=no --timeout=3 call org.freedesktop.DBus /org/freedesktop/DBus \
+  org.freedesktop.DBus NameHasOwner s "$service" 2>/dev/null)
+if [[ $owner != "b true" ]]; then
   printf '@daemon stopped\n'
   exit 0
 fi

@@ -40,7 +40,7 @@ ColumnLayout {
 
     spacing: Metrics.spaceXxs * scaleFactor
 
-    SystemClock { id: clock; precision: SystemClock.Minutes }
+    SystemClock { id: clock; precision: SystemClock.Minutes; enabled: WallClock.ticking }
 
     Repeater {
         model: root.shown

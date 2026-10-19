@@ -222,7 +222,7 @@ ShellRoot {
              "autostart entry only for Plasma")
         T.eq(A.execQuote("/a b/$x\"`\\"), "\"/a b/\\$x\\\"\\`\\\\\"", "Exec quoting")
 
-        // GTK apps (round 12): GTK 3 takes the dark variant from
+        // GTK apps: GTK 3 takes the dark variant from
         // settings.ini, not from gsettings, and the Breeze theme draws with
         // the colours of the user's gtk.css, which Plasma's kded wrote for
         // BreezeDark and nothing rewrites here - GTK apps stayed dark when

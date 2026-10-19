@@ -9,13 +9,15 @@ import "../../services/profile/ProfileLogic.js" as P
 // A profile keeps everything the user sets, not only its layouts: the panel
 // colour, the accent, the notch's options and its two lists, the lock screen
 // - every setting except the machine's and the person's (the weather place,
-// the keyboard layout, the screens, power and the fingerprint reader), and
-// except what the five modes own.
-// First the pure half: which settings are a profile's, and the state in the
-// file. Then LayoutService against the runner's sandbox: leaving a profile
+// the keyboard layout and the pointer, the screens, power and the fingerprint
+// reader, the clipboard history, what the login starts ...), and except what
+// the five modes own.
+// First the pure half: which settings are a profile's - every setting sorted
+// into one of the three, so a new one cannot go unclassified -, and the state
+// in the file. Then LayoutService against the runner's sandbox: leaving a profile
 // stores its state, entering one with a state puts it back, one without keeps
-// what is set and takes it, a setting the state does not name is not reset,
-// and the first switch of the day leaves a backup in the sandbox's state
+// what is set and takes it, a setting the state does not name goes back to its
+// default, and the first switch of the day leaves a backup in the sandbox's state
 // directory.
 ShellRoot {
     id: root
@@ -51,6 +53,74 @@ ShellRoot {
         T.ok(P.isProfileSetting("weather.unit") && P.isProfileSetting("input.repeatRate")
              && P.isProfileSetting("wallpaper.path") && P.isProfileSetting("lock.showAvatar"),
              "their neighbours are a profile's")
+        T.eq(["clipboard.history", "clipboard.maxItems", "input.tapToClick", "input.touchpadNaturalScroll",
+              "input.mouseNaturalScroll", "input.sensitivity", "input.accelProfile", "input.touchpadScrollFactor",
+              "input.disableWhileTyping", "autostart.apps", "autostart.system", "updates.checkHours",
+              "updates.shellAuto", "drives.autoOpen", "terminal.alacrittyDaemon", "notch.screens"].filter(P.isProfileSetting), [],
+             "the clipboard history, the pointer, what the login starts, updates, drives, how Alacritty runs "
+             + "and the notch's screens are the machine's")
+        T.ok(P.isProfileSetting("input.repeatRate") && P.isProfileSetting("input.repeatDelay")
+             && P.isProfileSetting("input.browserScroll") && P.isProfileSetting("terminal.fontSize"),
+             "the keys' repeat, the shell's own scrolling and the rest of the terminal stay a profile's")
+
+        // Every entry of the two lists names a setting there is: a typo
+        // ("dock.screen") would leave the real one a profile's, and nothing
+        // else would notice.
+        T.eq(P.GLOBAL_SETTINGS.filter(entry => SettingsService.defaultOf(entry) === undefined), [],
+             "every GLOBAL_SETTINGS entry is a setting or a group of SettingsService.defaults")
+        T.eq(P.MODE_SCOPED.filter(leaf => {
+            const fallback = SettingsService.defaultOf(P.modeScopedPath(leaf))
+            return fallback === undefined || typeof fallback === "object"
+        }), [], "every MODE_SCOPED leaf is a setting of SettingsService.defaults")
+
+        // Every setting is a profile's unless it is listed as the machine's or
+        // a mode's (pitfall 115): a new key lands here first, and fails until
+        // someone decides. A profile's? Add it below. The machine's or the
+        // person's? ProfileLogic.GLOBAL_SETTINGS and profile-export.py's DROP.
+        // A mode's? ProfileLogic.MODE_SCOPED.
+        const profileOwned = {
+            appearance: ["accent", "accentFromWallpaper", "appsAccent", "appsFollowTheme", "appsRestoreOnLogout",
+                         "clockFormat", "cursorSize", "cursorTheme", "fontFamily", "fontScale", "locale",
+                         "monoFontFamily", "panelColor", "panelScrim", "screenCorners", "statusColors", "theme"],
+            calendar: ["enabled", "eventColor", "eventHint", "hintMinutes"],
+            desktop: ["autoProfile", "clockIndicators", "dashboardHeight", "dashboardWidth", "launcherHeight",
+                      "launcherWidth", "osd", "quickHeight", "quickWidth"],
+            dock: ["enabled", "iconSize", "magnification", "margin", "position", "runningOn", "showRunning", "span",
+                   "startOpens", "visibility"],
+            emoji: ["tone"],
+            gestures: ["createNew", "enabled", "fourDown", "fourHorizontal", "fourUp", "naturalSwipe", "pinchIn",
+                       "pinchOut", "threeDown", "threeHorizontal", "threeUp"],
+            input: ["browserScroll", "repeatDelay", "repeatRate"],
+            launcher: ["categories", "fileSearch", "modeOrder", "pinned", "searchEngine", "searchUrl", "showPinned"],
+            lock: ["showAvatar", "showMedia", "showPowerButtons", "showStatus"],
+            login: ["accent", "blur", "dateFormat", "font", "wallpaper"],
+            nightLight: ["end", "lastMode", "mode", "start", "temperature"],
+            notch: ["accentGlyphs", "bodyHeight", "bodyPadding", "bodyRadius", "clickAction", "closeDelay",
+                    "collapsedWidth", "displayMedia", "displayNotifications", "displayOsd", "dockDuplicates",
+                    "eventCount", "expandedHeight", "expandedWidth", "fullscreen", "hoverMode", "middleAction",
+                    "openDelay", "osdStyle", "panelOrigin", "reserve", "rightAction", "shape", "swipe"],
+            notifications: ["dndTomorrowHour", "popupTimeoutMs", "suppressFullscreen", "suppressGames"],
+            panelOpacity: ["clipboard", "controlCenter", "dashboard", "dock", "launcher", "notificationCenter",
+                           "notificationPopups", "osd", "overview", "pillBar", "popups", "sessionMenu", "settings",
+                           "switcher", "widgets"],
+            recording: ["audio", "folder", "fps"],
+            terminal: ["commandDuration", "cursorBlink", "cursorBlinkStyle", "cursorShape", "cursorTrail", "directory",
+                       "directoryDepth", "docker", "durationMin", "errorColor", "errorSymbol", "fastfetchOnStart",
+                       "fontFamily", "fontSize", "git", "gitStatus", "gitSymbol", "hostname", "imageSize", "jobs",
+                       "newline", "nodejs", "opacity", "padding", "personalShell", "previewGit", "promptColor",
+                       "python", "symbol", "time", "timeFormat", "twoLine", "username"],
+            wallpaper: ["folder", "intervalMinutes", "order", "path", "slideshow", "slideshowFolder", "slideshowSource"],
+            weather: ["enabled", "refreshMinutes", "unit"],
+            workspaces: ["count", "keepEmpty", "mode", "perMonitor", "style"]
+        }
+        const listed = []
+        for (const group of Object.keys(profileOwned))
+            for (const leaf of profileOwned[group]) listed.push(group + "." + leaf)
+        const owned = Object.keys(P.settingLeaves(SettingsService.defaults, ""))
+        T.eq(owned.filter(path => listed.indexOf(path) < 0).sort(), [],
+             "no setting is a profile's without a decision: a new one goes into this list, GLOBAL_SETTINGS or MODE_SCOPED")
+        T.eq(listed.filter(path => owned.indexOf(path) < 0).sort(), [],
+             "and every one listed here is still a profile's setting")
         T.eq(P.profileSettings({ appearance: { panelColor: "#202020", gapsIn: 3 }, weather: { lat: 12.5, unit: "celsius" },
                                  recording: { folder: "~/Videos" } }, "/home/u"),
              { appearance: { panelColor: "#202020" }, weather: { unit: "celsius" }, recording: { folder: "/home/u/Videos" } },
@@ -181,7 +251,9 @@ ShellRoot {
             SettingsService.setAll({ "appearance.panelColor": "#303030", "appearance.accent": "#00aa00",
                                      "notch.bodyHeight": 48, "terminal.fontSize": 15,
                                      "weather.lat": 23.5, "input.kbLayout": "fr",
-                                     "power.ac.lidAction": "nothing", "lock.fingerprint": "on" })
+                                     "power.ac.lidAction": "nothing", "lock.fingerprint": "on",
+                                     "clipboard.history": false, "input.tapToClick": false,
+                                     "autostart.system": false })
             LayoutService.notchResetLayout()
             LayoutService.lockResetLayout()
             T.eq(LayoutService.setActiveProfile("default"), true, "back to Default")
@@ -195,6 +267,9 @@ ShellRoot {
             T.eq(SettingsService.value("input.kbLayout"), "fr", "and so does the keyboard layout")
             T.eq([SettingsService.value("power.ac.lidAction"), SettingsService.value("lock.fingerprint")], ["nothing", "on"],
                  "and power and the fingerprint reader")
+            T.eq([SettingsService.value("clipboard.history"), SettingsService.value("input.tapToClick"),
+                  SettingsService.value("autostart.system")], [false, false, false],
+                 "a clipboard history turned off stays off, and so do the touchpad and the login's own choices")
             T.eq(SettingsService.value("appearance.blurStrength"), 0.2, "the blur comes from Default's mode")
             const away = L.stateOf(LayoutService.config, root.studio)
             T.eq([away.settings.appearance.panelColor, away.settings.notch.bodyHeight], ["#303030", 48],
@@ -205,7 +280,7 @@ ShellRoot {
     }
 
     // A setting the state does not name - added after it was stored, as the
-    // dock was after every state of before round 11 - is the default there,
+    // dock was after every state stored before it - is the default there,
     // not what the profile left had: the dock switched on in one profile does
     // not come along into the other (17.10.). Duplicating and removing the
     // profile in use.

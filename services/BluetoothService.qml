@@ -36,14 +36,50 @@ Singleton {
     readonly property bool agentAllowed: Quickshell.env("BUCHHWIN_NESTED") !== "1"
         && ((Quickshell.env("XDG_CONFIG_HOME") || "").length === 0
             || Quickshell.env("XDG_CONFIG_HOME") === Quickshell.env("HOME") + "/.config")
+    // Only while a pairing can come in or is under way (BluetoothLogic.agentWanted).
+    // It is a Python process of about 11 MB, and it used to idle through every
+    // session - with Bluetooth off too - while BlueZ asks it nothing outside
+    // a pairing.
+    readonly property bool agentWanted: agentAllowed && available && Logic.agentWanted({
+        enabled: enabled, viewers: discoveryViewers, discoverable: enabled && adapter.discoverable,
+        grace: pairingGrace.running, pairing: devices.some(device => device.pairing),
+        untrusted: devices.some(device => (device.paired || device.bonded) && !device.trusted),
+        // A preview (IPC, screenshots) answers nothing and needs no agent.
+        asking: (request !== null && request.preview !== true) || queue.length > 0
+            || (displayCode !== null && displayCode.preview !== true)
+    })
     property bool agentReady: false
     // Crash restarts pause the process through this flag so the `running`
     // binding survives; after five failures the agent stays off.
     property bool agentPaused: false
     property int agentFailures: 0
+    // The shell stopped the agent (agentWanted went false while it ran).
+    property bool agentStopAsked: false
+    onAgentWantedChanged: {
+        if (!agentWanted && agentProc.running) agentStopAsked = true
+        watchAgentStart()
+    }
+    // Whether a view says "Pairing service is starting …": only once the
+    // agent has been wanted and not ready for a while. It starts as a view
+    // opens and is ready a fraction of a second later, and a caption bound
+    // to `agentReady` alone came and went with every open, the popup's
+    // height with it.
+    readonly property bool agentStarting: agentAllowed && enabled && !agentReady && agentSlow
+    property bool agentSlow: false
+    function watchAgentStart() {
+        if (agentWanted && !agentReady) {
+            if (!agentSlow && !agentSlowTimer.running) agentSlowTimer.start()
+        } else {
+            agentSlowTimer.stop()
+            agentSlow = false
+        }
+    }
+    onAgentReadyChanged: watchAgentStart()
+    Component.onCompleted: watchAgentStart()
+    Timer { id: agentSlowTimer; interval: 1500; onTriggered: root.agentSlow = true }
     property var request: null            // { id, kind, name, passkey, preview }
     property var queue: []
-    property var displayCode: null        // { name, passkey } shown without an answer
+    property var displayCode: null        // { name, passkey, device, … } shown without an answer
 
     function handleAgentLine(line) {
         let message = null
@@ -51,7 +87,7 @@ Singleton {
         if (message.kind === "ready") { agentReady = true; agentFailures = 0; return }
         if (message.kind === "error") { agentReady = false; return }
         if (message.kind === "display") {
-            displayCode = { name: message.name, passkey: message.passkey }
+            displayCode = Logic.displayFor(message, pairingStates)
             if (!request) PanelService.openOver("pairing")
             return
         }
@@ -77,8 +113,15 @@ Singleton {
 
     function respond(accept, value) {
         if (!request) return
-        if (!request.preview && agentProc.running)
+        if (!request.preview && agentProc.running) {
             agentProc.write(JSON.stringify({ id: request.id, accept: accept, value: value || "" }) + "\n")
+            // The agent stays for the rest of that pairing (pairingGrace). The
+            // answer only leaves on the next turn of the event loop, while
+            // the stop that the question's end could bring is a signal sent
+            // at once: it would reach the agent first, and the agent would
+            // cancel what the user had just accepted.
+            pairingGrace.restart()
+        }
         finishRequest()
     }
 
@@ -97,7 +140,7 @@ Singleton {
     function previewPairing(kind) {
         const sample = { id: -1, kind: kind, name: "Example device", passkey: "482913", preview: true }
         if (kind === "display") {
-            displayCode = { name: sample.name, passkey: sample.passkey }
+            displayCode = { name: sample.name, passkey: sample.passkey, preview: true }
             PanelService.openOver("pairing")
         } else {
             showRequest(sample)
@@ -107,7 +150,7 @@ Singleton {
     Process {
         id: agentProc
         stderr: ErrorLog { label: "BluetoothService.agentProc" }
-        running: root.agentAllowed && root.available && !root.agentPaused
+        running: root.agentWanted && !root.agentPaused
         command: [Paths.script("bluetooth-agent.py")]
         stdinEnabled: true
         stdout: SplitParser { onRead: data => root.handleAgentLine(data) }
@@ -115,11 +158,17 @@ Singleton {
             if (running) { root.agentReady = false; return }
             root.agentReady = false
             if (root.request && !root.request.preview) root.finishRequest()
-            if (!root.agentAllowed || !root.available || root.agentPaused) return
-            root.agentFailures += 1
-            if (root.agentFailures > 5) return
+            // Switching Bluetooth off, or the last view closing, stops the
+            // agent too; counted as a crash, that armed the backoff and the
+            // next power-on waited for it (BluetoothLogic.agentStopped).
+            const asked = root.agentStopAsked
+            root.agentStopAsked = false
+            const stop = Logic.agentStopped(root.agentFailures, root.agentWanted, root.agentPaused, asked)
+            if (!stop) return
+            root.agentFailures = stop.failures
+            if (stop.retryIn < 0) return
             root.agentPaused = true
-            agentRestart.interval = 5000 * Math.pow(2, root.agentFailures - 1)
+            agentRestart.interval = Math.max(1, stop.retryIn)
             agentRestart.restart()
         }
     }
@@ -162,7 +211,55 @@ Singleton {
         if (!device) return
         if (device.connected) device.disconnect()
         else if (device.paired || device.bonded) device.connect()
-        else device.pair()
+        else {
+            pairingStarted = Logic.startPairing(pairingStarted, device.address)
+            pairingGrace.restart()
+            device.pair()
+        }
+    }
+
+    // ---- after a pairing ------------------------------------------------------
+    // Every listed device's pairing state in one list, so one handler hears
+    // any of them change (BluetoothLogic.afterPairing, displayStep).
+    readonly property var pairingStates: devices.map(device => ({
+        address: device.address, path: device.dbusPath, paired: device.paired || device.bonded,
+        pairing: device.pairing, connected: device.connected, trusted: device.trusted
+    }))
+    // Pairings this shell started, by address, until they are over.
+    property var pairingStarted: ({})
+    onPairingStatesChanged: settlePairing(true)
+
+    // A pairing this shell started is trusted and connected once it has
+    // paired; a code on screen goes once its device has paired.
+    function settlePairing(grace) {
+        if (Object.keys(pairingStarted).length) {
+            const step = Logic.afterPairing(pairingStarted, pairingStates, grace)
+            pairingStarted = step.started
+            for (const address of step.trust) {
+                const device = devices.find(item => String(item.address || "").toUpperCase() === address)
+                if (!device) continue
+                if (!device.trusted) device.trusted = true
+                if (!device.connected) device.connect()
+            }
+        }
+        if (displayCode && displayCode.device) {
+            const shown = Logic.displayStep(displayCode, pairingStates)
+            if (shown.done) {
+                displayCode = null
+                if (!request) PanelService.close("pairing")
+            } else if (shown.display !== displayCode) {
+                displayCode = shown.display
+            }
+        }
+    }
+
+    // How long a pairing this shell started may take to begin and end: the
+    // agent stays up for it, and a pairing never seen is forgotten after.
+    // An answer to the agent (respond) starts it again.
+    Timer {
+        id: pairingGrace
+        interval: 90000
+        onTriggered: root.settlePairing(false)
     }
     function forget(device) { if (device) device.forget() }
 

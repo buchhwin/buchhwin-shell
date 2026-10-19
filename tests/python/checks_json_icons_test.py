@@ -63,6 +63,43 @@ try:
     page.write_text('Text { text: "X" } // style: the one place the glyph is drawn raw\n')
     result, output = run(checks.check_icons)
     check(result == 1, "a style exception does not excuse a glyph")
+    page.unlink()
+
+    # The top-level shells are read, and an escape is the glyph it stands for
+    # - in a file and in Icons.qml itself.
+    (root / "theme" / "Icons.qml").write_text(
+        'Singleton {\n    readonly property string close: "X"\n    readonly property string dock: "\\u{f1888}"\n}\n')
+    (root / "shell.qml").write_text('Item { property string a: "X" }\n')
+    result, output = run(checks.check_icons)
+    check(result == 1 and "shell.qml:1" in output, f"shell.qml is read: {output}")
+    (root / "shell.qml").write_text('Item { property string a: Icons.close }\n')
+    (root / "lock.qml").write_text("Item { property string a: '\U000f1888' }\n")
+    result, output = run(checks.check_icons)
+    check(result == 1 and "lock.qml:1 uses the glyph of Icons.dock" in output,
+          f"lock.qml is read, in single quotes, against an escaped name: {output}")
+    (root / "lock.qml").write_text('Item { property string a: "\\u{f1888}" }\n')
+    result, output = run(checks.check_icons)
+    check(result == 1 and "lock.qml:1" in output, f"an escape is the glyph it stands for: {output}")
+    (root / "lock.qml").unlink()
+
+    # A .js file cannot reach Icons: it names the glyph in a comment, and the
+    # comment has to be the glyph's own name.
+    logic = root / "services" / "NavLogic.js"
+    logic.write_text('const PAGES = [{ id: "a", icon: "X" }]\n')
+    result, output = run(checks.check_icons)
+    check(result == 1 and "NavLogic.js:1" in output and "// Icons.close" in output, f"a .js glyph is reported: {output}")
+    logic.write_text('const PAGES = [{ id: "a", icon: "X" }] // Icons.close\n')
+    result, output = run(checks.check_icons)
+    check(result == 0, f"and passes once named: {output}")
+    logic.write_text('const PAGES = [{ id: "a", icon: "X" }] // Icons.dock\n')
+    result, output = run(checks.check_icons)
+    check(result == 1, f"another glyph's name does not excuse it: {output}")
+    logic.write_text('function icon() { return "\\u{f1888}" } // Icons.dock\n')
+    result, output = run(checks.check_icons)
+    check(result == 0, f"an escaped glyph named in the comment passes: {output}")
+    logic.write_text('function icon() { return "\\udb86\\udc88" }\n')
+    result, output = run(checks.check_icons)
+    check(result == 1 and "Icons.dock" in output, f"so does a surrogate pair of escapes, as the glyph it is: {output}")
 finally:
     shutil.rmtree(root)
 

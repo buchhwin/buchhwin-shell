@@ -149,10 +149,17 @@ JSON
 "$project_dir/install/sddm-theme.sh" install --root "$root" --settings "$sandbox/bad-login.json" >/dev/null
 check '! grep -qE "^(blur|accent|font|dateFormat|lockItems)=" "$theme/theme.conf.user"' "invalid login values are dropped"
 
+# A change made after the install survives the remove - System Settings
+# rewrites these files for autologin, the cursor or another theme, and the
+# install-time backup copied over them took that back. Only the lines the
+# install commented out come back; a file that is gone comes from its backup.
+printf '\n[Autologin]\nUser=tester\n' >> "$root/etc/sddm.conf"
+{ cat "$sandbox/sddm.conf.orig"; printf '\n[Autologin]\nUser=tester\n'; } > "$sandbox/sddm.conf.expected"
+rm -f -- "$root/etc/sddm.conf.d/10-other.conf"
 output=$("$project_dir/install/sddm-theme.sh" remove --root "$root")
 check '[[ ! -e $theme && ! -e $root/etc/sddm.conf.d/buchhwin-theme.conf ]]' "theme and selection removed"
-check 'cmp -s "$sandbox/sddm.conf.orig" "$root/etc/sddm.conf"' "sddm.conf restored"
-check 'cmp -s "$sandbox/10-other.conf.orig" "$root/etc/sddm.conf.d/10-other.conf"' "conf.d file restored"
+check 'cmp -s "$sandbox/sddm.conf.expected" "$root/etc/sddm.conf"' "sddm.conf's theme selection restored, and the later change kept"
+check 'cmp -s "$sandbox/10-other.conf.orig" "$root/etc/sddm.conf.d/10-other.conf"' "a conf.d file that was gone restored from its backup"
 check '[[ ! -e $root/usr/share/sddm/faces/tester.face.icon ]]' "avatar removed"
 check 'grep -q "Would run: systemctl enable plasmalogin.service" <<<"$output"' "previous display manager restored"
 check '[[ ! -e $root/var/lib/buchhwin-shell/sddm-theme ]]' "state removed"

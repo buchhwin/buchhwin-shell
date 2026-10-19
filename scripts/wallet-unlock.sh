@@ -28,8 +28,8 @@
 #
 # Every call is `--auto-start=no`: `busctl status`, or a plain call to an
 # activatable name, would start a second ksecretd without the password
-# (org.kde.secretservicecompat has a D-Bus service file). `busctl list` only
-# reads the bus.
+# (org.kde.secretservicecompat has a D-Bus service file). Who owns a name is
+# asked of the bus itself (org.freedesktop.DBus), which starts nothing.
 #
 # Which name: on Fedora and openSUSE ksecretd owns org.freedesktop.secrets. On
 # Arch gnome-keyring usually does - pam_gnome_keyring in /etc/pam.d/sddm and a
@@ -43,13 +43,35 @@ set -uo pipefail
 collection=/org/freedesktop/secrets/collection/kdewallet
 busctl_q() { busctl --user --auto-start=no --no-pager --timeout=3 "$@" 2>/dev/null; }
 
+# The bus driver's own questions. It is never activated and never activates
+# what it is asked about, and one question costs ~4 ms where `busctl list`,
+# which looks up every name's process and unit, took ~22 ms - before every
+# browser start and in each step of the login's wait.
+driver() { busctl_q call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus "$@"; }
+has_owner() { [[ $(driver NameHasOwner s "$1") == "b true" ]]; }
+# The process name of a name's owner (what `busctl list` shows as PROCESS),
+# nothing when it has none.
+owner_process() {
+  local unique pid
+  unique=$(driver GetNameOwner s "$1") || return 1
+  unique=${unique#s }
+  unique=${unique//\"/}
+  [[ $unique == :* ]] || return 1
+  pid=$(driver GetConnectionUnixProcessID s "$unique") || return 1
+  pid=${pid#u }
+  [[ $pid =~ ^[0-9]+$ ]] || return 1
+  cat "/proc/$pid/comm" 2>/dev/null
+}
+
 # The name to talk to, set by owned().
 bus=""
 owned() {
-  bus=$(busctl --user --no-pager list 2>/dev/null | awk '
-    $1 == "org.kde.ksecretd" && $2 != "-" { own = 1 }
-    $1 == "org.freedesktop.secrets" && $2 != "-" && $3 ~ /^(ksecretd|kwalletd)/ { generic = 1 }
-    END { if (own) print "org.kde.ksecretd"; else if (generic) print "org.freedesktop.secrets" }')
+  bus=""
+  if has_owner org.kde.ksecretd; then
+    bus=org.kde.ksecretd
+  elif [[ $(owner_process org.freedesktop.secrets) =~ ^(ksecretd|kwalletd) ]]; then
+    bus=org.freedesktop.secrets
+  fi
   [[ -n $bus ]]
 }
 # true, false, or nothing when the property cannot be read.

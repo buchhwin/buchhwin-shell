@@ -39,7 +39,7 @@ var titleGroups = {
     "Emoji picker": "panels", "Wallpaper picker": "panels", "Profiles and modes": "panels", "Dock": "panels",
     "Start menu": "panels",
     "All keyboard shortcuts": "panels", "Pick a color off the screen": "panels",
-    "Desktop mode: widgets, bar, notch": "workspaces", "Mode: minimal, work, gaming, laptop, docked": "workspaces",
+    "Desktop mode: widgets, bar, notch": "workspaces", "Mode: minimal, work, gaming, laptop, desk": "workspaces",
     "Dashboard": "panels", "Session menu": "panels", "Overview": "panels", "Clipboard history": "panels",
     "Layout editor": "panels",
     "Close window": "windows", "Fullscreen": "windows", "Maximize": "windows", "Toggle floating": "windows",
@@ -163,7 +163,7 @@ function describeExec(arg) {
             : match[2] === "down" ? "Keyboard light down" : "Keyboard light on or off")
         if (match[1] === "colorPicker") return titleOf("Pick a color off the screen")
         if (match[1] === "desktop") return titleOf("Desktop mode: widgets, bar, notch")
-        if (match[1] === "mode") return titleOf("Mode: minimal, work, gaming, laptop, docked")
+        if (match[1] === "mode") return titleOf("Mode: minimal, work, gaming, laptop, desk")
         if (panelTitles[match[1]]) return titleOf(panelTitles[match[1]])
     }
     // The workspace binds carry their number and a `||` fallback to Hyprland's
@@ -308,6 +308,20 @@ function grouped(list, query) {
     })).filter(group => group.rows.length > 0)
 }
 
+// A string per row that stays the same while the row does, so a Repeater can
+// be keyed by them (testing.md pitfall 76, the string-key way): narrowing the
+// search on Settings > Shortcuts then only takes rows away, where a model of
+// the rows themselves built every row still shown again on each letter. Two
+// rows that read the same (one combination bound twice) get a count.
+function rowKeys(list) {
+    const seen = {}
+    return (list || []).map(row => {
+        const base = row.group + "|" + row.combo + "|" + row.title
+        seen[base] = (seen[base] || 0) + 1
+        return seen[base] > 1 ? base + "#" + seen[base] : base
+    })
+}
+
 // The sheet lays the groups out in columns, and a grid is the wrong tool for
 // it. In a `GridLayout` every row is as tall as its tallest cell, so a group
 // of three rows beside one of eleven leaves eight rows of nothing under it -
@@ -380,7 +394,7 @@ function commandError(command) {
 // A desktop id as a bind can carry it. The command line quotes it
 // (shellWord), so a space or a `$` is fine: the three Citrix entries here are
 // "Citrix_subscribed_XenApp 7.x.RDS-Buchhwin $S101-255" and the like, and
-// were refused (round 12). Not a control character or `;` (a bind line holds
+// were refused. Not a control character or `;` (a bind line holds
 // neither), not a `/` (no desktop id has one) and no `-` first
 // (launch-app.sh would take the id for one of its options).
 function validAppId(id) {
@@ -389,7 +403,7 @@ function validAppId(id) {
 
 // { mods, key, app }, { mods, key, shell } (a shell action from
 // ShellShortcuts.BINDABLE: "startMenu key") or { mods, key, command }. A
-// shortcut stored as "startMenu toggle" (offered for a few hours in round 12)
+// shortcut stored as "startMenu toggle" (offered for a few hours once)
 // is read as the key's action.
 function normalizeEntry(item) {
     if (!item || typeof item !== "object" || !Array.isArray(item.mods)) return null

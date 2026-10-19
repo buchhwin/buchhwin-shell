@@ -21,10 +21,12 @@ ScrollList {
             level: 1
             icon: "󰖂"
             title: modelData.name
-            subtitle: modelData.active ? "Connected" : "Off"
+            // "Connecting …" while a switch is under way, and the switch
+            // already where it is going (NetworkService.vpnPending).
+            subtitle: NetworkService.vpnStatus(modelData)
             active: modelData.active
-            onClicked: NetworkService.setVpn(modelData.uuid, !modelData.active)
-            ShellToggle { focusOnTab: true; checked: modelData.active; onToggled: value => NetworkService.setVpn(modelData.uuid, value) }
+            onClicked: NetworkService.setVpn(modelData.uuid, !NetworkService.vpnChecked(modelData))
+            ShellToggle { focusOnTab: true; checked: NetworkService.vpnChecked(modelData); onToggled: value => NetworkService.setVpn(modelData.uuid, value) }
         }
     }
 }

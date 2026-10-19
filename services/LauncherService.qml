@@ -11,6 +11,7 @@ import "launcher/ModeOrder.js" as ModeOrder
 import "launcher/Pinned.js" as Pinned
 import "launcher/LaunchLogic.js" as Launch
 import "launcher/FileSearch.js" as FileSearch
+import "launcher/ResultsLogic.js" as Results
 import "settings/SettingsNavLogic.js" as Nav
 
 // Launcher providers. Prefixes: none = apps (+ calculator, commands and, for
@@ -46,7 +47,10 @@ Singleton {
     readonly property bool showPinned: SettingsService.value("launcher.showPinned")
     readonly property var pinnedApps: Pinned.apps(pinnedStored, entries)
     readonly property bool pinnedFull: Pinned.full(pinnedStored)
+    readonly property int pinLimit: Pinned.LIMIT
     function isPinned(id) { return Pinned.has(pinnedStored, id) }
+    // True when pinning `id` would be refused for the limit (Pinned.refused).
+    function pinRefused(id) { return Pinned.refused(pinnedStored, id) }
     function togglePin(id) { return SettingsService.set("launcher.pinned", Pinned.toggle(pinnedStored, id)) }
     function movePinned(id, delta) { return SettingsService.set("launcher.pinned", Pinned.move(pinnedStored, id, delta)) }
 
@@ -66,7 +70,7 @@ Singleton {
     // - 69 `valuesChanged` within 4 ms at a start here, one per entry - and
     // does it again for every app installed or removed. Every binding over
     // `values` ran once per entry, with the launcher closed: the categories
-    // and their counts 70 times at every login (perf#2, round 12). These
+    // and their counts 70 times at every login. These
     // bindings read a copy taken once a scan has settled instead, and
     // `entriesRevision` counts the copies for anyone who looks entries up by
     // id (ShortcutService), which no binding would follow by itself.
@@ -78,6 +82,7 @@ Singleton {
         for (let index = 0; index < values.length; ++index) if (values[index]) list.push(values[index])
         entries = list
         entriesRevision += 1
+        queueIcons()
     }
     Component.onCompleted: takeEntries()
     Connections {
@@ -142,7 +147,7 @@ Singleton {
         { title: "Timer: 25 minutes", keywords: "timer countdown 25 minutes pomodoro focus wecker minuten", icon: "󰔛", run: () => TimerService.start(1500) },
         { title: "Timer: stop", keywords: "timer countdown stop cancel wecker abbrechen", icon: "󰔞", run: () => TimerService.stop() },
         { title: "Do Not Disturb: 1 hour", keywords: "dnd focus quiet nicht stören ruhe stunde", icon: Icons.busy, run: () => NotificationService.setDnd("1h") },
-        { title: "Do Not Disturb: until tomorrow", keywords: "dnd quiet night nicht stören ruhe nacht morgen", icon: "󰖔", run: () => NotificationService.setDnd("tomorrow") },
+        { title: "Do Not Disturb: until tomorrow", keywords: "dnd quiet night nicht stören ruhe nacht morgen", icon: Icons.untilMorning, run: () => NotificationService.setDnd("tomorrow") },
         { title: "Do Not Disturb: on", keywords: "dnd quiet nicht stören ruhe", icon: "󰂛", run: () => NotificationService.setDnd("manual") },
         { title: "Do Not Disturb: off", keywords: "dnd nicht stören", icon: "󰂚", run: () => NotificationService.setDnd("off") },
         { title: "Toggle dark mode", keywords: "theme dark light dunkelmodus hell dunkel", icon: "󰔎", run: () => SettingsService.set("appearance.theme", SettingsService.theme === "dark" ? "light" : "dark") },
@@ -153,12 +158,12 @@ Singleton {
         { title: "Mode: work", keywords: "mode modus profile layout profil arbeit", icon: Icons.arrange, run: () => LayoutService.setActiveMode("work") },
         { title: "Mode: gaming", keywords: "mode modus profile layout games profil spiele", icon: "󰊴", run: () => LayoutService.setActiveMode("gaming") },
         { title: "Mode: laptop", keywords: "mode modus profile layout profil", icon: "󰌢", run: () => LayoutService.setActiveMode("laptop") },
-        { title: "Mode: docked", keywords: "mode modus profile layout monitor display profil", icon: "󰍹", run: () => LayoutService.setActiveMode("docked") },
+        { title: "Mode: desk", keywords: "mode modus profile layout monitor display profil docked dock schreibtisch", icon: "󰍹", run: () => LayoutService.setActiveMode("docked") },
         { title: "Animations: full", keywords: "animation full fast animationen voll schnell", icon: "󰓅", run: () => SettingsService.set("appearance.animationMode", "full") },
         { title: "Animations: reduced", keywords: "animation reduced motion animationen reduziert", icon: "󰾆", run: () => SettingsService.set("appearance.animationMode", "reduced") },
-        { title: "Toggle Night Light", keywords: "night light blue light warm nachtlicht nachtmodus blaulicht", icon: "󰖔", run: () => NightLightService.toggle() },
-        { title: "Focus: on", keywords: "focus concentration quiet widgets fokus konzentration ruhe", icon: "󰽥", run: () => AdaptiveService.setFocus(true) },
-        { title: "Focus: off", keywords: "focus concentration fokus konzentration", icon: "󰽥", run: () => AdaptiveService.setFocus(false) },
+        { title: "Toggle Night Light", keywords: "night light blue light warm nachtlicht nachtmodus blaulicht", icon: Icons.nightLight, run: () => NightLightService.toggle() },
+        { title: "Focus: on", keywords: "focus concentration quiet widgets fokus konzentration ruhe", icon: Icons.focus, run: () => AdaptiveService.setFocus(true) },
+        { title: "Focus: off", keywords: "focus concentration fokus konzentration", icon: Icons.focus, run: () => AdaptiveService.setFocus(false) },
         { title: "Overview", keywords: "overview windows workspaces expose übersicht fenster", icon: Icons.arrange, run: () => PanelService.open("overview") },
         { title: "Clipboard", keywords: "clipboard history copy zwischenablage verlauf kopieren", icon: Icons.copy, run: () => PanelService.open("clipboard") },
         { title: "Screenshot: region", keywords: "screenshot capture region selection bildschirmfoto foto bereich auswahl", icon: "󰩭", run: () => { PanelService.close(); screenshotDelay.mode = "region"; screenshotDelay.restart() } },
@@ -259,6 +264,42 @@ Singleton {
         return IconLogic.source(names, name => Quickshell.iconPath(name, true))
     }
 
+    // ---- icon names, looked up ahead ----------------------------------------
+    // The first lookup of an icon name walks the icon theme's folders on disk,
+    // 8 ms for most names here and up to 19 (~70 apps: 0.33 s); after that Qt
+    // answers from its own cache (0.4 ms for sixty). Little else asks for most
+    // app icons before the launcher does, so the first open after a start
+    // resolved its sixty rows in one go and came up ~0.3 s late. The rows ask
+    // for their own icons now (only the rows a list draws), and a while after
+    // the entries have settled the names nobody asked yet are looked up one
+    // per tick, never while a panel is open, so each lookup lands where
+    // nobody waits for a frame. The start menu, the dock, the switcher and
+    // Settings read the same cache.
+    property var iconsAsked: ({})
+    property var iconQueue: []
+    function queueIcons() {
+        const names = IconLogic.pending(visibleApps().map(app => app.icon), iconsAsked)
+        if (!names.length) return
+        iconQueue = names
+        if (!iconWarm.running && !iconWarmDelay.running) iconWarmDelay.start()
+    }
+    // After the login's own work: the panels, the wallpaper, the first frames.
+    Timer { id: iconWarmDelay; interval: 20000; onTriggered: iconWarm.start() }
+    Timer {
+        id: iconWarm
+        interval: 250
+        repeat: true
+        onTriggered: {
+            if (PanelService.active.length) return
+            if (!root.iconQueue.length) { stop(); return }
+            const name = root.iconQueue[0]
+            root.iconQueue = root.iconQueue.slice(1)
+            // A plain object no binding reads: the queue's own bookkeeping.
+            root.iconsAsked[name] = true
+            root.iconSource(name)
+        }
+    }
+
     function apps(query, category) {
         const q = query.trim().toLowerCase()
         const now = Date.now()
@@ -275,7 +316,10 @@ Singleton {
             .slice(0, 60)
             .map(entry => ({
                 kind: "app", title: entry.app.name || entry.app.id, subtitle: entry.app.genericName || entry.app.comment || "",
-                iconSource: root.iconSource(entry.app.icon),
+                // Looked up when a row reads it, not here: the launcher draws
+                // a handful of the sixty, and a theme lookup is milliseconds
+                // the first time (see `queueIcons`).
+                get iconSource() { return root.iconSource(entry.app.icon) },
                 // The id so a row can be pinned; everything else about a result
                 // is what it shows, and this is the one thing about what it is.
                 appId: entry.app.id,
@@ -290,7 +334,8 @@ Singleton {
             .filter(entry => entry.score > 0)
             .sort((a, b) => b.score - a.score)
             .slice(0, limit)
-            .map(entry => ({ kind: "command", title: entry.command.title, subtitle: "Command", icon: entry.command.icon, run: entry.command.run }))
+            .map(entry => ({ kind: "command", key: "command:" + entry.command.title, title: entry.command.title,
+                             subtitle: "Command", icon: entry.command.icon, run: entry.command.run }))
     }
 
     function settingsResults(query) {
@@ -299,7 +344,8 @@ Singleton {
             .map(item => ({ item: item, score: Math.max(score(item.title, q), score(item.keywords, q) * 0.7) }))
             .filter(entry => entry.score > 0)
             .sort((a, b) => b.score - a.score)
-            .map(entry => ({ kind: "settings", title: entry.item.title, subtitle: "Settings", icon: entry.item.icon,
+            .map(entry => ({ kind: "settings", key: "settings:" + entry.item.page + ":" + entry.item.title,
+                             title: entry.item.title, subtitle: "Settings", icon: entry.item.icon,
                              run: () => PanelService.open("settings", { page: entry.item.page }) }))
     }
 
@@ -318,14 +364,14 @@ Singleton {
     function webResult(query) {
         const url = Web.searchUrl(query, searchEngine, searchTemplate)
         if (!url.length) return null
-        return { kind: "web", title: "Search for “" + query.trim() + "”", subtitle: searchLabel, icon: "󰖟",
+        return { kind: "web", key: "web:search", title: "Search for “" + query.trim() + "”", subtitle: searchLabel, icon: "󰖟",
                  run: () => root.openUrl(url) }
     }
 
     function addressResult(query) {
         const url = Web.addressUrl(query)
         if (!url.length) return null
-        return { kind: "web", title: "Open " + Web.hostOf(url), subtitle: url, icon: "󰖟",
+        return { kind: "web", key: "web:open", title: "Open " + Web.hostOf(url), subtitle: url, icon: "󰖟",
                  run: () => root.openUrl(url) }
     }
 
@@ -333,7 +379,7 @@ Singleton {
     // for the calculator: the shell never types into another window.
     function emojiResults(query) {
         return EmojiService.search(query, "").slice(0, 60).map(entry => ({
-            kind: "emoji", title: EmojiService.text(entry) + "  " + entry.n,
+            kind: "emoji", key: "emoji:" + entry.e, title: EmojiService.text(entry) + "  " + entry.n,
             subtitle: "Enter copies", icon: "󰞅",
             run: () => EmojiService.pick(entry)
         }))
@@ -343,7 +389,7 @@ Singleton {
         const result = Calc.evaluate(expression)
         if (!result.ok) return null
         const text = Calc.format(result.value)
-        return { kind: "calculator", title: text, subtitle: expression.trim() + " = " + text + " · Enter copies", icon: "󰃬",
+        return { kind: "calculator", key: "calculator", title: text, subtitle: expression.trim() + " = " + text + " · Enter copies", icon: "󰃬",
                  run: () => { Quickshell.clipboardText = text } }
     }
 
@@ -374,18 +420,18 @@ Singleton {
             requestFiles(query)
             return fileResults
         }
-        const list = []
+        const lead = []
         if (Calc.looksLikeMath(query)) {
             const calc = calculatorResult(query)
-            if (calc) list.push(calc)
+            if (calc) lead.push(calc)
         }
-        // A typed address is offered before anything else: nothing else can be
-        // meant by "example.org/page".
+        // A typed address: first when it is one beyond doubt
+        // ("example.org/page", "https://…"), after the best app when it is a
+        // bare host, which "readme.md" is too (ResultsLogic.appsMode).
         const address = addressResult(query)
-        if (address) list.push(address)
         const appList = apps(query, category)
         const commandList = query.trim().length >= 2 ? commandResults(query, 3) : []
-        return list.concat(appList.slice(0, 1), commandList, appList.slice(1))
+        return Results.appsMode(lead, address, Web.addressLeads(query), appList, commandList)
     }
 
     // ---- files -------------------------------------------------------------
@@ -441,7 +487,7 @@ Singleton {
     // asked (with a file search, or by Settings > Launcher). None
     // means every search ends in "No files found": on this machine /home is
     // the btrfs subvolume @home, which updatedb takes for a bind mount and
-    // skips (PRUNE_BIND_MOUNTS = "yes" in /etc/updatedb.conf, round 12). The
+    // skips (PRUNE_BIND_MOUNTS = "yes" in /etc/updatedb.conf). The
     // fix needs root, so it is the user's: `fileIndexHint` says which.
     property int homeIndexed: -1
     readonly property string fileIndexHint: homeIndexed !== 0 ? ""
@@ -469,7 +515,7 @@ Singleton {
                 const home = Paths.home + "/"
                 root.fileResults = FileSearch.paths(text, Paths.home)
                     .map(path => ({
-                        kind: "file", title: path.split("/").pop(), subtitle: "~/" + path.slice(home.length),
+                        kind: "file", key: "file:" + path, title: path.split("/").pop(), subtitle: "~/" + path.slice(home.length),
                         icon: /\.(png|jpe?g|webp|svg|gif)$/i.test(path) ? "󰋩" : /\.pdf$/i.test(path) ? "󰈦" : "󰈔",
                         run: () => Quickshell.execDetached(["xdg-open", path]),
                         alternate: () => Quickshell.execDetached(["xdg-open", path.slice(0, path.lastIndexOf("/"))])

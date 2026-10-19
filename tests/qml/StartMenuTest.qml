@@ -42,7 +42,7 @@ ShellRoot {
              "the planet goes on behind the ring")
         T.ok(saturn.runs.every(run => run.tone === 1 || run.tone === 2), "two colours, planet and ring")
         T.ok(saturn.rows <= S.LOGO_BOX.rows && saturn.columns <= S.LOGO_BOX.columns, "the Saturn fits the header's room as it is")
-        // A logo of the user's own (ui-dock#10): kept to its limit, colour
+        // A logo of the user's own: kept to its limit, colour
         // codes dropped, an image read as text is no logo.
         const tall = Array(100).fill("x".repeat(200)).join("\n")
         const capped = S.asciiRuns(tall)
@@ -121,7 +121,7 @@ ShellRoot {
         T.eq(S.move(field, "down", [{ id: "pinned", count: 0, columns: 5 }, { id: "suggested", count: 4, columns: 5 }]),
              { zone: "suggested", index: 0 }, "nothing pinned: down reaches the suggestions")
 
-        // ---- Escape (ui-dock#4) ------------------------------------------------------------
+        // ---- Escape ----------------------------------------------------------------------
         T.eq(S.escapeStep(true, "fire", "all"), "menu", "the menu first")
         T.eq(S.escapeStep(false, "fire", "all"), "query", "then the query, one the field passed on")
         T.eq(S.escapeStep(false, "", "all"), "view", "then All apps")
@@ -134,7 +134,7 @@ ShellRoot {
         T.eq(S.frequent(["code", "kitty", "dolphin"], installed, [], 2).length, 2, "a limit")
         T.eq(S.frequent(["code"], null, null), [], "no entries")
 
-        // ---- suggested (D5) ----------------------------------------------------------------
+        // ---- suggested ---------------------------------------------------------------------
         const entries = { "org.kde.dolphin": app("org.kde.dolphin", "Dolphin"), "Alacritty": app("Alacritty"),
                           "hidden": app("hidden", "hidden", { noDisplay: true }) }
         const lookup = id => entries[id] || null

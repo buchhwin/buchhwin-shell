@@ -6,6 +6,7 @@ import qs.services
 import qs.shell.components
 import "pages"
 import "../../services/arrange/ArrangeLogic.js" as Arrange
+import "../../services/quick/QuickLogic.js" as Quick
 
 // Super+O control center: quick tiles, sliders, media, audio and status chips
 // with detail pages for network, Bluetooth, audio, DND, power, drives and tray.
@@ -48,17 +49,35 @@ ShellPanel {
     // eight tiles had permanently shrunk the network page's scroll region.
     cardHeight: page.length ? -1 : sizing ? dragHeight : box.height
     property string page: ""
+    // The overview is kept once it has been built. It was most of what an
+    // open cost - some 1600 objects made in the open's own turn, before the
+    // first frame (22-26 ms of the GUI thread offscreen, 2 ms kept; the
+    // dashboard keeps its cards the same way) - and a trip to a detail page
+    // and back made it once more. Kept, it measured no more memory while
+    // closed (offscreen, within the allocator's noise). What it asks of the
+    // services follows the panel rather than the page (OverviewPage.live).
+    // The detail pages are still built per visit and let go on close, so
+    // their scans and discovery stop. `false` builds the overview on every
+    // open again.
+    property bool keepOverview: true
+    property bool overviewBuilt: false
 
     onWantedChanged: {
         if (wanted) {
             page = PanelService.args.page || ""
             BrightnessService.refresh()
-            NetworkService.refresh()
+            // Only when NetworkManager said something since the last read:
+            // its monitor keeps the list current, and every open used to run
+            // nmcli again for an answer it already had.
+            NetworkService.refreshIfStale()
             MprisService.trackers += 1
         } else {
             MprisService.trackers = Math.max(0, MprisService.trackers - 1)
         }
     }
+    // Arranging belongs to the overview. With the overview destroyed on the
+    // way to a detail page that ended it by itself; kept, it is ended here.
+    onPageChanged: if (page.length) LayoutService.quickEditing = false
     // The page is let go once the panel is really gone, not when it starts to
     // close: the card is still drawn through the close animation, so clearing
     // it any earlier flashes the overview page back for those frames.
@@ -75,7 +94,20 @@ ShellPanel {
         function onArgsChanged() { if (root.wanted) root.page = PanelService.args.page || "" }
     }
 
-    onEscapePressed: if (page.length) { page = ""; PanelService.open("controlCenter") }
+    // Escape on a detail page goes back to the overview and keeps the panel
+    // - after the page's own steps, such as an app's menu open on the
+    // background apps page (`stepBack`); on the overview it closes the panel.
+    // A handler, not `onEscapePressed`: that runs before the close, never
+    // instead of it, and the panel went with the page it had just cleared
+    // (pitfall 111).
+    escapeHandler: () => {
+        const shownPage = detailLoader.item
+        if (shownPage && typeof shownPage.stepBack === "function" && shownPage.stepBack() === true) return true
+        const next = Quick.pageAfterEscape(root.page)
+        if (next === null) return false
+        root.page = next
+        return true
+    }
 
     // The grip that sizes the panel, on the corner that grows: the card is
     // anchored top right, so its bottom left is the one that moves. On the
@@ -112,7 +144,17 @@ ShellPanel {
                 toolTip: LayoutService.quickEditing ? "Done arranging" : "Arrange tiles"
                 onClicked: LayoutService.quickEditing = !LayoutService.quickEditing
             }
-            ShellButton { icon: Icons.settings; variant: "ghost"; iconSize: Metrics.iconMd; toolTip: "Settings"; onClicked: PanelService.open("settings") }
+            // On a detail page, the Settings page of that page (the Power
+            // page's own "Power settings" button opens the same); on the
+            // overview, Settings where it was left.
+            ShellButton {
+                icon: Icons.settings; variant: "ghost"; iconSize: Metrics.iconMd; toolTip: "Settings"
+                onClicked: {
+                    const target = Quick.settingsPage(root.page)
+                    if (target.length) PanelService.open("settings", { page: target })
+                    else PanelService.open("settings")
+                }
+            }
             ShellButton { icon: Icons.poweroff; variant: "ghost"; iconSize: Metrics.iconMd; toolTip: "Power"; onClicked: PanelService.open("powerMenu") }
         }
 
@@ -137,21 +179,41 @@ ShellPanel {
                 (root.cardHeight > 0 ? root.cardTargetHeight : root.roomBelowTop)
                 - header.height - Metrics.panelPadding * 2 - Metrics.panelGap)
 
-            // Unloaded while hidden so pages stop scans and discovery on close.
+            // The overview, kept between opens (keepOverview) and hidden
+            // behind a detail page; a hidden item takes no room in the list.
+            // A page name it does not know shows the overview, as it did.
+            // Each fades in when the page changes while the panel is open
+            // (PageFade): the card's height glides between pages, and the
+            // content swapped inside it in one frame.
             Loader {
+                id: overviewLoader
                 width: parent.width
-                active: root.shown
-                sourceComponent: root.page === "network" ? networkPage
-                    : root.page === "bluetooth" ? bluetoothPage
-                    : root.page === "audio" ? audioPage
-                    : root.page === "dnd" ? dndPage
-                    : root.page === "power" ? powerPage
-                    : root.page === "drives" ? drivesPage
-                    : root.page === "tray" ? trayPage : overview
+                active: root.shown || (root.keepOverview && root.overviewBuilt)
+                visible: root.detailPage === null
+                sourceComponent: overview
+                onLoaded: root.overviewBuilt = true
+                PageFade { target: overviewLoader; key: root.page; live: root.openProgress === 1 }
+            }
+            // A detail page: unloaded while hidden, so pages stop scans and
+            // discovery on close.
+            Loader {
+                id: detailLoader
+                width: parent.width
+                active: root.shown && root.detailPage !== null
+                visible: active
+                sourceComponent: root.detailPage
+                PageFade { target: detailLoader; key: root.page; live: root.openProgress === 1 }
             }
         }
     }
 
+    readonly property Component detailPage: page === "network" ? networkPage
+        : page === "bluetooth" ? bluetoothPage
+        : page === "audio" ? audioPage
+        : page === "dnd" ? dndPage
+        : page === "power" ? powerPage
+        : page === "drives" ? drivesPage
+        : page === "tray" ? trayPage : null
     Component { id: overview; OverviewPage { panel: root; onOpenPage: name => root.page = name } }
     Component { id: networkPage; NetworkPage {} }
     Component { id: bluetoothPage; BluetoothPage {} }

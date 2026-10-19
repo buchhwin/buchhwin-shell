@@ -141,11 +141,14 @@ printf '== Installers and session launcher\n'
 "$project_dir/tests/bootstrap-test.sh"
 "$project_dir/tests/build-hyprland-test.sh"
 "$project_dir/tests/sddm-theme-install-test.sh"
+"$project_dir/tests/plasma-terminal-test.sh"
 "$project_dir/tests/session-launcher-test.sh"
 "$project_dir/tests/deploy-test.sh"
+"$project_dir/tests/doctor-test.sh"
 
 printf '== Session actions\n'
 "$project_dir/tests/start-shell-test.sh"
+"$project_dir/tests/quickshell-dirs-test.sh"
 "$project_dir/tests/session-action-test.sh"
 "$project_dir/tests/shell-control-test.sh"
 "$project_dir/tests/launch-app-test.sh"
@@ -165,12 +168,14 @@ printf '== Lid installers\n'
 "$project_dir/tests/bluetooth-autoenable-test.sh"
 
 printf '== Environment\n'
-# doctor.sh asks whether **this machine** can run the session - Kitty, Brave,
-# Dolphin, the backends. That is a fact about the machine, not about the code,
-# so a container that only builds and tests says so rather than installing a
-# browser to satisfy a check.
+# doctor.sh asks whether **this machine** can run the session - Hyprland,
+# Quickshell, Kitty, the QML modules. That is a fact about the machine, not
+# about the code, so a container that only builds and tests says so rather
+# than installing a desktop to satisfy a check. Brave, Dolphin and the
+# backends are said, not failed (tests/doctor-test.sh holds doctor.sh itself
+# to that, on any machine).
 if [[ ${BUCHHWIN_SKIP_ENVIRONMENT:-0} == 1 ]]; then
-  note_skip 'Environment (doctor.sh checks a session host: Kitty, Brave, Dolphin; BUCHHWIN_SKIP_ENVIRONMENT=1)'
+  note_skip 'Environment (doctor.sh checks a session host: Hyprland, Quickshell, Kitty; BUCHHWIN_SKIP_ENVIRONMENT=1)'
 else
   "$project_dir/scripts/doctor.sh" >/dev/null || { "$project_dir/scripts/doctor.sh"; exit 1; }
   printf 'doctor ok\n'

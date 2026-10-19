@@ -15,7 +15,8 @@ set -euo pipefail
 # --wallpaper it uses wallpaper.path from the user's buchhwin-shell
 # settings.json (the sudo user), else the bundled gradient. --use-sddm makes
 # SDDM the display manager at the next boot (Fedora 44 ships Plasma Login
-# Manager). remove restores the backups and the previous display manager.
+# Manager). remove un-comments those lines again (a backup only stands in for
+# a file that is gone) and restores the previous display manager.
 # --root DIR works below DIR without systemctl (tests); otherwise root is needed.
 
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -300,13 +301,23 @@ install_theme() {
 
 remove_theme() {
   rm -f -- "$conf_file"
+  # Only the lines install_theme commented out come back, by their marker: the
+  # files may have changed since (System Settings rewrites kde_settings.conf
+  # for autologin, the cursor or another theme), and copying the install-time
+  # backup over them took those changes back. The backup is for a file that
+  # is gone.
   if [[ -f $state_dir/restore-list ]]; then
     local file backup
     while IFS= read -r file; do
       backup="$state_dir/$(printf '%s' "$file" | tr '/' '_').backup"
-      if [[ -f $backup ]]; then
+      if [[ -f $root$file ]]; then
+        if grep -qF -- "$marker " "$root$file"; then
+          sed -i "s|^$marker ||" "$root$file"
+          printf 'Restored the theme selection in %s\n' "$file"
+        fi
+      elif [[ -f $backup ]]; then
         cp -p -- "$backup" "$root$file"
-        printf 'Restored %s\n' "$file"
+        printf 'Restored %s from its backup\n' "$file"
       fi
     done < "$state_dir/restore-list"
   fi

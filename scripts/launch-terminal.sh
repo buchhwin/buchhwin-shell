@@ -28,7 +28,11 @@ set -euo pipefail
 #
 # Nothing set, or the chosen terminal not installed: kitty, which the session
 # ships with.
-project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+# The path as it was called, resolved only when this file itself is a link
+# (as in launch-default.sh): two processes and two subshells less per start.
+self=${BASH_SOURCE[0]}
+[[ $self == /* && ! -L $self ]] || self=$(readlink -f -- "$self")
+project_dir=${self%/*/*}
 usage='usage: launch-terminal.sh [--hold] [--unit NAME] [--title TITLE] [--] [COMMAND [ARGS...]]'
 
 hold=false

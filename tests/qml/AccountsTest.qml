@@ -81,14 +81,14 @@ ShellRoot {
         // Last sync
         const now = 1758000000000
         T.eq(A.lastSyncText(now - 20 * 1000, now), "just now", "seconds")
-        T.eq(A.lastSyncText(now - 5 * 60 * 1000, now), "5 min ago", "minutes")
+        T.eq(A.lastSyncText(now - 5 * 60 * 1000, now), "5 minutes ago", "minutes")
         T.eq(A.lastSyncText(now - 60 * 60 * 1000, now), "1 hour ago", "one hour")
         T.eq(A.lastSyncText(now - 5 * 60 * 60 * 1000, now), "5 hours ago", "hours")
         T.eq(A.lastSyncText(now - 26 * 60 * 60 * 1000, now), "yesterday", "one day")
         T.eq(A.lastSyncText(now - 3 * 24 * 60 * 60 * 1000, now), "3 days ago", "days")
         T.eq(A.lastSyncText(0, now), "", "never synchronized")
         T.eq(A.lastSyncText(now, 0), "", "no reference time")
-        T.eq(A.subtitle(imap, now - 5 * 60 * 1000, now), "IMAP E-Mail Server · Mail · Last sync 5 min ago", "subtitle with a sync time")
+        T.eq(A.subtitle(imap, now - 5 * 60 * 1000, now), "IMAP E-Mail Server · Mail · Last sync 5 minutes ago", "subtitle with a sync time")
 
         // Commands
         const id = "akonadi_google_resource_0"

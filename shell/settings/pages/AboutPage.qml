@@ -1,47 +1,17 @@
 import Quickshell
-import Quickshell.Io
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
-import "../../../services/system/SystemLogic.js" as SystemLogic
 
 ColumnLayout {
     id: root
     spacing: Metrics.pageGap
-    property var info: ({})
-
-    Process {
-        running: true
-        command: ["sh", "-c", [
-            ". /etc/os-release 2>/dev/null; echo \"os=$PRETTY_NAME\"",
-            "echo \"kernel=$(uname -r)\"",
-            "echo \"host=$(cat /etc/hostname 2>/dev/null || uname -n)\"",
-            "echo \"hyprland=$(Hyprland --version 2>/dev/null | head -n1 | cut -d' ' -f2)\"",
-            // "quickshell 0.2.1, revision …" (Fedora, Leap) and "Quickshell
-            // 0.3.2 (revision , distributed by Arch Linux)": the number alone.
-            "echo \"quickshell=$(quickshell --version 2>/dev/null | head -n1 | sed -E 's/^[Qq]uickshell //; s/ \\(.*//; s/,.*//')\"",
-            "echo \"cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ //')\"",
-            "echo \"gpu=$(lspci 2>/dev/null | grep -Ei 'vga|3d|display' | head -n1 | cut -d: -f3- | sed 's/^ //')\"",
-            // KiB, written out by SystemLogic.formatBytes below: in the
-            // decimal units the System popup uses, which said "14.3 GB"
-            // while this page said "13.3 GiB" for the same memory.
-            "echo \"ramKib=$(awk '/MemTotal/ {print $2}' /proc/meminfo)\"",
-            "echo \"session=${XDG_SESSION_DESKTOP:-unknown}\""
-        ].join("; ")]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const result = {}
-                for (const line of text.split("\n")) {
-                    const index = line.indexOf("=")
-                    if (index > 0) result[line.slice(0, index)] = line.slice(index + 1)
-                }
-                if (Number(result.ramKib) > 0) result.ram = SystemLogic.formatBytes(Number(result.ramKib) * 1024)
-                root.info = result
-            }
-        }
-    }
+    // Read once per session and kept by the service: the page is built
+    // again on every visit, the versions and the hardware are not.
+    readonly property var info: SystemInfoService.info
+    Component.onCompleted: SystemInfoService.load()
 
     SettingsSection {
         Layout.fillWidth: true
@@ -53,8 +23,9 @@ ColumnLayout {
             labelFills: true
             label: "Show the tour again"
             hint: "The six keys this desktop is built on"
+            // The chevron after the word, where it reads as going on.
             ShellButton {
-                icon: Icons.forward
+                trailingIcon: Icons.forward
                 text: "Start"
                 variant: "surface"
                 compact: true

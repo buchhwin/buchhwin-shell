@@ -53,6 +53,19 @@ have_stable() { [[ -e $stable_dir/.git ]]; }
 # shellcheck source=lib/reload.sh
 source "$project_dir/scripts/lib/reload.sh"
 
+# Not from a terminal that points at a nested test session (its exports, or
+# half of them), whatever the action but --status: --no-test, --rollback and
+# --init moved stable and then reloaded the nested compositor instead of the
+# session's (the caller's signature is the one reload_hyprland trusts), the
+# shell's restart refused or went to the nested display, and the deploy still
+# said "Restarted the shell." Refused before stable is touched, as
+# scripts/shell-update.sh does.
+if [[ $action != status ]] && { nested_environment || nested_mixed_environment; }; then
+  printf 'deploy: the environment points at a nested session; refusing\n' >&2
+  printf 'deploy: run it from a terminal without the nested exports (BUCHHWIN_NESTED, WAYLAND_DISPLAY, HYPRLAND_INSTANCE_SIGNATURE)\n' >&2
+  exit 1
+fi
+
 # Reload the running session from the stable copy: Hyprland only when its
 # configuration changed, the shell when anything it loads changed.
 reload_changes() {
@@ -147,8 +160,8 @@ fi
 # tree, but stable gets the commit: a new QML file that shell.qml already
 # uses and that was never added passes every test here and is missing in
 # stable, and the reload then brings up a shell that fails with "is not a
-# type" - the desktop without a shell, what the stable worktree is for
-# (round 12, scripts#1). docs/ and the like are in .git/info/exclude.
+# type" - the desktop without a shell, what the stable worktree is for.
+# docs/ and the like are in .git/info/exclude.
 if [[ $ref == main ]] || $run_tests; then
   untracked=$(git_dev ls-files --others --exclude-standard --directory --no-empty-directory)
   if [[ -n $untracked ]]; then

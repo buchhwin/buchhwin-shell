@@ -11,7 +11,7 @@ var SHOWN = 50
 // from the index, while `-l` stops at the limit over the whole database. With
 // the query alone (and -l 200) /usr, /opt and the hidden folders used it all
 // up before a file of the user's came along, and "png" found nothing at home
-// out of 29 000 matches (round 12). The hidden folders still count against
+// out of 29 000 matches. The hidden folders still count against
 // the limit, and they come first: plocate answers in path order, where "."
 // sorts before every letter. Here 2736 "png" paths under home sit in hidden
 // folders and 330 outside them, so 1000 would still have found none; 5000

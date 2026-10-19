@@ -23,6 +23,26 @@ ColumnLayout {
 
     PageActivity { onOpened: DefaultAppsService.refresh() }
 
+    // The rows by category id. The list comes anew after every read - and a
+    // choice is a write and a read - so a Repeater over it built all ten
+    // rows again: the select the keyboard had just picked from lost the
+    // focus, and a list open on another row closed.
+    readonly property var categoryIds: DefaultAppsService.categories.map(category => category.id)
+    function categoryById(id) {
+        return DefaultAppsService.categories.find(entry => entry.id === id)
+            || { id: id, label: "", candidates: [], current: "", source: "", session: false }
+    }
+    // Where a row's choice comes from, at the width of the widest of the
+    // three (measured by a copy that is never drawn): the selects beside it
+    // ended at different x, and moved when a row changed between them.
+    function sourceLabel(source) {
+        return source === "session" ? "This session" : source === "plasma" ? "From Plasma" : "System default"
+    }
+    readonly property real sourceWidth: Math.max(sessionProbe.implicitWidth, plasmaProbe.implicitWidth, systemProbe.implicitWidth)
+    ShellText { id: sessionProbe; visible: false; role: "small"; text: root.sourceLabel("session") }
+    ShellText { id: plasmaProbe; visible: false; role: "small"; text: root.sourceLabel("plasma") }
+    ShellText { id: systemProbe; visible: false; role: "small"; text: root.sourceLabel("system") }
+
     SettingsSection {
         Layout.fillWidth: true
         title: "Default apps"
@@ -45,10 +65,11 @@ ColumnLayout {
         }
 
         Repeater {
-            model: DefaultAppsService.categories
+            model: ScriptModel { values: root.categoryIds }
             RowLayout {
                 id: appRow
-                required property var modelData
+                required property string modelData
+                readonly property var category: root.categoryById(modelData)
                 Layout.fillWidth: true
                 spacing: Metrics.spaceMd
 
@@ -58,7 +79,7 @@ ColumnLayout {
                 ShellIcon {
                     Layout.alignment: Qt.AlignTop
                     Layout.topMargin: (Metrics.controlHeight - implicitHeight) / 2
-                    glyph: root.icons[appRow.modelData.id] || Icons.apps
+                    glyph: root.icons[appRow.category.id] || Icons.apps
                     size: Metrics.iconMd
                     color: Colors.accentForeground
                 }
@@ -67,21 +88,22 @@ ColumnLayout {
                 // from is state and stays on the row.
                 SettingRow {
                     Layout.fillWidth: true
-                    label: appRow.modelData.label
-                    hint: root.hints[appRow.modelData.id] || ""
+                    label: appRow.category.label
+                    hint: root.hints[appRow.category.id] || ""
                     ShellSelect {
                         focusOnTab: true
                         Layout.fillWidth: true
-                        options: appRow.modelData.candidates.map(app => ({ value: app.id, label: app.name }))
-                        current: appRow.modelData.current
+                        options: appRow.category.candidates.map(app => ({ value: app.id, label: app.name }))
+                        current: appRow.category.current
                         placeholder: "Not set"
-                        onSelected: value => { if (value !== appRow.modelData.current) DefaultAppsService.setDefault(appRow.modelData.id, value) }
+                        onSelected: value => { if (value !== appRow.category.current) DefaultAppsService.setDefault(appRow.category.id, value) }
                     }
                     ShellText {
                         Layout.alignment: Qt.AlignTop
                         Layout.topMargin: (Metrics.controlHeight - implicitHeight) / 2
-                        text: appRow.modelData.source === "session" ? "This session"
-                            : appRow.modelData.source === "plasma" ? "From Plasma" : "System default"
+                        Layout.preferredWidth: root.sourceWidth
+                        horizontalAlignment: Text.AlignRight
+                        text: root.sourceLabel(appRow.category.source)
                         role: "small"
                         muted: true
                     }
@@ -93,8 +115,8 @@ ColumnLayout {
                         compact: true
                         variant: "ghost"
                         toolTip: "Follow Plasma or the system again"
-                        enabledState: appRow.modelData.session
-                        onClicked: DefaultAppsService.reset(appRow.modelData.id)
+                        enabledState: appRow.category.session
+                        onClicked: DefaultAppsService.reset(appRow.category.id)
                     }
                 }
             }

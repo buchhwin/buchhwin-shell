@@ -20,6 +20,11 @@ ShellPanel {
     placement: "center"
     cardWidth: Metrics.welcomeWidth
     scrimColor: Colors.scrimStrong
+    // Enter presses Next: the tour opened with nothing focused, and Return
+    // only reaches a focused button, so the keyboard had to Tab past Skip
+    // first. The panel hands Next the focus on every open, and it keeps it
+    // from step to step.
+    keyForward: nextButton
 
     property int step: 0
     // True while the tour has opened something to show it off. The panel closing
@@ -28,7 +33,8 @@ ShellPanel {
     readonly property var steps: [
         {
             icon: "󰋜", title: "Welcome",
-            text: "This is buchhwin-shell. There is no menu bar, and the dock is off until you want it: everything has a key, and every key opens the same thing every time.",
+            text: "This is buchhwin-shell. There is no menu bar, and the dock is off until you want it (" + ShortcutService.keyHint("SUPER + SHIFT + D", true)
+                + " turns it on): everything has a key, and every key opens the same thing every time.",
             keys: [], action: ""
         },
         {
@@ -48,7 +54,8 @@ ShellPanel {
         },
         {
             icon: Icons.arrange, title: "Make it yours",
-            text: "The layout editor arranges the desktop: widgets on the wallpaper, a bar of pills at the top, or a notch. Drag what you see, where you see it.",
+            text: "The layout editor arranges the desktop: widgets on the wallpaper, a bar of pills at the top, or a notch. Drag what you see, where you see it. "
+                + ShortcutService.keyHint("SUPER + ALT + P", true) + " switches between five modes - minimal, work, gaming, laptop and desk - each a desktop of its own.",
             keys: ShortcutService.keyHintParts("SUPER + ALT + E"), action: "editor"
         },
         {
@@ -59,6 +66,44 @@ ShellPanel {
         }
     ]
     readonly property var current: steps[Math.max(0, Math.min(steps.length - 1, step))]
+    // The words of every step take the height of the longest: the card is
+    // centred and its height followed the text, so Next moved up and down
+    // under a pointer clicking through the tour (by up to 59 px). Set from
+    // the measured texts' own changes, not bound to them: a text lays itself
+    // out when its height is first read, and inside a binding that read was
+    // reported as a binding loop.
+    property real textHeight: 0
+    // The place question under the dashboard's keys counts as that step's
+    // words here: the step was ~100 px taller than the others while it
+    // asked, and Next moved by half that. `bodyHeight` is the most any step
+    // needs for its words and the question below its keys (`placeHeight`,
+    // with the gaps); the dashboard's words give up what they do not need of
+    // it, and the other steps keep the rest free under their keys, where the
+    // question would be.
+    property real placeHeight: 0
+    property real bodyHeight: 0
+    function measureSteps() {
+        let place = 0
+        if (placeAsked) {
+            place = section.spacing + placeMeasure.implicitHeight
+            if (placeErrorShown) place += section.spacing + placeErrorMeasure.implicitHeight
+            if (!WeatherService.hasLocation) place += section.spacing + findButton.implicitHeight
+        }
+        let words = 0, body = 0
+        for (let index = 0; index < measure.count; ++index) {
+            const item = measure.itemAt(index)
+            if (!item) continue
+            words = Math.max(words, item.implicitHeight)
+            body = Math.max(body, item.implicitHeight + (steps[index].asksPlace === true ? place : 0))
+        }
+        placeHeight = place
+        textHeight = words
+        bodyHeight = Math.max(words, body)
+    }
+    // Under the keys of a step that does not ask: what the question needs
+    // beyond the longest words, less the gap the spacer brings itself.
+    readonly property real spareHeight: !asksPlace && bodyHeight - textHeight > section.spacing
+        ? bodyHeight - textHeight - section.spacing : 0
     readonly property bool last: step >= steps.length - 1
 
     onWantedChanged: if (wanted) {
@@ -99,8 +144,15 @@ ShellPanel {
     // third party (ipinfo.io), which sees this computer's address. That is
     // the user's call: the tour asks, where the shell used to ask ipinfo.io
     // by itself at the first start. A place already set is never asked about.
-    readonly property bool asksPlace: current.asksPlace === true && WeatherService.enabled
-        && (!WeatherService.hasLocation || placeFound)
+    readonly property bool placeAsked: WeatherService.enabled && (!WeatherService.hasLocation || placeFound)
+    readonly property bool asksPlace: current.asksPlace === true && placeAsked
+    onPlaceAskedChanged: Qt.callLater(measureSteps)
+    readonly property string placeText: WeatherService.hasLocation ? "Weather for " + WeatherService.locationName + "."
+        : LocationService.detecting ? "Asking ipinfo.io …"
+        : "The weather needs a place. Find it from this connection? That asks ipinfo.io once, which sees this computer's IP address. Or choose a city yourself."
+    readonly property bool placeErrorShown: !WeatherService.hasLocation && !LocationService.detecting
+        && LocationService.detectError.length > 0 && locating
+    onPlaceErrorShownChanged: Qt.callLater(measureSteps)
     // Found or chosen during this tour: the step says so rather than going
     // quiet.
     property bool placeFound: false
@@ -108,6 +160,7 @@ ShellPanel {
         target: WeatherService
         function onHasLocationChanged() {
             if (WeatherService.hasLocation && (root.wanted || root.steppingAside)) root.placeFound = true
+            Qt.callLater(root.measureSteps)
         }
     }
     // Asked from here, so a failure is this step's to show.
@@ -147,8 +200,12 @@ ShellPanel {
     }
 
     ColumnLayout {
+        id: stepColumn
         width: parent.width
         spacing: Metrics.panelGap
+        // A step fades in while the card's height glides (ShellPanel),
+        // instead of Next jumping up to 59 px in one frame.
+        PageFade { target: stepColumn; key: root.step; live: root.openProgress === 1 }
 
         PanelHeader {
             Layout.fillWidth: true
@@ -158,43 +215,91 @@ ShellPanel {
         }
 
         CardSection {
+            id: section
             Layout.fillWidth: true
 
             ShellText {
+                id: stepText
                 Layout.fillWidth: true
+                Layout.preferredHeight: Math.max(implicitHeight, root.asksPlace ? root.bodyHeight - root.placeHeight
+                    : root.spareHeight > 0 ? root.textHeight : root.bodyHeight)
                 text: root.current.text
                 wrapMode: Text.Wrap
             }
-
-            RowLayout {
-                Layout.fillWidth: true
-                visible: root.current.keys.length > 0
-                spacing: Metrics.spaceSm
-                KeyChips { keys: root.current.keys; accent: true }
-                ShellButton {
-                    focusOnTab: true
-                    text: "Try it"
-                    variant: "surface"
-                    compact: true
-                    onClicked: root.tryIt()
+            // Every step's words, measured at the same width and never shown.
+            // The width is the card's, not the words' own: theirs is set by
+            // the layout these heights feed, and read from there it is a loop.
+            Item {
+                visible: false
+                Repeater {
+                    id: measure
+                    model: root.steps
+                    ShellText {
+                        required property var modelData
+                        width: section.width - section.padding * 2
+                        text: modelData.text
+                        wrapMode: Text.Wrap
+                        onImplicitHeightChanged: Qt.callLater(root.measureSteps)
+                    }
                 }
-                Item { Layout.fillWidth: true }
+                // And the place question's lines at that width, on every
+                // step (the shown ones lay out only on their own).
+                ShellText {
+                    id: placeMeasure
+                    width: section.width - section.padding * 2
+                    text: root.placeText
+                    role: "small"
+                    wrapMode: Text.Wrap
+                    onImplicitHeightChanged: Qt.callLater(root.measureSteps)
+                }
+                ShellText {
+                    id: placeErrorMeasure
+                    width: section.width - section.padding * 2
+                    text: root.placeErrorShown ? LocationService.detectError : ""
+                    role: "small"
+                    wrapMode: Text.Wrap
+                    onImplicitHeightChanged: Qt.callLater(root.measureSteps)
+                }
             }
 
+            // The keys' row keeps its height on the step without keys, for the
+            // same reason as the words above.
+            Item {
+                Layout.fillWidth: true
+                implicitHeight: Math.max(tryButton.implicitHeight, chips.implicitHeight)
+                RowLayout {
+                    anchors.fill: parent
+                    visible: root.current.keys.length > 0
+                    spacing: Metrics.spaceSm
+                    KeyChips { id: chips; keys: root.current.keys; accent: true }
+                    ShellButton {
+                        id: tryButton
+                        focusOnTab: true
+                        text: "Try it"
+                        variant: "surface"
+                        compact: true
+                        onClicked: root.tryIt()
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+                visible: root.spareHeight > 0
+                implicitHeight: root.spareHeight
+            }
             ShellText {
                 Layout.fillWidth: true
                 visible: root.asksPlace
-                text: WeatherService.hasLocation ? "Weather for " + WeatherService.locationName + "."
-                    : LocationService.detecting ? "Asking ipinfo.io …"
-                    : "The weather needs a place. Find it from this connection? That asks ipinfo.io once, which sees this computer's IP address. Or choose a city yourself."
+                text: root.placeText
                 role: "small"
                 muted: true
                 wrapMode: Text.Wrap
             }
             ShellText {
                 Layout.fillWidth: true
-                visible: root.asksPlace && !WeatherService.hasLocation && !LocationService.detecting
-                    && LocationService.detectError.length > 0 && root.locating
+                visible: root.asksPlace && root.placeErrorShown
                 text: LocationService.detectError
                 role: "small"
                 color: Colors.warning
@@ -205,6 +310,7 @@ ShellPanel {
                 visible: root.asksPlace && !WeatherService.hasLocation
                 spacing: Metrics.spaceSm
                 ShellButton {
+                    id: findButton
                     focusOnTab: true
                     icon: Icons.location
                     text: "Find my place"
@@ -250,8 +356,12 @@ ShellPanel {
                 visible: !root.last
                 onClicked: root.requestClose()
             }
+            // Forward after the word, as the start menu's links have it; Done
+            // keeps its check in front.
             ShellButton {
-                icon: root.last ? Icons.check : Icons.forward
+                id: nextButton
+                icon: root.last ? Icons.check : ""
+                trailingIcon: root.last ? "" : Icons.forward
                 text: root.last ? "Done" : "Next"
                 variant: "accent"
                 focusOnTab: true

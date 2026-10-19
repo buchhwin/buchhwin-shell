@@ -4,6 +4,7 @@ import Quickshell.Io
 import QtQuick
 import "weather/WeatherLogic.js" as Logic
 import "appearance/TimeFormat.js" as TimeFormat
+import "lock/LockLogic.js" as LockLogic
 
 // Weather from Open-Meteo for the city chosen in Settings > Weather. Requests
 // only run while some UI tracks the weather (dashboard, widget); the last
@@ -20,6 +21,11 @@ Singleton {
     readonly property int refreshMinutes: Math.max(10, Math.min(180, SettingsService.value("weather.refreshMinutes")))
     readonly property bool hasLocation: locationName.length > 0 && Logic.validCoordinates(lat, lon)
     readonly property string locationKey: hasLocation ? Logic.roundCoordinate(lat) + "/" + Logic.roundCoordinate(lon) + "/" + unit : ""
+
+    // The lock screen's process only shows what the shell fetched: it reads
+    // the shell's cache and follows it while locked, and never fetches or
+    // writes itself (testing.md pitfall 86: the lock face reaches no writer).
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
 
     property int trackers: 0
     property var model: null
@@ -54,7 +60,7 @@ Singleton {
     }
 
     function refresh() {
-        if (!enabled || !hasLocation) return
+        if (lockProcess || !enabled || !hasLocation) return
         if (fetchProc.running) {
             if (fetchProc.requestKey === locationKey) return
             // A request for another place is stopped, and this one starts
@@ -73,16 +79,14 @@ Singleton {
 
     function setLocation(name, latitude, longitude) {
         if (!String(name).trim().length || !Logic.validCoordinates(latitude, longitude)) return false
-        SettingsService.set("weather.lat", Logic.roundCoordinate(latitude))
-        SettingsService.set("weather.lon", Logic.roundCoordinate(longitude))
-        SettingsService.set("weather.locationName", String(name).trim())
+        SettingsService.setAll({ "weather.lat": Logic.roundCoordinate(latitude),
+                                 "weather.lon": Logic.roundCoordinate(longitude),
+                                 "weather.locationName": String(name).trim() })
         return true
     }
 
     function clearLocation() {
-        SettingsService.set("weather.locationName", "")
-        SettingsService.set("weather.lat", 0)
-        SettingsService.set("weather.lon", 0)
+        SettingsService.setAll({ "weather.locationName": "", "weather.lat": 0, "weather.lon": 0 })
         model = null
         cacheKey = ""
         updated = null
@@ -101,7 +105,23 @@ Singleton {
         onTriggered: if (root.locationKey.length && root.trackers > 0) root.refresh()
     }
 
-    SystemClock { id: clock; precision: SystemClock.Hours }
+    SystemClock { id: clock; precision: SystemClock.Hours; enabled: WallClock.ticking }
+
+    // A resume and a network that comes back are reasons to fetch again
+    // (WeatherLogic.refreshWanted), but only for something that shows it.
+    function refreshFor(reason) {
+        if (trackers > 0 && Logic.refreshWanted(reason, failed, updated ? updated.getTime() : 0, Date.now())) refresh()
+    }
+    Connections {
+        target: WallClock
+        function onJumped() { root.refreshFor("jump") }
+    }
+    // The lock screen's process shows the weather too, and must not start
+    // the network service there (with its own nmcli monitor).
+    Connections {
+        target: root.lockProcess ? null : NetworkService
+        function onConnectedChanged() { if (NetworkService.connected) root.refreshFor("online") }
+    }
 
     Process {
         id: fetchProc
@@ -142,7 +162,7 @@ Singleton {
     Timer {
         interval: root.refreshMinutes * 60000
         repeat: true
-        running: root.trackers > 0 && root.hasLocation && root.enabled
+        running: !root.lockProcess && root.trackers > 0 && root.hasLocation && root.enabled
         onTriggered: root.refresh()
     }
 
@@ -152,20 +172,28 @@ Singleton {
     // the mode of the file it replaces, but makes a new one with the default
     // 0644, and one process per forecast is nothing.
     property bool cacheChecked: false
-    function keepCachePrivate() { Quickshell.execDetached(Logic.privateFileCommand(cacheFile.path)) }
+    function keepCachePrivate() {
+        if (lockProcess) return
+        Quickshell.execDetached(Logic.privateFileCommand(cacheFile.path))
+    }
 
     FileView {
         id: cacheFile
         path: Paths.cacheDir + "/weather.json"
         atomicWrites: true
         printErrors: false
+        // The lock's process follows the shell's writes to it.
+        watchChanges: root.lockProcess
+        onFileChanged: reload()
         onSaved: root.keepCachePrivate()
         onLoaded: {
             if (!root.cacheChecked) {
                 root.cacheChecked = true
                 root.keepCachePrivate()
             }
-            if (root.model !== null || !text().trim().length) return
+            // The shell keeps the forecast it fetched; the lock's process takes
+            // each new cache the shell writes.
+            if ((root.model !== null && !root.lockProcess) || !text().trim().length) return
             try {
                 const cached = Logic.fromCache(text())
                 root.model = cached.model

@@ -35,7 +35,7 @@ https://github.com/user-attachments/assets/467c2b76-ef77-41a0-a527-854d903a536b
 - **Arranged by hand.** One layout editor for widgets, bar and notch, with snapping
   and per-monitor layouts. Control center tiles and dashboard cards rearrange the same way.
 - **Profiles and modes.** Each profile keeps its whole setup. Two come built in,
-  `default` and `buchhwin`, each with five modes (minimal, work, gaming, laptop, docked).
+  `default` and `buchhwin`, each with five modes (minimal, work, gaming, laptop, desk).
 - **Its own lock screen and SDDM login theme**, with fingerprint support.
 - **No second stack.** Wi-Fi, VPN, Bluetooth, sound, calendar and passwords come from
   NetworkManager, PipeWire, Akonadi and KWallet, and Plasma keeps working alongside.
@@ -56,7 +56,7 @@ Then log out, pick **buchhwin-shell** on the login screen, and you're in.
 > On Arch, bring the system up to date first with `sudo pacman -Syu`. To see every
 > command before anything changes, run the line without `--apply`.
 
-**Updating:** Settings › Updates › *The shell*, or `git pull --ff-only && ./install/install.sh --apply`.
+**Updating:** Settings › Updates › *The shell*, or `git pull --ff-only && ./install/install.sh --apply`. When the update notice names new packages or changed system files, run the command it gives (`./install/bootstrap.sh --apply`, `sudo ./install/system-install.sh`).
 
 <details>
 <summary><b>Distributions and options</b></summary>
@@ -65,9 +65,9 @@ Then log out, pick **buchhwin-shell** on the login screen, and you're in.
 
 | Distribution | Notes |
 | --- | --- |
-| **Arch Linux** | Everything comes from the official repositories. Brave comes from the AUR (`brave-bin`, through paru or yay). |
-| **Fedora 44** | Hyprland comes from the `sachesi/hyprland` Copr and Brave from its RPM repository. |
-| **openSUSE Leap 16** | Quickshell comes from OBS. Hyprland 0.56 is built from pinned sources into `~/.local/opt/buchhwin-hyprland`, and `install/build-hyprland-leap.sh --remove --apply` removes it again. |
+| **Arch Linux** | Everything comes from the official repositories. Brave comes from the AUR (`brave-bin`, through paru or yay). Bluetooth needs `sudo systemctl enable --now bluetooth` once. |
+| **Fedora 44** | Hyprland and Starship come from Coprs (`sachesi/hyprland`, `atim/starship`) and Brave from its RPM repository. Quickshell is Fedora's own package, a 0.2.1 snapshot from February 2026 (the shell is made on 0.3). |
+| **openSUSE Leap 16.0** | Quickshell comes from OBS. Hyprland 0.56 is built from pinned sources into `~/.local/opt/buchhwin-hyprland`, and `install/build-hyprland-leap.sh --remove --apply` removes it again. A later 16.x is untried and needs `--distro opensuse-leap`. |
 
 Re-running is safe. Derivatives such as EndeavourOS or CachyOS need `--distro arch`.
 
@@ -75,7 +75,7 @@ Re-running is safe. Derivatives such as EndeavourOS or CachyOS need `--distro ar
 | --- | --- |
 | `--minimal` | only what the shell itself needs: no recording, fingerprint, phone, calendar writing or apps |
 | `--skip-apps` | no browser, file manager or media apps |
-| `--skip-fonts` | leave fonts alone |
+| `--skip-fonts` | leave fonts alone: no font packages, no Nerd Fonts download |
 | `--distro NAME` | `arch`, `fedora` or `opensuse-leap` instead of detecting it |
 
 The default apps it sets (Brave, Dolphin, kitty, VLC, Okular, Gwenview, Ark) apply to
@@ -113,7 +113,9 @@ sudo ./install/system-install.sh --sddm-theme-remove       # undo
 ```
 
 **Plasma terminal:** `./install/plasma-terminal.sh --apply` gives Plasma the same kitty,
-zsh and Starship setup and backs up existing files.
+zsh and Starship setup and backs up existing files. A file that is a symlink (a dotfiles
+checkout) is kept, and so is Plasma's terminal when its KDE files are links; `--force`
+replaces them.
 
 </details>
 
@@ -152,7 +154,9 @@ open the launcher.
 ## Configuration and help
 
 - Settings live in `~/.config/buchhwin-shell/` (`settings.json`, `layout.json`, …),
-  logs in `~/.local/state/buchhwin-shell/quickshell.log`.
+  logs in `~/.local/state/buchhwin-shell/quickshell.log`. Share that log (or plain `quickshell log`) in an issue - never
+  Quickshell's own `log.qslog` under `/run/user` or a `quickshell log -r "*.debug=true"` dump: they hold window titles,
+  network names and device addresses.
 - Something not working? `~/.local/share/buchhwin-shell/scripts/session-check.sh` checks the
   session without changing anything.
 - `Super` `Ctrl` `R` restarts the shell.

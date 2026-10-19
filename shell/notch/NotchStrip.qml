@@ -55,7 +55,7 @@ Item {
     // matches them right (services/model/KeyedLogic.js).
     property var lastParts: ({ list: [] })
     function keptParts(next) {
-        const list = Keyed.keep(lastParts.list, next, "partKey")
+        const list = Keyed.keepList(lastParts.list, next, "partKey")
         lastParts.list = list
         return list
     }
@@ -67,10 +67,17 @@ Item {
             return Object.assign({ partKey: text + "#" + seen[text] }, item)
         })
     }
-    // The screen this strip is drawn on. Empty means it reports nothing, which
-    // is what the copy inside the expanded notch wants while it is not the one
-    // on screen.
+    // The screen this strip reports its parts on. Empty means it reports
+    // nothing, which is what the strip wants while the notch is expanded and
+    // it is not the one on screen. For the reports only: a widget must never
+    // be handed it (see `widgetScreen`).
     property string screenName: ""
+    // The screen the strip's widgets belong to, always the window's own. A
+    // part loaded while the notch was expanded - a preset picked or an undo in
+    // the editor, which holds the notch open - used to get the empty
+    // `screenName`, once and for good: its workspace dots shrank to one
+    // placeholder pip, and a click on it went to the first monitor's.
+    property string widgetScreen: ""
     // Where this strip's window sits on the screen; see Notch.reportOrigin.
     property point reportOrigin: Qt.point(0, 0)
     // The screen the strip belongs to, kept while the notch is expanded too
@@ -92,7 +99,7 @@ Item {
     implicitWidth: symmetry.width
     implicitHeight: NotchService.bodyHeight
 
-    SystemClock { id: clock; precision: SystemClock.Minutes }
+    SystemClock { id: clock; precision: SystemClock.Minutes; enabled: WallClock.ticking }
 
     // ---- where its parts are ---------------------------------------------
     // The notch is its own layer surface and the layout editor covers it, so
@@ -172,10 +179,19 @@ Item {
             // are handed over as the same objects (`keptParts`).
             model: ScriptModel { values: root.keptParts(root.partKeys(root.items)); objectProp: "partKey" }
             Loader {
+                id: part
                 required property var modelData
                 required property int index
                 readonly property bool isClock: modelData.type === "clock"
+                // The widget a widget part loaded (a Loader in a Loader), or
+                // null for the parts the strip draws itself.
+                readonly property var widget: item && item.item !== undefined ? item.item : null
                 anchors.verticalCenter: parent.verticalCenter
+                // Nothing to say, nothing drawn: the explicit flag, which the
+                // Row goes by (pitfall 89), so the part takes no room and no
+                // gap and the symmetric strip is measured without it.
+                visible: Logic.stripShows(modelData.type, part.widget === null || part.widget.hasData !== false,
+                                          RecordingService.active, TimerService.running, NotchService.arranging)
                 onWidthChanged: { reportTimer.restart(); if (isClock) root.clockWidth = width }
                 onXChanged: if (isClock) root.clockX = x
                 Component.onCompleted: if (isClock) { root.clockX = x; root.clockWidth = width }
@@ -194,7 +210,7 @@ Item {
     Component {
         id: timePart
         Text {
-            text: Logic.timeText(clock.date)
+            text: Logic.timeText(clock.date, SettingsService.twelveHourClock)
             color: Colors.notchText
             font.family: Typography.family
             font.pixelSize: Typography.notchTimeSize * root.scaleFactor
@@ -318,7 +334,7 @@ Item {
                 // The registry's options, then the item's own on top (a
                 // workspace style chosen for this notch only).
                 item.instance = { id: modelData.id, type: modelData.type,
-                                  screen: root.screenName,
+                                  screen: root.widgetScreen,
                                   options: Object.assign({}, entry && entry.options ? entry.options : {},
                                                          modelData.options || {}) }
                 item.scaleFactor = root.scaleFactor

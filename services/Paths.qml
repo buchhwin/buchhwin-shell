@@ -3,7 +3,9 @@ import Quickshell
 import QtQuick
 
 // Central file-system locations. XDG variables are honoured so nested test
-// sessions can sandbox configuration and state.
+// sessions can sandbox configuration and state. The shell's own three
+// directories below are the user's alone (0700): SettingsService makes them
+// so once a start, whatever lands in them.
 Singleton {
     readonly property string home: Quickshell.env("HOME")
     readonly property string configDir: (Quickshell.env("XDG_CONFIG_HOME") || home + "/.config") + "/buchhwin-shell"

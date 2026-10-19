@@ -16,6 +16,9 @@ import qs.theme
 //   - **The timer is started and stopped by hand.** A `Timer` that does not
 //     repeat clears its own `running` when it fires, so a binding on `running`
 //     is torn down at the very moment it matters. That ate another attempt.
+//     The timer is the layer's (`ToolTipLayer.arm`): one per window, not one
+//     in each of the hundreds of controls built at start that may never be
+//     pointed at.
 //   - **Every way out has to put the bubble back.** Leaving, being disabled,
 //     being activated and being destroyed all end a tooltip, and a bubble left
 //     behind by a control that no longer exists cannot be dismissed by
@@ -54,14 +57,19 @@ Item {
     }
 
     // The pointer arrived. Nothing happens for a control with nothing to say.
+    // The layer waits for it and calls `show` when the wait is over.
     function arm() {
-        if (root.text.length) wait.start()
+        if (!root.text.length) return
+        const found = findLayer()
+        if (found) found.arm(root)
     }
 
     // The pointer left, or the control was disabled, activated or destroyed.
     function release() {
-        wait.stop()
-        root.hide()
+        const found = findLayer()
+        if (!found) return
+        found.disarm(root)
+        found.hide(root.anchorItem)
     }
 
     function show() {
@@ -74,11 +82,5 @@ Item {
         if (found) found.hide(root.anchorItem)
     }
 
-    Timer {
-        id: wait
-        interval: root.delay
-        onTriggered: root.show()
-    }
-
-    Component.onDestruction: root.hide()
+    Component.onDestruction: root.release()
 }

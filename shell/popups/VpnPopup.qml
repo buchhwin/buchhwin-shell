@@ -16,7 +16,9 @@ PopupPanel {
     glyphActive: NetworkService.activeVpns.length > 0
     footerText: "Network settings"
     onFooterClicked: PanelService.open("settings", { page: "network" })
-    onWantedChanged: if (wanted) NetworkService.refresh()
+    // Only when NetworkManager said something since the last read (see
+    // NetworkPopup).
+    onWantedChanged: if (wanted) NetworkService.refreshIfStale()
 
     body: ColumnLayout {
         spacing: Metrics.pageGap

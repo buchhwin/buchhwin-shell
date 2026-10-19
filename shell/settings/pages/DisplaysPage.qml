@@ -51,6 +51,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Arrangement"
+        scope: "display"
         description: "Drag displays to arrange them. Edges snap together."
 
         Rectangle {
@@ -201,16 +202,24 @@ ColumnLayout {
         }
     }
 
+    // What a section reads in the frame between a monitor going and its
+    // section going with it.
+    readonly property var noMonitor: ({ name: "", description: "", make: "", model: "", width: 0, height: 0, refresh: 0,
+                                        scale: 1, transform: 0, vrr: 0, x: 0, y: 0, disabled: true, focused: false, modes: [] })
+
     Repeater {
-        model: root.monitors
+        // A count, like the canvas above and for the same reason: the draft
+        // is a new array after every change, and a Repeater over it built
+        // every section again - the Scale or Refresh control the keyboard was
+        // on went with it, and the next arrow press did nothing.
+        model: root.monitors.length
         SettingsSection {
             id: monitorSection
-            required property var modelData
             required property int index
-            readonly property var monitor: modelData
+            readonly property var monitor: root.monitors[index] || root.noMonitor
             // One at a time. An invisible item is left out of the layout, so
             // the others cost nothing but their own bindings.
-            visible: monitor.name === root.chosen
+            visible: monitor.name.length > 0 && monitor.name === root.chosen
             Layout.fillWidth: true
             title: "Display " + (index + 1) + " · " + monitor.name
             description: [monitor.make, monitor.model].filter(value => value && value.length).join(" ")
@@ -318,9 +327,14 @@ ColumnLayout {
                 ShellText {
                     Layout.fillWidth: true
                     wrapMode: Text.Wrap
+                    // A draft the displays changed under (one plugged in or
+                    // taken away) cannot be kept, and it goes with a word
+                    // instead of the footer just saying "No changes".
                     text: DisplayService.confirming ? "Keep these display settings? Reverting in " + DisplayService.countdown + " s"
-                        : DisplayService.dirty ? "Unsaved changes" : "No changes"
-                    muted: !DisplayService.confirming && !DisplayService.dirty
+                        : DisplayService.dirty ? "Unsaved changes"
+                        : DisplayService.draftDropped === true ? "The displays changed, so the unsaved changes were discarded"
+                        : "No changes"
+                    muted: !DisplayService.confirming && !DisplayService.dirty && DisplayService.draftDropped !== true
                 }
                 ShellButton {
                     text: "Identify"
@@ -356,17 +370,25 @@ ColumnLayout {
     // size, one that does not is a third smaller and needs its own scale in
     // whatever launches it. Shown wherever there is a scaled screen, so the
     // question is only asked of the people it can answer.
+    //
+    // Why: XWayland is told the scaled size of a display rather than its
+    // real one, so on a screen at 1.5 an X11 window renders 2560x1440 pixels
+    // and the compositor stretches them over 3840x2160. Citrix showed it as
+    // an almost unreadable font on a 4K screen and a sharp one on a Full HD
+    // screen beside it.
     SettingsSection {
         Layout.fillWidth: true
         visible: root.monitors.some(monitor => Number(monitor.scale) !== 1)
         title: "X11 applications"
-        description: "Applications that do not speak Wayland are drawn by XWayland, which is told the scaled size of a display rather than its real one - so on a screen at 1.5 they render 2560x1440 pixels and the compositor stretches them over 3840x2160. Citrix showed it as an almost unreadable font on a 4K screen and a sharp one on a Full HD screen beside it."
+        description: "Apps that do not speak Wayland are stretched onto a scaled screen, which makes them blurry."
 
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
             label: "Sharp X11 applications"
-            hint: "They draw in real pixels instead of being stretched, and X11 is told the real scale of the largest screen (Xft.dpi, which only X11 applications read). A toolkit that honors it comes up the right size; one that does not is a third smaller and needs its own scale (GDK_SCALE, QT_SCALE_FACTOR) in its launcher. Only applications started afterwards are affected."
+            // X11 is told the real scale of the largest screen through
+            // Xft.dpi, which only X11 applications read.
+            hint: "They draw in real pixels instead. An app that ignores X11's scale comes up a third smaller and needs GDK_SCALE or QT_SCALE_FACTOR in its launcher. For apps started afterwards."
             ShellToggle {
                 focusOnTab: true
                 checked: SettingsService.value("display.xwaylandSharp")

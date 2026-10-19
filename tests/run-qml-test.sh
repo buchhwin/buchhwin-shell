@@ -6,7 +6,8 @@ set -euo pipefail
 # Quickshell cannot exit itself, so the runner stops it once a marker appears.
 test_file=$(readlink -f -- "$1")
 sandbox=$(mktemp -d "${TMPDIR:-/tmp}/buchhwin-qmltest.XXXXXX")
-trap 'rm -rf -- "$sandbox"' EXIT
+run_dir="$sandbox/run"
+trap 'rm -rf -- "$sandbox" "$run_dir"' EXIT
 output="$sandbox/output.log"
 
 # Quickshell only loads files below the config root, so tests run from a copy
@@ -22,11 +23,30 @@ sed -e 's#"\.\./\.\./#"#g' -e 's#"\.\./fixtures/#"tests/fixtures/#g' -e 's#"Harn
 # talking to Hyprland (WallpaperTest reaches DisplayService, which runs
 # `hyprctl -j monitors all`) reached the live one through the signature, and
 # DisplayService's write paths are one condition away from that read
-# (pitfall 82; round 12, tests-docs#2). hyprctl without a signature picks no
+# (pitfall 82). hyprctl without a signature picks no
 # instance. BUCHHWIN_SHELL_PATH is the session shell's own path.
+#
+# A runtime directory of its own as well: Quickshell keeps an instance
+# directory (its log, lock and socket) for every start in
+# $XDG_RUNTIME_DIR/quickshell, and nothing removes those before logout - in
+# the user's, a tmpfs, every suite run left about a hundred, some 5 MB of
+# memory. This one goes with the sandbox, and it keeps a test off the
+# session's PipeWire socket too. The IPC socket in it must stay within the 108
+# bytes a socket path may have (by-id/<id>/ipc.sock adds about 40): under a
+# long TMPDIR it is a directory of its own in /tmp.
+# Nor the session's bus: a test that pulls in NotificationService queued for
+# org.freedesktop.Notifications on it, and would have taken the user's
+# notifications had the shell restarted meanwhile (pitfall 82); MPRIS and the
+# portal find no bus and say so. The address names a socket that never exists.
+if (( ${#run_dir} > 64 )); then
+  run_dir=$(mktemp -d /tmp/buchhwin-qmlrun.XXXXXX)
+else
+  mkdir -m 700 "$run_dir"
+fi
 env -u WAYLAND_DISPLAY -u DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u BUCHHWIN_SHELL_PATH QT_QPA_PLATFORM=offscreen \
   XDG_CONFIG_HOME="$sandbox/config" XDG_STATE_HOME="$sandbox/state" \
-  XDG_CACHE_HOME="$sandbox/cache" \
+  XDG_CACHE_HOME="$sandbox/cache" XDG_RUNTIME_DIR="$run_dir" \
+  DBUS_SESSION_BUS_ADDRESS="unix:path=$sandbox/no-bus" \
   quickshell -p "$root/__test__.qml" >"$output" 2>&1 &
 pid=$!
 

@@ -35,26 +35,43 @@ ColumnLayout {
     // where it came from: the header for the keyboard, whatever held it before
     // for the mouse, so a click on a row does not leave a ring on the header
     // nobody tabbed to, nor the focus nowhere.
+    //
+    // A list without a filter opened by a click gives the header the focus,
+    // just as quietly: the arrows, Enter and Escape are the header's, and the
+    // focus used to stay wherever it was - in Settings the search field, so
+    // Escape went on from there and closed Settings with the list still open.
     property Item returnFocus: null
     property bool quietFilter: false
+    property bool quietHeader: false
     function openList(fromKeyboard) {
         if (!root.enabledState || root.expanded) return
         filterInput.text = ""
         root.filter = ""
         root.returnFocus = fromKeyboard ? header : Window.activeFocusItem
         root.expanded = true
-        if (!root.filterable) return
+        if (!root.filterable) {
+            if (fromKeyboard) return
+            root.quietHeader = !header.activeFocus
+            header.forceActiveFocus(Qt.MouseFocusReason)
+            return
+        }
         root.quietFilter = !fromKeyboard
         filterInput.forceActiveFocus(fromKeyboard ? Qt.TabFocusReason : Qt.MouseFocusReason)
     }
     function closeList() {
         if (!root.expanded) return
         // Read before the list goes: hiding the filter takes its focus away.
-        const back = filterInput.activeFocus ? root.returnFocus : null
+        const back = filterInput.activeFocus || (header.activeFocus && root.quietHeader) ? root.returnFocus : null
         root.expanded = false
         root.returnFocus = null
         if (back && back.visible) back.forceActiveFocus(Qt.OtherFocusReason)
     }
+    // An open list goes with the window it is in. A panel that closes takes
+    // its window away (Quickshell destroys a hidden one) and Settings keeps
+    // its page for a minute, so the list was still open when Settings came
+    // back.
+    Window.onWindowChanged: if (!Window.window) root.closeList()
+    Window.onVisibilityChanged: if (Window.visibility === Window.Hidden) root.closeList()
     function toggleList(fromKeyboard) {
         if (root.expanded) root.closeList()
         else root.openList(fromKeyboard)
@@ -74,6 +91,7 @@ ColumnLayout {
 
     readonly property int currentIndex: options.findIndex(option => option.value === root.current)
     function step(delta) {
+        root.quietHeader = false
         if (!root.enabledState || !options.length) return
         const next = Math.max(0, Math.min(options.length - 1, (currentIndex < 0 ? 0 : currentIndex) + delta))
         if (options[next].value !== root.current) root.selected(options[next].value)
@@ -91,6 +109,7 @@ ColumnLayout {
         return Math.max(0, Math.min(visibleOptions.length - 1, walked < 0 ? start : walked))
     }
     function walk(delta) {
+        root.quietHeader = false
         if (!visibleOptions.length) return
         walked = Math.max(0, Math.min(visibleOptions.length - 1, walkIndex + delta))
     }
@@ -129,7 +148,10 @@ ColumnLayout {
         Keys.onEnterPressed: event => { if (root.expanded) root.takeWalked(); else event.accepted = false }
         Keys.onSpacePressed: root.toggleList(true)
         Keys.onEscapePressed: event => { if (root.expanded) root.closeList(); else event.accepted = false }
-        FocusRing { active: header.activeFocus; controlRadius: header.radius }
+        // No ring for the focus a click handed over (see openList); a key
+        // walked with it is the keyboard's, and the ring comes back.
+        FocusRing { active: header.activeFocus && !root.quietHeader; controlRadius: header.radius }
+        onActiveFocusChanged: if (!activeFocus) root.quietHeader = false
         Accessible.role: Accessible.ComboBox
         Accessible.name: root.accessibleName
         Accessible.description: root.currentOption ? root.currentOption.label : root.current

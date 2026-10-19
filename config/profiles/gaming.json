@@ -1,9 +1,9 @@
 {
-  "configVersion": 2,
+  "configVersion": 3,
   "name": "gaming",
   "label": "Gaming",
   "description": "The notch only, Do Not Disturb, reduced motion and no blur",
-  "mode": "notch",
+  "desktopMode": "notch",
   "bar": {
     "reserve": true,
     "fullscreen": "hide",

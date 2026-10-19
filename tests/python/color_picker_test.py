@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """scripts/color-picker.py: the global-point to pixel mapping, against stub
-monitors and images made here. No grim, no compositor, no host screen."""
+monitors and images made here, and the helper as the shell runs it, with
+stand-ins for hyprctl and grim. No compositor, no host screen."""
 import importlib.util
 import json
 import os
+import signal
+import stat
 import subprocess
 import sys
+import tempfile
+import time
 
 from PIL import Image
 
@@ -103,6 +108,87 @@ portrait = {"name": "DP-2", "x": 1920, "y": 0, "width": 1440, "height": 2560, "s
 upright = solid(1440, 2560, (9, 9, 9))
 upright.putpixel((100, 2000), (0, 0, 255))
 check("the lower part of a portrait monitor is pickable", picker.pixel_at(portrait, upright, 2020, 2000), "#0000ff")
+
+# ---- the helper as the shell runs it ----------------------------------------
+# hyprctl and grim are stand-ins on PATH: two monitors, and a grim that logs
+# when it starts and ends (each takes 0.3 s) and sends a frame made here.
+with tempfile.TemporaryDirectory(prefix="color-picker-test.") as sandbox:
+    bin_dir = os.path.join(sandbox, "bin")
+    frames_dir = os.path.join(sandbox, "frames")
+    capture_dir = os.path.join(sandbox, "run", "color-picker")
+    log = os.path.join(sandbox, "grim.log")
+    os.makedirs(bin_dir)
+    os.makedirs(frames_dir)
+    two = [{"name": "eDP-1", "x": 0, "y": 0, "width": 40, "height": 20, "scale": 1.0},
+           {"name": "DP-2", "x": 40, "y": 0, "width": 30, "height": 20, "scale": 1.0}]
+    solid(40, 20, (10, 20, 30)).save(os.path.join(frames_dir, "eDP-1.ppm"))
+    solid(30, 20, (200, 100, 50)).save(os.path.join(frames_dir, "DP-2.ppm"))
+    with open(os.path.join(bin_dir, "hyprctl"), "w") as stub:
+        stub.write("#!/bin/sh\ncat <<'JSON'\n%s\nJSON\n" % json.dumps(two))
+    with open(os.path.join(bin_dir, "grim"), "w") as stub:
+        stub.write("#!/bin/sh\necho \"start $2\" >> '%s'\nsleep 0.3\necho \"end $2\" >> '%s'\ncat '%s'/\"$2\".ppm\n"
+                   % (log, log, frames_dir))
+    for name in ("hyprctl", "grim"):
+        os.chmod(os.path.join(bin_dir, name), 0o755)
+    env = dict(os.environ, PATH=bin_dir + os.pathsep + os.environ.get("PATH", ""))
+
+    def start():
+        process = subprocess.Popen([sys.executable, SCRIPT, "capture", capture_dir], stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+        return process, process.stdout.readline()
+
+    def frame_files():
+        try:
+            return sorted(os.listdir(capture_dir))
+        except FileNotFoundError:
+            return []
+
+    # A frame an earlier picker left of a monitor goes; anything else in the
+    # directory is not the picker's to remove.
+    os.makedirs(capture_dir)
+    for name in ("eDP-1.png", "notes.txt"):
+        with open(os.path.join(capture_dir, name), "w") as stale:
+            stale.write("x")
+    process, first = start()
+    try:
+        listed = json.loads(first)
+    except ValueError:
+        listed = []
+    check("the frames it froze, in order", [item["name"] for item in listed], ["eDP-1", "DP-2"])
+    check("as PPM files in the directory", frame_files(), ["DP-2.ppm", "eDP-1.ppm", "notes.txt"])
+    files = [item["file"] for item in listed]
+    check("each private to the user", [stat.S_IMODE(os.stat(path).st_mode) for path in files], [0o600, 0o600])
+    check("and readable as the frame it is", [Image.open(path).size for path in files], [(40, 20), (30, 20)])
+    with open(log) as grim_log:
+        order = [line.split()[0] for line in grim_log]
+    check("the monitors are grabbed at once, not one after the other", order[:2], ["start", "start"])
+    process.stdin.write("45 5\n")
+    process.stdin.flush()
+    check("a point on the second monitor", process.stdout.readline().strip(), "#c86432")
+    process.stdin.close()
+    try:
+        code = process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        code = None
+    check("stdin's end ends the helper", code, 0)
+    check("and takes the frames with it, the stale one too", frame_files(), ["notes.txt"])
+
+    # The shell stops the helper with SIGTERM when the overlay closes.
+    process, first = start()
+    check("a second pick freezes the screens again", len(json.loads(first or "[]")), 2)
+    process.send_signal(signal.SIGTERM)
+    try:
+        code = process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        code = None
+    check("SIGTERM ends the helper", code, 0)
+    check("and the frames go with it", frame_files(), ["notes.txt"])
+    process.stdout.close()
+    process.stderr.close()
+    if process.stdin:
+        process.stdin.close()
 
 if failures:
     for failure in failures:

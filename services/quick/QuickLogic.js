@@ -66,3 +66,84 @@ function missing(types) {
     const shown = types || []
     return catalogue.filter(tile => shown.indexOf(tile.type) < 0)
 }
+
+// What the shown overview asks of the services for its tiles: the phone tile
+// has KDE Connect polled (a script every 10 s), the fingerprint tile has the
+// reader's state read (fprintd-list, which starts the root daemon). Only
+// while the overview is shown (`live`) and only for a tile that is on it
+// (`types`, LayoutService.quickTypes): both used to run on every open,
+// whatever tiles the panel had.
+function watches(types, live) {
+    const list = types || []
+    return {
+        phone: live === true && list.indexOf("phone") >= 0,
+        fingerprint: live === true && list.indexOf("fingerprint") >= 0
+    }
+}
+
+// Whether a slider tile - brightness, and the battery beside it with its
+// bar - is drawn in its one-line form in a cell `rows` grid steps tall. It is
+// a question of rows, not of the cell's shape name: two rows (72 px with the
+// gap) hold one line, so the slider comes up beside the glyph and the title
+// goes; three (114 px) hold the title line and the slider under it, which a
+// one-column cell of three rows used to draw as the one-line form with 80 px
+// of empty card around it.
+function sliderCompact(rows) {
+    return Fit.step(rows, 1) <= 2
+}
+
+// What the audio tile draws in a cell of `shape` (FitLogic.fitClass) that is
+// `rows` steps tall. The volume row always; the output device above it from
+// three rows, where it fits; the System / Apps tabs only in a tall or large
+// cell, which has room for what is under them as well.
+function audioParts(shape, rows) {
+    return { tabs: shape === "tall" || shape === "large", device: Fit.step(rows, 1) >= 3 }
+}
+
+// The Settings page that belongs to a control-center page, for the header's
+// gear: on the Power page it opens Settings > Power, as the page's own button
+// does, rather than whatever Settings showed last. "" for the overview and
+// anything unknown, which leaves Settings where it was.
+var SETTINGS_PAGES = {
+    network: "network", bluetooth: "bluetooth", audio: "audio", power: "power",
+    dnd: "notifications", drives: "desktop", tray: "autostart"
+}
+function settingsPage(page) {
+    const key = String(page || "")
+    return Object.prototype.hasOwnProperty.call(SETTINGS_PAGES, key) ? SETTINGS_PAGES[key] : ""
+}
+
+// Where Escape leaves the control center: a detail page goes back to the
+// overview (""), and on the overview it is not the page's to take (null), so
+// the panel closes.
+function pageAfterEscape(page) {
+    return String(page || "").length ? "" : null
+}
+
+// The widths of a row of chips sharing `room` px with `gap` between them,
+// from what each one needs (its implicit width). As even as their words
+// allow: the narrow ones grow towards one common width before any wide one
+// grows, and no chip is given less than it needs while the row has room for
+// all of them. Shared out by content length, the last chip of the control
+// center's four ended up 107 px with its words against the edge beside a
+// 163 px one. A row too short for all of them gets the plain needs back, and
+// the layout shrinks them as before.
+function chipWidths(needs, room, gap) {
+    const list = (needs || []).map(value => Math.max(0, Number(value) || 0))
+    if (!list.length) return []
+    const free = Number(room) - Math.max(0, Number(gap) || 0) * (list.length - 1)
+    const total = list.reduce((sum, value) => sum + value, 0)
+    if (!(free >= total)) return list
+    // The common width `level`: every chip narrower than it is raised to it,
+    // and the rest keep what they need. Found from the narrowest up.
+    const sorted = list.slice().sort((a, b) => a - b)
+    let level = free / list.length
+    let kept = 0
+    for (let i = sorted.length - 1; i >= 0; --i) {
+        const raised = (free - kept) / (i + 1)
+        if (sorted[i] <= raised) { level = raised; break }
+        kept += sorted[i]
+        level = sorted[i]
+    }
+    return list.map(value => Math.max(value, level))
+}

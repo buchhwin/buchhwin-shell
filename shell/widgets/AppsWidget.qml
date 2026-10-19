@@ -29,7 +29,9 @@ Item {
 
     readonly property string screenName: instance ? String(instance.screen || "") : ""
     readonly property string edge: DockService.position
-    readonly property var apps: DockService.items
+    // This dock's apps: every dock's, or its own screen's running apps
+    // (DockService.itemsOn).
+    readonly property var apps: DockService.itemsOn(screenName)
     readonly property int firstRunning: apps.findIndex(app => !app.pinned)
     readonly property real room: screenName.length && DockService.appsRoomOn[screenName] !== undefined
         ? DockService.appsRoomOn[screenName] : -1
@@ -104,10 +106,12 @@ Item {
             width: size
             height: size
             keyFocus: root.keyboard && DockService.keyIndex === index
+            running: DockService.runningOf(modelData)
+            active: DockService.activeOf(modelData)
             dragging: DockService.dragKey === modelData.key && root.dragging
             removing: dragging && root.dragAway
             z: dragging ? 1 : 0
-            onActivated: DockService.activate(modelData.key)
+            onActivated: DockService.activate(modelData.key, root.screenName)
             onNewWindow: DockService.newWindow(modelData.key)
             onMenuWanted: root.openMenu(index)
             onDragStarted: {
@@ -117,7 +121,12 @@ Item {
             }
             onDragMoved: (along, acrossOut) => root.dragTo(index, along, acrossOut)
             onDragEnded: (along, acrossOut) => root.dragEnd(index, along, acrossOut)
-            onHoveredChanged: root.labelFor(hovered ? index : -1)
+            onDragCanceled: (along, acrossOut, rising) => root.dragCancel(modelData.key, acrossOut, rising)
+            onHoveredChanged: root.labelFor(index, hovered)
+            // An app before it that went or came moves it along the row
+            // under the pointer: the name goes with it, or its leave would
+            // read as another icon's and leave the name up.
+            onIndexChanged: if (hovered) root.labelIndex = index
         }
     }
 
@@ -125,17 +134,22 @@ Item {
     property int labelIndex: -1
     property bool labelShown: false
     property string notice: ""
-    function labelFor(index) {
-        if (index < 0) {
-            labelTimer.stop()
-            labelShown = false
-            return
-        }
-        labelIndex = index
-        // Once one is up, the next shows at once as the pointer moves on.
-        if (!labelShown) labelTimer.restart()
+    // The pointer entered or left an icon (DockLogic.labelAfter): the name
+    // shows after a delay, and once it is up the next icon's shows at once -
+    // the gap between two icons, where no icon has the pointer, is crossed
+    // within a grace instead of taking the name down. The grace is the
+    // dock's own wait after the pointer left (a wait, not motion: the same
+    // with animations off), so a name stays as long as the dock does.
+    function labelFor(index, entered) {
+        const next = Logic.labelAfter({ index: labelIndex, shown: labelShown }, index, entered)
+        labelIndex = next.index
+        labelShown = next.shown
+        if (next.timer === "show") { labelGrace.stop(); labelTimer.restart() }
+        else if (next.timer === "hide") { labelTimer.stop(); labelGrace.restart() }
+        else if (next.timer === "stop") { labelTimer.stop(); labelGrace.stop() }
     }
     Timer { id: labelTimer; interval: Animations.dockLabelDelay; onTriggered: root.labelShown = true }
+    Timer { id: labelGrace; interval: Animations.dockHideDelay; onTriggered: root.labelShown = false }
     Timer { id: noticeTimer; interval: Metrics.osdTimeout; onTriggered: root.notice = "" }
     function itemRect(index) {
         const size = placed.sizes[index] !== undefined ? placed.sizes[index] : slot
@@ -160,15 +174,26 @@ Item {
     }
 
     // ---- where the apps are, for `dock rects` (tests aim with it) -------------
+    // Mapped to the dock's drawn content without the slide that takes it out
+    // over the edge (Dock.qml `frame`, the pills' reportFrame), so a place
+    // reported while the dock is hidden is where it shows - mapped to the
+    // window, `dock rects` put a hidden dock's icons below the screen, and
+    // the dock menu's morph came from there. Asked for when it is reported,
+    // long after the window was made; the window itself without one.
+    function frameItem() {
+        const dock = QsWindow.window
+        return dock && dock.frame ? dock.frame : null
+    }
     function reportRects() {
         if (!screenName.length) return
         const origin = DockService.originOn[screenName] || { x: 0, y: 0 }
+        const frame = frameItem()
         DockService.reportRects(screenName, apps.map((app, index) => {
             const rect = itemRect(index)
-            const topLeft = mapToItem(null, rect.x, rect.y)
+            const topLeft = mapToItem(frame, rect.x, rect.y)
             return { x: Math.round(topLeft.x + origin.x), y: Math.round(topLeft.y + origin.y),
                      width: Math.round(rect.width), height: Math.round(rect.height),
-                     pinned: app.pinned, running: app.running }
+                     pinned: app.pinned, running: DockService.runningOf(app) }
         }))
     }
     Timer { id: rectsTimer; interval: Animations.hover; onTriggered: root.reportRects() }
@@ -183,16 +208,22 @@ Item {
         function onBodiesChanged() { rectsTimer.restart() }
     }
     Component.onCompleted: rectsTimer.restart()
-    Component.onDestruction: if (screenName.length) DockService.reportRects(screenName, null)
+    Component.onDestruction: {
+        if (!screenName.length) return
+        DockService.reportRects(screenName, null)
+        // Gone in the middle of a drag (the pill taken off the dock): the drag
+        // goes with it.
+        if (dragging) DockService.endDrag(screenName)
+    }
 
     // ---- menu ------------------------------------------------------------------
-    // Its place on the screen: mapped to the dock's window, moved by where the
-    // dock's surface sits (Dock.qml reports it).
+    // Its place on the screen: mapped to the dock's content as `dock rects`
+    // is, moved by where the dock's surface sits (Dock.qml reports it).
     function openMenu(index) {
         const app = apps[index]
         if (!app) return
         const rect = itemRect(index)
-        const topLeft = mapToItem(null, rect.x, rect.y)
+        const topLeft = mapToItem(frameItem(), rect.x, rect.y)
         const origin = DockService.originOn[screenName] || { x: 0, y: 0 }
         DockService.openMenu(app.key, screenName, { x: topLeft.x + origin.x, y: topLeft.y + origin.y,
                                                     width: rect.width, height: rect.height })
@@ -240,10 +271,28 @@ Item {
             notice = "At most " + LayoutService.dockPinLimit + " pinned apps"
             noticeTimer.restart()
         }
+        resetDrag()
+        DockService.endDrag()
+    }
+    // Taken away by the system: a pull past the surface's edge is one, and
+    // unpins as letting go there would have (DockLogic.cancelOutcome). By
+    // the app's key, and only the app being dragged: a cancel can come from
+    // an icon on its way out, whose place may already be another app's.
+    function dragCancel(key, acrossOut, rising) {
+        if (key !== DockService.dragKey) return
+        const app = apps.find(item => item.key === key) || null
+        if (Logic.cancelOutcome(app, acrossOut, rising, slot, Metrics.dockUnpinReach, unpinRoom) === "unpin")
+            DockService.unpinByDrag(key)
+        resetDrag()
+        DockService.endDrag()
+    }
+    function resetDrag() {
         dropSlot = -1
         dragIndex = -1
         dragAway = false
-        DockService.dragKey = ""
-        DockService.dragScreen = ""
     }
+    // A drag that ended without its icon - the app went, the dock's service
+    // let it go (DockService.endDrag) - leaves no drop marker or "Unpin"
+    // behind.
+    onDraggingChanged: if (!dragging) resetDrag()
 }

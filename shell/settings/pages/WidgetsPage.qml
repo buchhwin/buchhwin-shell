@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../editor/EditLogic.js" as EditLogic
 
 // Desktop mode and the widgets on the wallpaper: one list per display with
 // style, visibility and removal. Positions, scale and groups are dragged in
@@ -30,14 +31,12 @@ ColumnLayout {
     }
 
     // Every change here is one undo step and reaches layout.json, the way the
-    // editor's own changes do (EditLayer.change). Remove, the switch and the
-    // style used to change the layout in memory only: the desktop followed at
-    // once, and the next restart brought the old state back, with no undo.
-    function change(callback) {
-        LayoutService.beginChange()
-        callback()
-        LayoutService.save()
-    }
+    // editor's own changes do (EditLogic.change) - and one that changes
+    // nothing, the style or the visibility a widget has already, takes
+    // neither. Remove, the switch and the style used to change the layout in
+    // memory only: the desktop followed at once, and the next restart brought
+    // the old state back, with no undo.
+    function change(callback) { EditLogic.change(LayoutService, callback) }
 
     DesktopModeSection { Layout.fillWidth: true }
 

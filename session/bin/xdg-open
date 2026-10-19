@@ -11,7 +11,9 @@
 # browser.sh, all of them scripts/launch-chromium.sh): a Chromium browser has
 # to start with Plasma's password store and only with the wallet open, or it
 # makes itself a new key and logs out of everything (see that script). A
-# running browser takes the link over its own socket either way.
+# running browser takes the link over its own socket either way. So does any
+# other target whose handler runs one of those browsers: a web app's entry
+# (Outlook's here is the mailto: handler) and a local page as a file:// URL.
 set -euo pipefail
 here=$(readlink -f -- "${BASH_SOURCE[0]}")
 project_dir=$(cd -- "$(dirname -- "$here")/../.." && pwd)
@@ -26,10 +28,26 @@ done
 [[ -n $real ]] || { printf 'xdg-open: the system xdg-open is missing\n' >&2; exit 3; }
 target=${1:-}
 handler=""
+# A local page as a URL (an HTML report from Python's webbrowser, an editor's
+# openExternal) is a file: file:// and an optional localhost dropped, the
+# query and the fragment cut, the rest percent-decoded. As a URL it asked
+# for x-scheme-handler/file, which nothing handles, and the system xdg-open
+# then found the page's browser itself and started it past its launcher.
+# The handler still gets the URL as it was given.
+path=$target
+if [[ $target == file://* ]]; then
+  path=${target#file://}
+  [[ $path == localhost/* ]] && path=${path#localhost}
+  path=${path%%#*}
+  path=${path%%\?*}
+  # Backslashes first, so that only the %XX turn into escapes for printf.
+  path=${path//\\/\\\\}
+  printf -v path '%b' "${path//[%]/\\x}"
+fi
 # A file first (a path may contain a colon), then the web, then any other
 # scheme - mailto: and friends have no "//".
-if [[ -n $target && -e $target ]]; then
-  type=$(xdg-mime query filetype "$target" 2>/dev/null || true)
+if [[ -n $path && -e $path ]]; then
+  type=$(xdg-mime query filetype "$path" 2>/dev/null || true)
   [[ -n $type ]] && handler=$(xdg-mime query default "$type" 2>/dev/null || true)
 elif [[ $target == http://* || $target == https://* ]]; then
   handler=$(xdg-settings get default-web-browser 2>/dev/null || true)
@@ -43,6 +61,77 @@ case ${handler%.desktop} in
   # runs whichever command is there.
   chromium-browser|chromium) exec "$project_dir/scripts/launch-chromium-browser.sh" "$@" ;;
 esac
+
+# Any other handler may still run one of those browsers: a web app's entry
+# (brave-<app>-Default.desktop - Outlook, the mailto: handler here) runs
+# /opt/brave-bin/brave --profile-directory=Default --app-id=… %U, and the
+# system xdg-open runs that as written, so a browser that was not running
+# came up without Plasma's password store and without the wallet check
+# (testing.md pitfalls 32 and 98). Such an entry's program is known by name -
+# the same names as services/launcher/LaunchLogic.js's BROWSER_PROGRAMS,
+# which tests/launch-app-test.sh holds the two to - and its arguments, field
+# codes dropped, go to the browser's launcher ahead of the target.
+browser_launcher() {
+  case ${1##*/} in
+    brave|brave-browser|brave-browser-stable) printf 'launch-brave.sh' ;;
+    google-chrome|google-chrome-stable) printf 'launch-chrome.sh' ;;
+    chromium|chromium-browser) printf 'launch-chromium-browser.sh' ;;
+    *) return 1 ;;
+  esac
+}
+# The entry's file by its id: the user's applications first, then the
+# system's, as the desktop finds them.
+entry_file() {
+  local dir dirs
+  IFS=: read -r -a dirs <<<"${XDG_DATA_HOME:-$HOME/.local/share}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+  for dir in "${dirs[@]}"; do
+    [[ -n $dir && -r $dir/applications/$1 ]] || continue
+    printf '%s\n' "$dir/applications/$1"
+    return 0
+  done
+  return 1
+}
+# The words of the [Desktop Entry] group's Exec, one per line, the way the
+# desktop entry specification quotes them (double quotes; inside them a
+# backslash before " ` $ or \), with the field codes (%U, %f, …) dropped and
+# %% read as %. Nothing for an entry without one.
+exec_words() {
+  local line value="" group="" word="" quoted=0 any=0 i char next
+  while IFS= read -r line; do
+    case $line in
+      '['*']') group=$line; continue ;;
+    esac
+    if [[ $group == '[Desktop Entry]' && $line =~ ^Exec[[:space:]]*=[[:space:]]*(.*)$ ]]; then value=${BASH_REMATCH[1]}; break; fi
+  done <"$1"
+  [[ -n $value ]] || return 1
+  for (( i = 0; i < ${#value}; i++ )); do
+    char=${value:i:1}
+    if (( quoted )); then
+      if [[ $char == '\' ]]; then
+        next=${value:i+1:1}
+        if [[ $next == '"' || $next == '`' || $next == '$' || $next == '\' ]]; then word+=$next; i=$(( i + 1 )); continue; fi
+        word+=$char
+      elif [[ $char == '"' ]]; then quoted=0
+      else word+=$char
+      fi
+    elif [[ $char == '"' ]]; then quoted=1; any=1
+    elif [[ $char == ' ' || $char == $'\t' ]]; then
+      if (( any )) || [[ -n $word ]]; then printf '%s\n' "$word"; fi
+      word=""; any=0
+    elif [[ $char == '%' ]]; then
+      next=${value:i+1:1}
+      [[ $next == '%' ]] && word+='%'
+      i=$(( i + 1 ))
+    else
+      word+=$char
+    fi
+  done
+  if (( any )) || [[ -n $word ]]; then printf '%s\n' "$word"; fi
+}
+if [[ -n $handler ]] && file=$(entry_file "$handler") && mapfile -t words < <(exec_words "$file") \
+    && (( ${#words[@]} )) && launcher=$(browser_launcher "${words[0]}"); then
+  exec "$project_dir/scripts/$launcher" "${words[@]:1}" "$@"
+fi
 if [[ -n $handler ]]; then
   exec "$project_dir/scripts/launch-app.sh" "$handler" "$real" "$@"
 fi

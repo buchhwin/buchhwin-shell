@@ -1,8 +1,10 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../../services/quick/QuickLogic.js" as Quick
 
 ShellCard {
     id: root
@@ -10,12 +12,18 @@ ShellCard {
     property string tab: "system"
     implicitHeight: column.implicitHeight + Metrics.spaceLg * 2
 
-    // The shape of the cell it was given. A card too short for the tabs plus
-    // what is under them keeps the volume row - which is what the tile is for
-    // - and drops the tabs and the device name rather than showing the top
-    // half of all three.
+    // The shape of the cell it was given and how many rows tall it is. A card
+    // too short for the tabs plus what is under them keeps the volume row -
+    // which is what the tile is for - and drops the tabs rather than showing
+    // the top half of all three; the device row above the volume stays from
+    // three rows, where it fits (QuickLogic.audioParts). Decided on the shape
+    // alone, a one-column tile of three rows was a lone slider in 80 px of
+    // empty card.
     property string shape: "small"
-    readonly property bool tight: shape !== "tall" && shape !== "large"
+    property int rows: 2
+    readonly property var parts: Quick.audioParts(shape, rows)
+    readonly property bool tight: !parts.tabs
+    readonly property bool showsDevice: parts.device
     // `tab` is the user's, but the apps tab has nothing to draw at this size,
     // so a short card is always on the system one.
     readonly property string shownTab: tight ? "system" : tab
@@ -51,7 +59,7 @@ ShellCard {
 
             ListRow {
                 Layout.fillWidth: true
-                visible: !root.tight
+                visible: root.showsDevice
                 readonly property var parts: AudioService.labelParts(AudioService.sink, AudioService.sinks)
                 icon: AudioService.deviceIcon(AudioService.sink, false)
                 title: parts.title
@@ -84,7 +92,7 @@ ShellCard {
                 // all, while the microphone's tile led into its window. A
                 // chevron needs no row of its own.
                 ShellButton {
-                    visible: root.tight
+                    visible: !root.showsDevice
                     focusOnTab: true
                     icon: Icons.forward
                     variant: "ghost"; compact: true; iconSize: Metrics.iconSm
@@ -107,7 +115,11 @@ ShellCard {
                 title: "No app is playing audio"
             }
             Repeater {
-                model: AudioService.playbackStreams.slice(0, 3)
+                // Kept rows, not rebuilt ones: the streams are a new list
+                // whenever any PipeWire node comes or goes (a notification
+                // sound, a browser tab), and a rebuilt row ended the drag of
+                // its slider under the hand. The nodes keep their identity.
+                model: ScriptModel { values: AudioService.playbackStreams.slice(0, 3) }
                 StreamRow { required property var modelData; node: modelData; showOutput: false; Layout.fillWidth: true }
             }
         }

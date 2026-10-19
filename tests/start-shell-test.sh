@@ -48,6 +48,7 @@ if [[ ${1:-} == hold ]]; then
 fi
 n=$(cat "$COUNT" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "$COUNT"
 echo "run $n"
+[[ -n ${ORDER:-} ]] && echo started >> "$ORDER"
 # The environment the shell was given, and that of an application it starts
 # through scripts/launch-app.sh, as /proc has them.
 [[ -n ${ENVDUMP:-} ]] && tr '\0' '\n' < /proc/$$/environ > "$ENVDUMP"
@@ -126,13 +127,21 @@ real_pkill=$(command -v pkill)
 # (BUCHHWIN_START_WITHOUT_HYPRLAND); the cases of the session check below
 # take it away again. No signature of the caller's reaches the script.
 unset HYPRLAND_INSTANCE_SIGNATURE HYPR_INSTANCES
-export PATH="$SB/bin:$PATH" XDG_STATE_HOME="$SB/state" COUNT="$SB/count" LINGER="$SB/linger" \
+# The configuration is the sandbox's too: the icon theme comes from
+# kdeglobals and settings.json, and the caller's own would decide it. So is
+# the runtime directory: before it starts the shell, the script clears the
+# instance directories Quickshell left there, and a test clears none of the
+# caller's.
+export PATH="$SB/bin:$PATH" XDG_STATE_HOME="$SB/state" XDG_CONFIG_HOME="$SB/config" XDG_RUNTIME_DIR="$SB/run" \
+  COUNT="$SB/count" LINGER="$SB/linger" \
   HELD="$SB/held" PKILLS="$SB/pkills" STUB_CFG="$SB/cfg" SESSION_ENV="$SB/session-env" REPO="$PWD" \
   WAYLAND_DISPLAY=wayland-test BUCHHWIN_START_WITHOUT_HYPRLAND=1
 # The shell's own settings and its record of them come from whoever runs this
 # test - a terminal or an editor the shell started has them - and would be
-# taken for the session's.
-unset MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME
+# taken for the session's. So does a nested session's flag.
+unset MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION \
+  QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME \
+  BUCHHWIN_NESTED BUCHHWIN_NESTED_DIR BUCHHWIN_NESTED_MODE BUCHHWIN_NESTED_SCALE XDG_CACHE_HOME
 : > "$SESSION_ENV"
 echo 0 > "$LINGER"; : > "$PKILLS"
 fail=0
@@ -142,6 +151,34 @@ check() { if eval "$1"; then :; else printf 'FAIL: %s\n' "$2"; fail=1; fi; }
 echo 0 > "$COUNT"; CRASHES=2 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
 check '[[ $(cat "$COUNT") == 3 ]]' "a crash is restarted (got $(cat "$COUNT") runs, wanted 3)"
 check 'grep -q "died on signal 11, restarting (1 of 5)" "$SB/state/buchhwin-shell/quickshell.log"' 'and the log says so'
+
+# A start sweeps the instance directories of shells that are gone from its
+# runtime directory (scripts/lib/quickshell-dirs.sh): an unlocked one older
+# than an hour goes, a fresh one stays. In the sandbox's runtime directory,
+# never the host's.
+qs_dirs="$SB/run/quickshell/by-id"
+mkdir -p "$qs_dirs/deadold1" "$qs_dirs/deadnew1"
+: > "$qs_dirs/deadold1/instance.lock"; : > "$qs_dirs/deadnew1/instance.lock"
+touch -d '2 hours ago' "$qs_dirs/deadold1"
+echo 0 > "$COUNT"; CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
+check '[[ ! -e $qs_dirs/deadold1 && -d $qs_dirs/deadnew1 ]]' "a start removes a gone instance's directory older than an hour, and keeps a new one"
+# The shell does not wait for the sweep: the first one of a runtime directory
+# with a thousand directories took four seconds. A slow `find` stands in for
+# that; the shell starts first, and the sweep is still done when the script
+# has ended.
+mkdir -p "$SB/slowbin" "$qs_dirs/deadold2"
+: > "$qs_dirs/deadold2/instance.lock"; touch -d '2 hours ago' "$qs_dirs/deadold2"
+real_find=$(command -v find)
+printf '#!/usr/bin/env bash
+sleep 1
+echo swept >> "$ORDER"
+exec %q "$@"
+' "$real_find" > "$SB/slowbin/find"
+chmod +x "$SB/slowbin/find"
+: > "$SB/order"
+echo 0 > "$COUNT"; ORDER="$SB/order" PATH="$SB/slowbin:$PATH" CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
+check '[[ $(head -n1 "$SB/order") == started ]]' "the shell starts before the sweep has looked ($(tr '\n' ' ' < "$SB/order"))"
+check '[[ ! -e $qs_dirs/deadold2 ]]' "and the sweep is done by the time the script ends"
 
 # after a crash the dead instance may still be listed for a moment; the
 # restart waits for it to go rather than starting a --no-duplicate shell that
@@ -181,16 +218,19 @@ expect_agent="-u $uid -P $adopter -f ^(\\S+ )?$cfg_pattern/scripts/bluetooth-age
 expect_paste="-u $uid -P $adopter -f ^(\\S*/)?wl-paste --type (text|image) --watch cliphist -db-path \\S*/buchhwin-shell/cliphist\\.db -max-items [0-9]+ store\$"
 expect_udev="-u $uid -P $adopter -f ^(\\S*/)?udevadm monitor --udev --subsystem-match=backlight\$"
 expect_inhibit="-u $uid -P $adopter -f ^(\\S*/)?systemd-inhibit --what=handle-lid-switch --who=buchhwin-shell .* sleep infinity\$"
+expect_udisks="-u $uid -P $adopter -f ^(\\S*/)?udisksctl monitor\$"
+expect_gio="-u $uid -P $adopter -f ^(\\S*/)?gio mount -o\$"
 : > "$PKILLS"
 echo 0 > "$COUNT"; echo 3 > "$LINGER"; ORPHANS="$SB/orphans" CRASHES=1 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
 check '[[ $(cat "$COUNT") == 2 ]]' "the restart still happens (got $(cat "$COUNT") runs, wanted 2)"
 if (( orphans_testable )); then
-  check '[[ $(grep -c "^run=1 " "$PKILLS") == 6 ]]' "one pkill per helper after the crash and before the replacement ($(grep -c "^run=1 " "$PKILLS") calls, wanted 6)"
-  check '[[ $(grep -c "^run=2 " "$PKILLS") == 6 ]]' "and once more on the way out ($(grep -c "^run=2 " "$PKILLS") calls, wanted 6)"
-  for expected in "$expect_nmcli" "$expect_drives" "$expect_agent" "$expect_paste" "$expect_udev" "$expect_inhibit"; do
+  check '[[ $(grep -c "^run=1 " "$PKILLS") == 8 ]]' "one pkill per helper after the crash and before the replacement ($(grep -c "^run=1 " "$PKILLS") calls, wanted 8)"
+  check '[[ $(grep -c "^run=2 " "$PKILLS") == 8 ]]' "and once more on the way out ($(grep -c "^run=2 " "$PKILLS") calls, wanted 8)"
+  for expected in "$expect_nmcli" "$expect_drives" "$expect_agent" "$expect_paste" "$expect_udev" "$expect_inhibit" \
+      "$expect_udisks" "$expect_gio"; do
     check 'grep -qF -- "$expected" "$PKILLS"' "this user, the orphan's parent, the exact command line: $expected"
   done
-  check 'grep -q "ended 6 helper(s) left behind" "$SB/state/buchhwin-shell/quickshell.log"' 'and the log says what was ended'
+  check 'grep -q "ended 8 helper(s) left behind" "$SB/state/buchhwin-shell/quickshell.log"' 'and the log says what was ended'
 fi
 check '! grep -qw -- "$held_shell" "$PKILLS"' "a helper whose parent is a living quickshell is left alone"
 check '! grep -qw -- "-P $$" "$PKILLS" && ! grep -q -- "-P [0-9]*,$$" "$PKILLS"' "a helper whose parent is the user's own process (a terminal's zsh) is left alone"
@@ -208,7 +248,7 @@ for _ in {1..20}; do [[ $(cat /proc/$tray/comm 2>/dev/null) == kded6 ]] && break
 # The session the tray belongs to: the test's own Hyprland, socket and all.
 in_session=(HYPRLAND_INSTANCE_SIGNATURE=sig-alive XDG_RUNTIME_DIR="$SB/run")
 
-# ---- no Hyprland, no shell (round 12, scripts#0) -------------------------------
+# ---- no Hyprland, no shell ----------------------------------------------------
 # A deploy or a reload run from Plasma started the shell on KWin's display and
 # SIGKILLed Plasma's kded6 for holding the tray name. Without a Hyprland to
 # belong to - none listed, a signature whose socket is gone, or one instance
@@ -266,7 +306,7 @@ kill "$tray" 2>/dev/null || true
 echo 0 > "$COUNT"; ORPHANS="$SB/orphans" CRASHES=0 FINAL_EXIT=143 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1
 check '[[ $(cat "$COUNT") == 1 ]]' "a SIGTERM status is not restarted (got $(cat "$COUNT") runs)"
 if (( orphans_testable )); then
-  check '[[ $(grep -c "^run=1 " "$PKILLS") == 6 ]]' "but its helpers are ended on the way out ($(grep -c . "$PKILLS") pkill calls)"
+  check '[[ $(grep -c "^run=1 " "$PKILLS") == 8 ]]' "but its helpers are ended on the way out ($(grep -c . "$PKILLS") pkill calls)"
 fi
 
 # the session launcher asks for the same at logout, with --reap: no shell is
@@ -281,7 +321,7 @@ check '[[ $(cat "$COUNT") == 0 ]]' "--reap starts no shell (got $(cat "$COUNT") 
 check '[[ $(cat "$LINGER") == 0 ]]' "and waits for the lingering instance first, without a display ($(cat "$LINGER") list answers unused)"
 check 'grep -q marker-before-reap "$SB/state/buchhwin-shell/quickshell.log"' "and does not rotate the log"
 if (( orphans_testable )); then
-  check '[[ $(grep -c . "$PKILLS") == 6 ]] && grep -qF -- "$expect_inhibit" "$PKILLS"' "and ends the helpers ($(grep -c . "$PKILLS") pkill calls)"
+  check '[[ $(grep -c . "$PKILLS") == 8 ]] && grep -qF -- "$expect_inhibit" "$PKILLS"' "and ends the helpers ($(grep -c . "$PKILLS") pkill calls)"
 fi
 # an instance that never goes keeps its helpers
 : > "$PKILLS"; echo 500 > "$LINGER"
@@ -308,34 +348,113 @@ envcase() {
 }
 has() { grep -qx -- "$2" "$SB/$1.env"; }
 lacks() { ! grep -q -- "^$2=" "$SB/$1.env"; }
+# Everything the shell sets for itself, in the order of the record.
+own_names="MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO"
+own_pattern="^(MALLOC|mesa|GALLIUM|QT_WAYLAND_DISABLE|QSG_|QS_|BUCHHWIN_ICON)"
 envcase -u QT_QPA_PLATFORMTHEME QT_QPA_PLATFORMTHEME=kde
 check 'has shell MALLOC_ARENA_MAX=2 && has shell mesa_glthread=false && has shell GALLIUM_THREAD=0 && lacks shell QT_QPA_PLATFORMTHEME' \
   "the shell runs with its own settings and without the platform theme"
-check 'has shell "BUCHHWIN_APP_ENV_UNSET=MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME" && has shell BUCHHWIN_APP_QPA_THEME=kde' \
+# jemalloc's knob next to glibc's (Arch's quickshell links jemalloc), no
+# decorations for windows that never have any, greyscale text.
+check 'has shell MALLOC_CONF=narenas:2,background_thread:true,dirty_decay_ms:1000 && has shell QT_WAYLAND_DISABLE_WINDOWDECORATION=1 && has shell QSG_DISTANCEFIELD_ANTIALIASING=gray' \
+  "and with jemalloc's arenas, no decorations and greyscale text ($(grep -E "^(MALLOC_CONF|QT_WAYLAND|QSG_)" "$SB/shell.env" | tr '\n' ' '))"
+check 'has shell "BUCHHWIN_APP_ENV_UNSET=$own_names" && has shell BUCHHWIN_APP_QPA_THEME=kde' \
   "and records what it changed ($(grep ^BUCHHWIN_APP "$SB/shell.env" | tr '\n' ' '))"
-check 'lacks app MALLOC_ARENA_MAX && lacks app mesa_glthread && lacks app GALLIUM_THREAD && lacks app QS_ICON_THEME' \
-  "an application it starts has none of them ($(grep -E "^(MALLOC|mesa|GALLIUM|QS_)" "$SB/app.env" | tr '\n' ' '))"
+check '! grep -qE "$own_pattern" "$SB/app.env"' \
+  "an application it starts has none of them ($(grep -E "$own_pattern" "$SB/app.env" | tr '\n' ' '))"
 check 'has app QT_QPA_PLATFORMTHEME=kde && lacks app BUCHHWIN_APP_ENV_UNSET && lacks app BUCHHWIN_APP_QPA_THEME' \
   "but the session's platform theme, and no record"
 # an exported value wins - for the shell, and it was the session's anyway
-envcase -u QT_QPA_PLATFORMTHEME MALLOC_ARENA_MAX=4
+envcase -u QT_QPA_PLATFORMTHEME MALLOC_ARENA_MAX=4 MALLOC_CONF=narenas:1 QT_WAYLAND_DISABLE_WINDOWDECORATION=0
 check 'has shell MALLOC_ARENA_MAX=4 && has app MALLOC_ARENA_MAX=4 && lacks app mesa_glthread' "an exported value is kept for both"
+check 'has shell MALLOC_CONF=narenas:1 && has app MALLOC_CONF=narenas:1 && has shell QT_WAYLAND_DISABLE_WINDOWDECORATION=0 && has app QT_WAYLAND_DISABLE_WINDOWDECORATION=0' \
+  "jemalloc's and the decorations' too"
 check 'lacks app QT_QPA_PLATFORMTHEME' "and a session without a platform theme gives the application none"
 # started by something that came from a shell (a reload from a terminal the
 # shell opened): the record is undone first, so it is the session's again
 envcase -u QT_QPA_PLATFORMTHEME QS_ICON_THEME=breeze MALLOC_ARENA_MAX=2 mesa_glthread=false GALLIUM_THREAD=0 \
-  "BUCHHWIN_APP_ENV_UNSET=MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME" BUCHHWIN_APP_QPA_THEME=kde
-check 'has shell "BUCHHWIN_APP_ENV_UNSET=MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME" && has shell BUCHHWIN_APP_QPA_THEME=kde' \
+  MALLOC_CONF=narenas:2 QT_WAYLAND_DISABLE_WINDOWDECORATION=1 QSG_DISTANCEFIELD_ANTIALIASING=gray BUCHHWIN_ICON_THEME_AUTO=1 \
+  "BUCHHWIN_APP_ENV_UNSET=$own_names" BUCHHWIN_APP_QPA_THEME=kde
+check 'has shell "BUCHHWIN_APP_ENV_UNSET=$own_names" && has shell BUCHHWIN_APP_QPA_THEME=kde' \
   "a caller from the shell is taken back to the session's values first"
-check 'has app QT_QPA_PLATFORMTHEME=kde && lacks app MALLOC_ARENA_MAX' "and so are its applications"
+check 'has app QT_QPA_PLATFORMTHEME=kde && ! grep -qE "$own_pattern" "$SB/app.env"' "and so are its applications"
+# A caller from a shell older than these names (an editor opened from the
+# launcher before them): its record names the four it had, and the rest are
+# set and recorded as for any start.
+envcase -u QT_QPA_PLATFORMTHEME QS_ICON_THEME=breeze MALLOC_ARENA_MAX=2 mesa_glthread=false GALLIUM_THREAD=0 \
+  "BUCHHWIN_APP_ENV_UNSET=MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME" BUCHHWIN_APP_QPA_THEME=kde
+check 'has shell "BUCHHWIN_APP_ENV_UNSET=$own_names" && ! grep -qE "$own_pattern" "$SB/app.env"' \
+  "a caller from a shell before the newer names gets the whole record"
 # from a shell older than the record (an editor opened from the launcher
 # before it, deploying): the user manager says what the session has
 printf 'QT_QPA_PLATFORMTHEME=kde\nXDG_CURRENT_DESKTOP=buchhwin-shell:Hyprland\n' > "$SESSION_ENV"
 envcase -u QT_QPA_PLATFORMTHEME QS_ICON_THEME=breeze-dark MALLOC_ARENA_MAX=2 mesa_glthread=false GALLIUM_THREAD=0
-check 'has shell "BUCHHWIN_APP_ENV_UNSET=MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME" && has shell BUCHHWIN_APP_QPA_THEME=kde' \
+check 'has shell "BUCHHWIN_APP_ENV_UNSET=$own_names" && has shell BUCHHWIN_APP_QPA_THEME=kde' \
   "an old shell's settings are told apart by the user manager's environment ($(grep ^BUCHHWIN_APP "$SB/shell.env" | tr '\n' ' '))"
 check 'has app QT_QPA_PLATFORMTHEME=kde && lacks app MALLOC_ARENA_MAX && lacks app GALLIUM_THREAD' "and its applications get the session's"
 : > "$SESSION_ENV"
+
+# ---- the icon theme ---------------------------------------------------------
+# Qt reads it once, at the start: kdeglobals' [Icons] Theme when there is
+# one, else what the panels are (theme/Colors.qml's surfaceDark) - a chosen
+# panel colour by its brightness, the theme's own panels by the theme, "auto"
+# dark from 19:00 to 07:00. `date +%H` is the test's ($HOUR); everything else
+# date says is the real one's.
+real_date=$(command -v date)
+mkdir -p "$SB/clock" "$SB/config/buchhwin-shell"
+printf '#!/bin/sh\nif [ "$1" = "+%%H" ] && [ -n "$HOUR" ]; then echo "$HOUR"; exit 0; fi\nexec %s "$@"\n' "$real_date" > "$SB/clock/date"
+chmod +x "$SB/clock/date"
+icons() {   # icons SETTINGS-JSON HOUR: the theme the shell got, and whether the panels chose it
+  printf '%s\n' "$1" > "$SB/config/buchhwin-shell/settings.json"
+  envcase PATH="$SB/clock:$PATH" HOUR="$2"
+  printf '%s %s' "$(sed -n 's/^QS_ICON_THEME=//p' "$SB/shell.env")" "$(sed -n 's/^BUCHHWIN_ICON_THEME_AUTO=//p' "$SB/shell.env")"
+}
+check '[[ $(icons "{}" 12) == "breeze-dark 1" ]]' "no setting: the dark theme's icons ($(icons "{}" 12))"
+check '[[ $(icons "{\"appearance\":{\"theme\":\"light\"}}" 22) == "breeze 1" ]]' "light: the light theme's icons"
+check '[[ $(icons "{\"appearance\":{\"theme\":\"auto\"}}" 12) == "breeze 1" ]]' "auto by day: the light theme's icons ($(icons "{\"appearance\":{\"theme\":\"auto\"}}" 12))"
+check '[[ $(icons "{\"appearance\":{\"theme\":\"auto\"}}" 19) == "breeze-dark 1" && $(icons "{\"appearance\":{\"theme\":\"auto\"}}" 6) == "breeze-dark 1" ]]' \
+  "auto at night: the dark theme's icons"
+check '[[ $(icons "{\"appearance\":{\"theme\":\"light\",\"panelColor\":\"#000000\"}}" 12) == "breeze-dark 1" ]]' \
+  "light with black panels (buchhwin): light icons on the black ($(icons "{\"appearance\":{\"theme\":\"light\",\"panelColor\":\"#000000\"}}" 12))"
+check '[[ $(icons "{\"appearance\":{\"theme\":\"dark\",\"panelColor\":\" FFF \"}}" 22) == "breeze 1" ]]' \
+  "dark with white panels: dark icons on the white (three digits, no #, spaces)"
+check '[[ $(icons "{\"appearance\":{\"theme\":\"light\",\"panelColor\":\"auto\"}}" 3) == "breeze 1" ]]' "an automatic panel colour follows the theme"
+printf '[General]\nColorScheme=BreezeDark\n\n[Icons]\nTheme=Papirus\n' > "$SB/config/kdeglobals"
+check '[[ $(icons "{\"appearance\":{\"theme\":\"light\"}}" 12) == "Papirus " ]]' "kdeglobals' theme wins, and the panels did not choose ($(icons "{\"appearance\":{\"theme\":\"light\"}}" 12))"
+rm -f "$SB/config/kdeglobals" "$SB/config/buchhwin-shell/settings.json"
+
+# ---- a shell restarted into a nested session -------------------------------
+# From a terminal with the nested signature and display but neither its flag
+# nor its sandbox (the testing recipe's exports): the compositor's own
+# environment says it is nested, and the shell takes the flag and the
+# sandbox's directories from there - not the user's configuration, and the
+# live shell's log stays where it is.
+nest="$SB/nest"
+mkdir -p "$nest/config" "$nest/state" "$nest/cache" "$SB/run/hypr/sig-nest"
+python3 -c "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])" "$SB/run/hypr/sig-nest/.socket.sock"
+env BUCHHWIN_NESTED=1 BUCHHWIN_NESTED_MODE=1280x800 BUCHHWIN_NESTED_SCALE=1 XDG_CONFIG_HOME="$nest/config" \
+  XDG_STATE_HOME="$nest/state" XDG_CACHE_HOME="$nest/cache" sleep 120 & compositor=$!
+printf '%s\nwayland-nest\n' "$compositor" > "$SB/run/hypr/sig-nest/hyprland.lock"
+for _ in {1..20}; do grep -qx BUCHHWIN_NESTED=1 < <(tr '\0' '\n' < "/proc/$compositor/environ" 2>/dev/null) && break; sleep 0.05; done
+printf 'LIVE SHELL LOG\n' > "$SB/state/buchhwin-shell/quickshell.log"
+rm -f "$SB/state/buchhwin-shell/quickshell.log.old"
+envcase -u BUCHHWIN_START_WITHOUT_HYPRLAND HYPRLAND_INSTANCE_SIGNATURE=sig-nest WAYLAND_DISPLAY=wayland-nest XDG_RUNTIME_DIR="$SB/run"
+check '[[ $(cat "$COUNT") == 1 ]] && has shell BUCHHWIN_NESTED=1 && has shell BUCHHWIN_NESTED_MODE=1280x800' \
+  "the nested compositor's shell is nested ($(grep ^BUCHHWIN_NESTED "$SB/shell.env" | tr '\n' ' '))"
+check 'has shell XDG_CONFIG_HOME="$nest/config" && has shell XDG_STATE_HOME="$nest/state" && has shell XDG_CACHE_HOME="$nest/cache"' \
+  "and runs on the sandbox's directories ($(grep ^XDG_ "$SB/shell.env" | tr '\n' ' '))"
+check '[[ $(cat "$SB/state/buchhwin-shell/quickshell.log") == "LIVE SHELL LOG" && ! -e "$SB/state/buchhwin-shell/quickshell.log.old" ]]' \
+  "and the live shell's log is not moved aside"
+check 'grep -q "the compositor is a nested session; taken from it: BUCHHWIN_NESTED=1" "$nest/state/buchhwin-shell/quickshell.log"' \
+  "and its own log says what it took"
+# The real session's compositor carries none of it: nothing changes.
+env XDG_CONFIG_HOME="$SB/elsewhere" sleep 120 & real_compositor=$!
+printf '%s\nwayland-nest\n' "$real_compositor" > "$SB/run/hypr/sig-nest/hyprland.lock"
+for _ in {1..20}; do grep -q '^XDG_CONFIG_HOME=' < <(tr '\0' '\n' < "/proc/$real_compositor/environ" 2>/dev/null) && break; sleep 0.05; done
+envcase -u BUCHHWIN_START_WITHOUT_HYPRLAND HYPRLAND_INSTANCE_SIGNATURE=sig-nest WAYLAND_DISPLAY=wayland-nest XDG_RUNTIME_DIR="$SB/run"
+check 'lacks shell BUCHHWIN_NESTED && has shell XDG_CONFIG_HOME="$SB/config" && has shell XDG_STATE_HOME="$SB/state"' \
+  "a compositor that is not nested hands nothing over ($(grep -E "^(BUCHHWIN_NESTED|XDG_CONFIG)" "$SB/shell.env" | tr '\n' ' '))"
+kill "$compositor" "$real_compositor" 2>/dev/null; wait "$compositor" "$real_compositor" 2>/dev/null
 
 # a clean exit is not restarted
 echo 0 > "$COUNT"; CRASHES=0 FINAL_EXIT=0 bash ./scripts/start-shell.sh "$SB/cfg" >/dev/null 2>&1

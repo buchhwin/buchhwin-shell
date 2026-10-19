@@ -78,8 +78,10 @@ ShellRoot {
         items = D.build([a, b], [win("0x1", "b", 1), win("0x2", "c", 2)], look, { showRunning: false })
         T.eq(items.map(item => item.key), ["app:a", "app:b"], "running apps off: the pins only")
         T.ok(items[1].running, "a pin still shows it runs")
-        items = D.build([], [win("0x1", "c", 1, { activated: true }), win("0x2", "b", 2, { urgent: true })], look)
-        T.ok(items[0].active && !items[0].urgent && items[1].urgent && !items[1].active, "active and urgent")
+        items = D.build([], [win("0x1", "c", 1), win("0x2", "b", 2, { urgent: true })], look)
+        T.ok(D.isActive(items[0], "0x1") && !items[0].urgent && items[1].urgent && !D.isActive(items[1], "0x1"), "active and urgent")
+        T.ok(items[0].active === undefined, "which app is in front is not built in: a focus change rebuilds nothing")
+        T.ok(!D.isActive(items[0], "") && !D.isActive(null, "0x1"), "nothing in front: no app is active")
         items = D.build([], [win("0x1", "c", 1), win("0x2", "b", 2), win("0x3", "c", 7)], look)
         T.eq(items.map(item => item.key), ["app:c", "app:b"], "a new window of an app does not move the app")
         items = D.build([], [win("0x2", "b", 2), win("0x4", "c", 8)], look)
@@ -96,7 +98,7 @@ ShellRoot {
         T.eq(D.clickTarget({ entryId: "a", windows: [] }, "", []), { action: "launch", address: "" }, "not running: start it")
         T.eq(D.clickTarget({ entryId: "", windows: [] }, "", []), { action: "none", address: "" }, "nothing to start")
         // An empty workspace in front: Quickshell still names the last window
-        // as active, and the click on its app did nothing (round 13).
+        // as active, and the click on its app did nothing.
         T.eq(D.frontAddress({ address: "0x1", workspace: 1 }, 2), "", "a window on a workspace behind is not in front")
         T.eq(D.frontAddress({ address: "0x1", workspace: 2 }, 2), "0x1", "on the focused workspace it is")
         T.eq([D.frontAddress({ address: "0x1", workspace: -98 }, 2), D.frontAddress({ address: "0x1", workspace: 1, pinned: true }, 2)],
@@ -115,7 +117,7 @@ ShellRoot {
         T.eq(D.newWindowAction([{ id: "new-private-window" }, { id: "new-window" }]), "new-window", "the new window action, not the private one")
         T.eq(D.newWindowAction([{ id: "Neue-Nachricht" }]), "", "none")
         T.eq(D.newWindowAction(null), "", "no actions")
-        // The ids on this machine (ui-dock#9): VS Code's and Alacritty's own
+        // The ids on this machine: VS Code's and Alacritty's own
         // actions did what "New window" does, and the menu listed both.
         T.eq(D.newWindowAction([{ id: "new-empty-window", command: ["/usr/bin/code", "--new-window"] }], ["/usr/bin/code"]),
              "new-empty-window", "VS Code's new empty window")
@@ -166,9 +168,33 @@ ShellRoot {
         T.ok(!D.covered(body, [placed({ at: null })], view, 4), "no geometry yet: not covered")
         T.ok(!D.covered(body, [placed({ size: [0, 0] })], view, 4), "a zero size")
         T.ok(!D.covered(null, [placed({ size: [1920, 1188] })], view, 4), "no body yet")
-        T.ok(D.needsPoll([placed({ floating: true })], [view]), "a floating window on a dock's workspace: poll")
-        T.ok(!D.needsPoll([placed({ floating: false })], [view]), "tiled only: the events say everything")
-        T.ok(!D.needsPoll([placed({ floating: true, workspace: 4, workspaceName: "4" })], [view]), "floating elsewhere: no poll")
+        // Polled only for a floating window that could come over a drawn
+        // dock or leave it.
+        const bodies = { "DP-1": body }
+        const onIt = { size: [1920, 1188] }
+        T.ok(D.needsPoll([placed(Object.assign({ floating: true }, onIt))], [view], bodies, "", 4),
+             "a floating window on the dock: poll, to see it go")
+        T.ok(!D.needsPoll([placed({ floating: true })], [view], bodies, "", 4),
+             "a floating window away from the dock, not focused: no poll")
+        T.ok(D.needsPoll([placed({ floating: true })], [view], bodies, "0x1", 4),
+             "the focused one, which a hand or a key may move: poll")
+        T.ok(D.needsPoll([placed({ floating: true, at: null })], [view], bodies, "", 4), "one not placed yet: poll")
+        T.ok(!D.needsPoll([placed({ floating: true, pinned: true, workspace: 4, workspaceName: "4", at: [1500, 40], size: [400, 225] })],
+                          [view], bodies, "", 4), "a pinned picture-in-picture far from the dock: no poll")
+        T.ok(!D.needsPoll([placed(Object.assign({ floating: true }, onIt))], [view], {}, "0x1", 4),
+             "no body reported - fullscreen, or no dock drawn there: no poll")
+        T.ok(!D.needsPoll([placed(Object.assign({ floating: false }, onIt))], [view], bodies, "0x1", 4), "tiled only: the events say everything")
+        T.ok(!D.needsPoll([placed({ floating: true, workspace: 4, workspaceName: "4" })], [view], bodies, "0x1", 4), "floating elsewhere: no poll")
+        // Special workspaces open before the dock listened.
+        T.eq(D.specialsFrom([{ name: "eDP-1", specialWorkspace: { id: -98, name: "special:term" } },
+                             { name: "DP-8", specialWorkspace: { id: 0, name: "" } }, { name: "" }, null]),
+             { "eDP-1": "special:term", "DP-8": "" }, "the special workspace open on each monitor, from hyprctl monitors")
+        T.eq(D.specialsFrom(null), {}, "nothing read: nothing")
+        T.eq(D.seededSpecials({ "eDP-1": "", "DP-8": "special:a" }, { "eDP-1": "special:term", "DP-8": "" }, { "DP-8": true }),
+             { "eDP-1": "special:term", "DP-8": "special:a" }, "the read fills in, an event since keeps its newer word")
+        T.ok(D.covered(body, [placed({ size: [1920, 1188], workspace: -98, workspaceName: "special:term" })],
+                       { monitor: "DP-1", workspace: 1, special: D.specialsFrom([{ name: "DP-1", specialWorkspace: { name: "special:term" } }])["DP-1"] }, 4),
+             "so its windows cover the dock from the start")
 
         // ---- shown or not --------------------------------------------------------------
         const base = { enabled: true, mode: "intellihide" }
@@ -199,7 +225,7 @@ ShellRoot {
         T.eq(D.fit(0, 48, 6, 100, 6), 48, "no apps: the setting")
         T.eq(D.fit(1000, 48, 6, 100, 6), D.MIN_ICON, "never below the smallest")
         T.eq(D.fit(3, 48, 6, 1000, 0), 48, "room enough: the setting")
-        // ui-dock#6: the room the apps have, measured without them, and the
+        // The room the apps have, measured without them, and the
         // icons fitted into it - a side dock under the notch (1172 px) with
         // 24 apps, and a portrait taskbar whose right zone holds the status.
         T.eq(D.appsRoom(1172 - 16, 6, 12, [{ apps: false, length: 0 }, { apps: true, beside: 20 }, { apps: false, length: 0 }]),
@@ -235,10 +261,10 @@ ShellRoot {
         T.eq(D.keyAction({ enabled: true, target: "A", hotkey: "A" }), "hidden", "again: hidden")
         T.eq(D.keyAction({ enabled: true, target: "A", hotkey: "A", peeking: true }), "shown",
              "after the look \"on\" gave it, the key gives it the keyboard")
-        // svc-io#8: under a fullscreen window nothing is armed.
+        // Under a fullscreen window nothing is armed.
         T.eq(D.keyAction({ enabled: true, target: "A", hotkey: "", fullscreen: true }), "fullscreen", "under fullscreen: nothing")
         T.eq(D.keyAction({ enabled: true, target: "" }), "none", "no screen with a dock")
-        // svc-io#7: the dock's menu holds the keys and gives them back on Escape.
+        // The dock's menu holds the keys and gives them back on Escape.
         T.eq(D.keysAfterPanel("dockMenu", false, false), { keep: true, withMenu: true }, "the menu opens: it holds the keys")
         T.eq(D.keysAfterPanel("", true, true), { keep: true, withMenu: false }, "closed with Escape: back to the dock")
         T.eq(D.keysAfterPanel("", true, false), { keep: false, withMenu: false }, "closed by a click elsewhere: let go")
@@ -246,17 +272,46 @@ ShellRoot {
         T.eq(D.keysAfterPanel("launcher", false, false), { keep: false, withMenu: false }, "any panel takes the keys")
         T.eq(D.keysAfterPanel("", false, false), { keep: true, withMenu: false }, "a close of nothing: nothing")
         // The start button in the keys' ring.
-        T.eq(D.keyRange(4, "before"), { low: -1, high: 3 }, "a start button before the apps")
-        T.eq(D.keyRange(4, "after"), { low: 0, high: 4 }, "and after them")
-        T.eq(D.keyRange(4, ""), { low: 0, high: 3 }, "none")
-        T.eq(D.keyRange(0, ""), { low: 0, high: 0 }, "no apps")
-        T.ok(D.keyOnStart(-1, 4, "before") && D.keyOnStart(4, 4, "after") && !D.keyOnStart(0, 4, "before") && !D.keyOnStart(-1, 4, ""),
+        T.eq(D.keyRange(4, 1, 0), { low: -1, high: 3 }, "a start button before the apps")
+        T.eq(D.keyRange(4, 0, 1), { low: 0, high: 4 }, "and after them")
+        T.eq(D.keyRange(4, 0, 0), { low: 0, high: 3 }, "none")
+        T.eq(D.keyRange(0, 0, 0), { low: 0, high: 0 }, "no apps")
+        T.eq([D.keyStop(-1, 4, ["start"], []), D.keyStop(4, 4, [], ["start"]), D.keyStop(0, 4, ["start"], []), D.keyStop(-1, 4, [], [])],
+             [{ kind: "item", type: "start" }, { kind: "item", type: "start" }, { kind: "app", index: 0 }, null],
              "where the start button is in the ring")
+        // And the taskbar's other items: its status, notifications, clock.
+        const taskbarItems = [{ type: "clock", rect: { x: 1800, y: 1150, width: 60, height: 50 } },
+                              { type: "start", rect: { x: 0, y: 1150, width: 50, height: 50 } },
+                              { type: "network", rect: { x: 1600, y: 1150, width: 40, height: 50 } },
+                              { type: "apps", rect: { x: 60, y: 1150, width: 300, height: 50 } },
+                              { type: "battery", rect: null },
+                              { type: "media", rect: { x: 1500, y: 1150, width: 40, height: 50 } }]
+        const sides = D.keySides(taskbarItems, { x: 66, y: 1155, width: 40, height: 40 }, false, type => type !== "media")
+        T.eq(sides, { before: ["start"], after: ["network", "clock"] },
+             "the items that open something, in order along the dock, minus the apps, one not shown and one that opens nothing")
+        T.eq(D.keySides(taskbarItems, null, false, null), { before: ["start", "media", "network", "clock"], after: [] },
+             "no apps on the dock: everything is before them")
+        T.eq(D.keySides([{ type: "clock", rect: { x: 0, y: 900, width: 60, height: 40 } }, { type: "start", rect: { x: 0, y: 10, width: 60, height: 40 } }],
+                        { x: 4, y: 60, width: 52, height: 52 }, true, null), { before: ["start"], after: ["clock"] },
+             "down a side dock by y")
+        T.eq(D.keyRange(4, sides.before.length, sides.after.length), { low: -1, high: 5 }, "the ring runs over them all")
+        T.eq([D.keyStop(4, 4, sides.before, sides.after), D.keyStop(5, 4, sides.before, sides.after), D.keyStop(6, 4, sides.before, sides.after)],
+             [{ kind: "item", type: "network" }, { kind: "item", type: "clock" }, null], "past the apps, the items in order")
+        T.eq(D.keyRange(0, 2, 0), { low: -2, high: -1 }, "items only: no place for an app that is not there")
+        T.eq(D.keyStop(-2, 0, ["start", "clock"], []), { kind: "item", type: "start" }, "the farthest before is the first along the dock")
+        T.eq(D.layoutTypes({ left: [{ items: [{ type: "start" }, { type: "apps" }] }], center: [],
+                             right: [{ items: [{ type: "clock" }, { type: "date" }] }, { items: [{ type: "clock" }] }] }),
+             ["start", "apps", "clock", "date"], "every type on a dock layout, once")
+        T.eq(D.layoutTypes(null), [], "no layout: none")
 
         // ---- events --------------------------------------------------------------------
-        T.ok(D.COVER_EVENTS.indexOf("activewindowv2") < 0, "a focus change re-reads no window (perf#1)")
+        T.ok(D.COVER_EVENTS.indexOf("activewindowv2") < 0, "a focus change re-reads no window")
+        T.ok(D.COVER_EVENTS.indexOf("focusedmon") < 0 && D.COVER_EVENTS.indexOf("focusedmonv2") < 0,
+             "nor does the focus going to another monitor: each keeps its workspace")
+        T.ok(D.COVER_EVENTS.indexOf("workspace") >= 0 && D.COVER_EVENTS.indexOf("activespecial") >= 0,
+             "a workspace that changes says so itself")
         T.ok(D.COVER_EVENTS.indexOf("moveworkspacev2") >= 0 && D.COVER_EVENTS.indexOf("moveworkspace") >= 0,
-             "a workspace moved to another monitor does (svc-io#5)")
+             "a workspace moved to another monitor does")
 
         // ---- a default with no app ------------------------------------------------------
         const glyphs = { files: "F", terminal: "T", browser: "B" }
@@ -275,7 +330,7 @@ ShellRoot {
 
         // ---- zones ---------------------------------------------------------------------
         const shownPills = [{ hasContent: true, visible: false }, { hasContent: false, visible: false }, { hasContent: true, visible: false }]
-        T.eq(D.shownCount(shownPills), 2, "pills counted by their own condition, not by visible (ui-dock#0)")
+        T.eq(D.shownCount(shownPills), 2, "pills counted by their own condition, not by visible")
         T.eq(D.shownFlags([null].concat(shownPills)), [false, true, false, true], "and flagged the same way")
 
         // ---- drag -------------------------------------------------------------------------
@@ -290,7 +345,7 @@ ShellRoot {
         T.eq(D.slotAt(60, [[0, 48], [54, 48]]), 1, "between")
         T.eq(D.slotAt(500, [[0, 48], [54, 48]]), 2, "past the last")
         T.eq(D.slotAt(5, []), 0, "no pins")
-        // svc-io#6: the slot is counted over the pins shown, the plan over
+        // The slot is counted over the pins shown, the plan over
         // the stored ones, which hold one the dock cannot draw.
         const stored = ["gone-app", "@files", "@terminal", "@settings", "@browser"]
         const shown = ["@files", "@terminal", "@settings", "@browser"]
@@ -301,7 +356,7 @@ ShellRoot {
         T.eq(D.dropPlan({ pin: "@files", pinned: true }, at, stored, 12), { action: "move", id: "@files", index: 4 }, "and to the end")
         T.eq(D.storedSlot(0, shown, stored, "@browser"), 1, "first among the shown: before the first shown pin")
         T.eq(D.storedSlot(1, ["a", "b"], ["a", "b"], "x"), 1, "a running app dropped among the pins")
-        // ui-dock#8: pulled off the dock.
+        // Pulled off the dock.
         const pinned = { pin: "a", pinned: true }, running = { pin: "b", pinned: false }
         T.eq(D.dragOutcome(pinned, 10, 48, 1, 1.5), "drop", "near the dock: a drop")
         T.eq(D.dragOutcome(pinned, 60, 48, 1, 1.5), "none", "off the dock, not far: nothing")
@@ -346,6 +401,106 @@ ShellRoot {
         // launcher's (DockMenu handed the launcher's flag before).
         T.eq(D.menuRows({ entryId: "x", pinned: false, windows: [] }, [], true, 3).find(row => row.kind === "pin"),
              { kind: "pin", enabled: false, reason: "full" }, "the pin row is off while the dock's pins are full")
+
+        // ---- the room an "always" dock keeps ---------------------------------------------
+        // The taskbar (margin 0, 40 px icons: 52 across) and the dock (margin
+        // 8, 48 px: 60): Hyprland puts gaps_out between a window and the
+        // reserved room, so the windows end the margin off the body at every
+        // gap - with a fixed 12 they ran 4 px under the taskbar at the
+        // laptop mode's 8 and 12 px at 0.
+        for (const gap of [12, 8, 0]) {
+            T.eq(D.reserveZone(0, 52, gap) + gap, 52, "taskbar, gap " + gap + ": the windows end at its top line")
+            T.eq(D.reserveZone(8, 60, gap) + gap - (8 + 60), 8, "dock, gap " + gap + ": its margin above it")
+        }
+        T.eq(D.reserveZone(0, 52, 60), 0, "a gap wider than the taskbar: no room reserved, never less")
+        T.eq(D.reserveZone(8, 60, "x"), 76, "a gap not known: none")
+
+        // ---- a drag the system took away ---------------------------------------------
+        // A pull past the surface's edge is a leave, and Qt cancels the press
+        // there: the bottom dock's 28 px to the unpin, its surface 42 px high.
+        T.eq(D.cancelOutcome(pinned, 30, true, 40, 1.5, 28), "unpin", "pulled past the unpin distance, then off the surface: unpinned")
+        T.eq(D.cancelOutcome(pinned, 30, false, 40, 1.5, 28), "unpin", "however it was moving last")
+        T.eq(D.cancelOutcome(pinned, 16, true, 40, 1.5, 28), "unpin", "a quick pull still going away past half of it")
+        T.eq(D.cancelOutcome(pinned, 16, false, 40, 1.5, 28), "none", "half way and not going away: nothing")
+        T.eq(D.cancelOutcome(pinned, 10, true, 40, 1.5, 28), "none", "a cancel near the dock: nothing")
+        T.eq(D.cancelOutcome(running, 60, true, 40, 1.5, 28), "none", "a running app has no pin to lose")
+        T.eq(D.cancelOutcome(pinned, Infinity, true, 40, 1.5, 28), "none", "no place known: nothing")
+        T.eq(D.cancelOutcome(null, 60, true, 40, 1.5, 28), "none", "no app: nothing")
+        T.eq(D.dragOutcome(pinned, Infinity, 48, 1, 1.5), "none", "a release with no place known still does nothing")
+
+        // ---- a drag whose app went ---------------------------------------------------------
+        T.ok(D.dragLost("app:a", [{ key: "app:b" }]), "the dragged app is gone: the drag is over")
+        T.ok(!D.dragLost("app:a", [{ key: "app:a" }, { key: "app:b" }]), "still there: it goes on")
+        T.ok(!D.dragLost("", []), "no drag: nothing to end")
+
+        // ---- the names over the icons ------------------------------------------------------
+        let label = D.labelAfter({ index: -1, shown: false }, 0, true)
+        T.eq(label, { index: 0, shown: false, timer: "show" }, "onto an icon: its name after the delay")
+        label = D.labelAfter({ index: 0, shown: true }, 0, false)
+        T.eq(label, { index: 0, shown: true, timer: "hide" }, "off it, into the gap: the name stays for the grace")
+        label = D.labelAfter({ index: label.index, shown: label.shown }, 1, true)
+        T.eq(label, { index: 1, shown: true, timer: "stop" }, "onto the next icon within it: its name at once")
+        T.eq(D.labelAfter({ index: 1, shown: true }, 0, false), { index: 1, shown: true, timer: "keep" },
+             "the old icon's leave after the new one's enter changes nothing")
+        T.eq(D.labelAfter({ index: 0, shown: false }, 0, false), { index: 0, shown: false, timer: "stop" },
+             "off an icon before its name showed: no name")
+        T.eq(D.labelAfter({ index: 0, shown: false }, 1, true), { index: 1, shown: false, timer: "show" },
+             "onto another before any showed: the delay again")
+
+        // ---- started, not open yet -----------------------------------------------------
+        const firstStart = { since: 1000, before: 0, active: false }
+        T.ok(!D.launchDone(firstStart, { count: 0, active: false }, 2000, 10000), "started, no window yet")
+        T.ok(D.launchDone(firstStart, { count: 1, active: false }, 2000, 10000), "its window shows")
+        T.ok(D.launchDone(firstStart, { count: 0, active: false }, 11000, 10000), "or the limit is up")
+        const again = { since: 1000, before: 1, active: false }
+        T.ok(D.launchDone(again, { count: 1, active: true }, 1500, 10000), "a single-instance app that only came to the front")
+        const front = { since: 1000, before: 1, active: true }
+        T.ok(!D.launchDone(front, { count: 1, active: true }, 3000, 10000), "started again in front: not at once")
+        T.ok(D.launchDone(front, { count: 1, active: true }, 3500, 10000), "but after a quarter of the limit, not ten seconds")
+        T.eq(D.launchWait({ a: firstStart, b: front }, 2000, 10000), 1500, "the next deadline: the relaunch's")
+        T.eq(D.launchWait({ a: firstStart }, 2000, 10000), 9000, "a first start waits the whole limit")
+        T.eq(D.launchWait({}, 2000, 10000), -1, "nothing started: no timer")
+
+        // ---- where a window is, in the menu -------------------------------------------
+        T.eq(D.workspaceLabel(3, "3"), "Workspace 3", "a numbered workspace")
+        T.eq(D.workspaceLabel(-98, "special:term"), "Scratchpad term", "a named special workspace, not -98")
+        T.eq([D.workspaceLabel(-99, "special:special"), D.workspaceLabel(-99, "special")], ["Scratchpad", "Scratchpad"],
+             "the unnamed one")
+        T.eq(D.workspaceLabel(-1337, "music"), "Workspace music", "a named workspace by its name")
+        T.eq([D.workspaceLabel(-1, ""), D.workspaceLabel(4, "")], ["", "Workspace 4"], "not known: nothing; no name: its number")
+        const special = D.build([], [win("0x5", "c", 5, { workspace: -98, workspaceName: "special:term" })], look)[0]
+        T.eq(D.menuRows(special, [], false)[0], { kind: "window", address: "0x5", workspace: -98, workspaceName: "special:term" },
+             "the window rows carry the workspace's name")
+
+        // ---- the resolver -------------------------------------------------------------
+        let asked = 0
+        const counting = cls => { asked += 1; return look(cls) }
+        const find = D.resolver([braveFlatpak, entry("org.kde.dolphin")], counting)
+        T.eq([find("brave-browser").key, find("dolphin").key, find("c").key, find("steam_app_1").key],
+             ["app:com.brave.Browser", "app:org.kde.dolphin", "app:c", "class:steam_app_1"], "resolves as resolve() does")
+        const before = asked
+        T.ok(find("c") === find("c") && find("steam_app_1").key === "class:steam_app_1" && asked === before,
+             "and asks the lookup once per class")
+        T.eq(find(""), null, "no class, no app")
+        T.ok(find("__proto__").key === "class:__proto__", "any class name is a plain key")
+        T.eq(D.build([a], [win("0x1", "c", 1), win("0x2", "c", 2)], look, { resolve: D.resolver([a], look) }).map(item => item.key),
+             ["app:a", "app:c"], "a build with a kept resolver")
+
+        // ---- the same list --------------------------------------------------------------
+        const one = { key: "a" }, two = { key: "b" }
+        T.ok(D.sameObjects([one, two], [one, two]) && D.sameObjects([], []), "entry for entry the same objects")
+        T.ok(!D.sameObjects([one, two], [one, { key: "b" }]) && !D.sameObjects([one], [one, two]), "one new object, or one more: not")
+        const keptOnce = Keyed.keep([], D.build([a], [win("0x1", "c", 1)], look), "key", { windows: "address" })
+        T.ok(D.sameObjects(keptOnce, Keyed.keep(keptOnce, D.build([a], [win("0x1", "c", 1)], look), "key", { windows: "address" })),
+             "an unchanged build kept: the previous list can be handed out again")
+
+        // ---- each screen's own running apps --------------------------------------------
+        T.eq(D.optionValue("runningOn", "screen"), "screen", "running apps of the dock's own screen")
+        T.eq(D.optionValue("runningOn", "all"), "all", "or of every screen")
+        T.eq(D.optionValue("runningOn", "some"), null, "nothing else")
+        const spread = [win("0x1", "b", 1, { monitor: "DP-1" }), win("0x2", "c", 2, { monitor: "DP-2" })]
+        T.eq(D.build([a, b], D.windowsOn(spread, "DP-2"), look).map(item => [item.key, item.running]),
+             [["app:a", false], ["app:b", false], ["app:c", true]], "on DP-2: the pins, and the app with a window there")
 
         T.finish("DockTest")
     }

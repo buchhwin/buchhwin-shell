@@ -10,18 +10,24 @@ set -euo pipefail
 # Reported as "Bluetooth was switched on again after the restart although I
 # turned it off before". It is not the shell - nothing in `services/` powers an
 # adapter on - it is BlueZ's own `[Policy] AutoEnable`, which defaults to
-# **true** and is commented out in Fedora's `/etc/bluetooth/main.conf`. Every
-# boot therefore powers the adapter up, whatever the last session did.
+# **true** and is commented out in the shipped `/etc/bluetooth/main.conf`.
+# Every boot therefore powers the adapter up, whatever the last session did.
 #
-# A drop-in rather than an edit of main.conf: the package owns that file and an
-# update would take an edit with it, while `main.conf.d/` is ours to keep.
-# `on` removes the drop-in and BlueZ is back to its own default.
+# In main.conf itself, because that is the only file bluetoothd reads: it has
+# no main.conf.d/, and the drop-in an earlier version of this script wrote
+# there changed nothing (it is removed here). The package manager keeps an
+# edited main.conf over upgrades (pacman's .pacnew, rpm's %config). `off`
+# keeps a copy of the file as it was (main.conf.before-buchhwin), comments out
+# any AutoEnable line of its own in [Policy] and adds `AutoEnable=false` under
+# a marker line; `on` takes exactly that back.
 #
 # --root DIR works below DIR without root rights (tests).
 
-drop_dir=/etc/bluetooth/main.conf.d
-drop_name=50-buchhwin-autoenable.conf
-marker='# Managed by buchhwin-shell (install/bluetooth-autoenable.sh)'
+conf=/etc/bluetooth/main.conf
+old_drop=/etc/bluetooth/main.conf.d/50-buchhwin-autoenable.conf
+marker='# Managed by buchhwin-shell (install/bluetooth-autoenable.sh): Bluetooth stays where you leave it'
+# What an AutoEnable line this script commented out starts with.
+tag='#buchhwin-shell: '
 
 action=${1:-}
 shift || true
@@ -33,40 +39,88 @@ while (( $# )); do
   esac
 done
 [[ -n $root ]] && root=$(realpath -m -- "$root")
-target="$root$drop_dir/$drop_name"
+target="$root$conf"
+backup="$target.before-buchhwin"
+stale="$root$old_drop"
+
+# The drop-in of the earlier version, when it is that version's.
+remove_stale_drop() {
+  if [[ -e $stale ]] && grep -qF '# Managed by buchhwin-shell (install/bluetooth-autoenable.sh)' "$stale"; then
+    rm -f -- "$stale"
+    rmdir -- "$(dirname -- "$stale")" 2>/dev/null || true
+    printf 'Removed %s, which BlueZ never read.\n' "$stale"
+  fi
+}
+
+# rewrite AWK-PROGRAM: main.conf through awk, written back in place so the
+# file keeps its owner, mode and SELinux label.
+rewrite() {
+  local tmp
+  tmp=$(mktemp)
+  if ! awk -v marker="$marker" -v tag="$tag" "$1" "$target" > "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  cat -- "$tmp" > "$target"
+  rm -f -- "$tmp"
+}
+
+managed() { [[ -e $target ]] && grep -qxF -- "$marker" "$target"; }
 
 case "$action" in
   off)
-    install -d -- "$(dirname -- "$target")"
-    cat > "$target" <<CONF
-$marker
-#
-# BlueZ powers the adapter on at every boot unless told not to; the default of
-# [Policy] AutoEnable is true and Fedora ships it commented out. With this the
-# adapter stays wherever the last session left it, which is what the shell's
-# own Bluetooth switch then means.
-[Policy]
-AutoEnable=false
-CONF
-    chmod 0644 -- "$target"
-    printf 'Wrote %s - Bluetooth stays where you leave it.\n' "$target"
-    printf 'It takes effect on the next boot.\n'
+    remove_stale_drop
+    if [[ ! -e $target ]]; then
+      # Writing one would make the file the package installs later a
+      # conflict, so BlueZ has to be there first.
+      printf 'No %s: BlueZ is not installed. Nothing changed.\n' "$target" >&2
+      exit 1
+    fi
+    [[ -e $backup ]] || cp -a -- "$target" "$backup"
+    # Our own lines from an earlier run go first (the marker and the line
+    # after it), then any active AutoEnable in [Policy] is commented out and
+    # ours goes right under the section's header - or a section is added.
+    rewrite '
+      skip { skip = 0; next }
+      $0 == marker { skip = 1; next }
+      /^[[:space:]]*\[/ {
+        policy = ($0 ~ /^[[:space:]]*\[Policy\][[:space:]]*$/)
+        print
+        if (policy && !done) { print marker; print "AutoEnable=false"; done = 1 }
+        next
+      }
+      policy && /^[[:space:]]*AutoEnable[[:space:]]*=/ { print tag $0; next }
+      { print }
+      END { if (!done) { print "[Policy]"; print marker; print "AutoEnable=false" } }'
+    printf 'Set AutoEnable=false in %s - Bluetooth stays where you leave it.\n' "$target"
+    printf 'It takes effect on the next boot (the file as it was: %s).\n' "$backup"
     ;;
   on)
-    if [[ -e $target ]] && grep -qF "$marker" "$target"; then
-      rm -f -- "$target"
-      printf 'Removed %s - BlueZ powers the adapter on at boot again.\n' "$target"
+    remove_stale_drop
+    if managed || { [[ -e $target ]] && grep -q "^$tag" "$target"; }; then
+      rewrite '
+        skip { skip = 0; next }
+        $0 == marker { skip = 1; next }
+        index($0, tag) == 1 { print substr($0, length(tag) + 1); next }
+        { print }'
+      printf 'Took AutoEnable=false out of %s - BlueZ powers the adapter on at boot again.\n' "$target"
+      # The copy has done its job once the file is the same again.
+      if [[ -e $backup ]] && cmp -s -- "$backup" "$target"; then
+        rm -f -- "$backup"
+      fi
     else
-      printf 'Nothing of this project at %s\n' "$target"
+      printf 'Nothing of this project in %s\n' "$target"
     fi
     ;;
   status)
-    if [[ -e $target ]] && grep -qF "$marker" "$target"; then
+    if managed; then
       printf 'installed: %s\n' "$target"
       grep -hE '^\s*AutoEnable' "$target" 2>/dev/null || true
     else
       printf 'absent: %s (BlueZ decides, and its default is on)\n' "$target"
     fi
+    [[ -e $stale ]] && printf 'stale: %s (BlueZ does not read it; off or on removes it)\n' "$stale"
+    true
     ;;
   *)
     printf 'Usage: %s off|on|status [--root DIR]\n' "$0" >&2

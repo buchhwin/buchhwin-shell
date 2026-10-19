@@ -48,6 +48,44 @@ if (( ! reap_only )) && [[ -z ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && command -v 
   fi
 fi
 
+# ---- a nested session's shell is a nested session's ------------------------
+# scripts/nested-session.sh starts its Hyprland with BUCHHWIN_NESTED=1 and the
+# sandbox's XDG directories, and a shell that compositor starts has them. A
+# shell restarted into it from a terminal (scripts/reload-shell.sh with the
+# nested signature and display, as the testing recipe exports them) had only
+# what the terminal had: it took the real ~/.config and ~/.local/state, moved
+# the live shell's log aside, and with every BUCHHWIN_NESTED gate open it
+# queued for the host's notification name, took the host's Bluetooth agent
+# and ran the autostart apps (19.10.). The compositor says which session it
+# is: its lock file beside the socket names its pid first, and that
+# process's environment is the one to take - the same proof nested-guard.sh
+# and nested-session.sh stop trust. A sandbox file left behind by a session
+# that is gone cannot fool it, and the real session's Hyprland carries none
+# of this, so nothing changes there.
+nested_note=""
+if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
+  compositor_pid=$(sed -n 1p "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr/$HYPRLAND_INSTANCE_SIGNATURE/hyprland.lock" 2>/dev/null) || compositor_pid=""
+  compositor_env=""
+  if [[ $compositor_pid =~ ^[0-9]+$ ]]; then
+    # Captured, then searched (pitfall 15).
+    compositor_env=$({ tr '\0' '\n' <"/proc/$compositor_pid/environ"; } 2>/dev/null) || compositor_env=""
+  fi
+  if grep -qx 'BUCHHWIN_NESTED=1' <<<"$compositor_env"; then
+    for name in BUCHHWIN_NESTED BUCHHWIN_NESTED_DIR BUCHHWIN_NESTED_MODE BUCHHWIN_NESTED_SCALE \
+                XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME; do
+      value=""; found=0
+      while IFS= read -r line; do
+        if [[ $line == "$name="* ]]; then value=${line#*=}; found=1; break; fi
+      done <<<"$compositor_env"
+      (( found )) || continue
+      if [[ ${!name-} != "$value" ]]; then
+        nested_note+="${nested_note:+, }$name=$value (was ${!name-unset})"
+        export "$name=$value"
+      fi
+    done
+  fi
+fi
+
 state_dir=${XDG_STATE_HOME:-"$HOME/.local/state"}/buchhwin-shell
 log_file="$state_dir/quickshell.log"
 mkdir -p -- "$state_dir"
@@ -59,7 +97,7 @@ mkdir -p -- "$state_dir"
 # came up on KWin's display: its bar, notch and wallpaper over the Plasma
 # desktop, its notification server, clipboard watchers and lid inhibitor in
 # that session, and before that it SIGKILLed Plasma's own kded6 for holding
-# the tray name (round 12, scripts#0). So the shell starts only with a
+# the tray name. So the shell starts only with a
 # signature whose compositor socket is there: the session's own (Hyprland
 # exports it to everything it starts, the login included) or the one
 # instance resolved above. A signature without its socket is a session that
@@ -146,8 +184,9 @@ note() { printf '%s start-shell: %s\n' "$(date -Is)" "$1" >>"$log_file"; }
 # Quickshell's `Process` children are ordinary child processes, and a shell
 # that dies on a signal - a crash, or the abort on losing the compositor at
 # logout - runs no destructor that would end them. `nmcli monitor`, `udevadm
-# monitor`, the lid inhibitor, cliphist's two wl-paste watchers, drives.py and
-# the bluetooth agent then live on under PID 1: three of them from the
+# monitor`, the lid inhibitor, cliphist's two wl-paste watchers, the drive
+# watchers (udisksctl monitor, gio mount -o) and the bluetooth agent then live
+# on under PID 1: three of them from the
 # previous login were still running on 2026-10-13, and a shell restarted after
 # a crash starts a second set beside them (two wl-paste watchers storing into
 # the same database). So they are ended before a replacement starts, and once
@@ -175,6 +214,8 @@ if [[ $real_dir != "$config_dir" ]]; then
 fi
 helper_patterns=(
   "^(\\S+ )?${config_pattern}/scripts/drives\\.py monitor\$"
+  '^(\S*/)?udisksctl monitor$'
+  '^(\S*/)?gio mount -o$'
   "^(\\S+ )?${config_pattern}/scripts/bluetooth-agent\\.py\$"
   '^(\S*/)?wl-paste --type (text|image) --watch cliphist -db-path \S*/buchhwin-shell/cliphist\.db -max-items [0-9]+ store$'
   '^(\S*/)?nmcli monitor$'
@@ -226,8 +267,10 @@ fi
 # shell dies of, a status that is not a crash, the compositor gone (how every
 # nested test session ends) and the restart limit. Only once the instance is
 # no longer listed, as above; helpers now carry --pdeathsig (Paths.bound),
-# this is the net for anything that does not.
-trap 'instance_running || reap_helpers' EXIT
+# this is the net for anything that does not. And it waits for the sweep of
+# the instance directories below (a few seconds at most), so nothing this
+# script started outlives it.
+trap 'instance_running || reap_helpers; if [[ -n ${sweep_pid:-} ]]; then wait "$sweep_pid" 2>/dev/null || true; fi' EXIT
 
 # One log per shell start; the previous one is kept as quickshell.log.old. A
 # start that finds a running instance (--no-duplicate exits at once) keeps the
@@ -235,6 +278,36 @@ trap 'instance_running || reap_helpers' EXIT
 if ! instance_running; then
   [[ -e $log_file ]] && mv -f -- "$log_file" "$log_file.old"
 fi
+# In the log of the shell it concerns, so after the move.
+if [[ -n $nested_note ]]; then note "the compositor is a nested session; taken from it: $nested_note"; fi
+
+# Quickshell leaves an instance directory in the runtime directory (tmpfs)
+# for every shell, test and nested run, and nothing else removes them; those
+# of instances that are gone go with this start
+# (scripts/lib/quickshell-dirs.sh: unlocked and unchanged for an hour). In
+# the background, beside the first shell this script starts, and once that
+# shell is listed (or gone): the sweep costs ~4 ms a directory, the first one
+# of a runtime directory with a thousand took four seconds, and a start that
+# waited for it was not up when a nested smoke test asked for it - while
+# reload-shell.sh, after four seconds without an instance, starts a second
+# one. Waiting for the listing keeps the sweep from taking the empty by-shell
+# directory this shell is about to link itself into.
+# shellcheck source=lib/quickshell-dirs.sh
+if [[ -r "$project_dir/scripts/lib/quickshell-dirs.sh" ]]; then
+  source "$project_dir/scripts/lib/quickshell-dirs.sh"
+fi
+sweep_pid=
+start_sweep() {
+  [[ -z $sweep_pid ]] && declare -F quickshell_sweep_dirs >/dev/null || return 0
+  (
+    for _ in {1..100}; do
+      if ! kill -0 "$1" 2>/dev/null || instance_running; then break; fi
+      sleep 0.1
+    done
+    quickshell_sweep_dirs 60
+  ) </dev/null >/dev/null 2>&1 &
+  sweep_pid=$!
+}
 
 # ---- and it is watched while it runs ---------------------------------------
 # The shell used to be `exec`ed and that was the end of this script's job, so a
@@ -302,10 +375,14 @@ fi
 # shell used none of it: its fonts and colours are its own tokens, its dialogs
 # are kdialog, and the one thing it did take from the plugin - the icon theme's
 # name for Quickshell.iconPath - is handed over here through QS_ICON_THEME,
-# read from kdeglobals like the plugin did, else chosen by the shell's own
-# theme (the symbolic icons of a dark theme are light). Launcher screenshots
-# with and without the plugin differ in 604 of 537 600 pixels.
+# read from kdeglobals like the plugin did, else chosen by what the shell's
+# panels are (the symbolic icons of a dark theme are light). Launcher
+# screenshots with and without the plugin differ in 604 of 537 600 pixels.
 icon_theme=""
+# Set when the panels chose, so the shell can tell when they have changed
+# under it (services/SessionService.qml): Qt reads the icon theme once, at
+# the start.
+icon_theme_auto=""
 kdeglobals="${XDG_CONFIG_HOME:-$HOME/.config}/kdeglobals"
 # Guarded and status-caught: under `set -e` with pipefail a missing file (a
 # nested session's sandbox has none) would end this script here, before the
@@ -313,21 +390,56 @@ kdeglobals="${XDG_CONFIG_HOME:-$HOME/.config}/kdeglobals"
 if [[ -r $kdeglobals ]]; then
   icon_theme=$(sed -n '/^\[Icons\]/,/^\[/{s/^Theme=//p}' "$kdeglobals" 2>/dev/null | head -n1) || icon_theme=""
 fi
+# The panels decide, as theme/Colors.qml's surfaceDark does: a panel colour
+# chosen in Settings > Appearance is what it is (dark below the luminance of
+# PanelStyleLogic.isLight, 0.179; three or six hex digits, with or without
+# the #), and the theme's own panels follow the theme, "auto" being dark
+# from 19:00 to 07:00. The theme alone decided before: "auto" always got the
+# dark theme's light icons, by day on light cards too, and the buchhwin
+# profile's black panels in the light theme got dark icons on black.
+panels_light='
+  def channel: if . <= 0.04045 then . / 12.92 else pow((. + 0.055) / 1.055; 2.4) end;
+  def digit: if . >= 97 then . - 87 else . - 48 end;
+  def byte: explode | map(digit) | .[0] * 16 + .[1];
+  (.appearance.panelColor // "auto") as $stored
+  | (if ($stored | type) == "string" then $stored | gsub("^\\s+|\\s+$"; "") | ltrimstr("#") | ascii_downcase else "" end) as $hex
+  | (if ($hex | test("^[0-9a-f]{3}$")) then ($hex | split("") | map(. + .) | join("")) else $hex end) as $hex
+  | if ($hex | test("^[0-9a-f]{6}$")) then
+      [$hex[0:2], $hex[2:4], $hex[4:6]] | map(byte / 255 | channel)
+      | (0.2126 * .[0] + 0.7152 * .[1] + 0.0722 * .[2]) > 0.179
+    else
+      (.appearance.theme // "dark") as $theme
+      | ($theme == "dark" or ($theme == "auto" and ($hour >= 19 or $hour < 7))) | not
+    end'
 if [[ -z $icon_theme ]]; then
   icon_theme=breeze-dark
+  icon_theme_auto=1
   settings="${XDG_CONFIG_HOME:-$HOME/.config}/buchhwin-shell/settings.json"
   if command -v jq >/dev/null 2>&1 && [[ -s $settings ]] \
-     && [[ $(jq -r '.appearance.theme // "dark"' "$settings" 2>/dev/null) == light ]]; then
+     && [[ $(jq -r --argjson hour "$(( 10#$(date +%H) ))" "$panels_light" "$settings" 2>/dev/null) == true ]]; then
     icon_theme=breeze
   fi
 fi
 
-# glibc gives every thread that allocates its own malloc arena (up to 8 per
-# core). The shell runs ~150 threads - a render thread per mapped window and
-# Mesa's workers per GL context - and on 2026-10-13 about 410 of its 770 MB
-# sat in 94 such arenas, mostly fragmented free space. Two are plenty for a
-# program whose work happens on the GUI thread. An exported value wins (A/B).
+# The allocator gives every thread that allocates an arena of its own. The
+# shell runs dozens of threads - a render thread per mapped window and Mesa's
+# workers per GL context - and two arenas are plenty for a program whose work
+# happens on the GUI thread. Which knob that takes depends on how quickshell
+# was built:
+# - glibc's malloc (up to 8 arenas per core) reads MALLOC_ARENA_MAX. On Leap
+#   on 2026-10-13 about 410 of the shell's 770 MB sat in 94 such arenas,
+#   mostly fragmented free space.
+# - jemalloc, which Arch's quickshell links (libjemalloc.so.2 is its first
+#   NEEDED library; its malloc and new then serve the whole process), never
+#   reads MALLOC_ARENA_MAX and runs with its defaults: 48 arenas on 12 CPUs, a
+#   thread cache each, dirty pages kept 10 s. It reads MALLOC_CONF: two arenas,
+#   a background thread that returns freed pages, and a one-second decay took
+#   13-15 MB off the shell at start and 8-17 MB after panels were opened and
+#   closed (nested, medians of three runs, 19.10.), at the same CPU per panel.
+# Each is ignored by the other allocator, so both are set. An exported value
+# wins (A/B).
 malloc_arenas=${MALLOC_ARENA_MAX:-2}
+malloc_conf=${MALLOC_CONF:-narenas:2,background_thread:true,dirty_decay_ms:1000}
 # Mesa gives every GL context a marshalling thread (glthread) and a driver
 # thread (Gallium's threaded context), for applications that are limited by
 # GL calls on one thread. The shell draws a handful of light scene graphs,
@@ -337,14 +449,31 @@ malloc_arenas=${MALLOC_ARENA_MAX:-2}
 # exported value wins (A/B).
 mesa_glthread_value=${mesa_glthread:-false}
 gallium_thread=${GALLIUM_THREAD:-0}
+# Qt's Wayland client gives every window a second EGL context, for the
+# client-side decorations it draws around a toplevel - and the shell's
+# windows are layer surfaces, which never have any (there is no
+# FloatingWindow in the shell). Each such context held ~1.3 MB of Mesa's heap
+# and a Mesa thread for the life of its window: off, the shell started 14 MB
+# lighter nested (11 windows, medians of three runs, 19.10.), and one thread
+# per window fewer. The shell only; applications keep their decorations.
+disable_decorations=${QT_WAYLAND_DISABLE_WINDOWDECORATION:-1}
+# Text drawn by Qt Quick's distance fields (Typography's QtRendering) is
+# antialiased per subpixel by default on desktop GL: blue and orange fringes
+# on the bar's and the taskbar's light text on black, an RGB order that is
+# wrong on a rotated screen, and a subpixel blend that is wrong on
+# translucent pills anyway. Greyscale is what the shell already showed where
+# text went through a layer (the collapsed notch clock).
+text_antialiasing=${QSG_DISTANCEFIELD_ANTIALIASING:-gray}
 # All of the above is the shell's alone, and quickshell's environment is what
 # every process it starts inherits: applications opened from the launcher
-# ran with two arenas, without Mesa's threads and without the Plasma look. What this script changes is written down for
-# scripts/launch-app.sh, which undoes it before it runs an application: the
-# settings set here that the session did not have, and the platform theme
-# the shell goes without. An exported value is the session's, and stays.
+# ran with two arenas, without Mesa's threads and without the Plasma look.
+# What this script changes is written down for scripts/launch-app.sh, which
+# undoes it before it runs an application: the settings set here that the
+# session did not have, and the platform theme the shell goes without. An
+# exported value is the session's, and stays.
 app_unset=()
-for name in MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME; do
+for name in MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION \
+            QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO; do
   [[ -n ${!name:-} ]] || app_unset+=("$name")
 done
 app_qpa_theme=${QT_QPA_PLATFORMTHEME:-}
@@ -386,11 +515,14 @@ release_tray() {
 while true; do
   status=0
   release_tray
-  env -u QT_QPA_PLATFORMTHEME QS_ICON_THEME="$icon_theme" MALLOC_ARENA_MAX="$malloc_arenas" \
+  env -u QT_QPA_PLATFORMTHEME QS_ICON_THEME="$icon_theme" BUCHHWIN_ICON_THEME_AUTO="$icon_theme_auto" \
+    MALLOC_ARENA_MAX="$malloc_arenas" MALLOC_CONF="$malloc_conf" \
     mesa_glthread="$mesa_glthread_value" GALLIUM_THREAD="$gallium_thread" \
+    QT_WAYLAND_DISABLE_WINDOWDECORATION="$disable_decorations" QSG_DISTANCEFIELD_ANTIALIASING="$text_antialiasing" \
     BUCHHWIN_APP_ENV_UNSET="${app_unset[*]}" BUCHHWIN_APP_QPA_THEME="$app_qpa_theme" \
     quickshell --no-duplicate --path "$config_dir" >>"$log_file" 2>&1 &
   child=$!
+  start_sweep "$child"
   # `wait` returns as soon as a trapped signal arrives, before the shell has
   # gone; wait again for its real status.
   wait "$child" || status=$?

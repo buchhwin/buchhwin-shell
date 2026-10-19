@@ -199,6 +199,21 @@ function releaseWorkspaceRule(id) {
     }
 }
 
+// The rules of `ids` taken back, and the workspaces held open (`kept`,
+// { id: monitor }) held again in the same request. A held workspace's
+// `persistent` and its block's monitor are one merged rule (`hyprctl -j
+// workspacerules`: { workspaceString: "1", monitor, persistent }), so the
+// release disabled the hold too: the empty held ones went at once, and the
+// shell went on believing it held them. Each comes back as a rule of its own.
+// Lua only, like the release.
+function releaseRules(ids, kept) {
+    const held = kept && typeof kept === "object" ? kept : {}
+    const release = (Array.isArray(ids) ? ids : []).map(releaseWorkspaceRule)
+    const keep = Object.keys(held).map(Number).sort((a, b) => a - b).map(id => keepWorkspaceRule(id, true, held[id]))
+    const lua = release.concat(keep).map(item => item.lua).filter(text => text.length)
+    return { legacy: "", legacyEmpty: [], lua: lua.join("\n") }
+}
+
 // Held open or let go (Settings > Bar & notch > Keep empty workspaces open):
 // `persistent`, which Hyprland 0.56 merges into the rule it already has for
 // that workspace - and never `releaseWorkspaceRule`, whose set_enabled(false)
@@ -206,7 +221,7 @@ function releaseWorkspaceRule(id) {
 // monitor the workspace is on: a persistent rule moves its workspace to the
 // rule's monitor, and without one that is the focused monitor - which emptied
 // the other, Hyprland filled it with a new workspace, and holding that one
-// open too ran away (round 13, nested). Let go, an empty workspace no monitor
+// open too ran away (nested). Let go, an empty workspace no monitor
 // shows goes at once; one on screen goes when it is left. Both dialects take
 // it at runtime (probed nested 17.10., `hyprctl -j workspacerules`). An id
 // that is no workspace number sends nothing; neither does holding one open
@@ -238,6 +253,23 @@ function withDispatch(config, command) {
         legacy: legacy.join(" ; "),
         legacyEmpty: config.legacyEmpty || [],
         lua: lua.concat(["hl.dispatch(" + command.lua + ")"]).join("\n")
+    }
+}
+
+// Dispatchers one after the other, in one request: a `hyprctl` per step
+// (started in a loop by `sh`) cost about 10 ms of CPU and 10 ms of waiting
+// each, and a login at the desk sends eight. Legacy: one `--batch`, which
+// Hyprland runs in the order given (the builders never put a `;` in a
+// dispatcher); a step that fails no longer stops the ones after it, so the
+// focus still comes back last. Lua: one eval of `hl.dispatch(...)` lines,
+// the form `withDispatch` sends its dispatcher in.
+function dispatchBatch(list) {
+    const commands = (Array.isArray(list) ? list : []).filter(command => command && command.legacy !== undefined)
+    for (const command of commands)
+        if (/[;\n]/.test(String(command.legacy))) throw new Error("invalid dispatcher")
+    return {
+        legacy: commands.map(command => "dispatch " + command.legacy).join(" ; "),
+        lua: commands.map(command => "hl.dispatch(" + command.lua + ")").join("\n")
     }
 }
 

@@ -44,6 +44,13 @@ ShellRoot {
         T.eq(W.addressUrl("http://example.org"), "http://example.org", "an explicit scheme is kept")
         T.eq(W.addressUrl("cats"), "", "a word is not an address")
 
+        // Which addresses go before the apps: only one beyond doubt. A file
+        // name is a host by the rules above, and Enter opened the browser on it.
+        T.eq(["https://example.org", "example.org/page", "example.org:8080", "sub.example.org:8080/a?b=c"]
+             .map(W.addressLeads), [true, true, true, true], "a scheme, a path or a port leads")
+        T.eq(["example.org", "readme.md", "photo.jpg", "cats", "1.5"].map(W.addressLeads),
+             [false, false, false, false, false], "a bare host does not, and neither does a word")
+
         T.eq(W.hostOf("https://sub.example.org/a/b"), "sub.example.org", "the host of an address")
         T.eq(W.hostOf("nonsense"), "", "no host")
         T.eq(W.engineLabel("google", ""), "Google", "the engine's name")

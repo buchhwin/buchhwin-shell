@@ -75,8 +75,3 @@ function current(slots) {
     }
     return best
 }
-
-// Which kinds are switched on, for a page that wants to say so in one line.
-function enabledKinds(values) {
-    return KINDS.filter(kind => values && values[kind])
-}

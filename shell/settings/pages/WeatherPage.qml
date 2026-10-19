@@ -10,6 +10,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Location"
+        scope: "weather.locationName"
         description: "Only the location, rounded to about 1 km, is sent to Open-Meteo, and it is stored only locally. "
             + "Detecting it automatically asks ipinfo.io once, which sees this connection's IP address."
 
@@ -137,7 +138,9 @@ ColumnLayout {
         }
         SettingRow {
             label: "Refresh"
-            hint: "Only while the dashboard or weather widget is visible"
+            // WeatherService.track: the dashboard, the weather widget and
+            // popup, the notch's overview and the lock screen.
+            hint: "Only while something shows the weather"
             SegmentedControl {
                 focusOnTab: true
                 Layout.fillWidth: true

@@ -10,7 +10,7 @@ var MAX_ENTRIES = 200
 // Any desktop id: the file is JSON, so the id needs no rule of its own beyond
 // being one line. The Citrix entries here ("Citrix_subscribed_XenApp
 // 7.x.RDS-Buchhwin $S101-255") failed the old letters-and-dots rule and lost
-// their history at every start (round 12). `__proto__` would set the result's
+// their history at every start. `__proto__` would set the result's
 // prototype instead of an entry.
 function validId(id) {
     return /^[^\x00-\x1f\x7f]{1,255}$/.test(id) && id !== "__proto__"

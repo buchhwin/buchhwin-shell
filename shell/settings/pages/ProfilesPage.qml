@@ -5,6 +5,7 @@ import qs.theme
 import qs.services
 import qs.shell.components
 import "../../../services/profile/ProfileLogic.js" as Profile
+import "../../../services/settings/ScopeLogic.js" as Scope
 
 // The two levels, as one page. A profile is a card; its five modes are a
 // compact row **inside** the card rather than five rows under it, because five
@@ -13,23 +14,36 @@ ColumnLayout {
     id: page
     spacing: Metrics.pageGap
 
+    // What a mode does as it ships (its template's description), under the
+    // pointer on its segment: "Gaming" said nothing about turning Do Not
+    // Disturb on until it had.
+    function modeDescription(name) {
+        const template = LayoutService.templates[name]
+        return template && typeof template.description === "string" ? template.description : ""
+    }
     readonly property var modeOptions: LayoutService.modeNames.map(name => ({
         value: name,
         label: Profile.label(name, LayoutService.templates),
-        icon: Profile.icon(name)
+        icon: Profile.icon(name),
+        toolTip: page.modeDescription(name)
     }))
+    readonly property string activeModeDescription: page.modeDescription(LayoutService.activeMode)
 
     SettingsSection {
         Layout.fillWidth: true
         title: "Profiles"
-        description: "A profile keeps everything: its five modes' layouts, the notch, panels, colors and all other settings. Switching brings them back."
+        // What a built-in profile does the first time, said once for all of
+        // them rather than on every built-in card, where it pushed the
+        // card's own buttons down. The shipped setup is the layouts, the
+        // notch, the settings, the default apps and fastfetch.
+        description: "A profile keeps everything - its five modes' layouts, the notch, panels, colors and all other settings - and switching brings them back. A built-in profile starts from its shipped setup the first time (after a backup) and keeps your changes; Restore settings brings the shipped one back."
 
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
             visible: AdaptiveService.hasInternal
             label: "Choose the mode automatically"
-            hint: "Laptop without, Docked with an external display. It switches the mode inside the profile you are in; it never changes the profile."
+            hint: "Laptop without, Desk with an external display. It switches the mode inside the profile you are in; it never changes the profile."
             ShellToggle {
                 focusOnTab: true
                 checked: SettingsService.value("desktop.autoProfile")
@@ -123,14 +137,6 @@ ColumnLayout {
                         }
                     }
 
-                    // What activating it does, said before it is done: the
-                    // first time it writes more than a switch otherwise does.
-                    ShellText {
-                        visible: card.builtin.length > 0
-                        Layout.fillWidth: true
-                        text: "Shipped with the shell: the first time you use it, it brings its setup - layouts, notch, settings, default apps, fastfetch - after a backup; after that it keeps your changes. Restore settings brings the shipped one back."
-                        role: "small"; muted: true; wrapMode: Text.Wrap
-                    }
                     // Its own error only: one that failed says so on its own
                     // card, not on every built-in one.
                     ShellText {
@@ -152,14 +158,18 @@ ColumnLayout {
                         }
                         ShellButton {
                             focusOnTab: true
-                            icon: Icons.add; text: "Duplicate"; compact: true
+                            icon: Icons.copy; text: "Duplicate"; compact: true
                             toolTip: "A copy of this profile as it stands, settings included"
                             onClicked: LayoutService.duplicateProfile(card.modelData,
                                                                      LayoutService.profileLabelOf(card.modelData) + " copy")
                         }
+                        // Named by what it takes back, so the two buttons of a
+                        // built-in profile differ before the pointer rests on
+                        // them: Reset all is the modes and the settings,
+                        // Restore settings the settings alone.
                         ShellButton {
                             focusOnTab: true
-                            icon: Icons.reset; text: "Reset"; compact: true
+                            icon: Icons.reset; text: card.builtin.length ? "Reset all" : "Reset modes"; compact: true
                             confirm: true
                             confirmText: "Reset all five?"
                             toolTip: card.builtin.length ? "Every mode and setting of this profile back to the shipped state"
@@ -177,8 +187,8 @@ ColumnLayout {
                             confirm: true
                             confirmText: card.active ? "Overwrite settings?" : "Back to shipped?"
                             enabledState: !LayoutService.readOnly && LayoutService.builtinApplying.length === 0
-                            toolTip: card.active ? "The shipped settings, notch, lock screen, default apps and fastfetch, after a backup"
-                                                 : "Forgets your changes to it; using it next brings the shipped setup again"
+                            toolTip: card.active ? "The shipped settings, notch, lock screen, default apps and fastfetch, after a backup; the modes stay as they are"
+                                                 : "Forgets your changes to its settings; using it next brings the shipped setup again. The modes stay as they are"
                             onClicked: LayoutService.applyBuiltin(card.builtin)
                         }
                         ShellButton {
@@ -236,18 +246,34 @@ ColumnLayout {
             ShellButton { focusOnTab: true; icon: Icons.arrange; text: "Widgets"; compact: true; onClicked: PanelService.open("settings", { page: "widgets" }) }
             ShellButton { focusOnTab: true; icon: "󰘔"; text: "Bar & notch"; compact: true; onClicked: PanelService.open("settings", { page: "bar" }) }
         }
+        // What the mode does as it ships, Do Not Disturb included: a mode
+        // switch is the only place that turns it on by itself.
+        ShellText {
+            Layout.fillWidth: true
+            visible: page.activeModeDescription.length > 0
+            // The description is written to stand alone ("The notch only,
+            // …"); after the colon its first word goes small, unless it is
+            // a name in capitals.
+            text: Profile.label(LayoutService.activeMode, LayoutService.templates) + " as it ships: "
+                + (/^[A-Z](?![A-Z])/.test(page.activeModeDescription)
+                   ? page.activeModeDescription.charAt(0).toLowerCase() + page.activeModeDescription.slice(1)
+                   : page.activeModeDescription)
+            role: "small"; muted: true; wrapMode: Text.Wrap
+        }
 
         // The settings a mode owns, named rather than implied: a user who
         // changes the blur in Docked and finds Laptop unchanged should be able
         // to read why here, and a control that has a scope has to say it.
         ShellText {
             Layout.fillWidth: true
-            text: "Blur, panel opacity, animation mode and speed, corner radius, window borders and gaps are the mode's own - each mode keeps its own. Everything else belongs to the profile, except the weather place, keyboard layout and displays, which stay the same in every profile."
+            text: "Blur, panel opacity, animation mode and speed, corner radius, window borders and gaps are the mode's own - each mode keeps its own. Everything else belongs to the profile, except " + Scope.machineSettings() + ", which stay the same in every profile."
             role: "small"; muted: true; wrapMode: Text.Wrap
         }
+        // A page of this panel: the forward chevron, after the word, where
+        // it reads as going on.
         ShellButton {
             focusOnTab: true
-            icon: Icons.forward; text: "Appearance"; compact: true
+            trailingIcon: Icons.forward; text: "Appearance"; compact: true
             onClicked: PanelService.open("settings", { page: "appearance" })
         }
         ShellText {

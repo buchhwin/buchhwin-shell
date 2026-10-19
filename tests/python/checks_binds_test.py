@@ -101,6 +101,12 @@ problems, _, _ = checks._bind_problems(same + [(("key", "SUPER", "O"), ("SUPER",
 check(problems == ["two bindings call the same action 'launcher toggle' at hyprland.lua:9 and hyprland.lua:1"],
       f"two keys for one action: {problems}")
 
+volume_conf = [(("key", "", "XF86AUDIORAISEVOLUME"), ("", "XF86AUDIORAISEVOLUME"), None, "keybinds.conf:1")]
+volume_lua = [(("key", "", "XF86AUDIORAISEVOLUME"), ("", "XF86AUDIORAISEVOLUME"), "audio up", "hyprland.lua:1")]
+check(checks.bind_drift(volume_conf, volume_lua) == [], "a volume key the conf runs as wpctl and the Lua sends to the shell is no drift")
+other_lua = [(("key", "", "XF86AUDIORAISEVOLUME"), ("", "XF86AUDIORAISEVOLUME"), "launcher toggle", "hyprland.lua:1")]
+check(len(checks.bind_drift(volume_conf, other_lua)) == 1, "any other shell action against a plain command still is")
+
 # ---- the real files ---------------------------------------------------------
 real_conf = checks.conf_binds()
 real_lua = checks.lua_binds((checks.ROOT / "hypr" / "hyprland.lua").read_text())

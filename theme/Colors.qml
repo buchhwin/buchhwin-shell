@@ -19,13 +19,15 @@ Singleton {
     // steps on black: titles at 1.25:1 and cards that were not there.
     readonly property bool surfaceDark: PanelStyleService.customColor ? !PanelStyleService.lightColor : dark
 
-    SystemClock { id: clock; precision: SystemClock.Hours }
+    SystemClock { id: clock; precision: SystemClock.Hours; enabled: WallClock.ticking }
 
     readonly property color accent: /^#[0-9a-fA-F]{6}$/.test(SettingsService.accent) ? SettingsService.accent : "#4f8ff7"
-    // Text and icons on accent fills (buttons, badges, today). The labels are
-    // body text (13-14 px), so they need 4.5:1: white where it has that, dark
-    // ink otherwise. The calm blue and the purple used to keep white at 3:1,
-    // which is the large-text minimum, and these are not large.
+    // Text and icons on the raw accent (an avatar's disc, a handle in the
+    // editor). Buttons, badges and today on a panel are on accentFill and
+    // take accentFillText below. The labels are body text (13-14 px), so
+    // they need 4.5:1: white where it has that, dark ink otherwise. The calm
+    // blue and the purple used to keep white at 3:1, which is the large-text
+    // minimum, and these are not large.
     readonly property color accentText: labelOn(accent)
     readonly property color onAccentDark: "#15171c"
     // The same choice for words on any other fill (the hex value on a picked
@@ -85,12 +87,26 @@ Singleton {
     readonly property color accentOnSoft: Contrast.readableOnAll(String(accent), [String(contrastBase), String(softBase)])
     readonly property color mutedOnSoft: Contrast.readableOnAll(String(mutedText), [String(softBase)])
     // The accent as a fill that says on or how much - a switch that is on, a
-    // slider's level, a meter. It has to stand off the card around it, which
-    // a light accent on a light card does not (1.08:1, the teal), so the
-    // light side takes the 3:1 line. The white knob keeps about 4.5:1 on it.
-    readonly property color accentFill: surfaceDark ? accent : accentLine
-    readonly property color accentFillHover: surfaceDark ? accentHover : Qt.lighter(accentLine, 1.08)
-    readonly property color accentFillPressed: surfaceDark ? accentPressed : Qt.darker(accentLine, 1.12)
+    // slider's level, a meter - or that carries a label: a primary button,
+    // the tile of a popup's header while its thing is on, today in a month,
+    // a badge. It has to stand off the card around it, which a light accent
+    // on a light card does not (1.08:1, the teal), so the light side takes
+    // the 3:1 line, a step darker where white words on it would fall short
+    // of 4.5:1 (the line itself gave 4.43-4.48:1 for five swatches). One fill
+    // for both jobs: buttons and header tiles used to take the raw accent,
+    // and a light panel showed the bright teal at 1.3:1 beside the dark one
+    // its switch wears. The dark side is the accent as it is.
+    readonly property color accentFill: surfaceDark ? accent
+        : Contrast.readable(String(accentLine), "#ffffff", Contrast.TEXT_RATIO)
+    // On the light side a hover darkens the fill, as every hover there
+    // does (`hover`): a lighter one left the white words under the pointer
+    // at 3.9-4.1:1.
+    readonly property color accentFillHover: surfaceDark ? accentHover : Qt.darker(accentFill, 1.06)
+    readonly property color accentFillPressed: surfaceDark ? accentPressed : Qt.darker(accentFill, 1.12)
+    // Words and glyphs on that fill: 4.5:1, as on any label (`labelOn`).
+    // `accentText` is the same for the raw accent, which the dark side's
+    // fill is.
+    readonly property color accentFillText: labelOn(accentFill)
     // Accent choices offered in Settings > Appearance. The teal is the one
     // the shipped profiles use, so a fresh install shows its accent chosen.
     readonly property var accentChoices: ["#4f8ff7", "#8b6cf6", "#d46ad8", "#ef5f67", "#f28b3c", "#e7b43c", "#4fbf73", "#50e2cb", "#8f97a6"]
@@ -160,7 +176,7 @@ Singleton {
     readonly property color lockButton: Qt.rgba(1, 1, 1, 0.24)
     readonly property color lockButtonHover: Qt.rgba(1, 1, 1, 0.32)
     // A bare glyph on the lock screen (media controls, the retry target).
-    readonly property color lockGlyphHover: Qt.rgba(1, 1, 1, 0.12)
+    readonly property color lockGlyphHover: onDarkHover
     readonly property color lockError: "#ffb4ab"
     readonly property color solidSurface: surfaceDark ? "#1a1d25" : "#ffffff"
     readonly property color hover: surfaceDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.06)
@@ -241,7 +257,7 @@ Singleton {
     // The same in both themes: what is written on it is light in both, and
     // the light theme's thinner 0.62 let a bright wallpaper through - its
     // accent labels came to 2.5-3.2:1 there and the grey ones under 4:1 over
-    // white (round 12, D10).
+    // white.
     readonly property color overviewScrim: Qt.rgba(0.02, 0.024, 0.03, 0.78)
     // The lightest that scrim gets: over a white wallpaper. What is written
     // on it is measured there, not against a dark guess.
@@ -254,7 +270,7 @@ Singleton {
     // A small control drawn straight on that scrim (the overview card's ×):
     // the theme's hover tints are for panels and vanish on it in the light
     // theme.
-    readonly property color scrimHover: Qt.rgba(1, 1, 1, 0.14)
+    readonly property color scrimHover: onDarkHover
     readonly property color scrimPressed: Qt.rgba(1, 1, 1, 0.24)
     // Soft halo behind minimal widgets on the wallpaper: dark behind light
     // text, light behind the dark text of light panels (a dark shadow there
@@ -290,7 +306,7 @@ Singleton {
     //
     // The two keep `saturnSeparation` apart, or at the menu's small letters
     // they run into one mass: the teal's half-white ring was 1.25:1 from its
-    // planet (round 12, D13 d). On a dark panel the ring takes more white
+    // planet. On a dark panel the ring takes more white
     // until it stands that far off (the logo's own blue already does, and
     // stays #afd7ff); on a light one the planet is darkened past its 4.5:1
     // until it stands that far below the ring.
@@ -311,7 +327,7 @@ Singleton {
         }
         return "#ffffff"
     }
-    readonly property color dockBorder: surfaceDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.08)
+    readonly property color dockBorder: borderInner
     // Bar style "bar": item hover highlight and the line between item groups.
     readonly property color barItemHover: surfaceDark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0, 0, 0, 0.06)
     readonly property color barSeparator: surfaceDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
@@ -397,7 +413,11 @@ Singleton {
     // The groove behind a level the notch itself is showing. Not `track`: that
     // one is made to sit on a panel, and on black it disappears.
     readonly property color notchTrack: Qt.rgba(1, 1, 1, 0.22)
-    readonly property color notchHover: Qt.rgba(1, 1, 1, 0.1)
+    readonly property color notchHover: onDarkHover
+    // One hover for a control drawn straight on a surface that is dark in
+    // both themes - the notch, the lock screen, the overview's scrim. Each
+    // had its own (0.10, 0.12, 0.14), three steps nobody could tell apart.
+    readonly property color onDarkHover: Qt.rgba(1, 1, 1, 0.12)
     // The media and event fields inside the wide notch: each sits on its own
     // slightly raised surface so they read as two boxes, not two columns.
     readonly property color notchField: Qt.rgba(1, 1, 1, 0.06)

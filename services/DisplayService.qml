@@ -24,6 +24,11 @@ Singleton {
     readonly property int confirmSeconds: 15
     readonly property bool confirming: countdown > 0
     readonly property bool dirty: draft.length > 0 && Logic.changed(monitors, draft)
+    // A draft with changes that a refresh could not keep (a monitor came or
+    // went): Settings > Displays says they were discarded, until the next
+    // change.
+    property bool draftDropped: false
+    onDirtyChanged: if (dirty) draftDropped = false
     // No apply while anything overlaps: Hyprland keeps explicit positions as
     // given and only warns, with input landing on the wrong screen. The
     // page's moves never produce an overlap (Logic.placeApart), so this only
@@ -91,15 +96,19 @@ Singleton {
         const panel = monitors.find(item => item.name === name)
         if (closed) {
             const plan = Logic.lidPlan(monitors, name)
-            if (plan === "disable" && panel) {
+            // A panel that is off already (switched off in Settings >
+            // Displays) is not the lid's to bring back.
+            if (plan === "disable" && panel && !panel.disabled) {
                 lidRestore = panel
                 run([Object.assign({}, panel, { disabled: true })])
             } else if (plan === "dpms") {
                 setPanelPower(false)
             }
         } else {
-            if (lidRestore) run([Object.assign({}, lidRestore, { disabled: false })])
-            else if (panel && panel.disabled) run([Object.assign({}, panel, { disabled: false })])
+            // Back at its saved place, or after the other screens
+            // (Logic.lidOpenTarget); one kept off stays off.
+            const back = Logic.lidOpenTarget(monitors, saved, name, lidRestore)
+            if (back) run([back])
             if (lidDpms) setPanelPower(true)
             lidRestore = null
             savedDelay.restart()
@@ -122,6 +131,17 @@ Singleton {
     // docking adds two monitors, and the second refresh, dropped, left the
     // snapshot (and applySavedIfNeeded) without the second screen.
     property bool refreshQueued: false
+    // A config reload puts every monitor back to the config's rules; the
+    // saved layout goes back as soon as the monitors are read again, not
+    // 800 ms later (savedDelay stays as the second try) - the workspace
+    // blocks were planned from the positions in between.
+    property bool reapplyQueued: false
+    // A saved layout is on its way (a reload, a monitor plugged in, the lid)
+    // or has just been sent and not read back (refreshSoon): HyprlandService
+    // plans the workspace blocks after it. Without the second half the
+    // blocks were planned 2 ms after the layout was sent, from the old
+    // positions.
+    readonly property bool layoutPending: savedDelay.running || reapplyQueued || refreshSoon.running
     function refresh() {
         if (monitorsProc.running) { refreshQueued = true; return }
         monitorsProc.running = true
@@ -237,6 +257,11 @@ Singleton {
             if (panel && !panel.disabled) Qt.callLater(() => root.setPanelPower(false))
         }
         if (Logic.changed(monitors, target)) {
+            // After a reload, an output switched off again takes the focus
+            // with it (reloadFocus).
+            const switchesOff = target.some(item => item.disabled && monitors.some(other => other.name === item.name && !other.disabled))
+            if (reloadFocus.length && switchesOff && target.some(item => item.name === reloadFocus && !item.disabled))
+                focusBack.restart()
             run(target)
             refreshSoon.restart()
         }
@@ -287,10 +312,22 @@ Singleton {
             onStreamFinished: {
                 let parsed = []
                 try { parsed = Logic.parseMonitors(text) } catch (error) { return }
+                const before = root.monitors
                 root.monitors = parsed
-                if (!root.confirming) root.draft = parsed.slice()
+                // Changes not applied yet stay while the same monitors are
+                // there (Logic.refreshedDraft): reopening the page, a config
+                // reload or a moved shortcut threw them away without a word.
+                if (!root.confirming) {
+                    const next = Logic.refreshedDraft(before, parsed, root.draft)
+                    root.draft = next.draft
+                    if (next.dropped) root.draftDropped = true
+                }
                 if (!root.startupApplied && root.savedLoaded) {
                     root.startupApplied = true
+                    root.reapplyQueued = false
+                    root.applySavedIfNeeded()
+                } else if (root.reapplyQueued && root.startupApplied) {
+                    root.reapplyQueued = false
                     root.applySavedIfNeeded()
                 }
             }
@@ -307,6 +344,8 @@ Singleton {
         function onRawEvent(event) {
             // A config reload resets monitors to the config rules.
             if (event.name === "configreloaded") {
+                root.reloadFocus = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
+                root.reapplyQueued = true
                 root.refresh()
                 savedDelay.restart()
             } else if (event.name === "monitoraddedv2" || event.name === "monitorremovedv2") {
@@ -315,7 +354,34 @@ Singleton {
             }
         }
     }
-    Timer { id: savedDelay; interval: 800; onTriggered: root.applySavedIfNeeded() }
+    // Also the bound on reapplyQueued: a refresh that fails leaves it set.
+    Timer {
+        id: savedDelay
+        interval: 800
+        onTriggered: {
+            root.reapplyQueued = false
+            root.applySavedIfNeeded()
+            if (!focusBack.running) root.reloadFocus = ""
+        }
+    }
+
+    // The monitor that had the focus when the config reloaded. The reload
+    // switches an output the saved layout keeps off (the panel behind a shut
+    // lid) on again, the layout switches it off, and Hyprland hands the focus
+    // to the first monitor - the keys went to another screen than the one
+    // the hand was on. It goes back once the layout is in.
+    property string reloadFocus: ""
+    Timer {
+        id: focusBack
+        interval: 400
+        onTriggered: {
+            const name = root.reloadFocus
+            root.reloadFocus = ""
+            const now = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
+            if (name.length && now !== name && root.monitors.some(item => item.name === name && !item.disabled))
+                HyprCompat.dispatch(HyprCompat.commands.focusMonitor(name))
+        }
+    }
 
     FileView {
         id: savedFile

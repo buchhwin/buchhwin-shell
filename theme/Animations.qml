@@ -229,7 +229,7 @@ Singleton {
     readonly property int dockCoverDelay: 150
     // The windows are read again this long after the last compositor event,
     // and every this long while a floating window - which moves without an
-    // event - is on a dock's workspace.
+    // event - could come over a dock or leave it (DockLogic.needsPoll).
     readonly property int dockCoverRefresh: 120
     readonly property int dockCoverPoll: 1000
     // The app's name over its icon.
@@ -238,10 +238,10 @@ Singleton {
     readonly property int startMenuUptimeRefresh: 60000
     // Sliding in and out.
     readonly property int dockSlide: travel(220)
-    // An app the dock started breathes until its window shows: checked this
-    // often, given up after this long (an app that opens no window, one that
-    // hands it to a running instance elsewhere).
-    readonly property int dockLaunchCheck: 250
+    // An app the dock started breathes until its window shows or it comes to
+    // the front, given up after this long (an app that opens no window, one
+    // that hands it to a running instance elsewhere) - an app that had
+    // windows already after a quarter of it (DockLogic.launchDone).
     readonly property int dockLaunchLimit: 10000
     // One breath of a starting app's icon.
     readonly property int dockLaunchPulse: Math.round(900 * factor)

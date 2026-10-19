@@ -120,9 +120,21 @@ function currentPath(slideshowPath, configuredPath, images, checkedPath, missing
 }
 
 // Wallpaper for one screen: its own choice if the file is still available.
-function pathFor(state, screen, fallback, available) {
+//
+// At a start wallpapers.json and the folder are read in steps. Until
+// `stateRead` (left out: true) it is not known whether the screen has a
+// choice of its own, and until `settled` (the folder read, left out: true)
+// not whether its own one is there: "" meanwhile - nothing yet, as
+// `currentPath` answers before its check - spares the desktop a first decode
+// of the shared picture and a cross-fade to the screen's own one a moment
+// later. A screen known to have no choice of its own takes the shared one at
+// once.
+function pathFor(state, screen, fallback, available, settled, stateRead) {
     const own = state.screens[screen]
-    return own && (!available || available.indexOf(own) >= 0) ? own : fallback
+    if (stateRead === false) return ""
+    if (own && (!available || available.indexOf(own) >= 0)) return own
+    if (own && settled === false) return ""
+    return fallback
 }
 
 // Images the slideshow rotates through, for one of the three sources. In every
@@ -191,10 +203,20 @@ function groups(images, folder) {
     return found.sort((a, b) => a.localeCompare(b))
 }
 
-// Basename without the extension, for the picker's labels and its filter.
-function displayName(path) {
+// Basename without the extension: what the picker's search matches.
+function baseName(path) {
     const file = String(path || "").split("/").pop()
     return file.replace(/\.(png|jpe?g|webp)$/i, "")
+}
+
+// The label of a wallpaper: the basename with underscores and dashes as
+// spaces, "Desert_Color1.png" as "Desert Color1" - the picker showed the
+// file's stem and Settings the same file prettified, two names for one
+// picture. A name that is nothing but those keeps its stem.
+function displayName(path) {
+    const stem = baseName(path)
+    const pretty = stem.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim()
+    return pretty.length ? pretty : stem
 }
 
 // The picker's grid: favourites first, then the rest of the folder, each group
@@ -213,7 +235,10 @@ function pickerItems(images, favourites, query, filter, folder) {
     const needle = String(query || "").trim().toLowerCase()
     const want = String(filter || "")
     const list = (images || []).filter(path => {
-        if (needle.length && displayName(path).toLowerCase().indexOf(needle) < 0) return false
+        // The label and the file's own name: "desert_c" still finds the
+        // file the label calls "Desert Color1".
+        if (needle.length && displayName(path).toLowerCase().indexOf(needle) < 0
+                && baseName(path).toLowerCase().indexOf(needle) < 0) return false
         if (!want.length) return true
         if (want === FAVOURITES) return marks.indexOf(path) >= 0
         return groupOf(path, folder) === want
@@ -330,6 +355,28 @@ function folderUrl(path) {
     return "file://" + value.split("/").map(encodeURIComponent).join("/")
 }
 
+// Whether a FolderListModel lists `path`: its `folder` reads back the url it
+// was given, except where Qt put it in the working directory instead - which
+// it does for a folder that is empty or missing as the model is made (at a
+// start, before user-dirs.dirs is read: the home directory's pictures, and a
+// model for each of its folders). Compared decoded, as the model may hand the
+// url back with "Ü" or a space unescaped.
+function listsFolder(modelFolder, path) {
+    const plain = value => value.length > 1 ? value.replace(/\/+$/, "") : value
+    const want = plain(String(path || ""))
+    if (!want.length) return false
+    let have = ""
+    try { have = decodeURIComponent(String(modelFolder || "")) } catch (error) { return false }
+    return have.indexOf("file://") === 0 && plain(have.slice(7)) === want
+}
+
+// Whether a subfolder can be a group (a chip): not a hidden one, and not the
+// __MACOSX a zip leaves behind, which holds only hidden "._" files.
+function isGroupFolder(path) {
+    const name = String(path || "").replace(/\/+$/, "").split("/").pop()
+    return name.length > 0 && name.charAt(0) !== "." && name !== "__MACOSX"
+}
+
 // ---- thumbnails ----------------------------------------------------------------
 // scripts/wallpaper-thumbs.py answers {"thumbs": {image: thumbnail}}. Anything
 // else is null (keep what is there); an entry that is not an image path mapped
@@ -352,6 +399,120 @@ function parseThumbs(text) {
 function thumbUrl(thumbs, path) {
     const thumb = thumbs && Object.prototype.hasOwnProperty.call(thumbs, path) ? thumbs[path] : ""
     return thumb ? folderUrl(thumb) : ""
+}
+
+// ---- the picture's size and the desktop's decode ------------------------------
+// The desktop decodes a wallpaper for its screen. Image's `sourceSize` with
+// PreserveAspectCrop alone scales the picture to *cover* the screen and keeps
+// what the crop cuts off: the 5640x2400 JPEG came out 2820x1200 on the
+// 1920x1200 panel (13.5 MB instead of 9.2), 5076x2160 on a 4K screen and
+// 6016x2560 on a portrait 1440x2560 one, larger than the file itself - in RAM
+// and again on the GPU. Knowing the picture's own size, `sourceClipRect`
+// keeps only the screen's part of the scaled picture, and a picture smaller
+// than the screen is not enlarged on decode: the GPU scales it.
+
+// {"sizes": {image: [width, height]}} from scripts/wallpaper-thumbs.py, or
+// a sizes file the service kept: { image: [width, height] } for image paths
+// with two whole sizes; null when it is no such map (keep what is there).
+function parseSizes(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null
+    const result = {}
+    for (const path of Object.keys(value)) {
+        const size = value[path]
+        if (!isImagePath(path) || !Array.isArray(size) || size.length !== 2) continue
+        const width = Number(size[0]), height = Number(size[1])
+        if (Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0
+                && width <= 65535 && height <= 65535)
+            result[path] = [width, height]
+    }
+    return result
+}
+
+// The helper's answer: its "sizes", or null while it gives none (a run that
+// failed, or a helper from before sizes).
+function parseThumbSizes(text) {
+    let data = null
+    try { data = JSON.parse(String(text || "")) } catch (error) { return null }
+    return data && typeof data === "object" ? parseSizes(data.sizes) : null
+}
+
+// A sizes map as the file keeps it: sorted, so the same sizes are the same
+// text and an unchanged run writes nothing.
+function sizesText(sizes) {
+    const map = parseSizes(sizes) || {}
+    const sorted = {}
+    for (const path of Object.keys(map).sort()) sorted[path] = map[path]
+    return JSON.stringify(sorted) + "\n"
+}
+
+// How the desktop decodes a picture of `natural` [width, height] for a screen
+// of `screenWidth` x `screenHeight` pixels: { width, height } for
+// `sourceSize`, `clip` (x, y, width, height in the scaled picture's pixels,
+// which is what sourceClipRect means once sourceSize scales) or null, and
+// what it was worked out from (`natural`, `screen`), so a later change can
+// tell whether it is still right. Without a known size it is the screen's
+// size, as before.
+//
+// Qt scales by max(sw / w, sh / h) of the size asked for and rounds (qRound),
+// so asking for the picture's own cover size (sw x sh) decodes the same
+// pixels as asking for the screen's - and keeps the clip inside the picture
+// even when the size is wrong (a file replaced in place, until the next run
+// says so): Qt then scales to at least sw x sh, and the clip lies within
+// that. Asked for the screen's size with a wrong one, the clip ran past the
+// picture's edge and that part came out black.
+function decodeGeometry(natural, screenWidth, screenHeight) {
+    const W = Math.max(0, Math.round(Number(screenWidth) || 0))
+    const H = Math.max(0, Math.round(Number(screenHeight) || 0))
+    const size = parseSizes({ "/x.png": natural })
+    const known = size ? size["/x.png"] : null
+    const plain = { width: W, height: H, clip: null, natural: null, screen: [W, H] }
+    if (!known || W <= 0 || H <= 0) return plain
+    const w = known[0], h = known[1]
+    const ratio = Math.max(W / w, H / h)
+    if (ratio < 1) {
+        const scaledWidth = Math.round(w * ratio), scaledHeight = Math.round(h * ratio)
+        const clipWidth = Math.min(W, scaledWidth), clipHeight = Math.min(H, scaledHeight)
+        return { width: scaledWidth, height: scaledHeight, natural: [w, h], screen: [W, H],
+                 clip: { x: Math.floor((scaledWidth - clipWidth) / 2), y: Math.floor((scaledHeight - clipHeight) / 2),
+                         width: clipWidth, height: clipHeight } }
+    }
+    // Not larger than the file: the screen's shape cut from the picture as
+    // it is, and scaled up where it is drawn.
+    const clipWidth = Math.max(1, Math.min(w, Math.round(h * W / H)))
+    const clipHeight = Math.max(1, Math.min(h, Math.round(w * H / W)))
+    return { width: w, height: h, natural: [w, h], screen: [W, H],
+             clip: { x: Math.floor((w - clipWidth) / 2), y: Math.floor((h - clipHeight) / 2),
+                     width: clipWidth, height: clipHeight } }
+}
+
+// Whether the picture on screen, decoded as `shown`, has to be decoded again
+// for `wanted` (both decodeGeometry): the screen's pixels changed, or the
+// picture's size turned out to be another (a file replaced in place). A size
+// that is only learnt now, for a picture decoded without one, is no reason:
+// that would be a second decode at a start, for the few MB the crop saves.
+function needsRedecode(shown, wanted) {
+    if (!shown || !wanted) return false
+    const same = (a, b) => !!a && !!b && a[0] === b[0] && a[1] === b[1]
+    if (!same(shown.screen, wanted.screen)) return true
+    return !!shown.natural && !!wanted.natural && !same(shown.natural, wanted.natural)
+}
+
+// ---- the displays ------------------------------------------------------------
+// The "Set it on" choice: every display, then each one as Settings > Displays
+// and its Identify overlay number them ("1 · eDP-1"), in that order; a screen
+// without a number (0) keeps its bare name, last. `numberOf(name)` is
+// DisplayService.displayNumber.
+function screenChoices(names, numberOf) {
+    const number = name => {
+        const value = typeof numberOf === "function" ? Math.round(Number(numberOf(name))) : 0
+        return isFinite(value) && value > 0 ? value : 0
+    }
+    const rank = screen => screen.number > 0 ? screen.number : Number.MAX_SAFE_INTEGER
+    const screens = (names || []).map(name => String(name || "")).filter(name => name.length)
+        .map(name => ({ name: name, number: number(name) }))
+        .sort((a, b) => rank(a) - rank(b))
+    return [{ value: "", label: "All displays" }].concat(screens.map(screen => ({
+        value: screen.name, label: screen.number > 0 ? screen.number + " \u00b7 " + screen.name : screen.name })))
 }
 
 // "/home/a/x" → "~/x", so the setting survives a renamed home.

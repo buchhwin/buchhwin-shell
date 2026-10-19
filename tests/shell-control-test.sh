@@ -2,12 +2,13 @@
 set -euo pipefail
 
 # reload-shell.sh and stop-shell.sh against stub commands in a sandbox. What is
-# under test is which shell they act on. Both redirect to the copy the session
-# runs from when BUCHHWIN_SHELL_PATH is unset - and docs/testing.md has you
-# export the nested WAYLAND_DISPLAY, signature and XDG dirs without ever
-# mentioning BUCHHWIN_SHELL_PATH, so a hand-run from a development checkout
-# inside a nested session used to stop the shell on the user's own screen and
-# start a replacement pointed at the nested display. That happened.
+# under test is which shell they act on, and with what. Both redirect to the
+# copy the session runs from when BUCHHWIN_SHELL_PATH is unset - and
+# docs/testing.md once had you export the nested WAYLAND_DISPLAY, signature
+# and XDG dirs without ever mentioning BUCHHWIN_SHELL_PATH, so a hand-run from
+# a development checkout inside a nested session used to stop the shell on the
+# user's own screen and start a replacement pointed at the nested display.
+# That happened.
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
 sandbox=$(mktemp -d "${TMPDIR:-/tmp}/buchhwin-controltest.XXXXXX")
 trap 'rm -rf -- "$sandbox"' EXIT
@@ -77,7 +78,7 @@ chmod +x "$bin"/*
 export PATH="$bin:$PATH"
 # The sessions the cases name, each with its compositor socket, in a runtime
 # directory of the sandbox: reload-shell.sh only acts inside a Hyprland
-# session whose socket is there (round 12, scripts#0).
+# session whose socket is there.
 runtime="$sandbox/run"
 for signature in real-signature nested-signature other-vt-signature; do
   mkdir -p "$runtime/hypr/$signature"
@@ -126,6 +127,7 @@ echo 1 > "$nested/hyprland.pid"
 sandboxed() {
   env -u BUCHHWIN_SHELL_PATH -u BUCHHWIN_NESTED -u WAYLAND_DISPLAY \
     -u HYPRLAND_INSTANCE_SIGNATURE -u BUCHHWIN_START_WITHOUT_HYPRLAND -u HYPR_INSTANCES \
+    -u XDG_CONFIG_HOME -u XDG_STATE_HOME -u XDG_CACHE_HOME -u BUCHHWIN_NESTED_MODE \
     CALLS="$calls" HOME="$home" XDG_RUNTIME_DIR="$runtime" \
     BUCHHWIN_NESTED_DIR="$nested" "$@"
 }
@@ -210,13 +212,60 @@ for script in reload-shell.sh stop-shell.sh; do
     check 'grep -q "different sessions" "$sandbox/err.log"' "$script says why ($mixed)"
   done
 done
+
+# ---- a reload for the nested session ---------------------------------------------
+# What the recipe once had you export - the nested signature and display and
+# BUCHHWIN_SHELL_PATH, no XDG dirs and no BUCHHWIN_NESTED: the restarted shell
+# took itself for a real session and ran on the user's own configuration
+# (pitfall 121). Refused now, before anything is stopped.
+: > "$calls"
+status=0
+sandboxed "${nestedenv[@]}" BUCHHWIN_SHELL_PATH="$checkout" bash "$checkout/scripts/reload-shell.sh" \
+  >"$sandbox/out.log" 2>"$sandbox/err.log" || status=$?
+check '[[ $status -ne 0 ]] && ! said "^quickshell kill" && ! said "^start-shell"' \
+  "a nested reload without the sandbox's XDG dirs is refused before anything is stopped (status $status)"
+check 'grep -q "XDG dirs outside its sandbox" "$sandbox/err.log"' "and says why ($(cat "$sandbox/err.log"))"
+# With what nested-session.sh prints (here without BUCHHWIN_NESTED, which the
+# reload adds itself): the checkout's shell, as a nested one, on the sandbox.
+rm -f "$calls.env"
+: > "$calls"
+sandboxed "${nestedenv[@]}" BUCHHWIN_SHELL_PATH="$checkout" XDG_CONFIG_HOME="$nested/config" \
+  XDG_STATE_HOME="$nested/state" XDG_CACHE_HOME="$nested/cache" \
+  bash "$checkout/scripts/reload-shell.sh" >"$sandbox/out.log" 2>"$sandbox/err.log" || true
+for _ in {1..20}; do [[ -s $calls.env ]] && break; sleep 0.1; done
+check 'said "^start-shell '"$checkout"'$"' "a nested reload with the sandbox's XDG dirs starts the checkout's shell"
+check 'grep -qx BUCHHWIN_NESTED=1 "$calls.env" && grep -qx "XDG_CONFIG_HOME=$nested/config" "$calls.env" && grep -qx "XDG_STATE_HOME=$nested/state" "$calls.env"' \
+  "and starts it as a nested shell on the sandbox"
+# The session's own copy acts on itself whatever BUCHHWIN_SHELL_PATH says.
+# Run as the deploy runs it - from the stable worktree that the session link
+# points at - with the nested exports and BUCHHWIN_SHELL_PATH at a checkout,
+# it got past the guard and started a second installed shell in the nested
+# compositor. Refused, for reload and stop alike.
+stable="$sandbox/stable"
+home2="$sandbox/home2"
+mkdir -p "$stable/scripts/lib" "$home2/.local/share"
+cp "$project_dir/scripts/reload-shell.sh" "$project_dir/scripts/stop-shell.sh" "$stable/scripts/"
+cp "$project_dir/scripts/lib/nested-guard.sh" "$stable/scripts/lib/"
+cp "$checkout/scripts/start-shell.sh" "$stable/scripts/"
+touch "$stable/shell.qml"
+ln -s "$stable" "$home2/.local/share/buchhwin-shell"
+for script in reload-shell.sh stop-shell.sh; do
+  : > "$calls"
+  status=0
+  sandboxed "${nestedenv[@]}" HOME="$home2" BUCHHWIN_SHELL_PATH="$checkout" XDG_CONFIG_HOME="$nested/config" \
+    XDG_STATE_HOME="$nested/state" XDG_CACHE_HOME="$nested/cache" \
+    bash "$stable/scripts/$script" >"$sandbox/out.log" 2>"$sandbox/err.log" || status=$?
+  check '[[ $status -ne 0 ]] && ! said "^quickshell kill" && ! said "^start-shell"' \
+    "the stable copy's $script refuses the nested environment although BUCHHWIN_SHELL_PATH names a checkout (status $status)"
+  check 'grep -q "nested session" "$sandbox/err.log"' "and the stable copy's $script says why"
+done
 rm -f -- "$nested/wayland-display" "$nested/instance"
 
 # ---- no Hyprland session --------------------------------------------------------
 # Run from Plasma - no Hyprland at all, a signature the user manager kept from
 # the last Hyprland login, or the one instance on another display - a reload
 # stopped nothing and started the shell on KWin's display, after ending
-# Plasma's kded6 (round 12, scripts#0). Refused before anything is stopped,
+# Plasma's kded6. Refused before anything is stopped,
 # and said. The tests' opt-in goes on as before.
 no_session() {   # no_session LABEL ENV...
   local label=$1 status=0; shift
@@ -306,6 +355,20 @@ done
   reload_env GIT_EDITOR=nvim COREPACK_ENABLE_AUTO_PIN=0 NO_AT_BRIDGE=1 COPILOT_MODEL=own )
 check 'started_with GIT_EDITOR=nvim && started_with COREPACK_ENABLE_AUTO_PIN=0 && started_with NO_AT_BRIDGE=1 && started_with COPILOT_MODEL=own' \
   "the session's own editor, corepack, accessibility and Copilot settings stay"
+# Whatever else a caller keeps for itself goes by its kind - a token, a key,
+# a password, a cloud CLI's settings, an activated Python environment and its
+# place in PATH, a preload - and Hyprland's own token stays.
+reload_env GH_TOKEN=gh OPENAI_API_KEY=k DB_PASSWORD=p MY_SECRET_FILE=/s AWS_PROFILE=dev \
+  VIRTUAL_ENV=/work/.venv VIRTUAL_ENV_PROMPT=venv CONDA_PREFIX=/opt/conda CONDA_DEFAULT_ENV=base \
+  PYTHONPATH=/work NODE_OPTIONS=--inspect LD_PRELOAD=/lib/libfake.so HL_INITIAL_WORKSPACE_TOKEN=hl \
+  PATH="/work/.venv/bin:/opt/conda/bin:$PATH"
+for name in GH_TOKEN OPENAI_API_KEY DB_PASSWORD MY_SECRET_FILE AWS_PROFILE VIRTUAL_ENV VIRTUAL_ENV_PROMPT \
+    CONDA_PREFIX CONDA_DEFAULT_ENV PYTHONPATH NODE_OPTIONS LD_PRELOAD; do
+  check 'started_without "$name"' "the shell is started without the caller's $name"
+done
+check 'started_with HL_INITIAL_WORKSPACE_TOKEN=hl' "and with Hyprland's own HL_INITIAL_WORKSPACE_TOKEN"
+check '! grep -q "^PATH=.*/work/.venv/bin" "$calls.env" && ! grep -q "^PATH=.*/opt/conda/bin" "$calls.env" && grep -q "^PATH=$bin:" "$calls.env"' \
+  "and with PATH without the environments' bin directories ($(grep '^PATH=' "$calls.env" 2>/dev/null))"
 reload_env ZDOTDIR="$sandbox/kitty-tree/zsh"
 check 'started_without ZDOTDIR' "the session kitty's zsh profile does not"
 reload_env ZDOTDIR=/tmp/vscode-zsh USER_ZDOTDIR="$sandbox/userzsh"

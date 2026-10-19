@@ -16,7 +16,7 @@ Rectangle {
     property string icon: ""
     // A glyph after the words, for a link that goes somewhere ("All apps ›",
     // Icons.forward): the leading slot put the chevron before them, which
-    // reads as going back (round 12, D13 a). Drawn like the leading one.
+    // reads as going back. Drawn like the leading one.
     property string trailingIcon: ""
     property string variant: "surface"
     property int iconSize: Metrics.iconSm
@@ -32,7 +32,10 @@ Rectangle {
     signal clicked()
 
     property bool confirm: false
-    property string confirmText: "Click again"
+    // What the armed button asks: the verb and a question mark ("Remove?",
+    // "Forget?"), the one way every destructive button asks. This is only
+    // the fallback for a caller that names no verb.
+    property string confirmText: "Sure?"
     // Armed, and what the button looks like while it is. An armed button always
     // shows the words, even one that is otherwise an icon on its own: there is
     // no room for a doubt about what the next click will do.
@@ -44,14 +47,15 @@ Rectangle {
     readonly property bool down: mouse.pressed && mouse.containsMouse
     // An accent button that cannot act drops the accent: faded, the accent
     // disc read as the accentSoft tint a selected thing wears on a light card
-    // rather than as off (the media popup's Play with no player; round 12,
-    // D14). It takes the grey of a card inside a card and the muted ink, and
+    // rather than as off (the media popup's Play with no player). It takes the grey of a card inside a card and the muted ink, and
     // fades like every other disabled button.
     readonly property bool accentOff: shownVariant === "accent" && !enabledState
     // A danger button's label sits on its own red wash, so it takes the red
     // made for that wash (Colors.dangerOnSoft): the plain one was under 4:1.
+    // An accent button is the accent as a fill (Colors.accentFill), the one
+    // a switch that is on wears, with the words made for it.
     readonly property color foreground: accentOff ? Colors.mutedText
-        : shownVariant === "accent" ? Colors.accentText
+        : shownVariant === "accent" ? Colors.accentFillText
         : shownVariant === "danger" ? Colors.dangerOnSoft : Colors.text
 
     activeFocusOnTab: focusOnTab && enabledState
@@ -65,7 +69,7 @@ Rectangle {
     opacity: enabledState ? 1 : Effects.disabledOpacity
     color: accentOff ? Colors.surface2
         : shownVariant === "accent"
-        ? (down ? Colors.accentPressed : hovered ? Colors.accentHover : Colors.accent)
+        ? (down ? Colors.accentFillPressed : hovered ? Colors.accentFillHover : Colors.accentFill)
         : shownVariant === "ghost"
             ? (down ? Colors.pressed : hovered ? Colors.hover : "transparent")
             : shownVariant === "danger"

@@ -7,7 +7,7 @@ import "Harness.js" as T
 // page's Flickable (SettingsPanel.qml). A Loader keeps the implicit height of
 // the item it last held after the item is gone, so once Displays had been
 // open every other page ended 64 px short of the panel over an empty band
-// (round 12, D3). The pattern, laid out in an offscreen window (a layout
+// The pattern, laid out in an offscreen window (a layout
 // places its children only there): the bare Loader keeps the room, the one
 // that hides while empty gives it back.
 ShellRoot {

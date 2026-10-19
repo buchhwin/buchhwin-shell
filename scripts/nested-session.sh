@@ -28,23 +28,57 @@ base=${BUCHHWIN_NESTED_DIR:-"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/buchhwin-nested
 # nested shell dies of the lost compositor without running a destructor, and
 # its helpers used to live on under PID 1 (13 pairs of `nmcli monitor` and
 # `udevadm monitor` after one day of smoke runs). A process belongs to the
-# sandbox when its environment says BUCHHWIN_NESTED=1 and names this
-# sandbox's XDG_CONFIG_HOME; nothing of the real session carries both.
+# sandbox when its environment says BUCHHWIN_NESTED=1, names this sandbox's
+# XDG_CONFIG_HOME and carries BUCHHWIN_NESTED_MODE. The first two are no
+# longer enough on their own: the testing recipe exports them, and a
+# terminal's children - a smoke run, an editor started from it - carry them
+# too. BUCHHWIN_NESTED_MODE is set on the compositor alone and printed for
+# nobody, so only what the compositor started (and start-shell.sh carries
+# from it) has it.
+#
+# Three greps over every environ at once: a tr and two greps per process took
+# 0.6 s for 350 processes, and a fresh start asks up to ten times.
 sandbox_pids() {
-  local env_file pid environment
-  for env_file in /proc/[0-9]*/environ; do
-    pid=${env_file#/proc/}; pid=${pid%/environ}
-    [[ -O $env_file ]] || continue
-    # A process of this user can still refuse its environ (a set-id one).
-    environment=$({ tr '\0' '\n' <"$env_file"; } 2>/dev/null) || continue
-    if grep -qx 'BUCHHWIN_NESTED=1' <<<"$environment" \
-       && grep -qxF "XDG_CONFIG_HOME=$base/config" <<<"$environment"; then
-      printf '%s\n' "$pid"
-    fi
+  local files file pid
+  # grep exits 2 for the environ files of other users it cannot read, and
+  # pipefail passes that on: the list is kept whatever the status says.
+  files=$(grep -lzx 'BUCHHWIN_NESTED=1' /proc/[0-9]*/environ 2>/dev/null \
+            | xargs -r grep -lzxF "XDG_CONFIG_HOME=$base/config" 2>/dev/null \
+            | xargs -r grep -lz '^BUCHHWIN_NESTED_MODE=' 2>/dev/null) || true
+  for file in $files; do
+    pid=${file#/proc/}; pid=${pid%/environ}
+    [[ $pid =~ ^[0-9]+$ && -O $file ]] && printf '%s\n' "$pid"
   done
+  return 0
+}
+# The instance directories Quickshell keeps in the runtime directory (tmpfs,
+# so memory) for each of the given pids, by its by-pid link: a nested shell
+# killed with its compositor never removes its own, and each one held 0.3-0.8
+# MB until logout.
+quickshell_dirs() {
+  local pid target root=${XDG_RUNTIME_DIR:-}/quickshell
+  [[ -n ${XDG_RUNTIME_DIR:-} ]] || return 0
+  for pid in "$@"; do
+    target=$(readlink -- "$root/by-pid/$pid" 2>/dev/null) || continue
+    [[ $target == "$root/by-id/"* && ${target##*/} =~ ^[a-z0-9]+$ ]] && printf '%s %s\n' "$pid" "$target"
+  done
+  return 0
+}
+# Removes those of the dirs whose process is gone, and the links to them.
+remove_quickshell_dirs() {
+  local pid dir link root=${XDG_RUNTIME_DIR:-}/quickshell
+  while read -r pid dir; do
+    [[ -n $pid && ! -d /proc/$pid ]] || continue
+    rm -rf -- "$dir"
+    rm -f -- "$root/by-pid/$pid"
+    for link in "$root"/by-shell/*/"${dir##*/}"; do
+      if [[ -L $link ]]; then rm -f -- "$link"; fi
+    done
+  done <<<"$1"
+  return 0
 }
 stop_nested() {
-  local pid leftovers environment=""
+  local pid leftovers environment="" signature="" hypr_dir="" shells=""
   if [[ -r "$base/hyprland.pid" ]]; then
     pid=$(<"$base/hyprland.pid")
     # Captured, then searched, as in sandbox_pids: `| grep -qx` would leave tr
@@ -53,8 +87,25 @@ stop_nested() {
       environment=$({ tr '\0' '\n' <"/proc/$pid/environ"; } 2>/dev/null) || environment=""
     fi
     if [[ $pid =~ ^[0-9]+$ ]] && grep -qx 'BUCHHWIN_NESTED=1' <<<"$environment"; then
+      # Its own directory under $XDG_RUNTIME_DIR/hypr stays behind as well
+      # (its log and a socket). Only the one whose lock file names this very
+      # compositor is ever touched.
+      [[ -r $base/instance ]] && signature=$(<"$base/instance")
+      if [[ $signature =~ ^[A-Za-z0-9_]+$ && -n ${XDG_RUNTIME_DIR:-} ]] \
+         && [[ $(sed -n 1p "$XDG_RUNTIME_DIR/hypr/$signature/hyprland.lock" 2>/dev/null) == "$pid" ]]; then
+        hypr_dir="$XDG_RUNTIME_DIR/hypr/$signature"
+      fi
+      # shellcheck disable=SC2046 # one pid per word
+      shells=$(quickshell_dirs $(sandbox_pids))
       kill "$pid" 2>/dev/null || true
       for _ in {1..60}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.05; done
+      # Gone, and so is its lock file: its log is kept in the sandbox, the
+      # rest goes. rmdir leaves a directory that holds anything else.
+      if [[ -n $hypr_dir && ! -d /proc/$pid && ! -e $hypr_dir/hyprland.lock ]]; then
+        if [[ -f $hypr_dir/hyprland.log ]]; then cp -f -- "$hypr_dir/hyprland.log" "$base/hyprland-instance.log" 2>/dev/null || true; fi
+        rm -f -- "$hypr_dir/hyprland.log" "$hypr_dir/.socket.sock" "$hypr_dir/.socket2.sock"
+        rmdir -- "$hypr_dir" 2>/dev/null || true
+      fi
     elif [[ $pid =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
       printf 'nested-session: pid %s is not a nested Hyprland; not killed\n' "$pid" >&2
     fi
@@ -63,7 +114,19 @@ stop_nested() {
   leftovers=$(sandbox_pids | grep -vx "$$" || true)
   if [[ -n $leftovers ]]; then
     # shellcheck disable=SC2086 # one pid per word
+    shells+=${shells:+$'\n'}$(quickshell_dirs $leftovers)
+    # shellcheck disable=SC2086 # one pid per word
     kill $leftovers 2>/dev/null || true
+  fi
+  # The shells go with their compositor, or with the kill above, a moment
+  # later; their directories once they have.
+  if [[ -n $shells ]]; then
+    for _ in {1..20}; do
+      remove_quickshell_dirs "$shells"
+      # shellcheck disable=SC2046 # one pid per word
+      [[ -z $(quickshell_dirs $(cut -d' ' -f1 <<<"$shells")) ]] && break
+      sleep 0.05
+    done
   fi
   rm -f -- "$base/instance" "$base/wayland-display"
 }
@@ -108,7 +171,7 @@ fi
 if [[ ${BUCHHWIN_NESTED_FRESH:-0} == 1 ]]; then
   fresh=1
   if [[ -f $base/hypr/hyprland.conf && -f $base/hyprland.log ]]; then
-    # stop_nested has just sent them TERM; a scan of /proc takes ~0.3 s.
+    # stop_nested has just sent them TERM; a scan of /proc takes ~20 ms.
     running=""
     for _ in {1..10}; do
       running=$(sandbox_pids | grep -vx "$$" || true)
@@ -145,6 +208,15 @@ for file in "$project_dir"/hypr/*.conf; do
       -e "s|^monitor = .*|monitor = , $resolution, 0x0, $scale|" \
       "$file" > "$base/hypr/$(basename -- "$file")"
 done
+# BUCHTEST's place belongs in the configuration too, not only in the runtime
+# rule further down: `hyprctl reload` forgets runtime rules, the headless
+# output then took the catch-all's 0x0 on top of the nested window's, and the
+# per-monitor workspace blocks swapped screens by connector name (pitfall
+# 120). A rule for an output that does not exist yet is harmless, and a named
+# rule wins over the catch-all. hypr/hyprland.lua's nested branch has the
+# same one.
+printf '\n# The headless test output below (scripts/nested-session.sh).\nmonitor = BUCHTEST, %s@60, 4000x0, %s\n' \
+  "$resolution" "$scale" >> "$base/hypr/hyprland.conf"
 
 # BUCHHWIN_NESTED_LUA=1 runs hypr/hyprland.lua (the Hyprland 0.57+ format)
 # directly; it reads the nested settings from the environment.
@@ -222,3 +294,16 @@ printf 'NESTED_WAYLAND_DISPLAY=%s\n' "$display"
 # nested signature with the session's display (or the other way round).
 printf 'WAYLAND_DISPLAY=%s\n' "$display"
 printf 'NESTED_DIR=%s\n' "$base"
+# The rest of what a terminal needs to act on the nested session, all of it
+# meant to be exported (docs/testing.md, "Nested session"): a shell reloaded
+# from there is a nested one, on the sandbox's XDG dirs (pitfall 121) and of
+# this checkout, and the guards find this sandbox when it is not the default.
+# With BUCHHWIN_NESTED exported, a reload, stop or deploy of the installed
+# shell is refused from that terminal. BUCHHWIN_NESTED_MODE is left out on
+# purpose: it marks what the compositor started (sandbox_pids).
+printf 'BUCHHWIN_NESTED=1\n'
+printf 'BUCHHWIN_NESTED_DIR=%s\n' "$base"
+printf 'XDG_CONFIG_HOME=%s\n' "$base/config"
+printf 'XDG_STATE_HOME=%s\n' "$base/state"
+printf 'XDG_CACHE_HOME=%s\n' "$base/cache"
+printf 'BUCHHWIN_SHELL_PATH=%s\n' "$project_dir"

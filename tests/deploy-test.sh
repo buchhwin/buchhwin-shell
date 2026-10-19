@@ -30,12 +30,16 @@ for tool in busctl pkill notify-send; do
   printf '#!/bin/sh\necho "%s $*" >> "%s/calls.log"\n' "$tool" "$work" > "$work/bin/$tool"
 done
 # hyprctl lists no instance (`-j instances` answers for the stand-in nested
-# compositor below, once its pid file is there).
+# compositor below, once its pid file is there; the plain list names two
+# instances while $work/two-instances exists, for the deploy's count).
 cat > "$work/bin/hyprctl" <<EOF
 #!/bin/sh
 echo "hyprctl \$*" >> "$work/calls.log"
 if [ "\$*" = "-j instances" ] && [ -s "$work/nested/hyprland.pid" ]; then
   printf '[{"instance":"nested-stub","pid":%s,"wl_socket":"wayland-nested-stub"}]\n' "\$(cat "$work/nested/hyprland.pid")"
+fi
+if [ "\$*" = "instances" ] && [ -e "$work/two-instances" ]; then
+  printf 'instance deploy-test:\n\twl socket: wayland-0\n\ninstance nested-other:\n\twl socket: wayland-9\n'
 fi
 exit 0
 EOF
@@ -79,8 +83,8 @@ EOF
 chmod +x "$work/bin"/*
 export PATH="$work/bin:$PATH" HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config"
 # A Hyprland session of the test's own: its signature and socket in a runtime
-# directory of the sandbox (the shell is only restarted inside a session,
-# round 12, scripts#0). The nested sandbox goes there too.
+# directory of the sandbox (the shell is only restarted inside a session).
+# The nested sandbox goes there too.
 export HYPRLAND_INSTANCE_SIGNATURE=deploy-test BUCHHWIN_SHELL_PATH= XDG_RUNTIME_DIR="$work/run"
 mkdir -p -m 700 "$XDG_RUNTIME_DIR/hypr/deploy-test" "$XDG_RUNTIME_DIR/hypr/nested-stub"
 for sig in deploy-test nested-stub; do
@@ -89,7 +93,8 @@ done
 unset XDG_STATE_HOME BUCHHWIN_NESTED BUCHHWIN_NESTED_DIR BUCHHWIN_START_WITHOUT_HYPRLAND BUCHHWIN_NESTED_FRESH
 # The shell's own settings and its record of them, from a caller the shell
 # started, would send start-shell.sh to the user manager (a stub here too).
-unset MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME
+unset MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION \
+  QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME
 for tool in systemctl hyprctl quickshell systemd-run setsid busctl pgrep pkill Hyprland; do
   [[ $(command -v "$tool") == "$work/bin/$tool" ]] || fail "the $tool stub is not first in PATH"
 done
@@ -107,7 +112,17 @@ cp "$project_dir/scripts/deploy.sh" "$project_dir/scripts/reload-shell.sh" \
   "$project_dir/scripts/stop-shell.sh" "$project_dir/scripts/start-shell.sh" \
   "$project_dir/scripts/nested-session.sh" "$dev/scripts/"
 mkdir -p "$dev/scripts/lib" && cp "$project_dir/scripts/lib/reload.sh" "$project_dir/scripts/lib/app-env.sh" \
-  "$project_dir/scripts/lib/nested-guard.sh" "$dev/scripts/lib/"
+  "$project_dir/scripts/lib/nested-guard.sh" "$project_dir/scripts/lib/quickshell-dirs.sh" "$dev/scripts/lib/"
+# The suite a deploy runs first is a stand-in in the clone: it records how it
+# was called and passes or fails as $STUB_TEST_STATUS says (fails unless
+# told). Every deploy below without --no-test reaches it; the real suite never
+# runs inside its own test.
+cat > "$dev/scripts/test.sh" <<EOF
+#!/bin/sh
+echo "\$* FRESH=\${BUCHHWIN_NESTED_FRESH-} DIR=\${BUCHHWIN_NESTED_DIR-}" >> "$work/suite.log"
+exit "\${STUB_TEST_STATUS:-1}"
+EOF
+chmod +x "$dev/scripts/test.sh"
 git -C "$dev" add -A && git -C "$dev" commit --quiet -m "test: current scripts" || true
 export BUCHHWIN_STABLE_DIR="$work/home/.local/share/buchhwin-shell-stable"
 deploy() { "$dev/scripts/deploy.sh" "$@"; }
@@ -197,7 +212,7 @@ deploy --no-test --no-reload --ref diverged >/dev/null 2>&1 && fail "non-fast-fo
 git -C "$dev" checkout --quiet main
 "$BUCHHWIN_STABLE_DIR/scripts/deploy.sh" --status >/dev/null 2>&1 && fail "deploy from the stable worktree must be refused"
 # An untracked file the commit does not carry: the suite would test it, stable
-# would not get it (round 12, scripts#1). Ignored files do not count.
+# would not get it. Ignored files do not count.
 git -C "$dev" commit --quiet --allow-empty -m "chore: before an untracked file"
 echo "Item {}" > "$dev/shell/NotAdded.qml"
 echo "x" > "$dev/scratch.log"
@@ -208,9 +223,42 @@ rm -f "$dev/shell/NotAdded.qml"
 deploy --no-test --no-reload >/dev/null || fail "an ignored file alone does not refuse the deploy"
 rm -f "$dev/scratch.log"
 
+# The suite before the deploy, which every deploy above skipped: it runs with
+# --session from a fresh sandbox of the deploy's own (BUCHHWIN_NESTED_FRESH,
+# BUCHHWIN_NESTED_DIR), a failure keeps stable where it is, a second Hyprland
+# instance refuses before the suite starts, and so does a commit that is not
+# the checked-out one (the suite tests the working tree).
+echo "docs" >> "$dev/README.md"
+git -C "$dev" commit --quiet -am "docs: a change the suite passes"
+: > "$work/suite.log"
+out=$(STUB_TEST_STATUS=0 deploy 2>&1) || fail "a deploy whose suite passes failed ($out)"
+[[ $(git -C "$BUCHHWIN_STABLE_DIR" rev-parse HEAD) == $(git -C "$dev" rev-parse main) ]] || fail "a passing suite did not move stable"
+grep -qxF -- "--session FRESH=1 DIR=$XDG_RUNTIME_DIR/buchhwin-nested-deploy" "$work/suite.log" \
+  || fail "the suite did not run with --session from the deploy's fresh sandbox ($(cat "$work/suite.log"))"
+deployed=$(git -C "$BUCHHWIN_STABLE_DIR" rev-parse HEAD)
+echo "docs" >> "$dev/README.md"
+git -C "$dev" commit --quiet -am "docs: a change the suite fails"
+: > "$work/suite.log"
+out=$(STUB_TEST_STATUS=1 deploy 2>&1) && fail "a deploy whose suite fails must fail"
+[[ $(git -C "$BUCHHWIN_STABLE_DIR" rev-parse HEAD) == "$deployed" ]] || fail "a failing suite moved stable"
+grep -q 'tests failed; stable stays' <<<"$out" || fail "a failing suite is not said ($out)"
+[[ -s $work/suite.log ]] || fail "the failing suite was not run"
+touch "$work/two-instances"
+: > "$work/suite.log"
+out=$(STUB_TEST_STATUS=0 deploy 2>&1) && fail "a second Hyprland instance must refuse a tested deploy"
+rm -f "$work/two-instances"
+grep -q 'another nested session is running (2 Hyprland instances)' <<<"$out" || fail "the second instance is not said ($out)"
+[[ ! -s $work/suite.log ]] || fail "the suite ran beside a second instance"
+[[ $(git -C "$BUCHHWIN_STABLE_DIR" rev-parse HEAD) == "$deployed" ]] || fail "a refused deploy moved stable"
+git -C "$dev" commit --quiet --allow-empty -m "chore: one past the target"
+out=$(STUB_TEST_STATUS=0 deploy --ref main~1 2>&1) && fail "a tested deploy of a commit that is not checked out must refuse"
+grep -q 'tests run on the checked-out commit' <<<"$out" || fail "and say why ($out)"
+[[ $(git -C "$BUCHHWIN_STABLE_DIR" rev-parse HEAD) == "$deployed" ]] || fail "the refused --ref deploy moved stable"
+STUB_TEST_STATUS=0 deploy >/dev/null 2>&1 || fail "the passing deploy after the refusals failed"
+
 # No Hyprland session here (a deploy run from Plasma, or with the signature
 # of a Hyprland that has gone): stable moves, the shell is neither stopped
-# nor started, and the output says when it will be (round 12, scripts#0).
+# nor started, and the output says when it will be.
 echo "// test" >> "$dev/shell.qml"
 git -C "$dev" commit --quiet -am "fix: a shell change without a session"
 : > "$work/calls.log"
@@ -239,13 +287,55 @@ grep -q '^quickshell ' "$work/calls.log" && fail "reload-shell.sh without a sess
 # The deploy's nested sandbox starts empty (BUCHHWIN_NESTED_FRESH, which
 # deploy.sh passes to the suite): settings.json and layout.json of the last
 # run are gone, a seeded settings.json keeps the welcome tour out, and
-# without the flag the sandbox is kept (pitfall 92; round 12, scripts#6).
+# without the flag the sandbox is kept (pitfall 92).
 # Driven against the stand-in compositor above - nothing nested starts.
 nested() { env BUCHHWIN_NESTED_DIR="$work/nested" WAYLAND_DISPLAY=wayland-parent-stub "$@"; }
 seeded='{ "configVersion": 1, "onboarding": { "completed": true } }'
-nested BUCHHWIN_NESTED_FRESH=1 "$dev/scripts/nested-session.sh" start >/dev/null || fail "the stand-in nested session did not start"
+lines=$(nested BUCHHWIN_NESTED_FRESH=1 "$dev/scripts/nested-session.sh" start) || fail "the stand-in nested session did not start"
 [[ $(cat "$work/nested/config/buchhwin-shell/settings.json" 2>/dev/null) == "$seeded" ]] || fail "a first fresh start is not seeded"
+# What it prints is what the testing recipe exports, so all of a nested
+# shell's environment is there: the flag, the sandbox and its XDG dirs, the
+# checkout (pitfall 121). Not the compositor's own marker.
+for line in HYPRLAND_INSTANCE_SIGNATURE=nested-stub WAYLAND_DISPLAY=wayland-nested-stub BUCHHWIN_NESTED=1 \
+    "BUCHHWIN_NESTED_DIR=$work/nested" "XDG_CONFIG_HOME=$work/nested/config" "XDG_STATE_HOME=$work/nested/state" \
+    "XDG_CACHE_HOME=$work/nested/cache" "BUCHHWIN_SHELL_PATH=$dev"; do
+  grep -qxF -- "$line" <<<"$lines" || fail "nested-session.sh start does not print $line ($lines)"
+done
+grep -q '^BUCHHWIN_NESTED_MODE=' <<<"$lines" && fail "nested-session.sh prints the compositor's own marker"
+# BUCHTEST's place is in the configuration, so a `hyprctl reload` keeps it
+# (pitfall 120).
+grep -qx 'monitor = BUCHTEST, 1920x1200@60, 4000x0, 1' "$work/nested/hypr/hyprland.conf" \
+  || fail "the sandbox's conf has no rule for BUCHTEST"
+# A deploy from a terminal with those exports, or with only the nested
+# signature and display (or the signature alone), is refused before stable
+# moves; --status still answers.
+deployed=$(git -C "$BUCHHWIN_STABLE_DIR" rev-parse HEAD)
+echo "docs" >> "$dev/README.md"
+git -C "$dev" commit --quiet -am "docs: a deploy from a nested terminal"
+exports=$(grep -v '^NESTED_' <<<"$lines")
+for action in --no-test --rollback; do
+  # shellcheck disable=SC2086 # one KEY=VALUE per word
+  out=$(env $exports "$dev/scripts/deploy.sh" "$action" 2>&1) && fail "deploy $action with the nested exports must refuse"
+  grep -q 'points at a nested session' <<<"$out" || fail "deploy $action with the nested exports does not say why ($out)"
+done
+out=$(nested HYPRLAND_INSTANCE_SIGNATURE=nested-stub WAYLAND_DISPLAY=wayland-nested-stub "$dev/scripts/deploy.sh" --no-test 2>&1) \
+  && fail "deploy with the nested signature and display must refuse"
+out=$(nested HYPRLAND_INSTANCE_SIGNATURE=nested-stub "$dev/scripts/deploy.sh" --no-test 2>&1) \
+  && fail "deploy with the nested signature alone must refuse"
+[[ $(git -C "$BUCHHWIN_STABLE_DIR" rev-parse HEAD) == "$deployed" ]] || fail "a deploy from a nested terminal moved stable"
+# shellcheck disable=SC2086
+env $exports "$dev/scripts/deploy.sh" --status >/dev/null 2>&1 || fail "deploy --status with the nested exports failed"
+# A process of the sandbox leaves its Quickshell instance directory in the
+# runtime directory (tmpfs) when the compositor takes it down; the stop
+# removes it, and its link, once the process is gone. The stand-in
+# compositor plays that process here.
+stand_in=$(cat "$work/nested/hyprland.pid")
+mkdir -p "$XDG_RUNTIME_DIR/quickshell/by-id/standin1nt" "$XDG_RUNTIME_DIR/quickshell/by-pid"
+: > "$XDG_RUNTIME_DIR/quickshell/by-id/standin1nt/instance.lock"
+ln -s "$XDG_RUNTIME_DIR/quickshell/by-id/standin1nt" "$XDG_RUNTIME_DIR/quickshell/by-pid/$stand_in"
 nested "$dev/scripts/nested-session.sh" stop
+[[ ! -e $XDG_RUNTIME_DIR/quickshell/by-id/standin1nt && ! -L $XDG_RUNTIME_DIR/quickshell/by-pid/$stand_in ]] \
+  || fail "the stop left the sandbox's instance directory in the runtime directory"
 echo '{ "stale": true }' > "$work/nested/config/buchhwin-shell/settings.json"
 echo '{ "stale": true }' > "$work/nested/config/buchhwin-shell/layout.json"
 mkdir -p "$work/nested/state/buchhwin-shell" && echo stale > "$work/nested/state/buchhwin-shell/launcher.json"

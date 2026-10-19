@@ -15,12 +15,18 @@ import "power/KbdBacklightLogic.js" as Logic
 // hundred. `KbdBacklightLogic` names the step and says how many boxes the OSD
 // should draw, out of `maximum` and never out of a three written in the code.
 //
-// And the LED class sends no udev event, so there is nothing to subscribe to
-// the way the backlight has `udevadm monitor`. UPower's KbdBacklight object on
-// the *system* bus does emit `BrightnessChanged`, but reading it needs an
-// eavesdrop on the system bus, which a user session does not get. So the key
-// that changes the light asks the shell to re-read it afterwards - the same
-// `ipc call` tail the screen brightness keys carry, and for the same reason.
+// And the LED class sends no udev event for a new level, so there is nothing
+// to subscribe to the way the backlight has `udevadm monitor`. The shell's own
+// keys (XF86KbdBrightness*) need none: they go through `nudge`, which knows
+// the level it set. A change the firmware makes itself - Fn+Space on a
+// ThinkPad, which sends no key at all - the LED class marks in
+// `brightness_hw_changed`, and the kernel's notify on that file reaches
+// inotify: watched (never read; it reads "no data" until the first such
+// change), it is the cue to re-read the level, and the OSD shows it like a key
+// press would. UPower's KbdBacklight object reports the same as
+// BrightnessChangedWithSource on the system bus - a broadcast signal any
+// session may match, no eavesdrop needed - but listening there would take a
+// process of its own for the whole session.
 Singleton {
     id: root
     property string device: ""
@@ -70,6 +76,14 @@ Singleton {
             const level = Logic.parseLevel(text())
             if (level !== null) root.maximum = level
         }
+    }
+
+    FileView {
+        path: root.device.length ? "/sys/class/leds/" + root.device + "/brightness_hw_changed" : ""
+        preload: false
+        printErrors: false
+        watchChanges: true
+        onFileChanged: root.refresh()
     }
 
     FileView {

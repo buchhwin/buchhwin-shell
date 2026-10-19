@@ -188,7 +188,10 @@ Singleton {
     // What the compositor leaves between a window and whatever is reserved
     // above it: Hyprland's `general:gaps_out`. A surface that wants a gap
     // under itself reserves that much less, because this one is already
-    // there. `checks.py hypr` holds the two to the same number.
+    // there. `checks.py hypr` holds the two to the same number. That is what
+    // the config files ship; the surfaces reserve with the live gap, the
+    // mode's SettingsService.gapsOut (DockLogic.reserveZone,
+    // NotchLogic.reserveHeight).
     readonly property int windowGap: 12
     readonly property int screenMargin: 16
     readonly property int panelTopOffset: 92
@@ -308,21 +311,25 @@ Singleton {
     readonly property int guideWidth: 1
 
     // Pill bar (desktop mode "pills"): small floating capsules at the top edge.
+    // The gaps *along* the bar and the dock are steps of the space ladder
+    // (they were 9, 10, 3 and 6 beside its 4, 8 and 12); what lies *across*
+    // them - the margin to the screen edge, the dock's padding, a vertical
+    // bar's padding - sizes the room windows keep free and stays as it is.
     readonly property int pillHeight: 32
-    readonly property int pillGap: 6
+    readonly property int pillGap: spaceSm
     readonly property int pillPadding: 12
-    readonly property int pillItemGap: 10
+    readonly property int pillItemGap: spaceSm
     // Gap between a round cover and the pill edge, equal on all sides.
     readonly property int pillCoverInset: 4
     readonly property int barMargin: 6
     // Bar style "bar": one continuous bar with flat item segments. Corners
     // follow the shell radius; the hover highlight is inset from the bar edge.
     readonly property int barRadius: radiusMd
-    readonly property int barHighlightInset: 3
+    readonly property int barHighlightInset: spaceXs
     readonly property int barSidePadding: 8
-    readonly property int barSegmentPadding: 10
+    readonly property int barSegmentPadding: spaceSm
     readonly property int barSegmentGap: 2
-    readonly property int barGroupGap: 9
+    readonly property int barGroupGap: spaceSm
     readonly property int barSeparatorWidth: 1
     readonly property int barSeparatorHeight: 14
     // Bar sketch in Settings > Bar & notch.
@@ -503,7 +510,7 @@ Singleton {
     // edge are settings (dock.iconSize, dock.margin); these are the rest.
     // Padding inside the body around the icons, and the gap between two.
     readonly property int dockPadding: 6
-    readonly property int dockGap: 6
+    readonly property int dockGap: spaceSm
     // The room before the first running app that is not pinned, where the
     // separator line stands.
     readonly property int dockSeparatorRoom: 10
@@ -519,7 +526,7 @@ Singleton {
     // Running dots: the dot, the active app's wider bar, the gap between.
     readonly property int dockDot: 4
     readonly property int dockDotActive: 12
-    readonly property int dockDotGap: 3
+    readonly property int dockDotGap: spaceXs
     readonly property int dockMaxDots: 3
     // How much of its slot an app's icon fills: the rest is air to the
     // dock's border (an icon drawn edge to edge stood on it), and the glyph

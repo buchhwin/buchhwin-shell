@@ -20,6 +20,8 @@ Item {
     property real lean: 0
     property bool started: false
     readonly property real angle: active ? lean : 0
+    // Stopped, it starts again flat rather than at the angle it stopped at.
+    onActiveChanged: if (!active) lean = 0
 
     visible: false
     width: 0

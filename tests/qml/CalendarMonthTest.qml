@@ -7,8 +7,7 @@ import "Harness.js" as T
 // The month's seven columns are one width each, whatever the weekday names
 // are as text. With no width of its own a day cell left the names to share
 // the row out: "Wed" took more than "Fri" and "Sat", which were squeezed
-// together, the column steps 63/62/64/51/45/55 px on the dashboard (round 12,
-// D7). Laid out in an offscreen window, because a layout places its children
+// together, the column steps 63/62/64/51/45/55 px on the dashboard. Laid out in an offscreen window, because a layout places its children
 // only there; nothing here starts a service with a side effect.
 ShellRoot {
     id: root

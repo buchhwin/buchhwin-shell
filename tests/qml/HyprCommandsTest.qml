@@ -175,6 +175,26 @@ ShellRoot {
              "without a rule only the dispatch is sent")
         T.eq(H.withDispatch(H.keepWorkspaceRule(0, true, "DP-1"), H.workspace(4)).lua, "hl.dispatch(hl.dsp.focus({ workspace = 4 }))",
              "and in Lua as well")
+        // Turning the blocks off with workspaces held open (Lua): the release
+        // takes the merged `persistent` along, so they are held again in the
+        // same request.
+        const releasedHeld = H.releaseRules([1, 2], { 12: "DP-1", 2: "eDP-1" })
+        T.eq(releasedHeld.lua.split("\n"), [
+            "hl.workspace_rule({ workspace = \"1\" }):set_enabled(false)",
+            "hl.workspace_rule({ workspace = \"2\" }):set_enabled(false)",
+            "hl.workspace_rule({ workspace = \"2\", monitor = \"eDP-1\", persistent = true })",
+            "hl.workspace_rule({ workspace = \"12\", monitor = \"DP-1\", persistent = true })"], "released, then held again")
+        T.eq([releasedHeld.legacy, H.releaseRules([1], {}).lua, H.releaseRules(null, null).lua],
+             ["", "hl.workspace_rule({ workspace = \"1\" }):set_enabled(false)", ""], "nothing held, only the release; Lua only")
+        // Dispatchers in one request instead of a process each.
+        const batch = H.dispatchBatch([H.moveWorkspaceToMonitor(2, "DP-1"), H.focusMonitor("DP-1"), H.workspace(1)])
+        T.eq(batch.legacy, "dispatch moveworkspacetomonitor 2 DP-1 ; dispatch focusmonitor DP-1 ; dispatch workspace 1",
+             "one batch, in order, legacy")
+        T.eq(batch.lua, "hl.dispatch(hl.dsp.workspace.move({ workspace = 2, monitor = \"DP-1\" }))\n"
+             + "hl.dispatch(hl.dsp.focus({ monitor = \"DP-1\" }))\nhl.dispatch(hl.dsp.focus({ workspace = 1 }))", "one eval, in order, Lua")
+        T.eq(H.dispatchBatch([]), { legacy: "", lua: "" }, "nothing to send")
+        T.throwsError(() => H.dispatchBatch([{ legacy: "workspace 1 ; exit", lua: "" }]), "a separator cannot split the batch")
+
         // And the move a rule cannot make: a workspace that already exists.
         T.eq(H.moveWorkspaceToMonitor(3, "DP-1").legacy, "moveworkspacetomonitor 3 DP-1",
              "move a workspace to a monitor, legacy")

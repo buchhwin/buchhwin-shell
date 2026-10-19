@@ -11,7 +11,15 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Source"
-        description: "buchhwin-shell only reads the KDE calendars, like the Plasma clock. Google accounts and other calendars are set up in Merkuro (KDE)."
+        // Whether the dashboard's new events can go into them depends on the
+        // distribution: they are written through KDE's Akonadi Python
+        // bindings, which Fedora packages and Arch and openSUSE Leap do not
+        // (CalendarService.writerState, asked once when the calendar starts).
+        description: CalendarService.writerReady
+            ? "Reads the KDE calendars, like the Plasma clock, and new events from the dashboard go into them. Google accounts and other calendars are set up in Merkuro (KDE)."
+            : CalendarService.writerState === "missing"
+            ? "Reads the KDE calendars, like the Plasma clock. New events are made in Merkuro (KDE): this system does not have KDE's Akonadi Python bindings. Google accounts and other calendars are set up there too."
+            : "Reads the KDE calendars, like the Plasma clock. Google accounts and other calendars are set up in Merkuro (KDE)."
 
         ListRow {
             interactive: false
@@ -50,6 +58,8 @@ ColumnLayout {
             id: groupSection
             required property var modelData
             Layout.fillWidth: true
+            // Which calendars are shown is the machine's.
+            scope: "calendar.hiddenCalendars"
             title: modelData.name
             description: modelData.id === -1 ? "Calendars on this computer" : "Account"
 
@@ -67,8 +77,10 @@ ColumnLayout {
                     title: modelData.name
                     active: shown
                     onClicked: CalendarService.setCalendarVisible(modelData.id, !shown)
+                    // The row is the one tab stop (Space and Return toggle it
+                    // through onClicked); the toggle keeps its click and takes
+                    // its name from the row's title (ListRow.nameTrailing).
                     ShellToggle {
-                        focusOnTab: true
                         checked: calendarRow.shown
                         onToggled: value => CalendarService.setCalendarVisible(calendarRow.modelData.id, value)
                     }

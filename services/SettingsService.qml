@@ -175,7 +175,11 @@ Singleton {
             // A screen whose dock is a whole-edge taskbar carrying the status
             // or the clock: the notch strip there keeps its own clock, Wi-Fi
             // and battery ("keep") or leaves them to the taskbar ("hide").
-            "dockDuplicates": "keep"
+            "dockDuplicates": "keep",
+            // The screens that show the notch, a comma-string of output names
+            // like dock.screens, "" for every screen. The machine's, not a
+            // profile's (ProfileLogic.GLOBAL_SETTINGS).
+            "screens": ""
         },
         "workspaces": {
             "mode": "open",
@@ -285,7 +289,11 @@ Singleton {
             "magnification": false,
             // What the start button opens: the start menu (shell/startmenu)
             // or the launcher, as it did before there was a start menu.
-            "startOpens": "startMenu"
+            "startOpens": "startMenu",
+            // Each dock's running apps: those of every screen ("all"), or those
+            // with a window on the dock's own screen ("screen": a taskbar per
+            // screen). The pins are on every dock either way.
+            "runningOn": "all"
         },
         "autostart": {
             "apps": "",
@@ -351,7 +359,12 @@ Singleton {
         },
         "clipboard": {
             "history": true,
-            "maxItems": 200
+            "maxItems": 200,
+            // Both off is how the history always behaved: kept across logins,
+            // and an entry kept until maxItems pushes it out. maxAgeHours is
+            // one of ClipboardLogic.AGE_CHOICES, 0 for no limit.
+            "forgetAtLogout": false,
+            "maxAgeHours": 0
         },
         "recording": {
             "audio": "off",
@@ -426,6 +439,8 @@ Singleton {
             "battery": {
                 "screenOffMinutes": 5,
                 "lockMinutes": 0,
+                // The screen off this many minutes after locking (IdleService); 0 never.
+                "lockedScreenOffMinutes": 0,
                 "suspendMinutes": 15,
                 "dimBeforeScreenOff": true,
                 "lidAction": "suspend",
@@ -434,6 +449,7 @@ Singleton {
             "ac": {
                 "screenOffMinutes": 10,
                 "lockMinutes": 0,
+                "lockedScreenOffMinutes": 0,
                 "suspendMinutes": 0,
                 "dimBeforeScreenOff": true,
                 "lidAction": "suspend",
@@ -518,6 +534,8 @@ Singleton {
         "dock.iconSize": [40, 48, 56, 64],
         "dock.margin": [0, 4, 8, 16],
         "dock.startOpens": ["startMenu", "launcher"],
+        "dock.runningOn": ["all", "screen"],
+        "clipboard.maxAgeHours": [0, 1, 8, 24, 168],
         "notch.shape": ["notch", "pill"],
         "notch.clickAction": ["dashboard", "expand"],
         "notch.osdStyle": ["ring", "bar"],
@@ -567,11 +585,15 @@ Singleton {
         return path.startsWith("~/") ? Quickshell.env("HOME") + path.slice(1) : path
     }
 
+    // An index loop rather than for…of, like put() below: value() runs in
+    // every binding that reads a setting and once per leaf in sanitized(),
+    // and the iterator protocol was about half of what a call cost.
     function lookup(source, path) {
+        const parts = path.split(".")
         let node = source
-        for (const part of path.split(".")) {
+        for (let i = 0; i < parts.length; ++i) {
             if (node === null || node === undefined || typeof node !== "object") return undefined
-            node = node[part]
+            node = node[parts[i]]
         }
         return node
     }
@@ -605,6 +627,7 @@ Singleton {
         }
         const choices = allowed[path]
         if (choices && choices.indexOf(newValue) < 0) return false
+        if (unchanged(path, newValue)) return true
         const next = sanitized()
         put(next, path, newValue)
         data = next
@@ -612,6 +635,19 @@ Singleton {
         else keepEarly(path, newValue)
         settingChanged(path, newValue)
         return true
+    }
+
+    // A value that is set already is no change: no new `data` (which would
+    // run every value() binding in the shell again), no write and no
+    // settingChanged. Undo hands all its keys back at once, a profile or
+    // mode switch writes what it holds, and most of that is what is set.
+    // Before the file is in it still counts as a change: an early value is
+    // laid over the file once it is read, and the file may hold another.
+    // One consequence: a mode-scoped leaf set to what it already shows (a
+    // template's effect, a default) is not stored in the mode either - the
+    // mode hands out that same value the next time it is entered.
+    function unchanged(path, newValue) {
+        return loaded && value(path) === newValue
     }
 
     function put(doc, path, newValue) {
@@ -652,8 +688,39 @@ Singleton {
     // put older settings back on disk.
     property string pendingText: ""
     function scheduleWrite(next) {
+        if (readOnly) return
         pendingText = JSON.stringify(next, null, 2) + "\n"
         writeTimer.restart()
+    }
+
+    // settings.json is there but could not be read: a mode the user cannot
+    // read, a file root owns after a `sudo nano`, a directory in its place.
+    // That used to count as a first start - the shell came up with the
+    // defaults, wrote them over the next change, or failed at that without a
+    // word, and every change was gone at the next start. The defaults are
+    // still all there is to run on, but nothing is written over a file that
+    // was not read, and the log says why once. A read that works later (the
+    // mode put right, the watch reading it) ends it.
+    property bool readOnly: false
+    property string readOnlyReason: ""
+    function refuseWrites(reason) {
+        if (!readOnly)
+            console.warn("buchhwin-shell: settings.json is not readable (" + reason
+                         + "): running on what is set, and changes are not saved until it is")
+        readOnly = true
+        readOnlyReason = reason
+        // A write asked for before the read failed goes with the rest.
+        writeTimer.stop()
+        pendingText = ""
+    }
+    // A write that fails (a file the user can read but not replace) says so
+    // once per start; the change is live until the shell restarts.
+    property bool saveFailedWarned: false
+    function noteSaveFailed(reason) {
+        if (saveFailedWarned) return
+        saveFailedWarned = true
+        console.warn("buchhwin-shell: settings.json could not be written (" + reason
+                     + "): changes are lost when the shell restarts")
     }
     // The file as last read or written, for the backup LayoutService keeps
     // before the first profile switch of a day: the file itself, keys this
@@ -665,7 +732,7 @@ Singleton {
         id: writeTimer
         interval: 0
         onTriggered: {
-            if (unreadableBackup.running) return
+            if (unreadableBackup.running || root.readOnly) return
             settingsFile.setText(root.pendingText)
             root.fileText = root.pendingText
         }
@@ -681,11 +748,11 @@ Singleton {
 
     // Several keys in one write - they used to be one write each, which is
     // the race above; now it is one `settingChanged` per key and one write.
-    // Migrations that run together use this.
+    // Migrations that run together use this. True when any key was taken,
+    // even if every one of them was set already (see unchanged).
     function setAll(values) {
-        const next = sanitized()
         const written = []
-        let changed = false
+        let taken = false
         for (const path of Object.keys(values || {})) {
             const newValue = values[path]
             const fallback = lookup(defaults, path)
@@ -695,11 +762,12 @@ Singleton {
             }
             const choices = allowed[path]
             if (choices && choices.indexOf(newValue) < 0) continue
-            put(next, path, newValue)
-            written.push(path)
-            changed = true
+            taken = true
+            if (!unchanged(path, newValue)) written.push(path)
         }
-        if (!changed) return false
+        if (!written.length) return taken
+        const next = sanitized()
+        for (const path of written) put(next, path, values[path])
         data = next
         if (loaded) scheduleWrite(next)
         else written.forEach(path => keepEarly(path, lookup(next, path)))
@@ -733,6 +801,10 @@ Singleton {
     function load() {
         const text = settingsFile.text()
         if (loaded && !text.trim().length) return
+        // A read that works ends a refusal (refuseWrites), also when the text
+        // is the one held already: the mode put right, the file unchanged.
+        readOnly = false
+        readOnlyReason = ""
         // The watch reads back every write of our own. That text is what
         // `data` already holds (the write timer keeps it as fileText, and the
         // migrations pass a written document through unchanged), and a fresh
@@ -742,6 +814,9 @@ Singleton {
         if (loaded && text === fileText) return
         fileText = text
         try {
+            // The same chain runs on a profile's stored settings and on a
+            // shipped profile's when one is entered (LayoutLogic.
+            // migrateSettings): a new migration goes into both.
             data = text.trim().length
                 ? NotchLogic.migrate(AnimationLogic.migrate(WallpaperLogic.migrate(PowerSourceLogic.migrate(JSON.parse(text))))) : defaults
         } catch (error) {
@@ -778,6 +853,21 @@ Singleton {
         Quickshell.execDetached(["chmod", "600", "--", settingsFile.path])
     }
 
+    // The shell's three directories are the user's alone too, once a start.
+    // Only some files in them are made private one by one (this one,
+    // layout.json, the clipboard's database, the weather's cache); the rest -
+    // state.json with the apps whose notifications are muted, launcher.json
+    // with what was started when, the covers of what was played,
+    // shortcuts.json with commands that may hold a token - was there for
+    // every account to read in a home that is not 0700. `install -d` makes a
+    // missing one at 0700 and sets an existing one to it. Nobody else needs
+    // them: the lock runs as the user, and the login theme's installer runs
+    // as root and copies what it shows. Not from the lock process, as above.
+    Component.onCompleted: {
+        if (LockLogic.lockProcess(Quickshell.shellId)) return
+        Quickshell.execDetached(["install", "-d", "-m", "700", "--", Paths.configDir, Paths.stateDir, Paths.cacheDir])
+    }
+
     FileView {
         id: settingsFile
         path: Paths.configDir + "/settings.json"
@@ -785,8 +875,15 @@ Singleton {
         watchChanges: true
         printErrors: false
         onLoaded: { root.load(); root.keepPrivate(false) }
-        onLoadFailed: { root.applyEarly(); root.loaded = true }
+        // Only a file that is not there is a first start; any other failure
+        // is a file that is there and must not be replaced (refuseWrites).
+        onLoadFailed: error => {
+            if (error !== FileViewError.FileNotFound) root.refuseWrites(FileViewError.toString(error))
+            root.applyEarly()
+            root.loaded = true
+        }
         onFileChanged: reload()
         onSaved: root.keepPrivate(true)
+        onSaveFailed: error => root.noteSaveFailed(FileViewError.toString(error))
     }
 }

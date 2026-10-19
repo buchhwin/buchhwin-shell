@@ -32,15 +32,17 @@ home="$sandbox/home"
 checkout="$home/.local/share/buchhwin-shell-stable"
 link="$home/.local/share/buchhwin-shell"
 mkdir -p "$checkout"
-for part in install session scripts shell-completion zsh systemd config session/xdg-desktop-portal; do
+for part in install session scripts scripts/lib shell-completion zsh systemd config session/xdg-desktop-portal; do
   mkdir -p "$checkout/$part"
 done
 cp "$project_dir/install/install.sh" "$checkout/install/"
+# The real list of skipped autostart entries: install.sh links a drop-in for each.
+cp "$project_dir/scripts/lib/autostart-skip.sh" "$checkout/scripts/lib/"
 # The real one, not a stub: the checks below read its contents.
 cp "$project_dir/config/fastfetch.jsonc" "$checkout/config/"
 for file in session/buchhwin-shell-session scripts/buchhwin shell-completion/_buchhwin \
   zsh/buchhwin.zsh systemd/buchhwin-shell-session.target \
-  systemd/buchhwin-shell-autostart.target \
+  systemd/buchhwin-shell-autostart.target systemd/autostart-skip.conf \
   session/xdg-desktop-portal/buchhwin-shell-portals.conf; do
   : > "$checkout/$file"
 done
@@ -53,6 +55,14 @@ export XDG_CONFIG_HOME="$home/.config"
   || { printf 'FAIL install: first --apply exited non-zero\n'; cat "$sandbox/first.log"; exit 1; }
 
 check '[[ -L "$link" ]]' 'the session link is a symlink'
+# Each skipped autostart entry gets the drop-in that keeps it out of this
+# session (systemd/autostart-skip.conf), and the dry run lists them.
+if command -v systemd-escape >/dev/null 2>&1; then
+  dropin="$XDG_CONFIG_HOME/systemd/user/app-print\x2dapplet@autostart.service.d/buchhwin-shell.conf"
+  check '[[ -L $dropin && $(readlink -f -- "$dropin") == "$checkout/systemd/autostart-skip.conf" ]]' 'each skipped autostart entry gets the drop-in'
+  "$checkout/install/install.sh" > "$sandbox/dropin-dry.log" 2>&1 || true
+  check 'grep -qF "@autostart.service.d/buchhwin-shell.conf" "$sandbox/dropin-dry.log"' 'and the dry run lists the drop-ins'
+fi
 check '[[ $(readlink -f -- "$link") == "$checkout" ]]' 'the session link points at the checkout'
 
 # A machine with no dwl configuration gets the shipped one. Without it
@@ -164,6 +174,27 @@ check '[[ $(readlink -f -- "$session") == "$dev" ]]' 'a worktree on another bran
 
 unknown=0; in_repohome "$dev/install/install.sh" --aply > /dev/null 2>&1 || unknown=$?
 check '[[ $unknown -eq 2 ]]' 'an unknown option is refused before anything happens'
+
+# ---- no user manager to reload ----------------------------------------------
+# su or sudo -iu from another login, a container: `systemctl --user` cannot
+# reach a manager. The links are all there is to do, and the run goes on to
+# layout.json and the Fastfetch configuration - it used to stop at the
+# reload, and the bootstrap with it, before the session entry.
+nomanager_bin="$sandbox/nomanager-bin"
+mkdir -p "$nomanager_bin"
+printf '#!/bin/sh\necho "Failed to connect to user scope bus via local transport" >&2\nexit 1\n' > "$nomanager_bin/systemctl"
+chmod +x "$nomanager_bin/systemctl"
+nmhome="$sandbox/nmhome"
+nmcheckout="$nmhome/.local/share/buchhwin-shell-stable"
+mkdir -p "$nmcheckout"
+cp -r "$checkout/." "$nmcheckout/"
+nm_status=0
+PATH="$nomanager_bin:$PATH" HOME="$nmhome" XDG_CONFIG_HOME="$nmhome/.config" \
+  "$nmcheckout/install/install.sh" --apply > "$sandbox/nomanager.log" 2>&1 || nm_status=$?
+check '[[ $nm_status -eq 0 ]]' "without a user manager the run still succeeds (status $nm_status)"
+check '[[ -f $nmhome/.config/buchhwin-shell/layout.json && -r $nmhome/.config/buchhwin-shell/fastfetch.jsonc ]]' \
+  'and still creates layout.json and the Fastfetch configuration'
+check 'grep -q "no user manager reachable" "$sandbox/nomanager.log"' 'and says why the targets wait for the next login'
 
 # ---- scripts/install-cursor-macos.sh ------------------------------------------
 # Settings > Appearance runs it in a held terminal, so what it prints is all the

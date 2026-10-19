@@ -10,12 +10,17 @@
 # that must be certain they are driving the nested one (that is nested_guard).
 #
 # It is easy to be in this environment by accident. The testing recipe has you
-# export the nested WAYLAND_DISPLAY, HYPRLAND_INSTANCE_SIGNATURE and XDG dirs
-# and says nothing about BUCHHWIN_SHELL_PATH - and reload-shell.sh then falls
-# back to the installed copy and restarts the shell on the user's own screen.
-# Hyprland built into the home directory (openSUSE Leap) on PATH, as in the session.
+# export what scripts/nested-session.sh start prints - the nested
+# WAYLAND_DISPLAY, HYPRLAND_INSTANCE_SIGNATURE, BUCHHWIN_NESTED=1, the XDG
+# dirs and BUCHHWIN_SHELL_PATH - and an older recipe left the last one out:
+# reload-shell.sh then fell back to the installed copy and restarted the shell
+# on the user's own screen.
+# Hyprland built into the home directory (openSUSE Leap) on PATH, as in the
+# session. The directory by parameter expansion rather than dirname: this is
+# sourced by every lock and screenshot, and the two dirname processes were
+# most of what sourcing it cost. Every caller sources it by a path.
 # shellcheck source=hyprland-prefix.sh
-if [[ -r "$(dirname -- "${BASH_SOURCE[0]}")/hyprland-prefix.sh" ]]; then source "$(dirname -- "${BASH_SOURCE[0]}")/hyprland-prefix.sh"; fi
+if [[ -r "${BASH_SOURCE[0]%/*}/hyprland-prefix.sh" ]]; then source "${BASH_SOURCE[0]%/*}/hyprland-prefix.sh"; fi
 nested_environment() {
   local base=${BUCHHWIN_NESTED_DIR:-"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/buchhwin-nested"}
   local pid
@@ -69,6 +74,16 @@ nested_mixed_environment() {
   (( nested_signature != nested_display ))
 }
 
+# True when the caller's XDG config, state and cache dirs are the nested
+# sandbox's. A shell started for the nested session with any others reads and
+# writes the user's own settings and layout, and its start moves the live
+# shell's log aside (testing.md, pitfall 121) - reload-shell.sh refuses it.
+nested_sandbox_dirs() {
+  local base=${BUCHHWIN_NESTED_DIR:-"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/buchhwin-nested"}
+  [[ ${XDG_CONFIG_HOME:-} == "$base/config" && ${XDG_STATE_HOME:-} == "$base/state" \
+     && ${XDG_CACHE_HOME:-} == "$base/cache" ]]
+}
+
 # Prints the signature of the Hyprland session a shell started from here
 # would belong to, and fails when there is none: the caller's own signature
 # when its compositor socket is there, else the one instance hyprctl lists,
@@ -76,7 +91,7 @@ nested_mixed_environment() {
 # start-shell.sh applies before it starts anything; reload-shell.sh and the
 # deploy's reload (scripts/lib/reload.sh) ask first, so a run from Plasma -
 # no Hyprland at all, or a signature the user manager kept from the last
-# Hyprland login - restarts nothing and says so (round 12, scripts#0). Two
+# Hyprland login - restarts nothing and says so. Two
 # instances are a nested test session beside the real one: no guess.
 #
 # A signature whose socket is there is not enough on its own either: with a

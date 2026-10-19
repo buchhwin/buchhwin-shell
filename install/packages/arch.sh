@@ -19,8 +19,15 @@ packages=(
   kitty zsh starship fastfetch
   # zsh/.zshrc sources both; Arch keeps them under /usr/share/zsh/plugins
   zsh-autosuggestions zsh-syntax-highlighting
-  # the backends the shell drives; pw-metadata and pw-record are in pipewire
-  brightnessctl wireplumber pipewire playerctl networkmanager
+  # the backends the shell drives; pw-metadata is in pipewire, pw-record (the
+  # level meter in Settings > Audio) in pipewire-audio, which also carries
+  # the ALSA devices WirePlumber finds the sound cards through - without it a
+  # system that never had Plasma has an empty volume panel
+  brightnessctl wireplumber pipewire pipewire-audio playerctl networkmanager
+  # PulseAudio clients (Brave, VLC) through PipeWire. Asked for as what it
+  # provides (arch_provided_by below), so a system that runs PulseAudio
+  # itself keeps it: the two conflict, and pacman would offer to remove it.
+  pipewire-pulse
   # realtime priority for PipeWire's audio threads (D-Bus activated, nothing
   # to enable): without it PipeWire and WirePlumber log "RTKit error:
   # org.freedesktop.DBus.Error.ServiceUnknown" and run at normal priority
@@ -30,6 +37,18 @@ packages=(
   # bridge (scripts/x11-clipboard-bridge.py)
   xclip
   swaylock swayidle kdialog udisks2 wireguard-tools
+  # the Bluetooth daemon (Arch does not enable it: sudo systemctl enable
+  # --now bluetooth) and the power profiles behind the profile controls,
+  # which tuned-ppd provides as well; a system with it keeps it
+  bluez power-profiles-daemon
+  # nm-applet is the session's only NetworkManager secret agent - without it
+  # no VPN or saved-secret password is asked for - and plasma-nm the dialog
+  # an enterprise (802.1X) network is set up in (kcm_networkmanagement)
+  network-manager-applet plasma-nm
+  # WebP wallpapers (the picker offers them; Qt reads them through this),
+  # the Notification portal the session's portals.conf names (gtk), and the
+  # user directories the wallpaper folder and the start menu's places use
+  qt6-imageformats xdg-desktop-portal-gtk xdg-user-dirs
   # checkupdates: the update check (scripts/updates-check.sh); it syncs its
   # copy of the database through fakeroot and stops without it, which
   # pacman-contrib does not pull in (base-devel does, not every system has it)
@@ -46,11 +65,19 @@ packages=(
   # nothing here depends on); without either the service fails to load and
   # takes the shell with it, as on Leap, so neither is an extra here.
   merkuro kdepim-addons
-  # interface and monospace faces, and both Nerd Fonts: Arch packages them,
-  # so the font step finds them and fetches nothing
-  inter-font ttf-jetbrains-mono ttf-firacode-nerd ttf-jetbrains-mono-nerd
+  # what the font step itself needs: fc-cache/fc-list and an unpacker
   fontconfig unzip
 )
+
+# Interface and monospace faces, both Nerd Fonts and the emoji the picker
+# draws: Arch packages them all, so the font step finds the Nerd Fonts and
+# fetches nothing. --skip-fonts leaves these out.
+font_packages=(inter-font ttf-jetbrains-mono ttf-firacode-nerd ttf-jetbrains-mono-nerd noto-fonts-emoji)
+
+# Asked for as the name after the bar: installed only when no installed
+# package provides that already (install/lib/distro.sh, arch_needed).
+# NAME|DEPENDENCY
+arch_provided_by=("pipewire-pulse|pulse-native-provider")
 
 # Not here, compared with Fedora: the Akonadi Python bindings (not packaged),
 # so Arch can show calendar events but not write them, as on Leap.

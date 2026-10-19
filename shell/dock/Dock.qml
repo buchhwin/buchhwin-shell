@@ -89,8 +89,10 @@ Variants {
         readonly property real widgetScale: Math.max(1, Math.min(Metrics.dockWidgetScaleMax,
                                                                  across / Metrics.pillHeight * Metrics.dockWidgetFill))
         // The room the windows leave: the body and a margin on each side of
-        // it, less the gap Hyprland puts back (NotchLogic.reserveHeight).
-        readonly property real zone: DockService.reserves ? Math.max(0, DockService.margin * 2 + across - Metrics.windowGap) : 0
+        // it, less the gap Hyprland puts back - the mode's own gap to the
+        // screen edge, which Settings > Appearance sends it as gaps_out
+        // (DockLogic.reserveZone). A change of it maps the dock again once.
+        readonly property real zone: DockService.reserves ? Logic.reserveZone(DockService.margin, across, SettingsService.gapsOut) : 0
         // The surface's length along its edge (the window is anchored along it).
         readonly property real length: vertical ? height : width
 
@@ -182,8 +184,24 @@ Variants {
         readonly property bool panelFromHere: PanelService.active.length > 0 && PanelService.args && PanelService.args.fromDock === true
             && PanelService.screenName === screenName
         property bool shown: false
-        Component.onCompleted: { shown = want; report() }
+        // Whether it was shown or not is first decided once its body is
+        // reported: before that intellihide knows of nothing over it, so a
+        // dock made under a window (the shell starting, a profile with the
+        // dock, a screen plugged in) slid in and out again. Without
+        // intellihide, or under a fullscreen window, nothing waits.
+        property bool decided: false
+        function decide() {
+            if (decided) return
+            if (active && DockService.intellihide && !Logic.validRect(DockService.bodies[screenName])) return
+            decided = true
+            shown = want
+        }
+        Component.onCompleted: { report(); decide() }
         onWantChanged: {
+            if (!decided) {
+                decide()
+                return
+            }
             if (want) {
                 hideTimer.stop()
                 shown = true
@@ -297,6 +315,7 @@ Variants {
             DockService.reportBody(screenName, active ? Logic.globalRect(restBody, screenRect(), offsets, thickness, edge) : null)
             DockService.reportPlace(screenName, !active ? null
                 : { x: origin.x + restBody.x, y: origin.y + restBody.y, width: restBody.width, height: restBody.height })
+            decide()
         }
         onRestBodyChanged: report()
         // The zones' frames only matter to the editor; magnifying moves them
@@ -439,6 +458,27 @@ Variants {
                 y: window.vertical ? window.body.y + window.starts[2] : window.body.y + (window.across - height) / 2
             }
 
+            // The keys' ring on an item beside the apps - a taskbar's status,
+            // notifications, clock -, where the item's pill reported it is
+            // (it maps to this content, without the slide). The apps and the
+            // start button draw their own.
+            Item {
+                id: keyRing
+                readonly property var rect: window.keyboard && DockService.keyItemType.length > 0 && DockService.keyItemType !== "start"
+                    ? LayoutService.dockItemRect(window.screenName, DockService.keyItemType) : null
+                // Inset across the dock as a pill's highlight is.
+                readonly property real inset: Metrics.barHighlightInset * window.widgetScale
+                visible: rect !== null
+                x: !rect ? 0 : rect.x - window.origin.x + (window.vertical ? inset : 0)
+                y: !rect ? 0 : rect.y - window.origin.y + (window.vertical ? 0 : inset)
+                width: !rect ? 0 : Math.max(0, rect.width - (window.vertical ? inset * 2 : 0))
+                height: !rect ? 0 : Math.max(0, rect.height - (window.vertical ? 0 : inset * 2))
+                FocusRing {
+                    active: keyRing.visible
+                    controlRadius: BarLogic.highlightRadius(0, keyRing.inset, window.vertical ? keyRing.width : keyRing.height, false)
+                }
+            }
+
             // The keys, while the key gave them to this dock.
             FocusScope {
                 id: keys
@@ -448,22 +488,24 @@ Variants {
         }
 
         onKeyboardChanged: if (keyboard) keys.forceActiveFocus()
-        // The keys walk the apps and the start button beside them
-        // (DockService.keyOnStart); Enter on the button opens what its click
-        // opens.
+        // The keys walk the apps and the items beside them that open
+        // something (DockService.keyStop): the start button, and on a taskbar
+        // its status, notifications and clock. Enter on an item opens what
+        // its click opens.
         function key(event) {
             const back = vertical ? Qt.Key_Up : Qt.Key_Left
             const on = vertical ? Qt.Key_Down : Qt.Key_Right
-            const app = DockService.keyOnStart ? null : DockService.items[DockService.keyIndex]
+            const stop = DockService.keyStop
+            const app = stop !== null && stop.kind === "app" ? DockService.keyItems[stop.index] : null
             const enter = event.key === Qt.Key_Return || event.key === Qt.Key_Enter
             event.accepted = true
             if (event.key === back) DockService.moveKey(-1)
             else if (event.key === on) DockService.moveKey(1)
             else if (event.key === Qt.Key_Home) DockService.keyHome()
             else if (event.key === Qt.Key_End) DockService.keyEnd()
-            else if (enter && DockService.keyOnStart) DockService.openStart(screenName)
+            else if (enter && stop !== null && stop.kind === "item") DockService.openItem(screenName, stop.type)
             else if (enter && app)
-                (event.modifiers & Qt.ShiftModifier) ? DockService.newWindow(app.key) : DockService.activate(app.key)
+                (event.modifiers & Qt.ShiftModifier) ? DockService.newWindow(app.key) : DockService.activate(app.key, screenName)
             else if ((event.key === Qt.Key_Menu || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))) && app)
                 DockService.menuWanted()
             else if (event.key === Qt.Key_Escape) DockService.endKeyboard(screenName)

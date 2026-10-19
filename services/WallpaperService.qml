@@ -114,7 +114,10 @@ Singleton {
         }
     }
 
-    function currentFor(screen) { return Logic.pathFor(state, screen, current, images) }
+    // Nothing for a moment at a start (Logic.pathFor): until wallpapers.json
+    // has been read it is not known whether a screen has a wallpaper of its
+    // own, and until the folder has, whether that one is there.
+    function currentFor(screen) { return Logic.pathFor(state, screen, current, images, imagesReady, stateLoaded) }
     function hasOwn(screen) { return state.screens[screen] !== undefined }
     function resetScreen(screen) { saveState(Logic.withScreen(state, screen, "")) }
     function isFavourite(path) { return state.favourites.indexOf(path) >= 0 }
@@ -200,6 +203,9 @@ Singleton {
         watchChanges: true
         printErrors: false
         onLoaded: root.load()
+        // No file yet is an empty state, and a known one: the screens wait
+        // for it (currentFor).
+        onLoadFailed: root.stateLoaded = true
         onFileChanged: reload()
     }
 
@@ -230,6 +236,23 @@ Singleton {
     }
 
     readonly property var imageFilters: ["*.png", "*.jpg", "*.jpeg", "*.webp", "*.PNG", "*.JPG", "*.JPEG", "*.WEBP"]
+
+    // Whether the folder has been read once: the folder itself, its
+    // subfolders, and each subfolder's own list - or 2 s, for a folder that
+    // never answers (one that is not there stays empty). Until then a
+    // screen's own wallpaper is not known to be there (currentFor).
+    property bool imagesReady: false
+    function checkReady() {
+        if (imagesReady || !folder.length) return
+        if (folderModel.status !== FolderListModel.Ready || !Logic.listsFolder(folderModel.folder, folder)) return
+        if (subfolderModel.status !== FolderListModel.Ready || !Logic.listsFolder(subfolderModel.folder, folder)) return
+        if (subfolders.every(path => subfolderImages[path] !== undefined)) imagesReady = true
+    }
+    Timer {
+        interval: 2000
+        running: root.folder.length > 0 && !root.imagesReady
+        onTriggered: root.imagesReady = true
+    }
 
     // The wallpaper folder itself, and the subfolders it holds.
     //
@@ -266,12 +289,23 @@ Singleton {
     property var subfolders: []
     function rebuildSubfolders() {
         const found = []
-        for (let i = 0; i < subfolderModel.count; ++i) found.push(subfolderModel.get(i, "filePath"))
+        // A model that lists another folder than the one asked for lists the
+        // working directory: FolderListModel goes there when its folder is
+        // empty or missing as it is made - at every start, before
+        // user-dirs.dirs is read - and a model per folder of the home
+        // directory followed. A zip's __MACOSX holds only hidden "._" files
+        // and never makes a chip; it was a thread and a watch of its own.
+        if (Logic.listsFolder(subfolderModel.folder, root.folder))
+            for (let i = 0; i < subfolderModel.count; ++i) {
+                const path = subfolderModel.get(i, "filePath")
+                if (Logic.isGroupFolder(path)) found.push(path)
+            }
         // Only when it actually changed: assigning the same list would restart
         // every Repeater below and with it every scan.
         if (found.length !== subfolders.length || found.some((path, i) => path !== subfolders[i]))
             subfolders = found
         root.refresh()
+        root.checkReady()
     }
 
     // One model per subfolder, so they come and go with the folders
@@ -298,7 +332,10 @@ Singleton {
             }
             function collect() {
                 const found = []
-                for (let i = 0; i < inner.count; ++i) found.push(inner.get(i, "filePath"))
+                // Not the working directory's, for a subfolder gone before
+                // its model was made (rebuildSubfolders).
+                if (Logic.listsFolder(inner.folder, watcher.modelData))
+                    for (let i = 0; i < inner.count; ++i) found.push(inner.get(i, "filePath"))
                 const next = Object.assign({}, root.subfolderImages)
                 next[watcher.modelData] = found
                 root.subfolderImages = next
@@ -318,8 +355,10 @@ Singleton {
     // fall back to something else.
     function refresh() {
         const result = []
-        for (let i = 0; i < folderModel.count; ++i)
-            result.push(folderModel.get(i, "filePath"))
+        // Not the working directory's images (rebuildSubfolders).
+        if (Logic.listsFolder(folderModel.folder, root.folder))
+            for (let i = 0; i < folderModel.count; ++i)
+                result.push(folderModel.get(i, "filePath"))
         for (const name of subfolders)
             for (const path of subfolderImages[name] || []) result.push(path)
         // Only when it changed, like the subfolders above: a folder is read
@@ -328,6 +367,7 @@ Singleton {
         // grid and restarts the thumbnail run's wait.
         if (result.length !== images.length || result.some((path, i) => path !== images[i]))
             images = result
+        checkReady()
     }
 
     // ---- thumbnails ------------------------------------------------------------
@@ -342,10 +382,13 @@ Singleton {
     // set of images changes and the first one starts shortly after the folder
     // is read - before anyone opens the picker.
     readonly property string thumbDir: Paths.cacheDir + "/wallpaper-thumbs"
-    // Twice the picker's sourceWidth: Qt multiplies sourceSize by the integer
-    // devicePixelRatio (2 on the 1.667 4K screens, pitfall 49), so this is the
-    // width a tile decoded the original at. The Settings grid's tiles are
-    // smaller than the picker's.
+    // Twice the picker's sourceWidth, and wider than the overview card's 480.
+    // A tile still decodes it at its own sourceWidth: Qt multiplies sourceSize
+    // by the devicePixelRatio for an SVG or a PDF only, not for a picture
+    // (offscreen at scale 2 the decode came out the same size), so at a
+    // devicePixelRatio of 2 (the 1.667 4K screens, pitfall 49) the picker's
+    // tiles are drawn from 260 pixels. The Settings grid's tiles are smaller
+    // than the picker's.
     readonly property int thumbWidth: Metrics.wallpaperPickerTile * 2
     // image -> thumbnail file, from the last run that finished.
     property var thumbs: ({})
@@ -390,6 +433,8 @@ Singleton {
             const found = exitCode === 0 ? Logic.parseThumbs(output) : null
             if (found) root.thumbs = found
             else root.thumbsRunFor = ""
+            const sized = found ? Logic.parseThumbSizes(output) : null
+            if (sized) root.takeSizes(sized)
             if (root.thumbsQueued) {
                 root.thumbsQueued = false
                 Qt.callLater(root.makeThumbs)
@@ -398,6 +443,46 @@ Singleton {
         stdout: StdioCollector { onStreamFinished: { thumbProc.output = text; thumbProc.outputDone = true; thumbProc.finish() } }
         onStarted: { output = ""; outputDone = false; exitCode = -1 }
         onExited: code => { exitCode = code; finish() }
+    }
+
+    // ---- the pictures' sizes ---------------------------------------------------
+    // image -> [width, height], for the desktop's decode (WallpaperLogic, "the
+    // picture's size and the desktop's decode"): the helper reads each
+    // picture's size with its thumbnail. Kept in the cache between starts,
+    // because the desktop decodes its first picture long before the first
+    // run is in; a size that turns out wrong after a run (a file replaced in
+    // place) is decoded again (WallpaperLayer). `sizesRead` once the cache
+    // file has answered.
+    property var sizes: ({})
+    property bool sizesRead: false
+    property string sizesStored: ""
+    function sizeOf(path) {
+        return Object.prototype.hasOwnProperty.call(sizes, path) ? sizes[path] : null
+    }
+    function takeSizes(found) {
+        const text = Logic.sizesText(found)
+        if (text === Logic.sizesText(sizes)) return
+        sizes = Logic.parseSizes(found) || ({})
+        // One write per run at most, and never from the file's own read.
+        if (text !== sizesStored) {
+            sizesStored = text
+            sizesFile.setText(text)
+        }
+    }
+    FileView {
+        id: sizesFile
+        path: Paths.cacheDir + "/wallpaper-sizes.json"
+        atomicWrites: true
+        printErrors: false
+        onLoaded: {
+            root.sizesStored = text()
+            let stored = null
+            try { stored = Logic.parseSizes(JSON.parse(text())) } catch (error) { stored = null }
+            // A run that finished first knows better.
+            if (stored && !Object.keys(root.sizes).length) root.sizes = stored
+            root.sizesRead = true
+        }
+        onLoadFailed: root.sizesRead = true
     }
 
     Timer {

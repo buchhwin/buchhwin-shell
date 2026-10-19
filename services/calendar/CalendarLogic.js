@@ -1,4 +1,5 @@
 .pragma library
+.import "../appearance/TimeFormat.js" as TimeFormat
 
 // Pure helpers for KDE calendar events delivered by the Plasma calendar
 // "pimevents" plugin (Akonadi, including Google accounts added in KDE).
@@ -9,6 +10,27 @@ function pad(value) {
 
 function dayKey(date) {
     return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate())
+}
+
+// Whether the day shown (a dayKey, "" before the first) is no longer the day
+// it is at `now`: after a suspend across midnight the calendar's own hour
+// clock is late (WallClock.qml), so the service asks this on a jump too.
+function dayChanged(shownKey, now) {
+    return dayKey(now) !== String(shownKey || "")
+}
+
+// What the calendar shows: disabled | sandbox | loading | ok | unavailable.
+// Rows mean the calendars are there; no rows after the 15 s wait mean
+// Akonadi did not answer. The wait counts for one start of the backend at a
+// time: the service clears it when rows arrive and when the backend starts
+// again. It used to be cleared only by switching the calendar off and on, so
+// once one start had taken longer, every later one (after the five-minute
+// cool-down) read "unavailable" until its rows were in.
+function status(enabled, sandboxed, rowCount, timedOut) {
+    if (!enabled) return "disabled"
+    if (sandboxed) return "sandbox"
+    if (rowCount > 0) return "ok"
+    return timedOut ? "unavailable" : "loading"
 }
 
 function startOfDay(date) {
@@ -101,9 +123,12 @@ function remainingToday(events, now) {
     return eventsForDay(events, now).filter(event => event.allDay || event.end > now)
 }
 
-function formatRange(event) {
+// "14:00 – 15:00", or "2:00 PM – 3:00 PM" on a 12-hour clock: `twelve` is
+// SettingsService.twelveHourClock, which CalendarService.formatRange passes.
+// TimeFormat is the one place a time becomes text.
+function formatRange(event, twelve) {
     if (event.allDay) return "All day"
-    const time = date => pad(date.getHours()) + ":" + pad(date.getMinutes())
+    const time = date => TimeFormat.time(date, twelve === true, ":")
     if (event.end <= event.start) return time(event.start)
     return time(event.start) + " – " + time(event.end)
 }

@@ -8,6 +8,11 @@ ColumnLayout {
     id: root
     property string text: ""
     property string glyph: Icons.settings
+    // The link takes the user out of this popup - to Settings, to an app - and
+    // its mark says so, as the tiles and chips that open Settings do
+    // (Icons.leavesPanel). The forward chevron is for more of the same thing,
+    // in a panel of the shell's own.
+    property bool leaves: true
     signal clicked()
     spacing: Metrics.spaceXs
 
@@ -39,7 +44,7 @@ ColumnLayout {
             spacing: Metrics.spaceSm
             ShellIcon { glyph: root.glyph; size: Metrics.iconSm; color: Colors.mutedText }
             ShellText { Layout.fillWidth: true; text: root.text }
-            ShellIcon { glyph: Icons.forward; size: Metrics.iconXs; color: Colors.mutedText }
+            ShellIcon { glyph: root.leaves ? Icons.leavesPanel : Icons.forward; size: Metrics.iconXs; color: Colors.mutedText }
         }
 
         MouseArea {

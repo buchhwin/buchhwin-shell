@@ -89,7 +89,8 @@ use() { printf '%s\n' "$1" > "$config/buchhwin-shell-xdg-terminals.list"; }
 # The caller's own environment must not decide anything below - its display
 # neither: with one, Alacritty's windows go to its daemon (a case of its own
 # below).
-unset MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME RUN \
+unset MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION \
+  QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME RUN \
   WAYLAND_DISPLAY DISPLAY HYPRLAND_INSTANCE_SIGNATURE
 export PATH="$bin:$sys" XDG_CONFIG_HOME="$config" XDG_DATA_HOME="$data" XDG_DATA_DIRS="$sandbox/sysdata" \
   XDG_RUNTIME_DIR="$runtime" HOME="$sandbox/home"
@@ -257,9 +258,10 @@ check "[[ \$status -eq 0 ]] && got kitty --config '$project_dir/kitty/kitty.conf
 # launch-app.sh's restore reaches every terminal, not only kitty and Alacritty.
 use org.kde.konsole.desktop
 env -u QT_QPA_PLATFORMTHEME QS_ICON_THEME=breeze-dark MALLOC_ARENA_MAX=2 mesa_glthread=false GALLIUM_THREAD=0 \
-  BUCHHWIN_APP_ENV_UNSET="MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME" BUCHHWIN_APP_QPA_THEME=kde \
+  MALLOC_CONF=narenas:2 QT_WAYLAND_DISABLE_WINDOWDECORATION=1 QSG_DISTANCEFIELD_ANTIALIASING=gray BUCHHWIN_ICON_THEME_AUTO=1 \
+  BUCHHWIN_APP_ENV_UNSET="MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO" BUCHHWIN_APP_QPA_THEME=kde \
   "${launch[@]}" -- htop </dev/null >/dev/null 2>&1 || true
-check 'grep -qx "QT_QPA_PLATFORMTHEME=kde" "$argv.env" && ! grep -qE "^(MALLOC_ARENA_MAX|mesa_glthread|GALLIUM_THREAD|QS_ICON_THEME|BUCHHWIN_APP_ENV_UNSET)=" "$argv.env"' \
+check 'grep -qx "QT_QPA_PLATFORMTHEME=kde" "$argv.env" && ! grep -qE "^(MALLOC_ARENA_MAX|MALLOC_CONF|mesa_glthread|GALLIUM_THREAD|QT_WAYLAND_DISABLE_WINDOWDECORATION|QSG_DISTANCEFIELD_ANTIALIASING|QS_ICON_THEME|BUCHHWIN_ICON_THEME_AUTO|BUCHHWIN_APP_ENV_UNSET)=" "$argv.env"' \
   "Konsole gets the session's environment, not the shell's own settings"
 run --unit buchhwin-upgrade --hold -- htop
 check 'grep -q "^systemd-run --user --quiet --collect --slice=app.slice --unit=buchhwin-upgrade --description=org.kde.konsole (buchhwin-shell) " "$calls"' \

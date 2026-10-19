@@ -165,6 +165,14 @@ ShellRoot {
         T.eq(K.command("text", id, "a; rm -rf ~"), ["kdeconnect-cli", "--device", id, "--share-text", "a; rm -rf ~"], "text is one argument")
         T.eq(K.command("text", id, "  "), null, "empty text rejected")
         T.eq(K.command("play", "a/../b"), null, "path-like id rejected for media")
+
+        // A new viewer reads the phone again only once the last read is as
+        // old as the poll's interval.
+        T.eq(K.stale(0, 50000), true, "never read: read")
+        T.eq(K.stale(40000, 45000), false, "read 5 s ago: the poll's answer is still fresh")
+        T.eq(K.stale(40000, 40000 + K.POLL_MS), true, "read a poll ago: read again")
+        T.eq(K.stale(50000, 40000), true, "a clock that went back: read again")
+        T.eq(K.stale(40000, 41000, 500), true, "a shorter age when asked")
         T.finish("KdeConnectTest")
     }
 }

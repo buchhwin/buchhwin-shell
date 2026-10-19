@@ -41,7 +41,7 @@ Singleton {
         workspace: Commands.workspace, focusMonitor: Commands.focusMonitor, focusWindow: Commands.focusWindow, moveWindowSilent: Commands.moveWindowSilent,
         moveActiveSilent: Commands.moveActiveSilent, workspaceRule: Commands.workspaceRule,
         releaseWorkspaceRule: Commands.releaseWorkspaceRule, keepWorkspaceRule: Commands.keepWorkspaceRule,
-        withDispatch: Commands.withDispatch,
+        withDispatch: Commands.withDispatch, releaseRules: Commands.releaseRules,
         moveWorkspaceToMonitor: Commands.moveWorkspaceToMonitor,
         closeWindow: Commands.closeWindow, dpms: Commands.dpms, exit: Commands.exit,
         bindExec: Commands.bindExec, unbind: Commands.unbind, gestures: Commands.gestures
@@ -64,14 +64,17 @@ Singleton {
 
     // A dispatcher from `commands` (workspace, focusWindow, …).
     function dispatch(command) { run("dispatch", command) }
-    // Several, one after the other in one process: separate `hyprctl` runs
-    // are not promised to arrive in the order they were started, and a
-    // focus that has to come back last must come back last.
+    // Several, one after the other in one request (Commands.dispatchBatch):
+    // separate `hyprctl` runs are not promised to arrive in the order they
+    // were started, and a focus that has to come back last must come back
+    // last. One request rather than a `sh` loop of one `hyprctl` each, which
+    // cost ~10 ms of CPU per step.
     function dispatchInOrder(list) {
         if (!list.length) return
         if (!detected) { for (const command of list) run("dispatch", command); return }
-        const args = list.map(command => lua ? command.lua : command.legacy)
-        Quickshell.execDetached(["sh", "-c", 'for a; do hyprctl dispatch "$a" >/dev/null || exit 1; done', "sh"].concat(args))
+        const batch = Commands.dispatchBatch(list)
+        if (lua) Quickshell.execDetached(["hyprctl", "eval", batch.lua])
+        else Quickshell.execDetached(["hyprctl", "--batch", batch.legacy])
     }
     // Configuration changes (options, monitor, env or a combination).
     function configure(command) { run("config", command) }

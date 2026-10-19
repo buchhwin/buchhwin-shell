@@ -8,8 +8,18 @@
   ],
   "expanded": [
     "clock",
-    "weather",
-    "media",
+    {
+      "type": "weather",
+      "options": {
+        "hideEmpty": true
+      }
+    },
+    {
+      "type": "media",
+      "options": {
+        "hideEmpty": true
+      }
+    },
     "events",
     "status"
   ],

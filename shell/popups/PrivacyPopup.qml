@@ -66,7 +66,9 @@ PopupPanel {
                 title: "No app is using the microphone"
             }
             Repeater {
-                model: AudioService.captureStreams
+                // Kept rows: PipeWire's nodes keep their identity, the list
+                // of them is new whenever any node comes or goes.
+                model: ScriptModel { values: AudioService.captureStreams }
                 ListRow {
                     required property var modelData
                     Layout.fillWidth: true

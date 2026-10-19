@@ -10,7 +10,16 @@ import "../../services/notifications/NotificationLogic.js" as Logic
 ShellPanel {
     id: root
     keyNavigation: true
-    keyForward: search
+    // The search field while there is something to search. With an empty
+    // history the field is hidden, and the keys went into it all the same:
+    // the empty state turned into "No notification matches" for words nobody
+    // could see.
+    keyForward: NotificationService.history.length > 0 ? search : null
+    // The first notification while the centre is open brings the field, and
+    // the panel's own key holder lets go as it does (ShellPanel hands the
+    // focus over only as it opens): the field takes it then, or Escape and
+    // the arrow keys reached nothing until the centre was opened again.
+    onKeyForwardChanged: if (wanted && keyForward) Qt.callLater(focusEntry)
     panelId: "notifications"
     placement: "top-right"
     // The corner, always. It used to follow the desktop clock like any other
@@ -22,18 +31,37 @@ ShellPanel {
     // the dock (ShellPanel's bottomOffset), or up to the bar or the notch out
     // of the dock's bell. It used to measure to the screen's bottom margin
     // and ran down over the taskbar, its bell, the clock and the tray
-    // (round 12, D1).
-    cardHeight: roomBelowTop
+    // With nothing in the history it is only as tall as what
+    // it says (-1 follows the content): a card the height of the screen stood
+    // there for one tile and "No notifications". Asked of the history, not of
+    // the search, so a word that matches nothing does not fold the card up
+    // under the field while it is typed.
+    cardHeight: NotificationService.history.length > 0 ? roomBelowTop : -1
 
     // Group keys the user expanded ("N more").
     property var expanded: ({})
     property string query: ""
+    // The clock the cards' "5 min" is read against, while the centre shows.
+    property real now: Date.now()
+    Timer {
+        interval: 30000
+        repeat: true
+        triggeredOnStart: true
+        running: root.shown
+        onTriggered: root.now = Date.now()
+    }
     // Searched and grouped while shown, like the list below: hidden, every
     // notification that arrived ran both over the whole history for a panel
     // nobody saw. `shown` turns true in the same turn the window maps
     // (ShellPanel), so the first frame of an open already has the list.
-    readonly property var matching: shown ? Logic.search(NotificationService.history, query) : []
+    // Nothing while Clear all lets the history go: the list is emptied once
+    // rather than worked out again for each notification it dismisses.
+    readonly property var matching: shown && !NotificationService.clearing
+        ? Logic.search(NotificationService.history, query) : []
     readonly property var groups: Logic.group(matching)
+    // What the list below is keyed by, and how a key finds its group.
+    readonly property var groupKeys: groups.map(entry => entry.key)
+    readonly property var groupIndex: Logic.groupIndex(groups)
 
     // The field, not the query: the panel is built once and keeps its field,
     // so clearing only `query` reopened it with the old words still in the
@@ -42,7 +70,9 @@ ShellPanel {
     onWantedChanged: if (wanted) { NotificationService.markRead(); search.text = "" }
 
     ColumnLayout {
-        anchors.fill: parent
+        // The whole card while it holds a list; measured while it does not.
+        width: parent.width
+        height: root.cardHeight > 0 ? parent.height : implicitHeight
         spacing: Metrics.panelGap
 
         PanelHeader {
@@ -81,12 +111,19 @@ ShellPanel {
         Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            // The empty state's room, for the measured card.
+            implicitHeight: root.matching.length === 0 ? empty.implicitHeight + Metrics.spaceXl * 2 : 0
 
             EmptyState {
+                id: empty
+                // A search only while there is something to search: words
+                // typed before Clear all stay in the hidden field, and the
+                // empty centre said "No notification matches" for them.
+                readonly property bool searching: root.query.length > 0 && NotificationService.history.length > 0
                 anchors.centerIn: parent
                 visible: root.matching.length === 0
-                icon: root.query.length ? Icons.search : "󰂜"
-                title: root.query.length ? "No notification matches" : "No notifications"
+                icon: searching ? Icons.search : "󰂜"
+                title: searching ? "No notification matches" : "No notifications"
             }
 
             Flickable {
@@ -104,15 +141,27 @@ ShellPanel {
                     spacing: Metrics.spaceLg
 
                     // Built while shown: every notification that arrived re-created
-                    // every group and card behind the hidden panel.
+                    // every group and card behind the hidden panel. Keyed by the
+                    // group keys, strings, which a ScriptModel compares by value
+                    // (pitfall 76): a group that is still there keeps its delegate
+                    // and its cards, hover and focus included. On the group
+                    // objects themselves - new ones on every change - every group
+                    // and card was built again for each notification that came or
+                    // went, and Clear all of a hundred blocked for over three
+                    // seconds.
                     Repeater {
-                        model: root.shown ? root.groups : []
+                        model: ScriptModel { values: root.shown ? root.groupKeys : [] }
 
                         ColumnLayout {
                             id: groupItem
-                            required property var modelData
-                            readonly property bool isExpanded: root.expanded[modelData.key] === true
-                            readonly property var shown: Logic.visibleItems(modelData, isExpanded)
+                            required property string modelData
+                            // Looked up by its key. For the evaluation in which its
+                            // group has just gone the entry is missing, and an
+                            // empty one stands in until the delegate goes too.
+                            readonly property var group: root.groupIndex[modelData]
+                                || ({ key: modelData, name: "", icon: "", items: [] })
+                            readonly property bool isExpanded: root.expanded[modelData] === true
+                            readonly property var shown: Logic.visibleItems(group, isExpanded)
                             Layout.fillWidth: true
                             spacing: Metrics.spaceSm
 
@@ -121,12 +170,12 @@ ShellPanel {
                                 Layout.leftMargin: Metrics.spaceXs
                                 spacing: Metrics.spaceSm
                                 Image {
-                                    visible: groupItem.modelData.icon.length > 0 && status === Image.Ready
+                                    visible: groupItem.group.icon.length > 0 && status === Image.Ready
                                     Layout.preferredWidth: Metrics.iconSm
                                     Layout.preferredHeight: Metrics.iconSm
-                                    // appIcon is an icon name or an absolute file path.
-                                    source: groupItem.modelData.icon.startsWith("/") ? "file://" + groupItem.modelData.icon
-                                        : groupItem.modelData.icon.length ? Quickshell.iconPath(groupItem.modelData.icon, true) : ""
+                                    // An icon name, an absolute path or a file://
+                                    // URI, by the card's own route.
+                                    source: Logic.iconSource(groupItem.group.icon, name => Quickshell.iconPath(name, true))
                                     sourceSize.width: Metrics.iconSm * 2
                                 }
                                 // Elides rather than pushing the buttons out of
@@ -136,44 +185,52 @@ ShellPanel {
                                     id: appName
                                     Layout.fillWidth: true
                                     Layout.maximumWidth: appName.implicitWidth
-                                    text: groupItem.modelData.name
+                                    text: groupItem.group.name
                                 }
-                                ShellText { text: String(groupItem.modelData.items.length); role: "caption" }
+                                ShellText { text: String(groupItem.group.items.length); role: "caption" }
                                 Item { Layout.fillWidth: true }
                                 ShellButton {
-                                    visible: groupItem.modelData.items.length > groupItem.shown.length || groupItem.isExpanded && groupItem.modelData.items.length > 3
-                                    text: groupItem.isExpanded ? "Show less" : (groupItem.modelData.items.length - groupItem.shown.length) + " more"
+                                    visible: groupItem.group.items.length > groupItem.shown.length || groupItem.isExpanded && groupItem.group.items.length > 3
+                                    text: groupItem.isExpanded ? "Show less" : (groupItem.group.items.length - groupItem.shown.length) + " more"
                                     compact: true; variant: "ghost"
                                     onClicked: {
                                         const next = Object.assign({}, root.expanded)
-                                        next[groupItem.modelData.key] = !groupItem.isExpanded
+                                        next[groupItem.group.key] = !groupItem.isExpanded
                                         root.expanded = next
                                     }
                                 }
+                                // Normal and Muted, back and forth
+                                // (Logic.nextAppRule); "Always urgent" is set
+                                // in Settings > Notifications and goes back to
+                                // normal here.
                                 ShellButton {
-                                    readonly property string rule: NotificationService.appRule(groupItem.modelData.key)
+                                    readonly property string rule: NotificationService.appRule(groupItem.group.key)
                                     icon: rule === "mute" ? "󰂛" : rule === "critical" ? Icons.warning : "󰂚"
                                     compact: true
                                     variant: rule === "default" ? "ghost" : "surface"
-                                    toolTip: rule === "mute" ? "Muted · click for always urgent"
+                                    toolTip: rule === "mute" ? "Muted · click to unmute"
                                         : rule === "critical" ? "Always urgent · click for normal"
                                         : "Normal · click to mute this app"
-                                    onClicked: NotificationService.setAppRule(groupItem.modelData.key,
-                                        rule === "default" ? "mute" : rule === "mute" ? "critical" : "default")
+                                    onClicked: NotificationService.setAppRule(groupItem.group.key, Logic.nextAppRule(rule))
                                 }
                                 ShellButton {
                                     icon: Icons.close; compact: true; variant: "ghost"
                                     toolTip: "Dismiss all from this app"
-                                    onClicked: groupItem.modelData.items.slice().forEach(notification => notification.dismiss())
+                                    onClicked: groupItem.group.items.slice().forEach(notification => notification.dismiss())
                                 }
                             }
 
                             Repeater {
-                                model: groupItem.shown
+                                // The notification objects themselves, which the
+                                // server keeps for a notification's whole life: a
+                                // card that stays is the same card.
+                                model: ScriptModel { values: groupItem.shown }
                                 NotificationCard {
                                     required property var modelData
                                     Layout.fillWidth: true
                                     notification: modelData
+                                    receivedAt: NotificationService.arrivalOf(modelData)
+                                    now: root.now
                                 }
                             }
                         }

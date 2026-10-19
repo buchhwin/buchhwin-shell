@@ -28,7 +28,21 @@ ShellRoot {
         T.eq(N.pageIds(N.rows("akku")), ["kdeConnect", "power"], "keywords from different groups")
         T.eq(N.pageIds(N.rows("konten")), ["accounts"], "German keyword finds the accounts page")
         T.eq(N.rows("#connectivity").length, 0, "no match gives no rows")
-        T.eq(N.pageIds(N.rows("devices")), ["bluetooth", "displays", "audio", "input", "power"], "group title matches its pages")
+        T.eq(N.pageIds(N.rows("personalization")), ["appearance", "wallpaper", "lockScreen", "login"], "group title matches its pages")
+        T.eq(N.pageIds(N.rows("devices")), ["bluetooth", "kdeConnect", "displays", "audio", "input", "power"],
+             "the Devices group, and the phone page with its own lists of devices")
+        // Words of the pages' own sections and rows, and of their subtitles
+        // (the search used to read only titles and keywords).
+        const found = [["refresh rate", "displays"], ["idle", "power"], ["hotspot", "network"], ["vrr", "displays"],
+                       ["natural scrolling", "input"], ["night light", "appearance"], ["nachtlicht", "appearance"],
+                       ["dark mode", "appearance"], ["text size", "appearance"], ["font size", "appearance"],
+                       ["scale", "displays"], ["rotation", "displays"], ["x11", "displays"], ["wireguard", "network"],
+                       ["ethernet", "network"], ["tap to click", "input"], ["suspend", "power"], ["time format", "desktop"],
+                       ["12 hour", "desktop"], ["fahrenheit", "weather"], ["fullscreen", "bar"], ["fullscreen", "notifications"],
+                       ["mute", "notifications"], ["directory depth", "terminal"], ["border width", "appearance"]]
+        T.eq(found.filter(entry => N.pageIds(N.rows(entry[0])).indexOf(entry[1]) < 0).map(entry => entry[0]), [],
+             "each control's own words find its page")
+        T.eq(N.pageIds(N.rows("hotspot")), ["network"], "a subtitle word finds its page and no other")
         T.eq(N.GROUPS.map(group => group.title),
              ["Personalization", "Desktop", "Connectivity", "Devices", "Apps", "Calendar & weather", "System"],
              "sidebar sections in their order")
@@ -85,6 +99,19 @@ ShellRoot {
         T.eq([personalization[0].first, personalization[0].last], [true, false], "the first page of a group opens its card")
         T.eq([personalization[personalization.length - 1].first, personalization[personalization.length - 1].last],
              [false, true], "the last page of a group closes it")
+        // The sidebar's Repeater runs over string keys: unique, the same for
+        // a row whatever the query, and a narrower query only takes keys away.
+        const keys = grouped.map(row => N.rowKey(row))
+        T.eq(new Set(keys).size, keys.length, "every sidebar row has a key of its own")
+        T.eq([keys[0], keys[1]], ["h:personalization", "p:appearance"], "headings and pages are keyed apart")
+        const narrowKeys = N.rows("lock").map(row => N.rowKey(row))
+        T.ok(narrowKeys.every(key => keys.indexOf(key) >= 0), "a search keeps the keys of the rows it leaves")
+        T.eq(narrowKeys.map(key => keys.indexOf(key)), narrowKeys.map(key => keys.indexOf(key)).slice().sort((a, b) => a - b),
+             "in the same order")
+        const byKey = N.rowsByKey(grouped)
+        T.ok(grouped.every(row => byKey[N.rowKey(row)] === row), "each row is found by its key")
+        T.eq(Object.keys(N.rowsByKey(undefined)).length, 0, "no rows, no keys")
+
         const single = N.rows("", [{ key: "g", title: "G", pages: ["about"] }])
         const only = single.filter(row => row.kind === "page")
         T.eq([only.length, only[0].first, only[0].last], [1, true, true], "a group with one page opens and closes the card")

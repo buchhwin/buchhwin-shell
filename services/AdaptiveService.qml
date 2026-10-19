@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import QtQuick
 import "display/DisplayLogic.js" as DisplayLogic
+import "adaptive/FocusLogic.js" as FocusLogic
 
 // Adaptive behaviour: accent colour from the wallpaper, automatic Laptop /
 // Docked mode when external monitors come and go, and a focus mode that
@@ -92,17 +93,40 @@ Singleton {
     }
 
     // ---- focus mode -------------------------------------------------------------
+    // Focus owns the Do Not Disturb it turns on (FocusLogic.dndOnFocus), as a
+    // mode does: leaving gaming under Focus keeps it, and ending Focus hands
+    // it back to a mode that wants it.
     property bool focusActive: false
-    property bool dndBeforeFocus: false
 
     function setFocus(active) {
         if (active === focusActive) return
-        if (active) {
-            dndBeforeFocus = NotificationService.dndActive
-            if (!dndBeforeFocus) NotificationService.setDnd("manual")
-        } else if (!dndBeforeFocus) {
-            NotificationService.setDnd("off")
-        }
+        const effects = (LayoutService.templates[LayoutService.activeMode] || {}).effects || {}
+        const change = FocusLogic.dndOnFocus(active, NotificationService.dndBy, NotificationService.dndActive,
+                                             LayoutService.activeMode, effects)
+        if (change) NotificationService.setDnd(change.mode, change.by)
         focusActive = active
     }
+
+    // A deploy, reload or crash restart keeps Focus's Do Not Disturb - it is
+    // read back from state.json with its owner - and Focus comes back with
+    // it; before, the tile said Off, the desktop widgets were back and the
+    // Do Not Disturb stayed on until switched off by hand. Asked once, after
+    // the state has loaded (and after an early setDnd laid over it). Only in
+    // the shell itself (BUCHHWIN_SHELL_PATH, which the unit tests run
+    // without): asking from a test that reaches this service - WallpaperTest
+    // reads the accent - would build NotificationService there, and its
+    // server would queue for the session's notifications (testing.md
+    // pitfall 82).
+    readonly property bool restoresFocus: (Quickshell.env("BUCHHWIN_SHELL_PATH") || "").length > 0
+    property bool focusChecked: false
+    function restoreFocus() {
+        if (!restoresFocus || focusChecked || !NotificationService.stateLoaded) return
+        focusChecked = true
+        if (FocusLogic.focusRestored(NotificationService.dndBy, NotificationService.dndActive)) focusActive = true
+    }
+    Connections {
+        target: root.restoresFocus ? NotificationService : null
+        function onStateLoadedChanged() { Qt.callLater(root.restoreFocus) }
+    }
+    Component.onCompleted: Qt.callLater(restoreFocus)
 }

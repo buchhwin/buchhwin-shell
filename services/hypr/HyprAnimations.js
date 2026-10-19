@@ -64,19 +64,34 @@ var BASE = [
     { leaf: "borderangle", speed: 1, spring: "", bezier: "buchhwinFast", style: "", off: true }
 ]
 
-// How the shell's three animation modes read on the compositor. Only the
-// durations are scaled and only `borderangle` and the two pointer-driven
-// `misc` flags are switched: which style string means "less movement" differs
-// per leaf and guessing at it would be cosmetic invention, so the modes stay
-// honest about what they change.
+// How the shell's three animation modes read on the compositor.
 //
 //   off      nothing animates
-//   reduced  shorter, and a dragged or resized window stops interpolating
+//   reduced  shorter, nothing travels: workspaces cross-fade instead of
+//            sliding, a window appears and goes with its fade alone (no zoom,
+//            no glide when the tiles move), and a dragged or resized window
+//            stops interpolating
 //   full     the table as written; the pace within it is the speed setting
+//
+// Reduced is what the shell's own surfaces call "shorter, no movement"
+// (theme/Animations.qml), and gaming mode uses it. It used to scale the
+// durations alone, so the largest motions on screen - every workspace switch
+// sliding the whole screen, every window zooming in - still moved, only
+// faster.
 function plan(mode) {
     if (mode === "off") return { enabled: false, factor: 1, pointer: false, moving: false }
     if (mode === "reduced") return { enabled: true, factor: 0.6, pointer: false, moving: false }
     return { enabled: true, factor: 1, pointer: true, moving: true }
+}
+
+// What Reduced changes per leaf, beyond the durations. The fades are the
+// critically damped effects spring: a cross-fade has nothing to overshoot.
+var REDUCED = {
+    windows: { enabled: false },
+    windowsOut: { enabled: false },
+    windowsMove: { enabled: false },
+    workspaces: { style: "fade", spring: "buchhwinEffects" },
+    specialWorkspace: { style: "fade", spring: "buchhwinEffects" }
 }
 
 // The table as one mode wants it, at one speed. Speeds are rounded to two
@@ -95,14 +110,17 @@ function plan(mode) {
 function entries(mode, speed) {
     const wanted = plan(mode)
     const pace = Anim.rate(speed === undefined ? 1 : speed)
-    return BASE.map(entry => ({
-        leaf: entry.leaf,
-        enabled: wanted.enabled && !entry.off,
-        speed: Math.max(0.1, Math.round(Anim.travelSpeed(entry.speed, wanted.factor / pace, wanted.moving) * 100) / 100),
-        spring: entry.spring,
-        bezier: entry.bezier,
-        style: entry.style
-    }))
+    return BASE.map(entry => {
+        const change = mode === "reduced" ? REDUCED[entry.leaf] || {} : {}
+        return {
+            leaf: entry.leaf,
+            enabled: wanted.enabled && !entry.off && change.enabled !== false,
+            speed: Math.max(0.1, Math.round(Anim.travelSpeed(entry.speed, wanted.factor / pace, wanted.moving) * 100) / 100),
+            spring: change.spring !== undefined ? change.spring : entry.spring,
+            bezier: entry.bezier,
+            style: change.style !== undefined ? change.style : entry.style
+        }
+    })
 }
 
 // The springs as one mode wants them at one speed. A spring ignores the

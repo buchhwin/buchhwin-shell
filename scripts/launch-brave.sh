@@ -9,7 +9,11 @@ set -euo pipefail
 # Brave's own packages (Fedora, openSUSE) install /usr/bin/brave-browser;
 # Arch's brave-bin from the AUR installs /usr/bin/brave, with the same
 # brave-browser.desktop.
-project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
+# The path as it was called, resolved only when this file itself is a link
+# (as in launch-default.sh): two processes and two subshells less per start.
+self=${BASH_SOURCE[0]}
+[[ $self == /* && ! -L $self ]] || self=$(readlink -f -- "$self")
+project_dir=${self%/*/*}
 exe=brave-browser
 if ! command -v brave-browser >/dev/null 2>&1 && command -v brave >/dev/null 2>&1; then exe=brave; fi
 exec "$project_dir/scripts/launch-chromium.sh" com.brave.Browser "$exe" "$@"

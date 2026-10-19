@@ -50,7 +50,7 @@ PopupPanel {
             visible: !MprisService.hasPlayer
             icon: "󰎆"
             title: "Nothing playing"
-            description: "Music and videos from an app show up here"
+            description: "Music and videos show up here"
         }
 
         // The player, its cover and its transport: only for a player. The
@@ -135,6 +135,9 @@ PopupPanel {
                         id: seek
                         Layout.fillWidth: true
                         accessibleName: "Position"
+                        // The position moves on a second at a time; a spring on
+                        // that redrew the popup for a sixth of each second.
+                        glide: false
                         enabledState: media.player !== null && media.player.canSeek
                         value: media.seekable ? Math.min(1, media.player.position / media.trackLength) : 0
                         onReleased: value => MprisService.seekTo(value)

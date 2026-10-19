@@ -61,9 +61,9 @@ reload_for_changes() {
   # What the running shell never reads restarts nothing: the page's own files
   # (.github/, LICENSE, the Markdown), the tests and installers, the zsh files
   # and completion a terminal reads when it starts, and the units above.
-  # scripts/ stays: drives.py, the Bluetooth agent, the clipboard bridge and
-  # the KDE Connect helper run for as long as the shell does, and only a
-  # restart starts them from the new files (round 12, scripts#9).
+  # scripts/ stays: the Bluetooth agent, the clipboard bridge and the KDE
+  # Connect helper are started by the running shell from these files, and
+  # only a restart starts them from the new ones.
   if ! grep -qvE '^(hypr/|[^/]+\.md$|docs/|Promt$|tests/|install/|session/sddm/|\.gitignore$|\.github/|LICENSE$|shell-completion/|zsh/|systemd/)' <<<"$changed"; then
     printf 'No shell files changed; the shell keeps running.\n'
   elif ! hyprland_session >/dev/null; then

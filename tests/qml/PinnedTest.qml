@@ -76,6 +76,11 @@ ShellRoot {
              "a Citrix entry's id, spaces and `$` and all, is pinned and read back")
         T.eq(Pinned.toggle("a.desktop", "b,c"), "a.desktop", "an id with a comma would read back as two: refused")
 
+        // ---- saying no at the limit ---------------------------------------------
+        const ten = "a,b,c,d,e,f,g,h,i,j"
+        T.ok(Pinned.refused(ten, "k"), "an eleventh pin is refused")
+        T.ok(!Pinned.refused(ten, "a"), "unpinning one at the limit is not")
+        T.ok(!Pinned.refused("a,b", "k"), "nor is a pin below the limit")
         T.finish("PinnedTest")
     }
 }

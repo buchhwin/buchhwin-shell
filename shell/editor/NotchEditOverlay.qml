@@ -36,6 +36,11 @@ Item {
     property string dragId: ""
     property string dropZone: ""
     property int dropIndex: -1
+    // The overview's cell the drop would rest in (overlay coordinates), or
+    // null: the strip marks the gap a drop opens, the grid the cell it lands
+    // in (ArrangeLogic.gridDropTarget). A hairline after the list neighbour
+    // was drawn past the grid's edge wherever the packer floats a block up.
+    property var dropCell: null
     property real ghostX: 0
     property real ghostY: 0
     // Where inside the item it was taken hold of, so the ghost hangs there
@@ -156,6 +161,7 @@ Item {
         LayoutService.arrangeDragging = id
         overlay.dropZone = ""
         overlay.dropIndex = -1
+        overlay.dropCell = null
     }
 
     function updateDrag(x, y) {
@@ -169,14 +175,18 @@ Item {
         // a row - there are no holes in it - and it keeps the cheap answer.
         const zone = rectOf("notchzone:expanded")
         if (overlay.dropZone === "expanded" && zone) {
-            overlay.dropIndex = Arrange.gridDropIndex(
+            const target = Arrange.gridDropTarget(
                 NotchService.expandedItems.map(item => ({ id: item.id, w: item.w, h: item.h })),
                 overlay.dragId,
                 { x: x - zone.x, y: y - zone.y, grabX: overlay.grabX, grabY: overlay.grabY },
                 { columns: NotchService.columns, width: zone.width,
                   gap: Metrics.notchColumnGap, unit: Metrics.notchGridUnit })
+            overlay.dropIndex = target.index
+            overlay.dropCell = target.cell ? { x: zone.x + target.cell.x, y: zone.y + target.cell.y,
+                                               width: target.cell.width, height: target.cell.height } : null
         } else {
             overlay.dropIndex = Arrange.insertIndexAt(cellsIn(overlay.dropZone), x, y, overlay.dragId)
+            overlay.dropCell = null
         }
     }
 
@@ -251,6 +261,7 @@ Item {
         overlay.dragId = ""
         overlay.dropZone = ""
         overlay.dropIndex = -1
+        overlay.dropCell = null
         LayoutService.arrangeDragging = ""
     }
 
@@ -451,7 +462,11 @@ Item {
                 // controls in one place is one too many.
                 x: parent.width - width - Metrics.spaceXxs
                 y: Metrics.spaceXxs
+                // Not for a block the strip cannot draw (media, events,
+                // status): sent there, it was an empty spot that could not
+                // come back into the overview (NotchService.stripTakes).
                 visible: overlay.sizeId.length === 0
+                    && (overlay.zone === "collapsed" || NotchService.stripTakes(chrome.modelData.type))
                 width: chrome.button
                 height: width
 
@@ -596,13 +611,28 @@ Item {
     // Insertion marker at the gap the dragged item would take.
     Rectangle {
         readonly property var line: overlay.marker()
-        visible: overlay.dragId.length > 0 && overlay.dropZone.length > 0 && line !== null
+        visible: overlay.dragId.length > 0 && overlay.dropZone.length > 0 && line !== null && overlay.dropCell === null
         width: Metrics.focusBorderWidth * 2
         height: line ? line.height : 0
         radius: width / 2
         x: line ? line.x - width / 2 : 0
         y: line ? line.y : 0
         color: Colors.accent
+    }
+
+    // On the overview the drop rests in a cell of the grid: that cell is
+    // outlined, where the item will land.
+    Rectangle {
+        readonly property var cell: overlay.dropCell
+        visible: overlay.dragId.length > 0 && overlay.dropZone === "expanded" && cell !== null
+        x: cell ? cell.x : 0
+        y: cell ? cell.y : 0
+        width: cell ? cell.width : 0
+        height: cell ? cell.height : 0
+        radius: Metrics.radiusCard
+        color: "transparent"
+        border.width: Metrics.focusBorderWidth
+        border.color: Colors.accent
     }
 
     // The item under the pointer while it is being dragged. It hangs where it

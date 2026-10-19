@@ -26,9 +26,32 @@ Singleton {
     // and all, until it is dismissed, and nothing else ever let one go: a
     // session that was never cleared held every notification since login.
     readonly property int maxHistory: 100
+    // And how many of them may hold a picture of their own (image data the
+    // sender sent along, Logic.carriesPixels): a hundred 256 px ones were
+    // 27 MB that the heap kept after they had gone. Older ones beyond this
+    // expire like the ones beyond `maxHistory`.
+    readonly property int maxImages: 20
     readonly property var history: server ? server.trackedNotifications.values : []
     property var popups: []
-    property int unread: 0
+    // The popup the notch shows, when the notch is the display: the newest
+    // (Logic.notchPick). The popup stack and the notch's click both ask here.
+    readonly property var notchPopup: Logic.notchPick(popups)
+    // The notifications that came while the centre was closed, by id
+    // (id -> true), and the count of them still in the history. A muted
+    // app's are never marked: it was silenced, so it does not light the bell
+    // either. Opening the centre clears the marks.
+    property var unseen: ({})
+    readonly property int unread: Logic.unreadCount(history, unseen)
+    // When each notification came, by id (ms since the epoch), for the
+    // centre's cards. One carried over a shell restart has none.
+    property var arrivals: ({})
+    function arrivalOf(notification) {
+        const stamp = notification ? arrivals[notification.id] : undefined
+        return stamp > 0 ? stamp : 0
+    }
+    // True while Clear all lets the history go, one dismissal after another:
+    // the centre empties its list once instead of reworking it for each.
+    property bool clearing: false
     property string dndMode: "off"
     property real dndUntil: 0
     // Whose Do Not Disturb this is: the name of the mode that turned it on
@@ -46,25 +69,24 @@ Singleton {
         || (SettingsService.value("notifications.suppressGames") && HyprlandService.gameActive)
     readonly property bool suppressed: dndActive || autoSuppressed
 
-    readonly property string dndLabel: !dndActive ? "Off"
-        : dndMode === "manual" && dndBy.length ? "Until you leave " + Logic.dndOwnerTitle(dndBy)
-        : dndMode === "manual" ? "Until turned off"
-        : "Until " + Qt.formatTime(new Date(dndUntil), "HH:mm") + (dndMode === "tomorrow" ? " (tomorrow)" : "")
+    // "Until 06:00 (tomorrow)" and the rest (Logic.dndLabel), the time as the
+    // clock shows it.
+    readonly property string dndLabel: Logic.dndLabel(dndMode, dndUntil, dndBy, now, SettingsService.twelveHourClock)
 
     // `by` only from a mode switch (LayoutService.modeDndTransition); every
     // other caller - the tiles, the launcher, IPC, the focus mode - leaves it
     // out, and the Do Not Disturb set is the user's.
     function setDnd(mode, by) {
-        const current = new Date()
+        const current = Date.now()
         let until = 0
-        if (mode === "1h") until = current.getTime() + 3600000
-        else if (mode === "tomorrow") {
-            const hour = SettingsService.value("notifications.dndTomorrowHour")
-            until = new Date(current.getFullYear(), current.getMonth(), current.getDate() + 1, hour, 0, 0).getTime()
-        } else if (mode !== "manual") mode = "off"
+        if (mode === "1h") until = current + 3600000
+        else if (mode === "tomorrow") until = Logic.tomorrowEnd(current, SettingsService.value("notifications.dndTomorrowHour"))
+        else if (mode !== "manual") mode = "off"
         dndMode = mode
         dndUntil = until
         dndBy = Logic.dndOwner(mode, by)
+        // Any change answers what a reboot asked (`resumeModeDnd`).
+        dndEndedBy = ""
         now = Date.now()
         saveState()
         scheduleExpiry()
@@ -74,22 +96,33 @@ Singleton {
 
     function clearAll() {
         const values = root.history.slice()
-        for (let i = values.length - 1; i >= 0; --i) values[i].dismiss()
+        clearing = true
+        try {
+            for (let i = values.length - 1; i >= 0; --i) values[i].dismiss()
+        } finally {
+            clearing = false
+        }
         popups = []
-        unread = 0
+        unseen = ({})
     }
 
     // The oldest beyond `maxHistory` expire: they leave the history, and the
     // sender hears that they closed (a `notify-send --wait` or `--action`
     // still waiting on one returns). Expired, not dismissed - nobody closed
-    // them. A popup on screen is left alone; it goes with a later arrival.
+    // them. So do the older ones beyond the newest `maxImages` that hold a
+    // picture of their own. A popup on screen is left alone; it goes with a
+    // later arrival.
     function trimHistory() {
         if (!server) return
         const values = server.trackedNotifications.values
-        const old = Logic.overflow(values, maxHistory, popups)
+        const old = Logic.overflow(values, maxHistory, popups, maxImages)
         for (const notification of old) notification.expire()
-        // Counted per arrival; there are no more unread than are left.
-        if (old.length) unread = Math.min(unread, server.trackedNotifications.values.length)
+        // The marks and stamps of the ones that have gone, whichever way.
+        const left = server.trackedNotifications.values
+        const marks = Logic.forHistory(unseen, left)
+        if (marks !== unseen) unseen = marks
+        const stamps = Logic.forHistory(arrivals, left)
+        if (stamps !== arrivals) arrivals = stamps
     }
 
     function hidePopup(notification) {
@@ -100,7 +133,37 @@ Singleton {
     // waits until it is closed again, the way a card waits under the pointer.
     property var heldPopup: null
 
-    function markRead() { unread = 0 }
+    function markRead() { unseen = ({}) }
+
+    // Counted as unread unless the centre is open, where it is seen as it
+    // comes, or the app is muted.
+    function markUnseen(notification, rule) {
+        if (!notification || rule === "mute" || PanelService.isOpen("notifications")) return
+        if (unseen[notification.id] === true) return
+        const marks = Object.assign({}, unseen)
+        marks[notification.id] = true
+        unseen = marks
+    }
+
+    // A sender replaced one of its notifications (replaces_id): Quickshell
+    // changes the object it has and announces nothing new, so it was not
+    // queued again once its popup had gone, nor counted. Now it came "now",
+    // is unread again, and pops up again as the newest when it may pop up at
+    // all (its card, still up, shows the new words by itself and stays where
+    // it is). Asked for the summary and for the body; the second asking
+    // finds it done.
+    function replaced(notification) {
+        if (!notification) return
+        now = Date.now()
+        const stamps = Object.assign({}, arrivals)
+        stamps[notification.id] = now
+        arrivals = stamps
+        const rule = Logic.ruleFor(appRules, notification)
+        markUnseen(notification, rule)
+        const state = { suppressed: suppressed, dndMode: dndMode, dndBy: dndBy }
+        const next = Logic.requeue(popups, notification, Logic.shouldPopup(state, isCritical(notification), rule), maxPopups)
+        if (next !== popups) popups = next
+    }
 
     function isCritical(notification) {
         return notification && notification.urgency === NotificationUrgency.Critical
@@ -146,13 +209,21 @@ Singleton {
         const rule = appRules[key]
         return rule === "mute" || rule === "critical" ? rule : "default"
     }
+    // The apps Settings > Notifications offers a rule for: every one with a
+    // rule stored, and every one in the history (Logic.ruleRows). A function,
+    // so only a page that shows them works them out.
+    function ruleRows() { return Logic.ruleRows(appRules, history) }
+
+    // The mode whose manual Do Not Disturb this boot's start ended, until the
+    // mode in use has been asked (`resumeModeDnd`); "" otherwise.
+    property string dndEndedBy: ""
+    // A `resumeModeDnd` that came before the state was read.
+    property string pendingResume: ""
 
     function loadState() {
         try {
             const parsed = JSON.parse(stateFile.text() || "{}")
             const dnd = parsed.dnd || {}
-            dndMode = ["off", "1h", "tomorrow", "manual"].indexOf(dnd.mode) >= 0 ? dnd.mode : "off"
-            dndUntil = Number(dnd.until) || 0
             // **A reboot turns a manual Do Not Disturb off.** "Until turned
             // off" is a promise about this session, and starting the machine
             // again is as clear an answer as reaching for the switch would be;
@@ -160,8 +231,13 @@ Singleton {
             // after a restart. A *timed* one is a promise about the clock
             // instead - "until six tomorrow" means six tomorrow whether or not
             // the machine slept in between - so those two are left alone.
-            if (dndMode === "manual" && String(dnd.boot || "") !== bootId) dndMode = "off"
-            dndBy = Logic.dndOwner(dndMode, dnd.by)
+            // A mode's own is the mode's promise, not the session's: it comes
+            // back while that mode is still in use (`resumeModeDnd`).
+            const restored = Logic.dndAtBoot(dnd.mode, dnd.by, dnd.boot, bootId)
+            dndMode = restored.mode
+            dndUntil = Number(dnd.until) || 0
+            dndBy = restored.by
+            dndEndedBy = restored.ended
             const rules = parsed.appRules || {}
             const clean = {}
             for (const key in rules) if (rules[key] === "mute" || rules[key] === "critical") clean[key] = rules[key]
@@ -169,6 +245,7 @@ Singleton {
         } catch (error) {
             dndMode = "off"
             dndBy = ""
+            dndEndedBy = ""
             appRules = ({})
         }
         stateLoaded = true
@@ -176,6 +253,7 @@ Singleton {
             dndMode = earlyState.mode
             dndUntil = earlyState.until
             dndBy = earlyState.by || ""
+            dndEndedBy = ""
             appRules = Object.assign({}, appRules, earlyState.rules)
             earlyState = null
             // Not from inside the load that is finishing (pitfall 3).
@@ -183,6 +261,30 @@ Singleton {
         }
         now = Date.now()
         scheduleExpiry()
+        // Its setDnd writes the file: not from inside the load either.
+        if (pendingResume.length) Qt.callLater(root.resumePending)
+    }
+
+    // Asked once by LayoutService with the mode in use, once the layout has
+    // been read: a manual Do Not Disturb that this boot's start ended is that
+    // mode's again while the mode is still the one in use, owner and all, so
+    // leaving it ends it as before. Any change of Do Not Disturb made before
+    // it asks answers the question instead. True when it turned it on.
+    function resumeModeDnd(mode) {
+        if (!stateLoaded) {
+            pendingResume = String(mode || "")
+            return false
+        }
+        const owner = dndEndedBy
+        dndEndedBy = ""
+        if (!owner.length || owner !== mode || dndActive) return false
+        setDnd("manual", owner)
+        return true
+    }
+    function resumePending() {
+        const mode = pendingResume
+        pendingResume = ""
+        if (mode.length) resumeModeDnd(mode)
     }
 
     // The clock read again: at the expiry, and once a minute while a timed
@@ -255,16 +357,36 @@ Singleton {
             keepOnReload: true
 
             onNotification: notification => {
+                root.now = Date.now()
+                // Stamped before it is tracked: tracking puts it in the
+                // history, and the centre's card for it reads the stamp as
+                // it is made.
+                const stamps = Object.assign({}, root.arrivals)
+                stamps[notification.id] = root.now
+                root.arrivals = stamps
                 notification.tracked = true
                 // After this arrival has been queued as a popup or not, and
                 // not from inside the server's own signal.
                 Qt.callLater(root.trimHistory)
-                root.now = Date.now()
-                if (!PanelService.isOpen("notifications")) root.unread += 1
-                const state = { suppressed: root.suppressed, dndMode: root.dndMode }
-                if (!Logic.shouldPopup(state, root.isCritical(notification), Logic.ruleFor(root.appRules, notification))) return
+                const rule = Logic.ruleFor(root.appRules, notification)
+                root.markUnseen(notification, rule)
+                const state = { suppressed: root.suppressed, dndMode: root.dndMode, dndBy: root.dndBy }
+                if (!Logic.shouldPopup(state, root.isCritical(notification), rule)) return
                 root.popups = Logic.withPopup(root.popups, notification, root.maxPopups)
             }
+        }
+    }
+
+    // One watcher per notification in the history, for a sender replacing it
+    // in place (`replaced`). Variants keeps the watchers of the ones that stay
+    // and makes one for each that comes.
+    Variants {
+        model: root.history
+        Connections {
+            required property var modelData
+            target: modelData
+            function onSummaryChanged() { root.replaced(modelData) }
+            function onBodyChanged() { root.replaced(modelData) }
         }
     }
 }

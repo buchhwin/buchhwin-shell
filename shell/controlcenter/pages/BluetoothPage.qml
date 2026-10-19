@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
@@ -48,26 +49,30 @@ ColumnLayout {
     }
 
     Repeater {
-        model: [
-            { label: "Connected", list: BluetoothService.connected, always: false },
-            { label: "Paired", list: BluetoothService.paired, always: false },
-            // Nearby stays while it is empty and says it is looking: with
-            // every section gone the page said nothing at all about a scan
-            // it had started.
-            { label: "Nearby", list: BluetoothService.nearby, always: true }
-        ]
+        // The sections by name, built once, and the rows kept by device
+        // (ScriptModel; BlueZ's device objects keep their identity). Built
+        // from a list of new objects, every section and row was made again
+        // whenever discovery found a device: an armed Remove fell back to
+        // its first click, the focus went, the Nearby list jumped to the top.
+        model: ["connected", "paired", "nearby"]
         // The title inside the card, as the popup has it (ScrollList: a label
         // above a card reads as two things), and the popup's height for the
         // same lists.
         ScrollList {
             id: section
-            required property var modelData
+            required property string modelData
+            readonly property var list: modelData === "connected" ? BluetoothService.connected
+                : modelData === "paired" ? BluetoothService.paired : BluetoothService.nearby
+            // Nearby stays while it is empty and says it is looking: with
+            // every section gone the page said nothing at all about a scan
+            // it had started.
+            readonly property bool always: modelData === "nearby"
             Layout.fillWidth: true
-            visible: BluetoothService.enabled && (modelData.list.length > 0 || modelData.always)
-            title: section.modelData.label
+            visible: BluetoothService.enabled && (list.length > 0 || always)
+            title: modelData === "connected" ? "Connected" : modelData === "paired" ? "Paired" : "Nearby"
             maxHeight: Metrics.popupListHeight / 2 + Metrics.rowHeight
             EmptyState {
-                visible: section.modelData.list.length === 0
+                visible: section.list.length === 0
                 // Inset like the rows (ListRow's spaceLg), so its icon lines
                 // up with theirs instead of sitting at the card's padding.
                 x: Metrics.spaceLg
@@ -77,7 +82,7 @@ ColumnLayout {
                 title: BluetoothService.discovering ? "Searching …" : "No devices found"
             }
             Repeater {
-                model: section.modelData.list
+                model: ScriptModel { values: section.list }
                 ListRow {
                     level: 1
                     required property var modelData
@@ -92,7 +97,7 @@ ColumnLayout {
                         icon: Icons.remove; variant: "ghost"; compact: true
                         // The pairing is gone for good, as in Settings.
                         confirm: true
-                        confirmText: "Remove"
+                        confirmText: "Remove?"
                         toolTip: "Remove device"
                         onClicked: BluetoothService.forget(modelData)
                     }
@@ -103,7 +108,7 @@ ColumnLayout {
 
     ShellText {
         Layout.fillWidth: true
-        visible: BluetoothService.enabled && BluetoothService.agentAllowed && !BluetoothService.agentReady
+        visible: BluetoothService.agentStarting
         text: "Pairing service is starting … Devices that need a confirmation code can be paired in a moment."
         role: "caption"
         wrapMode: Text.Wrap

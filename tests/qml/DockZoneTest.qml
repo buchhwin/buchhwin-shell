@@ -12,13 +12,13 @@ import "../../services/dock/DockLogic.js" as D
 // - A hidden dock hides its content, and every pill under it then reads
 //   `visible: false` (pitfall 89). A zone that counted `visible` pills came
 //   to none, and the hidden dock's body - its reveal strip and its
-//   intellihide rect - shrank to its padding (ui-dock#0). The zone counts
+//   intellihide rect - shrank to its padding. The zone counts
 //   the pills' own `hasContent` (DockLogic.shownCount).
 // - A Grid with more columns than children counted one gap too many after
-//   the last pill, and the dock stood off its centre (D6); a GridLayout of
+//   the last pill, and the dock stood off its centre; a GridLayout of
 //   one row does not, also with a pill that shows nothing.
-// - DesktopEntries.byId() notifies no binding when the entries arrive
-//   (perf#3): a binding that also reads a revision the service moves on
+// - DesktopEntries.byId() notifies no binding when the entries arrive:
+//   a binding that also reads a revision the service moves on
 //   every scan resolves again.
 ShellRoot {
     id: root
@@ -70,7 +70,7 @@ ShellRoot {
         running: true
         onTriggered: {
             const expected = 2 * root.pillLength + root.gap
-            T.eq(zone.implicitWidth, expected, "one gap between the two pills that show, none after the last (D6)")
+            T.eq(zone.implicitWidth, expected, "one gap between the two pills that show, none after the last")
             T.eq(D.shownCount(root.pills()), 2, "two pills show")
             T.eq(root.visibleCount(), 2, "and read visible")
             content.visible = false
@@ -82,7 +82,7 @@ ShellRoot {
         interval: 50
         onTriggered: {
             T.eq(root.visibleCount(), 0, "under the hidden content every pill reads invisible")
-            T.eq(D.shownCount(root.pills()), 2, "the zone still counts two (ui-dock#0)")
+            T.eq(D.shownCount(root.pills()), 2, "the zone still counts two")
             T.eq(zone.implicitWidth, 2 * root.pillLength + root.gap, "and keeps its length")
             content.visible = true
 
@@ -90,7 +90,7 @@ ShellRoot {
             root.entries.map["org.kde.dolphin"] = { id: "org.kde.dolphin" }
             const plainBefore = root.runs.plain
             root.revision += 1
-            T.eq(root.revised !== null && root.revised.id, "org.kde.dolphin", "a binding that reads the revision resolves again (perf#3)")
+            T.eq(root.revised !== null && root.revised.id, "org.kde.dolphin", "a binding that reads the revision resolves again")
             T.eq(root.runs.plain, plainBefore, "one that does not never does")
             T.eq(root.plain, null, "and keeps what it found before the scan")
             T.finish("DockZoneTest")

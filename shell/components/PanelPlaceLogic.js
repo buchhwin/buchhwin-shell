@@ -4,7 +4,7 @@
 // it, the dock. Panels and popups are Overlay surfaces that ignore every
 // reserved zone, so the taskbar's own zone does nothing for them - the
 // notification center ran down over the taskbar and hid the bell that opens
-// it (round 12, V1). Pure numbers, so ShellPanel and the popup stack cannot
+// it. Pure numbers, so ShellPanel and the popup stack cannot
 // disagree, and "a bottom bar with the dock beyond it" is a test rather than
 // a screenshot.
 //
@@ -81,7 +81,7 @@ function clearOfDock(place, width, height, screenWidth, screenHeight, dock, barE
 // A panel opened by a key or over IPC lands where its click would have
 // opened it when the dock always shows the widget it belongs to: Super+N
 // above the taskbar's bell instead of under a desktop clock a screen away
-// (round 12, D13 g). The first of these the dock carries on that screen.
+// The first of these the dock carries on that screen.
 var DOCK_ITEMS = {
     notifications: ["notificationIndicator"],
     // The control center has no widget of its own on the Taskbar preset:
@@ -124,4 +124,55 @@ function withDockItem(args, rect, anchor) {
     return Object.assign({}, args || {}, anchor, {
         originX: rect.x, originY: rect.y, originWidth: rect.width, originHeight: rect.height
     })
+}
+
+// ---- the surface -------------------------------------------------------------
+// What a panel's layer surface covers (ShellPanel's `compactSurface`): the
+// card and what it grows out of, not the screen. `full` is when it has to be
+// the whole screen after all - a panel without a card (the overview draws
+// the screen itself), a card being resized by its grip, or a card being
+// dragged by its title. A panel that can be dragged is compact at rest:
+// Settings, the only one, mapped a whole-screen surface for its 980 x 680
+// card on every open (2.3 against 0.86 million pixels a frame on this
+// laptop, 8.3 against 2.4 at a 4K desk), when it only needs the screen while
+// it is being dragged. Once dragged it keeps the screen until it closes:
+// shrinking a mapped surface lets a frame at the old size through (testing
+// pitfall 57), and while the panel is open its surface only ever grows.
+function fullSurface(compact, sizing, dragged) {
+    return compact !== true || sizing === true || dragged === true
+}
+
+// The compact surface for a card at `card` ({ x, y, width, height }, where it
+// settles) that grows out of `origin` (the same, or null): both, with `pad`
+// around them for the shadow and the tooltips, inside the screen.
+// `fullHeight` keeps the screen's whole height (a card that changes height
+// while it is open). Whole pixels, never empty.
+function cardSurface(card, origin, pad, screenWidth, screenHeight, fullHeight) {
+    let x0 = card.x, y0 = card.y
+    let x1 = card.x + card.width, y1 = card.y + card.height
+    if (origin) {
+        x0 = Math.min(x0, origin.x); y0 = Math.min(y0, origin.y)
+        x1 = Math.max(x1, origin.x + origin.width); y1 = Math.max(y1, origin.y + origin.height)
+    }
+    x0 = Math.max(0, Math.floor(x0 - pad))
+    y0 = Math.max(0, Math.floor(y0 - pad))
+    x1 = Math.min(screenWidth, Math.ceil(x1 + pad))
+    y1 = Math.min(screenHeight, Math.ceil(y1 + pad))
+    if (fullHeight) { y0 = 0; y1 = screenHeight }
+    return { x: x0, y: y0, width: Math.max(1, x1 - x0), height: Math.max(1, y1 - y0) }
+}
+
+// ---- out of a bar's pill ---------------------------------------------------------
+// How far in from one side edge a panel that comes out of something may
+// stand: `clear` (edgeClear's answer for that side), or less when it is only
+// the screen `margin` and what the panel comes out of stands further out -
+// the bar's last pill sits at the bar's own inset, a few pixels nearer the
+// edge than the screen margin, and the panel out of it ended that much short
+// of it, so no two edges lined up. A bar or a dock on that side is kept
+// clear of whatever opened the panel. `originNear` is how far the origin is
+// from that edge (negative: no origin).
+function outerClear(clear, margin, originNear) {
+    const near = Number(originNear)
+    if (!isFinite(near) || near < 0 || clear > margin) return clear
+    return Math.max(0, Math.min(clear, near))
 }

@@ -22,7 +22,10 @@ PopupPanel {
     onToggled: checked => NetworkService.setWifiEnabled(checked)
     footerText: "Network settings"
     onFooterClicked: PanelService.open("settings", { page: "network" })
-    onWantedChanged: if (wanted) NetworkService.refresh()
+    // Only when NetworkManager said something since the last read: its
+    // monitor keeps the list current, and every open ran nmcli again for an
+    // answer it already had.
+    onWantedChanged: if (wanted) NetworkService.refreshIfStale()
     // Wi-Fi that can find networks: the radio flag on and an adapter to
     // search with. NetworkManager keeps the flag on where there is no adapter
     // at all, and the popup said "Searching for networks …" for good there,

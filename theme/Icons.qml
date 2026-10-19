@@ -18,8 +18,7 @@ Singleton {
     readonly property string search: "󰍉"
     // Outlined, as the power glyph beside it in every footer and header is
     // (the start menu's, the control center's): a filled cog and padlock
-    // next to a thin power ring were three weights in one row (round 12,
-    // D13 b).
+    // next to a thin power ring were three weights in one row.
     readonly property string settings: "󰢻"
     // Settings as an app, not as a button: the filled cog on its accent tile
     // on the dock and in the start menu, where it stands among app icons.
@@ -29,7 +28,9 @@ Singleton {
     // Arranging tiles, cards and widgets: the 2x2 grid of the arrange button
     // in the control center's and the launcher's header. (It was `edit`,
     // which also stood for renaming and changing things; those are `modify`.)
-    readonly property string arrange: "󰕰"
+    // Outlined, like the cog and the power ring it stands beside in those
+    // headers: the filled squares were the one solid glyph in the row.
+    readonly property string arrange: "\u{f11d9}"
     // Changing something that is already there - renaming a preset, editing
     // an event, another folder or wallpaper: a pencil. The grid stood for
     // these too and read as "layout" there.
@@ -79,6 +80,23 @@ Singleton {
     readonly property string pin: "󰐃"
     readonly property string unpin: "󰐄"
 
+    // Modes and states with a switch of their own. One meaning, one glyph -
+    // and the other way round: the moon stood for the dark theme, for Night
+    // Light and for Do Not Disturb until the morning at once, with Focus's
+    // crescent beside it, and the apps grid for every profile. The moon is
+    // left to the dark theme (and to a clear night in the forecast, which is
+    // the weather's own glyph and why it has no name here).
+    // A lamp with a moon: the warm screen at night.
+    readonly property string nightLight: "\u{f1a4c}"
+    // Quiet until the sun is up: Do Not Disturb until tomorrow morning.
+    readonly property string untilMorning: "\u{f059c}"
+    // Focus mode: a viewfinder's centre, nothing else around it.
+    readonly property string focus: "\u{f02f1}"
+    // A profile: a card that says whose setup this is. The cog is Settings'.
+    readonly property string profile: "\u{f05d2}"
+    // What starts with the session.
+    readonly property string autostart: "\u{f14de}"
+
     // Leaving the session, and what is locked: the power menu, the lock
     // screen's buttons, the launcher's commands and the start menu drew these
     // five each on their own. `lock` is also the padlock on a secured network
@@ -87,7 +105,10 @@ Singleton {
     // twin (a phone to unlock).
     readonly property string lock: "󰍁"
     readonly property string unlock: "󰍀"
-    readonly property string suspend: "󰤄"
+    // A crescent drawn in a line, like the padlock, the door and the power
+    // ring around it in the session menu; mdi has only a filled moon for
+    // sleeping, so this one is Font Awesome's, which the font carries too.
+    readonly property string suspend: "\u{f186}"
     readonly property string logout: "󰍃"
     readonly property string reboot: "󰜉"
     readonly property string poweroff: "󰐥"

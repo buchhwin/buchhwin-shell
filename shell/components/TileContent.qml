@@ -38,9 +38,9 @@ RowLayout {
         // Off the GUI thread, theme icons too, as the dock, the start menu's
         // tiles and the launcher load them: "theme icons must load on the GUI
         // thread" was a claim nobody had measured, and Quickshell 0.3.2 serves
-        // image://icon asynchronously (probed in round 12). Loaded here, the
+        // image://icon asynchronously (probed). Loaded here, the
         // first switch to All apps decoded every new row's icon inside the
-        // frame (about 1 ms each; perf#5). The slot keeps its size, so a row
+        // frame (about 1 ms each). The slot keeps its size, so a row
         // does not move when its icon arrives.
         asynchronous: true
     }

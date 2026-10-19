@@ -19,21 +19,31 @@ Item {
     property point pressPoint
     property point startPos
     property real startScale: 1
-    property bool changeStarted: false
+    property real resizeFrom: 0
+    // Where the card is while it is dragged. Its place itself stays a
+    // binding: assigning x and y ended it for the card's life, and after a
+    // drag an undo, an arrow-key nudge or a new scale moved the stored widget
+    // but not its card - and every nudge after that started from the same
+    // stale place.
+    property real dragX: 0
+    property real dragY: 0
+    // The press may still move the card. Escape ends a drag with the button
+    // held (cancelDrag), and the rest of that press must not start it again.
+    property bool dragArmed: false
 
     readonly property var previewItem: entry ? (resizing ? Object.assign({}, entry, { scale: previewScale }) : entry) : null
     readonly property var restingPosition: entry ? Logic.pixelPosition(entry, width, height, editor.width, editor.height) : ({ x: 0, y: 0 })
 
     width: frame.hasContent ? frame.implicitWidth : placeholder.implicitWidth + Metrics.spaceLg * 2
     height: frame.hasContent ? frame.implicitHeight : placeholder.implicitHeight + Metrics.spaceMd * 2
-    x: dragging ? x : restingPosition.x
-    y: dragging ? y : restingPosition.y
-    visible: entry !== null || opacity > 0
-    // A removed widget fades rather than blinking out. Its position is *not*
-    // animated: a desktop widget has no neighbours to displace, and x feeds
-    // reportRect, so an animated x would keep reporting and never settle.
-    opacity: entry !== null ? 1 : 0
-    Behavior on opacity { NumberAnimation { duration: Animations.popupClose; easing.type: Animations.easingExit } }
+    x: dragging ? dragX : restingPosition.x
+    y: dragging ? dragY : restingPosition.y
+    // Only while its widget is there. A removed widget's card goes with its
+    // row of the Repeater in the same turn, so there is nothing to fade out.
+    // Its position is not animated either: a desktop widget has no
+    // neighbours to displace, and x feeds reportRect, so an animated x would
+    // keep reporting and never settle.
+    visible: entry !== null
 
     // Editable, so it says so. Not while it is being dragged or resized: it is
     // already following the pointer then.
@@ -53,7 +63,89 @@ Item {
     onYChanged: editor.reportRect(placementId, x, y, width, height)
     onWidthChanged: editor.reportRect(placementId, x, y, width, height)
     onHeightChanged: editor.reportRect(placementId, x, y, width, height)
-    Component.onDestruction: editor.forgetRect(placementId)
+    Component.onDestruction: {
+        cancelDrag()
+        editor.forgetRect(placementId)
+    }
+
+    // The drag, from the press to the drop, in the editor's coordinates. They
+    // are the card's own functions rather than its MouseArea's, so Escape can
+    // end a drag (EditLayer.cancelDrags) and a test can drive one.
+    function press(point) {
+        pressPoint = point
+        startPos = Qt.point(x, y)
+        dragArmed = true
+    }
+    function dragTo(point, noSnap) {
+        if (!dragArmed) return
+        const dx = point.x - pressPoint.x
+        const dy = point.y - pressPoint.y
+        if (!dragging && Math.abs(dx) + Math.abs(dy) < Metrics.dragThreshold) return
+        if (!dragging) {
+            dragX = startPos.x
+            dragY = startPos.y
+            dragging = true
+        }
+        const result = Snap.snap({ x: startPos.x + dx, y: startPos.y + dy, width: width, height: height },
+            editor.otherRects(placementId),
+            { screenWidth: editor.width, screenHeight: editor.height, threshold: Metrics.snapThreshold,
+              grid: editor.gridEnabled, gridSize: Metrics.gridSize, margin: Metrics.screenMargin,
+              disabled: noSnap === true })
+        dragX = result.x
+        dragY = result.y
+        editor.guides = result.guides
+    }
+    // The undo step is taken at the drop, not when the drag began: nothing is
+    // written before it, so the step is the same - and a drag Escape ended,
+    // or one let go where it began, leaves none behind.
+    function drop() {
+        if (dragArmed && dragging && entry
+            && (Math.abs(dragX - startPos.x) >= 0.5 || Math.abs(dragY - startPos.y) >= 0.5)) {
+            const position = Logic.relativePosition(dragX, dragY, width, height, editor.width, editor.height)
+            LayoutService.beginChange()
+            LayoutService.updateItem(placementId, position)
+            LayoutService.save()
+        }
+        cancelDrag()
+    }
+    // Back to where the widget is stored, which is where its card rests.
+    function cancelDrag() {
+        dragArmed = false
+        if (!dragging) return
+        dragging = false
+        editor.guides = []
+    }
+
+    // The resize handle's drag, the same way.
+    function beginResize(pointX) {
+        if (!entry) return
+        resizeFrom = pointX
+        startScale = entry.scale
+        previewScale = entry.scale
+        resizing = true
+    }
+    function resizeTo(pointX) {
+        if (!resizing || !entry) return
+        const dx = pointX - resizeFrom
+        const base = Math.max(1, width / previewScale)
+        const direction = entry.anchorX === "right" ? -1 : 1
+        previewScale = Math.max(Metrics.widgetScaleMin, Math.min(Metrics.widgetScaleMax,
+            startScale + direction * dx / base))
+    }
+    // A step and a write only for a scale that changed: a click on the handle
+    // took an undo step that undid nothing, rewrote layout.json and rounded a
+    // scale that was not on two decimals.
+    function endResize() {
+        if (!resizing) return
+        const next = Math.round(previewScale * 100) / 100
+        if (entry && previewScale !== startScale && next !== entry.scale) {
+            LayoutService.beginChange()
+            LayoutService.updateItem(placementId, { scale: next })
+            LayoutService.save()
+        }
+        resizing = false
+    }
+    function cancelResize() { resizing = false }
 
     WidgetFrame {
         id: frame
@@ -96,40 +188,17 @@ Item {
         onPressed: event => {
             card.editor.takeFocus()
             card.editor.select(card.placementId, event.modifiers & Qt.ShiftModifier)
-            const global = mapToItem(card.editor, event.x, event.y)
-            card.pressPoint = Qt.point(global.x, global.y)
-            card.startPos = Qt.point(card.x, card.y)
-            card.changeStarted = false
+            const point = mapToItem(card.editor, event.x, event.y)
+            card.press(Qt.point(point.x, point.y))
         }
         onPositionChanged: event => {
             if (!pressed) return
-            const global = mapToItem(card.editor, event.x, event.y)
-            const dx = global.x - card.pressPoint.x
-            const dy = global.y - card.pressPoint.y
-            if (!card.dragging && Math.abs(dx) + Math.abs(dy) < Metrics.dragThreshold) return
-            if (!card.changeStarted) {
-                LayoutService.beginChange()
-                card.changeStarted = true
-                card.dragging = true
-            }
-            const result = Snap.snap({ x: card.startPos.x + dx, y: card.startPos.y + dy, width: card.width, height: card.height },
-                card.editor.otherRects(card.placementId),
-                { screenWidth: card.editor.width, screenHeight: card.editor.height, threshold: Metrics.snapThreshold,
-                  grid: card.editor.gridEnabled, gridSize: Metrics.gridSize, margin: Metrics.screenMargin,
-                  disabled: (event.modifiers & Qt.AltModifier) !== 0 })
-            card.x = result.x
-            card.y = result.y
-            card.editor.guides = result.guides
+            const point = mapToItem(card.editor, event.x, event.y)
+            card.dragTo(Qt.point(point.x, point.y), (event.modifiers & Qt.AltModifier) !== 0)
         }
-        onReleased: {
-            if (card.dragging) {
-                const position = Logic.relativePosition(card.x, card.y, card.width, card.height, card.editor.width, card.editor.height)
-                LayoutService.updateItem(card.placementId, position)
-                LayoutService.save()
-            }
-            card.dragging = false
-            card.editor.guides = []
-        }
+        onReleased: card.drop()
+        // A press the window loses (testing.md pitfall 114) drops nothing.
+        onCanceled: card.cancelDrag()
     }
 
     Rectangle {
@@ -149,27 +218,12 @@ Item {
             anchors.margins: -Metrics.spaceXs
             cursorShape: Qt.SizeFDiagCursor
             preventStealing: true
-            property real pressX: 0
-            onPressed: event => {
-                pressX = mapToItem(card.editor, event.x, event.y).x
-                card.startScale = card.entry.scale
-                card.previewScale = card.entry.scale
-                LayoutService.beginChange()
-                card.resizing = true
-            }
+            onPressed: event => card.beginResize(mapToItem(card.editor, event.x, event.y).x)
             onPositionChanged: event => {
-                if (!pressed) return
-                const dx = mapToItem(card.editor, event.x, event.y).x - pressX
-                const base = Math.max(1, card.width / card.previewScale)
-                const direction = card.entry.anchorX === "right" ? -1 : 1
-                card.previewScale = Math.max(Metrics.widgetScaleMin, Math.min(Metrics.widgetScaleMax,
-                    card.startScale + direction * dx / base))
+                if (pressed) card.resizeTo(mapToItem(card.editor, event.x, event.y).x)
             }
-            onReleased: {
-                LayoutService.updateItem(card.placementId, { scale: Math.round(card.previewScale * 100) / 100 })
-                LayoutService.save()
-                card.resizing = false
-            }
+            onReleased: card.endResize()
+            onCanceled: card.cancelResize()
         }
     }
 }

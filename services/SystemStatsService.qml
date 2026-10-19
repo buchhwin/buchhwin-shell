@@ -3,10 +3,11 @@ import Quickshell
 import Quickshell.Io
 import QtQuick
 import "system/SystemLogic.js" as Logic
+import "system/ProcessLogic.js" as ProcessLogic
 
 // CPU, memory and disk usage for the stat widgets and the system popup.
 // Samples every two seconds only while something tracks it; the busiest
-// processes (`top`, two iterations) only while the popup is open.
+// processes (read from /proc, ProcessLogic) only while the popup is open.
 Singleton {
     id: root
     property int trackers: 0
@@ -28,8 +29,13 @@ Singleton {
 
     function track() { trackers += 1; sample(true) }
     function untrack() { trackers = Math.max(0, trackers - 1) }
-    function trackProcesses() { processTrackers += 1; if (!topProc.running) topProc.running = true }
-    function untrackProcesses() { processTrackers = Math.max(0, processTrackers - 1) }
+    function trackProcesses() { processTrackers += 1; readProcesses() }
+    // The next open measures afresh, not against a read from minutes ago.
+    function untrackProcesses() {
+        processTrackers = Math.max(0, processTrackers - 1)
+        if (!processTrackers) { lastProcesses = null; processSoon.stop() }
+    }
+    function readProcesses() { if (!procProc.running) procProc.running = true }
 
     function usage(metric) { return metric === "ram" ? ram : metric === "disk" ? diskUsage : cpu }
     function formatBytes(bytes) { return Logic.formatBytes(bytes) }
@@ -77,13 +83,30 @@ Singleton {
         stdout: StdioCollector { onStreamFinished: root.disk = Logic.disk(text) }
     }
 
+    // The busiest processes: each one's CPU time since the read before
+    // (ProcessLogic.busiest). The first read of an open has nothing to
+    // compare with, so the second follows half a second later - top's own
+    // delay - and then one every three seconds.
+    property var lastProcesses: null
     Process {
-        id: topProc
-        stderr: ErrorLog { label: "SystemStatsService.topProc" }
-        command: ["top", "-b", "-n", "2", "-d", "0.5", "-o", "%CPU", "-w", "512"]
-        environment: ({ LC_ALL: "C" })
-        stdout: StdioCollector { onStreamFinished: root.processes = Logic.topProcesses(text, 5) }
+        id: procProc
+        stderr: ErrorLog { label: "SystemStatsService.procProc" }
+        // Its own pid first, to leave the reader out of the list, and the
+        // page size the resident sizes are counted in. A process that ends
+        // between the glob and the read is a "No such file" for cat to keep.
+        command: ["sh", "-c", "echo $$ $(getconf PAGESIZE); exec cat /proc/stat /proc/[0-9]*/stat 2>/dev/null"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (!root.processTrackers) return
+                const current = ProcessLogic.snapshot(text)
+                const list = ProcessLogic.busiest(root.lastProcesses, current, root.memory ? root.memory.total : 0, 5)
+                root.lastProcesses = current
+                if (list) root.processes = list
+                else processSoon.start()
+            }
+        }
     }
+    Timer { id: processSoon; interval: 500; onTriggered: root.readProcesses() }
 
     Timer {
         interval: 2000
@@ -96,6 +119,6 @@ Singleton {
         interval: 3000
         repeat: true
         running: root.processTrackers > 0
-        onTriggered: if (!topProc.running) topProc.running = true
+        onTriggered: root.readProcesses()
     }
 }

@@ -36,3 +36,16 @@ function keep(previous, next, key, children) {
         return JSON.stringify(old) === JSON.stringify(candidate) ? old : candidate
     })
 }
+
+// keepList(previous, next, key[, children]): keep(), and `previous` itself
+// when not one entry changed - the same length, every entry the very object
+// it was. A binding that returns the same object notifies nobody; an equal
+// new list re-ran everything that read it.
+function keepList(previous, next, key, children) {
+    const list = keep(previous, next, key, children)
+    const before = previous || []
+    if (list.length !== before.length) return list
+    for (let index = 0; index < list.length; ++index)
+        if (list[index] !== before[index]) return list
+    return before
+}

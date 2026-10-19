@@ -1,9 +1,14 @@
 import Quickshell
+import Quickshell.Io
 import QtQuick
 import "Harness.js" as T
 import "../../services/overview/OverviewLogic.js" as O
 
 ShellRoot {
+    // `hyprctl -j --batch "clients; monitors; workspaces"` as Hyprland 0.56
+    // answers it, titles and the monitor's maker made up.
+    FileView { id: batch; path: Qt.resolvedUrl("../fixtures/hypr-batch-overview.txt").toString().replace("file://", ""); blockLoading: true }
+
     Component.onCompleted: {
         const monitors = [
             { id: 0, name: "eDP-1", x: 0, y: 0, width: 2880, height: 1800, scale: 1.5, transform: 0, focused: true, activeWorkspace: { id: 1 } },
@@ -112,6 +117,91 @@ ShellRoot {
         // Without blocks nothing changes: one row per monitor, global numbers.
         const flat = O.build([], three, [{ id: 1, name: "1", monitorID: 0 }, { id: 3, name: "3", monitorID: 1 }], "open", 2, false)
         T.eq(flat.map(w => w.label), ["1", "3"], "no blocks, no relabelling")
+
+        // ---- the "New workspace" card of each row --------------------------
+
+        // With blocks every row offers the next free number of its own block.
+        T.eq(rows.map(row => row.newCard ? row.newCard.id : -1), [3, 13, 23], "each row offers its own block's next number")
+        T.ok(rows.every(row => row.newCard && row.newCard.placeholder === true && row.newCard.monitor === row.monitor
+                        && row.newCard.aspect === row.aspect), "shaped and placed like its row")
+        T.eq(O.groups(spread, three, true).map(row => row.newCard.id), [3, 13, 23], "perMonitor true is the same")
+        // Without blocks the numbers are one count, and `workspace N` opens a
+        // new one on the focused monitor: DP-1's own next number was DP-2's
+        // workspace, DP-2's a block number with no block behind it.
+        const pair = [
+            { id: 0, name: "DP-1", x: 0, y: 0, width: 1920, height: 1080, scale: 1, transform: 0, focused: true, activeWorkspace: { id: 1 } },
+            { id: 1, name: "DP-2", x: 1920, y: 0, width: 1920, height: 1080, scale: 1, transform: 0, focused: false, activeWorkspace: { id: 2 } }
+        ]
+        const global = O.build([], pair, [{ id: 1, name: "1", monitorID: 0 }, { id: 2, name: "2", monitorID: 1 }], "open", 5, false)
+        const globalRows = O.groups(global, pair, false)
+        T.eq(globalRows.map(row => row.workspaces.map(w => w.id)), [[1], [2]], "without blocks: a workspace per row")
+        T.eq(globalRows.map(row => row.newCard ? row.newCard.id : -1), [3, -1],
+             "only the focused row offers a new one, with the next number free anywhere")
+        T.eq(globalRows.map(row => row.base), [0, 0], "and no row has a block")
+        pair[0].focused = false
+        pair[1].focused = true
+        T.eq(O.groups(global, pair, false).map(row => row.newCard ? row.newCard.id : -1), [-1, 3],
+             "the focus elsewhere moves the card with it")
+        T.eq(O.groups([{ id: 5, monitor: "GONE", windows: [] }], pair, false).map(row => row.monitor), ["DP-1", "DP-2", ""],
+             "a homeless workspace still has its row without blocks")
+
+        // ---- what the × may close ---------------------------------------------
+
+        // Fixed shows its numbers whether they exist or not, gapless fills the
+        // holes: neither kind is a workspace the × could close.
+        const fixedAgain = O.build(holedClients, screens, spaces, "fixed", 4)
+        T.eq(fixedAgain.map(w => !!w.filled), [false, true, false, true], "Fixed's made-up workspaces are marked filled")
+        T.eq(fixedAgain.map(w => !!w.slot), [true, true, true, true], "and all four of its numbers are slots")
+        const fixedRow = O.groups(fixedAgain, screens)[0]
+        T.eq(fixedAgain.map(w => O.closable(w, fixedRow)), [false, false, false, false],
+             "so none of them gets a × that cannot work")
+        const pastCount = O.build(holedClients, screens, spaces, "fixed", 2)
+        const pastRow = O.groups(pastCount, screens)[0]
+        T.eq(pastCount.map(w => [w.id, O.closable(w, pastRow)]), [[1, false], [2, false], [3, true]],
+             "a real workspace past Fixed's count can be closed")
+        const gapless = O.build(holedClients, screens, spaces, "gapless", 5)
+        const gaplessRow = O.groups(gapless, screens)[0]
+        T.eq(gapless.map(w => [w.id, !!w.filled, !!w.slot]), [[1, false, false], [2, true, false], [3, false, false]],
+             "No gaps marks the hole it fills, and has no slots")
+        T.eq(gapless.map(w => O.closable(w, gaplessRow)), [true, false, true], "the filled hole has no ×")
+        const openOnly = O.build(holedClients, screens, spaces, "open", 5)
+        T.eq(openOnly.map(w => O.closable(w, O.groups(openOnly, screens)[0])), [true, true], "in Open every real workspace can")
+        const lonely = O.build([], screens, [{ id: 1, name: "1", monitorID: 0 }], "open", 5)
+        T.eq(O.closable(lonely[0], O.groups(lonely, screens)[0]), false, "a monitor's only workspace has nothing to close into")
+        const withFill = O.build([], screens, [{ id: 1, name: "1", monitorID: 0 }, { id: 3, name: "3", monitorID: 0 }], "gapless", 5)
+        T.eq(withFill.map(w => O.closable(w, O.groups(withFill, screens)[0])), [true, false, true],
+             "two real ones and a hole between: the real ones can")
+        T.eq([O.closable(rows[0].newCard, rows[0]), O.closable(null, rows[0])], [false, false], "the new workspace card never")
+        const windowOnFill = O.build([{ address: "0x9", title: "w", class: "w", workspace: { id: 2, name: "2" }, monitor: 0,
+                                        at: [0, 0], size: [10, 10] }], screens, spaces, "gapless", 5)
+        T.eq(windowOnFill.map(w => !!w.filled), [false, false, false], "a window on a filled-in number makes it a real one")
+
+        // ---- the rows' headings ------------------------------------------------
+
+        T.eq(O.monitorTitle({ name: "DP-8", model: "DELL U2720Q" }), "DELL U2720Q", "a monitor that names its model goes by it")
+        T.eq([O.monitorTitle({ name: "eDP-1", model: "0x41B5" }), O.monitorTitle({ name: "DP-1", model: "" }),
+              O.monitorTitle({ name: "DP-2" }), O.monitorTitle({ name: "DP-3", model: "  " })],
+             ["eDP-1", "DP-1", "DP-2", "DP-3"], "a bare product code or none is the connector")
+        T.eq(O.groups(spread, three.map(m => Object.assign({ model: m.name === "DP-1" ? "Example 27Q" : "" }, m))).map(row => row.title),
+             ["DP-3", "Example 27Q", "DP-2"], "each row carries its title")
+
+        // ---- one hyprctl for the three answers ------------------------------
+
+        const answer = O.parseBatch(batch.text(), ["clients", "monitors", "workspaces"])
+        T.ok(answer !== null, "the batch answer splits into its three documents")
+        if (answer) {
+            T.eq([answer.clients.length, answer.monitors.length, answer.workspaces.length], [2, 1, 2], "clients, monitors, workspaces")
+            T.eq(answer.monitors[0].name, "eDP-1", "in the order they were asked for")
+            const built = O.build(answer.clients, answer.monitors, answer.workspaces, "open", 5, true)
+            T.eq(built.map(w => w.windows.length), [1, 1], "and they build the overview as the three calls did")
+        }
+        T.eq(O.parseBatch(batch.text(), ["clients", "monitors"]), null, "three documents for two names is no answer")
+        T.eq(O.parseBatch("[1]\n\n\n{broken", ["a", "b"]), null, "nor is a broken one")
+        T.eq([O.parseBatch("", ["a"]), O.parseBatch(null, ["a"]), O.parseBatch("[]", [])], [null, null, null], "nor nothing")
+        T.eq(O.parseBatch("[{\n    \"a\": 1\n}]\n\n\n{\n    \"b\": \"x y\"\n}\n", ["clients", "active"]),
+             { clients: [{ a: 1 }], active: { b: "x y" } }, "two documents, as the switcher asks for them")
+        T.eq(O.parseBatch("[]\n\n\n{}\n", ["clients", "active"]), { clients: [], active: {} },
+             "no window focused is an empty object")
 
         T.finish("OverviewTest")
     }

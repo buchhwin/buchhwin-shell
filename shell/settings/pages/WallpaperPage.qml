@@ -1,6 +1,7 @@
 import Quickshell
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 import qs.theme
 import qs.services
 import qs.shell.components
@@ -32,7 +33,8 @@ ColumnLayout {
                 Layout.fillWidth: true
                 visible: Quickshell.screens.length > 1
                 current: root.target
-                options: [{ value: "", label: "All displays" }].concat(Quickshell.screens.map(screen => ({ value: screen.name, label: screen.name })))
+                // "1 · eDP-1", as Settings > Displays names them.
+                options: Logic.screenChoices(Quickshell.screens.map(screen => screen.name), name => DisplayService.displayNumber(name))
                 onSelected: value => root.target = value
             }
 
@@ -47,7 +49,8 @@ ColumnLayout {
                 RoundedImage {
                     anchors.fill: parent
                     radius: parent.radius
-                    source: root.targetPath.length ? "file://" + root.targetPath : ""
+                    // Encoded: a "#", "?" or "%XX" in the name stays part of it.
+                    source: Logic.folderUrl(root.targetPath)
                     sourceWidth: 640
                 }
                 Rectangle {
@@ -60,7 +63,8 @@ ColumnLayout {
                         id: caption
                         anchors.fill: parent
                         anchors.margins: Metrics.spaceMd
-                        text: root.targetPath.split("/").pop().replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ")
+                        // The picture's name as the picker writes it.
+                        text: Logic.displayName(root.targetPath)
                             + (root.target.length && !WallpaperService.hasOwn(root.target) ? " · same as all displays" : "")
                         color: Colors.scrimText
                     }
@@ -257,11 +261,32 @@ ColumnLayout {
                 grid.current = Logic.moveIndex(grid.current, delta, root.shownImages.length, grid.columns)
             }
 
+            // Settings scrolls the focused item into view, and the grid is one
+            // item: taller than the view with a folder of pictures, Tab showed
+            // its end while the ring sat on a tile near its top, and the
+            // arrows, which only move `current`, never scrolled at all. The
+            // current tile is brought into view instead, in the page's own
+            // Flickable, with the panel's air around it.
+            function revealCurrent() {
+                const tile = thumbs.itemAt(grid.current)
+                let flick = grid.parent
+                while (flick && (flick.contentY === undefined || flick.contentItem === undefined)) flick = flick.parent
+                if (!tile || !flick || flick.height <= 0) return
+                const top = tile.mapToItem(flick.contentItem, 0, 0).y - Metrics.spaceLg
+                const bottom = top + tile.height + Metrics.spaceLg * 2
+                const maxY = Math.max(0, flick.contentHeight - flick.height)
+                if (top < flick.contentY) flick.contentY = Math.max(0, top)
+                else if (bottom > flick.contentY + flick.height) flick.contentY = Math.min(maxY, bottom - flick.height)
+            }
+            onCurrentChanged: if (activeFocus) revealCurrent()
+
             // Arriving from Tab lands on the image the chosen display already
-            // shows, not on the first of several hundred.
+            // shows, not on the first of several hundred - and shows it once
+            // the panel has scrolled to the grid as a whole.
             onActiveFocusChanged: if (activeFocus) {
                 const at = root.shownImages.indexOf(root.targetPath)
                 if (at >= 0) grid.current = at
+                Qt.callLater(grid.revealCurrent)
             }
 
             Keys.onLeftPressed: grid.step(-1)
@@ -277,7 +302,40 @@ ColumnLayout {
                 }
             }
 
+            // Every tile is the same size, so they share one mask for their
+            // rounded corners instead of each carrying its own layer for it:
+            // RoundedImage's own mask was a second layer per tile, one more
+            // texture for every picture in the folder for as long as the page
+            // is kept. The chosen tile is inset by its ring and has a smaller
+            // radius, so it has a mask of its own size. Neither is drawn:
+            // they are only read.
+            readonly property real activeInset: Metrics.focusBorderWidth + 1
+            readonly property real tileWidth: (width - columnSpacing * (columns - 1)) / columns
+            readonly property real tileHeight: (width / columns) * 10 / 16
+            Rectangle {
+                id: tileMask
+                visible: false
+                width: grid.tileWidth
+                height: grid.tileHeight
+                radius: Math.min(Metrics.radiusInner, Math.min(width, height) / 2)
+                layer.enabled: true
+                layer.smooth: true
+            }
+            Rectangle {
+                id: activeMask
+                visible: false
+                width: grid.tileWidth - grid.activeInset * 2
+                height: grid.tileHeight - grid.activeInset * 2
+                // Concentric with the frame: a picture inset by the ring
+                // needs a radius smaller by the same amount, or the two
+                // curves cross.
+                radius: Math.min(Metrics.radiusInner - grid.activeInset, Math.min(width, height) / 2)
+                layer.enabled: true
+                layer.smooth: true
+            }
+
             Repeater {
+                id: thumbs
                 model: root.shownImages
                 Rectangle {
                     id: thumb
@@ -289,16 +347,27 @@ ColumnLayout {
                     implicitHeight: (grid.width / grid.columns) * 10 / 16
                     radius: Metrics.radiusInner
                     color: Colors.surface2
-                    RoundedImage {
+                    // RoundedImage's picture with the grid's shared mask: the
+                    // layer crops it to the tile, the mask rounds it.
+                    Image {
+                        id: picture
                         anchors.fill: parent
-                        anchors.margins: thumb.active ? Metrics.focusBorderWidth + 1 : 0
-                        // Concentric with the frame: a picture inset by the
-                        // ring needs a radius smaller by the same amount, or
-                        // the two curves cross.
-                        radius: thumb.radius - anchors.margins
+                        anchors.margins: thumb.active ? grid.activeInset : 0
+                        visible: false
+                        asynchronous: true
+                        fillMode: Image.PreserveAspectCrop
                         // The picker's cached thumbnail, the same file.
                         source: WallpaperService.thumbFor(thumb.modelData) || Logic.folderUrl(thumb.modelData)
-                        sourceWidth: 320
+                        sourceSize.width: 320
+                        layer.enabled: true
+                    }
+                    MultiEffect {
+                        anchors.fill: picture
+                        source: picture
+                        maskEnabled: true
+                        maskSource: thumb.active ? activeMask : tileMask
+                        maskThresholdMin: 0.5
+                        maskSpreadAtMin: 1.0
                     }
                     Rectangle {
                         anchors.fill: parent
@@ -316,8 +385,9 @@ ColumnLayout {
                         width: Metrics.thumbBadge
                         height: width
                         radius: width / 2
-                        color: Colors.accent
-                        ShellIcon { anchors.centerIn: parent; glyph: Icons.check; size: Metrics.iconXs; color: Colors.accentText }
+                        // The accent fill a switch wears, with its ink.
+                        color: Colors.accentFill
+                        ShellIcon { anchors.centerIn: parent; glyph: Icons.check; size: Metrics.iconXs; color: Colors.accentFillText }
                     }
                     // The same ring the Displays page puts on a monitor tile:
                     // a grey border is not a focus indicator, and the keyboard
@@ -364,12 +434,12 @@ ColumnLayout {
                         width: Metrics.thumbBadge
                         height: width
                         radius: Metrics.radiusInner
-                        color: picked ? Colors.accent : Colors.pill
+                        color: picked ? Colors.accentFill : Colors.pill
                         ShellIcon {
                             anchors.centerIn: parent
                             glyph: Icons.check
                             size: Metrics.iconXs
-                            color: parent.picked ? Colors.accentText : Colors.mutedText
+                            color: parent.picked ? Colors.accentFillText : Colors.mutedText
                         }
                         MouseArea {
                             anchors.fill: parent

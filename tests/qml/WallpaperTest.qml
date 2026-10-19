@@ -16,6 +16,9 @@ ShellRoot {
     FileView { id: imageB; path: root.wallFolder + "/b.png"; printErrors: false }
     // The service's state file, as it was written.
     FileView { id: written; path: Paths.configDir + "/wallpapers.json"; blockLoading: true; printErrors: false }
+    // Where a wallpaper is handed to Qt: the desktop and an overview card.
+    FileView { id: layerSource; path: Quickshell.shellPath("shell/desktop/WallpaperLayer.qml"); blockLoading: true }
+    FileView { id: overviewSource; path: Quickshell.shellPath("shell/overview/Overview.qml"); blockLoading: true }
     property var writtenState: null
     // The accent from the wallpaper follows every image below, and none of
     // them is one it can read.
@@ -272,6 +275,128 @@ ShellRoot {
         T.eq(W.thumbUrl(thumbs, "/w/h.png"), "file:///home/a%23b/c.jpg", "encoded like a folder url")
         T.eq([W.thumbUrl(thumbs, "/w/none.png"), W.thumbUrl({}, "/w/a.png"), W.thumbUrl(null, "/w/a.png"),
               W.thumbUrl(thumbs, "constructor")], ["", "", "", ""], "none yet is \"\", so the tile loads the image")
+        // ---- a screen's own wallpaper at a start ---------------------------
+        // wallpapers.json and the folder are read in steps; until both are in
+        // a screen's own choice is not known, nor whether it is there.
+        const own = W.withScreen(W.emptyState(), "DP-1", "/w/c.webp")
+        T.eq(W.pathFor(own, "DP-1", "/w/a.png", [], false, true), "",
+             "an own choice the folder has not listed yet waits instead of showing the shared one first")
+        T.eq(W.pathFor(own, "DP-1", "/w/a.png", images, false, true), "/w/c.webp", "and is taken once it is listed")
+        T.eq(W.pathFor(own, "DP-1", "/w/a.png", ["/w/a.png"], true, true), "/w/a.png",
+             "with the folder read, one that is not there falls back")
+        T.eq(W.pathFor(own, "eDP-1", "/w/a.png", [], false, true), "/w/a.png",
+             "a screen known to have none takes the shared one at once")
+        T.eq([W.pathFor(own, "DP-1", "/w/a.png", images, true, false), W.pathFor(W.emptyState(), "eDP-1", "/w/a.png", images, true, false)],
+             ["", ""], "before wallpapers.json is read nobody knows, so nothing yet")
+        T.eq(W.pathFor(own, "DP-1", "/w/a.png", images), "/w/c.webp", "called as before, it is as before")
+
+        // ---- names --------------------------------------------------------
+        T.eq(W.displayName("/w/Desert_Color1.jpg"), "Desert Color1", "underscores read as spaces, as Settings shows it")
+        T.eq([W.displayName("/w/night-sky--2.png"), W.displayName("/w/_x_.webp"), W.displayName("/w/___.png")],
+             ["night sky 2", "x", "___"], "dashes too, runs collapse, a name of nothing but those keeps its stem")
+        T.eq(W.baseName("/w/Desert_Color1.jpg"), "Desert_Color1", "the file's own stem is still there")
+        T.eq(W.pickerItems(["/w/Desert_Color1.jpg", "/w/sea.png"], [], "desert_c").map(item => item.name), ["Desert Color1"],
+             "the search finds the file by its own name")
+        T.eq(W.pickerItems(["/w/Desert_Color1.jpg", "/w/sea.png"], [], "desert c").map(item => item.name), ["Desert Color1"],
+             "and by its label")
+        T.eq(W.screenChoices(["DP-8", "eDP-1", "DP-10"], name => ({ "eDP-1": 3, "DP-8": 1, "DP-10": 2 })[name]),
+             [{ value: "", label: "All displays" }, { value: "DP-8", label: "1 \u00b7 DP-8" },
+              { value: "DP-10", label: "2 \u00b7 DP-10" }, { value: "eDP-1", label: "3 \u00b7 eDP-1" }],
+             "the displays numbered and ordered as Settings > Displays numbers them")
+        T.eq(W.screenChoices(["B", "A"], () => 0).map(item => item.label), ["All displays", "B", "A"],
+             "without numbers the bare names, in their order")
+        T.eq(W.screenChoices([], null), [{ value: "", label: "All displays" }], "no screens is all displays")
+
+        // ---- the desktop's url ----------------------------------------------
+        // The layer loads W.folderUrl(path): a "#", "?" or "%25" in a file
+        // name is part of the name, not a fragment, a query or an escape.
+        T.eq([W.folderUrl("/w/wall #1.png"), W.folderUrl("/w/what?.png"), W.folderUrl("/w/50%25 off.png")],
+             ["file:///w/wall%20%231.png", "file:///w/what%3F.png", "file:///w/50%2525%20off.png"],
+             "a wallpaper's own name is encoded, as the picker's tiles are")
+        // "file://" and the bare path was what the desktop loaded, and such a
+        // picture showed only the background colour there.
+        T.ok(layerSource.text().indexOf("Logic.folderUrl(path)") >= 0 && layerSource.text().indexOf("\"file://\"") < 0,
+             "the desktop loads its pictures through folderUrl")
+        T.ok(overviewSource.text().indexOf("WallpaperLogic.folderUrl(WallpaperService.currentFor(") >= 0,
+             "and so does an overview card without a thumbnail")
+
+        // ---- which folder a FolderListModel lists ---------------------------
+        T.ok(W.listsFolder("file:///home/u/Bilder/Desktop", "/home/u/Bilder/Desktop"), "the folder asked for")
+        T.ok(W.listsFolder("file:///home/u/%C3%9Cber%20mich%20%232", "/home/u/Über mich #2")
+             && W.listsFolder("file:///home/u/Über mich %232", "/home/u/Über mich #2"), "encoded or handed back half decoded")
+        T.ok(W.listsFolder("file:///home/u/w/", "/home/u/w") && W.listsFolder("file:///home/u/w", "/home/u/w/"), "a trailing slash either side")
+        T.ok(!W.listsFolder("file:///home/u", "/home/u/Bilder/Desktop"), "not the working directory Qt went to instead")
+        T.ok(!W.listsFolder("file:///home/u", "") && !W.listsFolder("", "/w") && !W.listsFolder("file:///w%E0", "/w"),
+             "nor anything when no folder is asked for, none is listed or the url is broken")
+        T.eq(["/w/nature", "/w/__MACOSX", "/w/.hidden", "/w/a/"].map(W.isGroupFolder), [true, false, false, true],
+             "a zip's __MACOSX and hidden folders are never groups")
+
+        // ---- the desktop's decode -------------------------------------------
+        // Qt scales the picture to cover the screen (max of the two ratios,
+        // rounded) and keeps the centred screen-sized part of it; probed
+        // offscreen with the shipped settings: 2820x1200 decoded before,
+        // exactly 1920x1200 with this clip.
+        const laptop = W.decodeGeometry([5640, 2400], 1920, 1200)
+        T.eq([laptop.width, laptop.height, laptop.clip], [2820, 1200, { x: 450, y: 0, width: 1920, height: 1200 }],
+             "a 2.35:1 picture on the 1920x1200 panel: scaled to cover, and only its centre kept")
+        T.eq(W.decodeGeometry([5640, 2400], 3840, 2160).clip, { x: 618, y: 0, width: 3840, height: 2160 }, "on a 4K screen")
+        T.eq(W.decodeGeometry([5641, 2401], 1920, 1200).clip, { x: 449, y: 0, width: 1920, height: 1200 },
+             "Qt rounds the scaled 2819.3 to 2819")
+        T.eq(W.decodeGeometry([5639, 2399], 1920, 1200).clip.x, 450, "and 2820.7 to 2821")
+        T.eq(W.decodeGeometry([6000, 3750], 3840, 2160).clip, { x: 0, y: 120, width: 3840, height: 2160 },
+             "a 16:10 picture on a 16:9 screen is cut at the top and bottom")
+        const portrait = W.decodeGeometry([5640, 2400], 1440, 2560)
+        T.eq([portrait.width, portrait.height, portrait.clip], [5640, 2400, { x: 2145, y: 0, width: 1350, height: 2400 }],
+             "a portrait screen taller than the picture: not enlarged on decode, the screen's shape cut from it")
+        const small = W.decodeGeometry([1600, 1000], 1920, 1200)
+        T.eq([small.width, small.height, small.clip], [1600, 1000, { x: 0, y: 0, width: 1600, height: 1000 }],
+             "a picture smaller than the screen is decoded as it is")
+        T.eq(W.decodeGeometry([1920, 1200], 1920, 1200).clip, { x: 0, y: 0, width: 1920, height: 1200 }, "one of the screen's own size")
+        const plain = W.decodeGeometry(null, 1920, 1200)
+        T.eq([plain.width, plain.height, plain.clip, plain.natural], [1920, 1200, null, null], "without a size, the screen's size as before")
+        T.eq([W.decodeGeometry([0, 10], 1920, 1200).clip, W.decodeGeometry([10.5, 10], 1920, 1200).clip,
+              W.decodeGeometry("big", 1920, 1200).clip, W.decodeGeometry([5640, 2400], 0, 0).clip], [null, null, null, null],
+             "a size that is no size, or no screen yet, is no clip")
+        T.eq([laptop.natural, laptop.screen], [[5640, 2400], [1920, 1200]], "and it says what it was worked out from")
+        // A size that is wrong (a file replaced in place, until the next run
+        // says so) keeps the clip inside what Qt decodes: Qt scales the real
+        // picture to at least the size asked for. Past its edge it was black.
+        const qtScaled = (real, asked) => {
+            const ratio = Math.max(asked[0] / real[0], asked[1] / real[1])
+            return [Math.round(real[0] * ratio), Math.round(real[1] * ratio)]
+        }
+        const inside = (geometry, real) => {
+            const scaled = qtScaled(real, [geometry.width, geometry.height])
+            const clip = geometry.clip
+            return clip.x >= 0 && clip.y >= 0 && clip.x + clip.width <= scaled[0] && clip.y + clip.height <= scaled[1]
+        }
+        T.ok([[[6000, 3000], [6000, 3750]], [[5640, 2400], [3000, 4000]], [[1600, 1000], [6000, 3750]], [[6000, 3750], [1600, 1000]],
+              [[3000, 4000], [5640, 2400]], [[5640, 2400], [5640, 2400]]]
+             .every(pair => [[1920, 1200], [3840, 2160], [1440, 2560]].every(screen =>
+                 inside(W.decodeGeometry(pair[0], screen[0], screen[1]), pair[1]))),
+             "a wrong size never puts the clip past the picture")
+
+        // Decoded again only when it has to be.
+        T.ok(!W.needsRedecode(laptop, W.decodeGeometry([5640, 2400], 1920, 1200)), "the same is the same")
+        T.ok(W.needsRedecode(laptop, W.decodeGeometry([5640, 2400], 2560, 1600)), "another mode decodes again")
+        T.ok(W.needsRedecode(laptop, W.decodeGeometry([6000, 3750], 1920, 1200)), "and so does a file replaced in place")
+        T.ok(!W.needsRedecode(plain, laptop), "a size only learnt now is no reason for a second decode at a start")
+        T.ok(!W.needsRedecode(laptop, plain), "nor is a size forgotten")
+        T.ok(W.needsRedecode(plain, W.decodeGeometry(null, 1200, 1920)), "but a turned screen is")
+        T.ok(!W.needsRedecode(null, laptop) && !W.needsRedecode(laptop, null), "nothing shown or wanted is nothing to do")
+
+        // The sizes: the helper's answer and the file the service keeps.
+        T.eq(W.parseThumbSizes(JSON.stringify({ thumbs: {}, sizes: { "/w/a.png": [6000, 3750], "/w/b.jpg": [1, 2, 3],
+                                                                    "x.png": [10, 10], "/w/c.png": [0, 5], "/w/d.png": [2.5, 4],
+                                                                    "/w/e.png": "6000x3750", "/w/f.png": [70000, 10] } })),
+             { "/w/a.png": [6000, 3750] }, "only image paths with two whole sizes are kept")
+        T.eq([W.parseThumbSizes(JSON.stringify({ thumbs: {} })), W.parseThumbSizes("{broken"), W.parseThumbSizes("")],
+             [null, null, null], "an answer without sizes keeps the sizes there are")
+        T.eq(W.parseSizes({}), {}, "an empty map is a map")
+        T.eq(W.sizesText({ "/w/b.png": [2, 1], "/w/a.png": [4, 3] }), '{"/w/a.png":[4,3],"/w/b.png":[2,1]}\n',
+             "the file is sorted, so the same sizes are the same text")
+        T.eq(W.sizesText(null), "{}\n", "and no sizes are an empty map")
+
         T.eq(W.recentFolders(" ~/a, ~/b,,~/a "), ["~/a", "~/b"], "recent folders trimmed and unique")
         T.eq(W.addRecentFolder("~/a,~/b", "~/b"), "~/b,~/a", "a reused folder moves to the front")
         T.eq(W.addRecentFolder("~/1,~/2,~/3,~/4,~/5", "~/6").split(",").length, 5, "at most five")
@@ -383,6 +508,41 @@ ShellRoot {
             const stored = W.parseState(chipFile.text())
             T.eq([stored.pickerFilter, stored.favourites], ["nature", [root.wallFolder + "/a.png"]],
                  "wallpapers.json holds the chip next to the favourites")
+            sizesWrite.start()
+        }
+    }
+
+    // The pictures' sizes for the desktop's decode: taken from a run, kept
+    // in the cache for the next start, and written only when they change.
+    property string sizesPath: ""
+    FileView { id: sizesBack; path: root.sizesPath; blockLoading: true; printErrors: false }
+    Timer {
+        id: sizesWrite
+        interval: 50
+        onTriggered: {
+            T.ok(WallpaperService.sizesRead, "the sizes file has answered (or is not there) by now")
+            const found = {}
+            found[root.wallFolder + "/b.png"] = [6000, 3750]
+            found[root.wallFolder + "/a.png"] = [5640, 2400]
+            WallpaperService.takeSizes(found)
+            T.eq(WallpaperService.sizeOf(root.wallFolder + "/a.png"), [5640, 2400], "a run's sizes are taken")
+            T.eq([WallpaperService.sizeOf(root.wallFolder + "/gone.png"), WallpaperService.sizeOf("constructor")], [null, null],
+                 "an image without one has none")
+            T.eq(WallpaperService.sizesStored, W.sizesText(found), "and written to the cache, sorted")
+            const before = WallpaperService.sizes
+            WallpaperService.takeSizes(JSON.parse(JSON.stringify(found)))
+            T.ok(WallpaperService.sizes === before, "the same sizes again change nothing")
+            sizesRead.start()
+        }
+    }
+    // Against what was written last: the folder's own thumbnail run may land
+    // in between, with sizes of its own.
+    Timer {
+        id: sizesRead
+        interval: 400
+        onTriggered: {
+            root.sizesPath = Paths.cacheDir + "/wallpaper-sizes.json"
+            T.eq(sizesBack.text(), WallpaperService.sizesStored, "the cache holds what was written")
             T.finish("WallpaperTest")
         }
     }

@@ -60,6 +60,7 @@ ShellRoot {
         T.ok(C.inRange(new Date(2026, 1, 23), range) && !C.inRange(new Date(2026, 3, 6), range), "grid range is half-open")
 
         T.eq(C.formatRange(dentist), "14:00 – 15:00", "time range")
+        T.eq(C.formatRange(dentist, true), "2:00 PM – 3:00 PM", "time range on a 12-hour clock")
         T.eq(C.formatRange(holiday), "All day", "all-day label")
 
         // Hidden calendar ids

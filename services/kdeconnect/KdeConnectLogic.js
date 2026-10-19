@@ -411,3 +411,16 @@ function shareAction(input) {
 function parseFiles(text) {
     return String(text || "").split("\n").filter(validFile)
 }
+
+// Whether a snapshot read at `readAt` (ms since the epoch, 0 for never) is
+// worth reading again when a new viewer starts tracking. The poll reads every
+// `POLL_MS` while anyone tracks, so an answer younger than that is the one
+// the poll would show anyway: the control center opened twice within ten
+// seconds reads the phone once. A clock that went back (a time change)
+// counts as old.
+var POLL_MS = 10000
+function stale(readAt, now, maxAge) {
+    const at = Number(readAt) || 0
+    const age = Number(now) - at
+    return at <= 0 || !(age >= 0) || age >= (maxAge === undefined ? POLL_MS : Number(maxAge))
+}

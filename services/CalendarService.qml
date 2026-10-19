@@ -13,7 +13,8 @@ import org.kde.kitemmodels
 // is loaded and asks QSettings for an empty key. A bare ShellRoot with only
 // this import prints it (probed 16./17.10., kxmlgui 6.31); nothing of ours
 // uses QSettings. Harmless, and not ours to silence: the import costs about
-// 0.4 MB and 5-10 ms, too little for a lazy split.
+// 0.4 MB and 5-10 ms, too little for a lazy split. The backend below is
+// another matter (see `wanted`).
 import org.kde.akonadi as Akonadi
 import qs.theme
 import "calendar/CalendarLogic.js" as Logic
@@ -21,6 +22,7 @@ import "calendar/EventDraftLogic.js" as Draft
 import "calendar/EventEditLogic.js" as Edit
 import "calendar/RecurrenceLogic.js" as Rec
 import "calendar/WeekLogic.js" as Week
+import "lock/LockLogic.js" as LockLogic
 
 // Read-only KDE calendars (Akonadi, including Google accounts added in KDE)
 // through Plasma's calendar "pimevents" plugin, the same source the Plasma
@@ -85,10 +87,7 @@ Singleton {
     readonly property int visibleCalendarCount: calendarRows.filter(row => row.selectable && hiddenIds.indexOf(row.id) < 0).length
 
     // disabled | sandbox | loading | ok | unavailable
-    readonly property string status: !enabled ? "disabled"
-        : sandboxed ? "sandbox"
-        : calendarRows.length > 0 ? "ok"
-        : timedOut ? "unavailable" : "loading"
+    readonly property string status: Logic.status(enabled, sandboxed, calendarRows.length, timedOut)
 
     readonly property var todayEvents: {
         const unused = revision
@@ -131,7 +130,7 @@ Singleton {
         const soon = todayEvents.concat(backendItem.eventsOn(backendItem.todayCalendar, Logic.addDays(now, 1)))
         return Logic.nextUpcoming(soon, now, hintMinutes)
     }
-    function formatRange(event) { return Logic.formatRange(event) }
+    function formatRange(event) { return Logic.formatRange(event, SettingsService.twelveHourClock) }
 
     function setCalendarVisible(id, visible) {
         SettingsService.set("calendar.hiddenCalendars", Logic.formatIdList(Logic.withId(hiddenIds, id, !visible)))
@@ -156,6 +155,35 @@ Singleton {
     readonly property bool realSession: (Quickshell.env("BUCHHWIN_SHELL_PATH") || "").length > 0
         && Quickshell.env("BUCHHWIN_NESTED") !== "1"
     readonly property bool writeAllowed: realSession && !editorPreview && !previewEvents
+
+    // Whether calendar-helper.py can run here at all: it writes through KDE's
+    // Akonadi Python bindings (PySide6 and AkonadiCore), which Fedora packages
+    // and openSUSE Leap and Arch do not. Nothing asked before, so on Arch the
+    // editor took a whole new event and only its Save said the bindings were
+    // missing, and an opened event read "could not be matched safely". Asked
+    // once per shell, when the backend first starts, with the helper's own two
+    // imports (calendar-helper.py `check` would need Akonadi and a request).
+    // "" (not asked) | checking | ready | missing
+    property string writerState: ""
+    readonly property bool writerReady: writerState === "ready"
+    // Writes would happen here, and cannot: the editor offers Merkuro instead
+    // of a form whose Save would only fail.
+    readonly property bool writesBlocked: writeAllowed && writerState === "missing"
+    readonly property string writesBlockedReason: writesBlocked ? Edit.refuse("noBindings").message : ""
+
+    function checkWriter() {
+        if (writerState.length || !realSession || LockLogic.lockProcess(Quickshell.shellId)) return
+        writerState = "checking"
+        writerCheck.running = true
+    }
+
+    // Quiet either way: a missing module is an answer, not a log line.
+    Process {
+        id: writerCheck
+        command: ["python3", "-c", "try:\n    from PySide6.QtCore import QCoreApplication\n"
+                  + "    from AkonadiCore import Akonadi\nexcept Exception:\n    raise SystemExit(1)\n"]
+        onExited: code => root.writerState = code === 0 ? "ready" : "missing"
+    }
     // "" | saving | saved | error | preview
     property string saveState: ""
     property string saveMessage: ""
@@ -170,6 +198,8 @@ Singleton {
     }
 
     function openEditor(day, returnArgs) {
+        // Without the bindings a new event can only be made in Merkuro.
+        if (writesBlocked) { openManager(); return }
         resetSave()
         PanelService.openOver("eventEditor", { mode: "new", day: Logic.dayKey(day) }, returnArgs)
     }
@@ -187,6 +217,7 @@ Singleton {
 
     function createEvent(draft, rule) {
         if (saveState === "saving") return false
+        if (writesBlocked) return fail(writesBlockedReason)
         const check = Draft.validate(draft)
         if (!check.ok) return fail(check.error)
         const repeat = Rec.validate(rule, draft.date)
@@ -206,6 +237,7 @@ Singleton {
     // original/originalRule: what the editor started from.
     function changeEvent(original, draft, locked, originalRule, rule, scope) {
         if (saveState === "saving") return false
+        if (writesBlocked) return fail(writesBlockedReason)
         if (!identity.ok) return fail(identityMessage.length ? identityMessage
                                                             : "This event cannot be changed here.")
         const check = Edit.validate(draft, original, locked, rule)
@@ -218,6 +250,7 @@ Singleton {
 
     function deleteEvent(scope) {
         if (saveState === "saving") return false
+        if (writesBlocked) return fail(writesBlockedReason)
         if (!identity.ok) return fail(identityMessage.length ? identityMessage
                                                             : "This event cannot be deleted here.")
         const planned = Edit.deleteRequest(identity, scope)
@@ -290,6 +323,11 @@ Singleton {
         if (!event) { identityState = ""; return }
         if (previewEvents) {
             applyIdentity(Edit.previewMatch(event))
+            return
+        }
+        // No helper to ask: the details say why, not "could not be matched".
+        if (writesBlocked) {
+            applyIdentity(Edit.refuse("noBindings"))
             return
         }
         if (status !== "ok") {
@@ -409,7 +447,22 @@ Singleton {
     }
 
     onHiddenIdsChanged: if (backendItem) backendItem.applySelection()
+    // The 15-s wait below is for one start of the backend (CalendarLogic.status).
     onEnabledChanged: timedOut = false
+    onCalendarRowsChanged: if (calendarRows.length > 0) timedOut = false
+    Connections {
+        target: backend
+        function onActiveChanged() { if (backend.active) root.timedOut = false }
+    }
+
+    // After a suspend across midnight the day clock below is late (it runs on
+    // a timer that slept too, WallClock.qml): today's list stayed yesterday's
+    // until it caught up, and with it the clock's event hint and the notch's
+    // next event. A jump of the wall clock asks for the day at once.
+    Connections {
+        target: WallClock
+        function onJumped() { if (root.backendItem) root.backendItem.newDay(new Date()) }
+    }
 
     Timer {
         // Without Akonadi the calendar list stays empty.
@@ -427,12 +480,22 @@ Singleton {
     }
 
     // Started when something needs it, not with the shell (G6, 2026-10-13):
-    // the clock's event hint needs it all the time and keeps it on; without
-    // the hint, the dashboard, the events popup, the notch's events and its
-    // date page, the calendar widget, the lock screen and Settings > Calendar
-    // say so through CalendarDemand while they are shown. Once started it
-    // stays for five minutes past the last of them, so a dashboard opened
-    // twice does not reconnect to Akonadi twice.
+    // the dashboard, the events popup, the notch's events and its date page,
+    // the calendar widget, the lock screen, Settings > Calendar and the clock
+    // widget's event hint say so through CalendarDemand while they are shown.
+    // Once started it stays for five minutes past the last of them, so a
+    // dashboard opened twice does not reconnect to Akonadi twice.
+    //
+    // The hint used to keep the backend on by itself, from login and in every
+    // mode, though only a clock widget of its own (on the desktop, not in a
+    // bar or the notch) draws it: in notch and bar modes the shell paid for an
+    // indicator nobody could see. And the backend is costly: Plasma's
+    // pimevents plugin links KDE's Akonadi calendar, which links KMail's
+    // composer and viewer and with them Qt WebEngine - 223 libraries, ~21 MB
+    // PSS and ~11 MB of it private (19.10.). Qt never unloads a plugin, so
+    // after the first events view the libraries stay mapped; what the cool-
+    // down frees is the models and Akonadi's monitors, and what a session
+    // without an events view saves is all of it.
     property int trackers: 0
     property bool warm: false
     function track() { trackers += 1; warm = true; coolDown.stop() }
@@ -441,7 +504,7 @@ Singleton {
         if (trackers === 0) coolDown.restart()
     }
     Timer { id: coolDown; interval: 300000; onTriggered: if (root.trackers === 0) root.warm = false }
-    readonly property bool wanted: hintActive || trackers > 0 || warm
+    readonly property bool wanted: trackers > 0 || warm
 
     LazyLoader {
         id: backend
@@ -462,6 +525,21 @@ Singleton {
                 todayCalendar.daysModel.update()
                 viewCalendar.daysModel.update()
             }
+
+            // Today's lists anew, once per day: from the day clock (with the
+            // time of its own tick) and from a jump of the wall clock (now),
+            // whichever notices the new day first.
+            property string shownDay: Logic.dayKey(new Date())
+            function newDay(at) {
+                if (!Logic.dayChanged(shownDay, at)) return
+                shownDay = Logic.dayKey(at)
+                root.revision++
+                todayCalendar.today = at
+                todayCalendar.resetToToday()
+                viewCalendar.today = at
+            }
+
+            Component.onCompleted: root.checkWriter()
 
             function readRows() {
                 const result = []
@@ -496,13 +574,9 @@ Singleton {
             SystemClock {
                 id: dayClock
                 precision: SystemClock.Hours
+                enabled: WallClock.ticking
                 readonly property string day: Logic.dayKey(date)
-                onDayChanged: {
-                    root.revision++
-                    todayCalendar.today = new Date()
-                    todayCalendar.resetToToday()
-                    viewCalendar.today = new Date()
-                }
+                onDayChanged: scope.newDay(date)
             }
 
             PlasmaCalendar.Calendar {

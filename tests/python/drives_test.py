@@ -140,27 +140,19 @@ check(not module.removable_drive(None), "no drive")
 check(module.volume_from({module.BLOCK: {"Drive": PREFIX + "drives/x", "IdUsage": "filesystem", "Device": "sdb1"},
                           module.FILESYSTEM: {}}) is None, "device outside /dev rejected")
 
-# Events between snapshots.
-before = module.build_drives(objects)
-after_objects = dict(objects)
-del after_objects[PREFIX + "drives/SD_Reader"]
-after_objects.update([block("sdb1", "SanDisk_Ultra_1", fs="vfat", label="STICK", mounts=["/run/media/user/STICK"]),
-                      block("sdc2", "WD_Elements", fs="ext4", label="Backup"),
-                      drive("Kingston_1", Model="DataTraveler", Removable=True, ConnectionBus="usb"),
-                      block("sdg1", "Kingston_1", fs="exfat")])
-events = module.diff(before, module.build_drives(after_objects))
-check(events == [{"kind": "added", "id": "Kingston_1"},
-                 {"kind": "removed", "id": "SD_Reader"},
-                 {"kind": "mounted", "id": "sdb1", "drive": "SanDisk_Ultra_1"},
-                 {"kind": "unmounted", "id": "sdc2", "drive": "WD_Elements"}], "events: %r" % events)
-check(module.diff(before, before) == [], "no events without changes")
-check(module.diff([], []) == [], "empty lists")
-
-# Unlocking a volume between two snapshots is a mount event for the shell.
+# What came and went between two lists (and the reads in a row) is worked out
+# by the shell now, from the lists `list` prints: DrivesTest.qml covers it.
+# An unlocked volume is the encrypted one with the cleartext's mount points.
 unlocked_objects = dict(objects)
 del unlocked_objects[PREFIX + "block_devices/dm-0"]
-events = module.diff(module.build_drives(unlocked_objects), before)
-check(events == [{"kind": "mounted", "id": "sdc5", "drive": "WD_Elements"}], "unlock shows up as mounted: %r" % events)
+locked_volume = [volume for entry in module.build_drives(unlocked_objects) if entry["id"] == "WD_Elements"
+                 for volume in entry["volumes"] if volume["id"] == "sdc5"]
+open_volume = [volume for entry in module.build_drives(objects) if entry["id"] == "WD_Elements"
+               for volume in entry["volumes"] if volume["id"] == "sdc5"]
+check(locked_volume and not locked_volume[0]["mountPoints"] and not locked_volume[0]["unlocked"],
+      "without its cleartext device the LUKS volume is locked, no mount points")
+check(open_volume and open_volume[0]["mountPoints"] and open_volume[0]["unlocked"],
+      "with it, unlocked and mounted where the cleartext is")
 
 # MTP phones from the gvfs volume monitor (UDisks2 never sees them).
 volumes = [{"name": "Windows", "uri": "file:///run/media/user/Windows"},
@@ -184,40 +176,10 @@ check(module.mtp_id("mtp://[usb:001,005]/") == "mtp-usb_001_005", "id from a leg
 check(module.same_device("mtp://X/", "mtp://X") and not module.same_device("mtp://X/", "mtp://Y/"), "URI comparison")
 check(module.same_device("", "") is False, "empty URIs never match")
 
-events = module.diff_phones(phones, [dict(by_name["Sample Phone"], mounted=False, mountPoint=""),
-                                     {"id": "mtp-new", "name": "New", "uri": "mtp://New/", "mountPoint": "", "mounted": False}])
-check(events == [{"kind": "phoneAdded", "id": "mtp-new"},
-                 {"kind": "phoneRemoved", "id": "mtp-nokia_9"},
-                 {"kind": "phoneRemoved", "id": "mtp-5busb_3a001_2c005_5d"},
-                 {"kind": "phoneUnmounted", "id": "mtp-vendor_phone_1a2b"}], "phone events: %r" % events)
-check(module.diff_phones(phones, phones) == [], "no phone events without changes")
 check(isinstance(module.mtp_available(), bool), "gvfs-mtp presence is a plain flag")
 
-# The monitor's reads in a row (settle): the list at start, an error, the same
-# list again. The shell shows "unavailable" from the error on, so the list has
-# to be said once more even though nothing changed.
-state = {"drives": [], "phones": [], "stale": True, "first": True, "retries": 0}
-listed = {"drives": before, "phones": []}
-said, events = module.settle(state, listed, None)
-check(said == "drives" and events == [], "the first read is said, without events for what is plugged in already")
-check(module.settle(state, listed, None) == (None, []), "an unchanged read says nothing")
-check(module.settle(state, None, "timed out") == ("error", []), "a failed read is an error")
-check(state["retries"] == 1 and module.settle(state, None, "timed out")[0] == "error" and state["retries"] == 2,
-      "failed reads in a row are counted")
-check(state["drives"] == before, "an error keeps the last list")
-said, events = module.settle(state, listed, None)
-check(said == "drives" and events == [], "the same list after an error is said again: %r" % said)
-check(state["retries"] == 0 and module.settle(state, listed, None) == (None, []), "and then nothing until a change")
-# Plugged in while UDisks2 could not be read: a real event once it can.
-module.settle(state, None, "restarting")
-said, events = module.settle(state, {"drives": module.build_drives(after_objects), "phones": []}, None)
-check(said == "drives" and {"kind": "added", "id": "Kingston_1"} in events, "a drive plugged in meanwhile is added")
-# A start without UDisks2: the error, no empty list that would read as "no drives".
-fresh = {"drives": [], "phones": [], "stale": True, "first": True, "retries": 0}
-check(module.settle(fresh, None, "not available") == ("error", []), "a start without UDisks2 says so")
-said, events = module.settle(fresh, {"drives": [], "phones": []}, None)
-check(said == "drives" and events == [], "and says the (empty) list once it is there")
-check([module.retry_delay(n) for n in (1, 2, 5, 9)] == [2000, 5000, 60000, 60000], "tries again sooner, then every minute")
+# `list` is the only command: the resident monitor is gone.
+check(not hasattr(module, "command_monitor") and not hasattr(module, "settle"), "no monitor in the helper any more")
 
 if failures:
     for failure in failures:

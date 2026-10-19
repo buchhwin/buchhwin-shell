@@ -74,7 +74,7 @@ ShellRoot {
               S.describeExec("quickshell --path /opt/b ipc call mode cycle").title],
             ["All keyboard shortcuts", "Profiles and modes", "Wallpaper picker",
              "Pick a color off the screen", "Desktop mode: widgets, bar, notch",
-             "Mode: minimal, work, gaming, laptop, docked"],
+             "Mode: minimal, work, gaming, laptop, desk"],
             "and the six surfaces that had no pattern at all")
         T.eq(S.describeExec("quickshell --path /opt/b ipc call shortcuts toggleSheet").group, "panels",
             "the sheet is a panel, not Other")
@@ -127,6 +127,21 @@ ShellRoot {
         T.eq(S.grouped(legacyRows, "screenshot").map(group => group.id), ["screenshots"], "search by title")
         T.eq(titles(S.grouped(legacyRows, "super+shift+s"), "screenshots"), ["Super+Shift+S Screenshot of the screen"], "search by combo")
         T.eq(S.grouped(legacyRows, "nothing matches this").length, 0, "empty search result")
+
+        // Settings > Shortcuts keys its rows by these strings: one per row,
+        // the same for the same row read again, and a narrower search keeps
+        // the keys of the rows it still shows - so typing only takes rows
+        // away.
+        const allKeys = [].concat(...legacyGroups.map(group => S.rowKeys(group.rows)))
+        T.eq(allKeys.length, new Set(allKeys).size, "every row has a key of its own")
+        T.eq(S.rowKeys(S.grouped(S.rows(legacyBinds, [], null), "").find(group => group.id === "panels").rows),
+             S.rowKeys(legacyGroups.find(group => group.id === "panels").rows), "a fresh read gives the same keys")
+        const narrowed = S.grouped(legacyRows, "s")
+        T.ok(narrowed.every(group => S.rowKeys(group.rows).every(key => allKeys.indexOf(key) >= 0)),
+             "a narrower search keeps the keys of the rows it still shows")
+        const twice = [{ group: "apps", combo: "Super+E", title: "Files" }, { group: "apps", combo: "Super+E", title: "Files" }]
+        T.eq(S.rowKeys(twice), ["apps|Super+E|Files", "apps|Super+E|Files#2"], "one combination bound twice gets a count")
+        T.eq(S.rowKeys(null), [], "no rows, no keys")
 
         // Lua config: `__lua` binds carry descriptions
         const luaRows = S.rows(S.parseBinds(lua.text()), [], null)
@@ -192,7 +207,7 @@ ShellRoot {
         // An app starts the way the launcher starts it (LaunchLogic), not by
         // a bare gtk-launch: a web app past launch-brave.sh came up without
         // the wallet (pitfalls 32, 98), and GLib knows no terminal installed
-        // here, so a Terminal=true entry started nothing (round 12).
+        // here, so a Terminal=true entry started nothing.
         const script = name => "/s/" + name
         const overrides = { "kitty": "launch-kitty.sh", "brave-browser": "launch-brave.sh" }
         const start = app => ({ app: app, overrides: overrides, script: script })

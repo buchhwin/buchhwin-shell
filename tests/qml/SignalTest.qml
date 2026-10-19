@@ -34,6 +34,23 @@ ShellRoot {
         T.eq(["full", "limited", "portal", "none", "unknown"].map(S.note),
              ["", "No internet", "Sign-in required", "No internet", ""], "what the line says")
 
+        // "No internet" only once it has held: a reconnect reports the
+        // connection before NetworkManager's check reaches the internet again.
+        T.eq(S.LIMITED_SETTLE_MS, 3000, "three seconds")
+        T.eq([S.limitedShown(true, 1000, 3999), S.limitedShown(true, 1000, 4000), S.limitedShown(true, 1000, 9000)],
+             [false, true, true], "shown from three seconds on")
+        T.eq([S.limitedShown(false, 1000, 9000), S.limitedShown(true, -1, 9000)], [false, false],
+             "not while it is not limited, nor without a start")
+        T.eq([S.limitedShown(true, 1000, 1000, 0), S.limitedShown(true, 1000, 1400, 500)], [true, false], "another wait")
+        // The service's Timer asks again for what is left: one that ends a
+        // moment early must not leave the "!" away for good.
+        T.eq([S.limitedWait(true, 1000, 1000), S.limitedWait(true, 1000, 3990), S.limitedWait(true, 1000, 3999.5)],
+             [3000, 10, 1], "the wait from the start, and what is left after an early end")
+        T.eq([S.limitedWait(true, 1000, 4000), S.limitedWait(false, 1000, 2000), S.limitedWait(true, -1, 2000)],
+             [-1, -1, -1], "nothing to wait for once shown, or while not limited")
+        T.eq(S.limitedWait(true, 5000, 1000), 3000, "never longer than the settle time (a clock set back)")
+        T.eq(S.limitedWait(true, 1000, 1200, 500), 300, "another wait")
+
         T.finish("SignalTest")
     }
 }

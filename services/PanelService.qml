@@ -68,7 +68,10 @@ Singleton {
     // Panels built on demand (shell.qml's LazyLoaders): a panel is built at the
     // start whether it opens or not (testing.md pitfall 101), and these may
     // never open in a session - the dock's menu, the start menu, the tour
-    // after the first start. Each ShellPanel says when it is there.
+    // after the first start, Settings, the dialogs (Wi-Fi password, pairing,
+    // drive unlock, event editor), the power menu, the shortcut sheet, the
+    // emoji and wallpaper pickers, the clipboard and notification histories.
+    // Each ShellPanel says when it is there.
     //
     // Opening one that is not there asks for it (`demanded`, which its loader
     // reads alongside its feature), and the open waits for the panel to report
@@ -76,7 +79,9 @@ Singleton {
     // raised for a panel that is not there dims over nothing and catches the
     // next click (pitfall 110). A loader whose feature is off builds nothing,
     // and then nothing opens.
-    readonly property var lazyPanels: ["dockMenu", "startMenu", "welcome"]
+    readonly property var lazyPanels: ["dockMenu", "startMenu", "welcome", "settings", "eventEditor",
+                                       "wifiPassword", "pairing", "driveUnlock", "powerMenu", "shortcutSheet",
+                                       "emoji", "wallpaperPicker", "clipboard", "notifications"]
     // How many of each panel there are: counted, not flagged, because a
     // loader switched off and on again builds the new one before the old one
     // is gone (it is deleted at the end of the turn), and the old one's

@@ -58,8 +58,12 @@ fi
 lua_fallback_seconds=${BUCHHWIN_LUA_FALLBACK_SECONDS:-10}
 
 # Session-scoped markers let services distinguish this desktop without changing
-# the user's global KDE, Hyprland or application configuration.
-export XDG_CURRENT_DESKTOP=Hyprland
+# the user's global KDE, Hyprland or application configuration. hypr/ sets
+# XDG_CURRENT_DESKTOP to this same value for everything Hyprland starts (env in
+# hyprland.conf, hl.env in hyprland.lua; portals read buchhwin-shell first), so
+# this one only reaches start-hyprland and Hyprland's own process - where it
+# was a third value, "Hyprland", beside the session file's DesktopNames.
+export XDG_CURRENT_DESKTOP=buchhwin-shell:Hyprland
 export XDG_SESSION_DESKTOP=buchhwin-shell
 export DESKTOP_SESSION=buchhwin-shell
 export QT_QPA_PLATFORM=wayland
@@ -103,11 +107,20 @@ if [[ -x $project_dir/scripts/start-shell.sh ]]; then
   "$project_dir/scripts/start-shell.sh" --reap "$project_dir" 2>/dev/null || true
 fi
 
-# Autostart entries masked for this session by scripts/session-init.sh.
+# Autostart entries masked for this session by scripts/session-init.sh: only
+# the ones it did mask - the link `mask --runtime` leaves in the runtime unit
+# directory - since an unmask makes the user manager reload too, and with
+# the drop-ins (install/install.sh) or entries this system does not have
+# nothing was masked.
 if [[ -r $project_dir/scripts/lib/autostart-skip.sh ]]; then
   # shellcheck source=../scripts/lib/autostart-skip.sh
   source "$project_dir/scripts/lib/autostart-skip.sh"
-  mapfile -t skipped_units < <(autostart_skip_units 2>/dev/null || true)
+  mapfile -t listed_units < <(autostart_skip_units 2>/dev/null || true)
+  runtime_units="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/systemd/user"
+  skipped_units=()
+  for unit in "${listed_units[@]}"; do
+    if [[ -n $unit && -L $runtime_units/$unit ]]; then skipped_units+=("$unit"); fi
+  done
   if (( ${#skipped_units[@]} )); then
     systemctl --user unmask --runtime "${skipped_units[@]}" >/dev/null 2>&1 || true
   fi

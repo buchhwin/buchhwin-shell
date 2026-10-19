@@ -98,6 +98,11 @@ function highlightRadius(barRadius, inset, highlightHeight, roundEnd) {
 // may extend past the surface so hidden edges draw no border) with per-corner
 // radii and the content rect the zones sit in. Rects are in x/y, mapped from
 // along/across at the end.
+//
+// metrics: { height, margin, radius, border, inset }. `inset` is how far in
+// from the screen's ends a floating bar or the pills run, default the margin:
+// the windows' own gap, so the bar starts and ends where they do while it
+// keeps its margin off the screen edge.
 function geometry(styleName, positionName, edgeName, screenLength, metrics, reserve) {
     const name = style(styleName)
     const place = position(positionName)
@@ -107,6 +112,7 @@ function geometry(styleName, positionName, edgeName, screenLength, metrics, rese
     const length = nonNegative(screenLength)
     const thick = nonNegative(metrics.height)
     const margin = nonNegative(metrics.margin)
+    const along = metrics.inset === undefined ? margin : nonNegative(metrics.inset)
     const border = nonNegative(metrics.border)
     const attached = name === "bar" && place === "attached"
     const thickness = attached ? thick : margin + thick
@@ -128,7 +134,7 @@ function geometry(styleName, positionName, edgeName, screenLength, metrics, rese
         inset: thickness,
         // The margin is on the side away from the screen edge, so a floating
         // bottom bar has its gap below it, not above.
-        content: rect(margin, Math.max(0, length - margin * 2), far ? 0 : margin, thick),
+        content: rect(along, Math.max(0, length - along * 2), far ? 0 : margin, thick),
         background: null,
         radii: { topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 0 },
         // The concave corners an attached bar hangs into the screen, and how
@@ -158,7 +164,7 @@ function geometry(styleName, positionName, edgeName, screenLength, metrics, rese
         result.inset = thick
     } else {
         const acrossStart = upright ? result.content.x : result.content.y
-        result.background = rect(margin, Math.max(0, length - margin * 2), acrossStart, thick)
+        result.background = rect(along, Math.max(0, length - along * 2), acrossStart, thick)
         result.radii = { topLeft: radius, topRight: radius, bottomLeft: radius, bottomRight: radius }
     }
     return result
@@ -238,4 +244,15 @@ function segmentPadding(coverStart, coverEnd, iconOnly, pads) {
 // it is handing over, because it is the one that read the geometry.
 function anchorAlong(segmentStart, segmentSize) {
     return Math.round(Number(segmentStart) + nonNegative(segmentSize) / 2)
+}
+
+// A zone's pills without the item types in `types` (the readouts a taskbar on
+// the same screen shows already, NotchService.dockDuplicatesOn). A pill left
+// with nothing goes; with no types the zone is the very list it was.
+function withoutTypes(pills, types) {
+    const list = Array.isArray(pills) ? pills : []
+    if (!Array.isArray(types) || !types.length) return list
+    return list.map(pill => Object.assign({}, pill, {
+        items: (Array.isArray(pill && pill.items) ? pill.items : []).filter(item => !(item && types.indexOf(item.type) >= 0))
+    })).filter(pill => pill.items.length > 0)
 }

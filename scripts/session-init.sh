@@ -4,11 +4,15 @@ set -uo pipefail
 # Login session setup, started once by the Hyprland config:
 #   session-init.sh SHELL_PATH
 # Makes the compositor environment available to D-Bus/systemd activated KDE and
-# desktop services, restarts the portal and then starts the shell
-# (scripts/start-shell.sh SHELL_PATH), so Quickshell registers with a portal
-# that already knows this session. Steps that fail are reported and skipped;
-# the shell starts in any case. Nested test sessions never run this script
-# (they start start-shell.sh directly).
+# desktop services, starts the shell (scripts/start-shell.sh SHELL_PATH) as
+# soon as that is done, and then does the slow part: waits for the secret
+# service, restarts the portal, opens the wallet and starts the autostart
+# apps. The shell starts first on purpose - a slow portal used to keep the
+# screen black - so its Qt registration with the portal can be dropped by the
+# restart; it uses no portal, and a restarted portal ends every registration
+# anyway. Steps that fail are reported and skipped; the shell starts in any
+# case. Nested test sessions never run this script (they start
+# start-shell.sh directly).
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 shell_path=${1:-}
 shell_started=0
@@ -18,12 +22,19 @@ shell_started=0
 startup_log="${XDG_STATE_HOME:-$HOME/.local/state}/buchhwin-shell/startup.log"
 mkdir -p -- "$(dirname -- "$startup_log")" 2>/dev/null || true
 [[ -e $startup_log ]] && mv -f -- "$startup_log" "$startup_log.old" 2>/dev/null
-start_ms=$(( $(date +%s%N) / 1000000 ))
+# The clock from bash itself: two `date` processes per mark were thirty
+# forks in a login that is waiting for the shell. EPOCHREALTIME is seconds
+# and microseconds, with the locale's decimal point - only the digits count.
+start_us=${EPOCHREALTIME//[!0-9]/}
 mark() {
-  local now=$(( $(date +%s%N) / 1000000 ))
-  printf '%s +%5sms %s\n' "$(date +%H:%M:%S)" "$(( now - start_ms ))" "$*" >> "$startup_log" 2>/dev/null || true
+  local now=${EPOCHREALTIME//[!0-9]/}
+  printf '%(%H:%M:%S)T +%5sms %s\n' -1 "$(( (${now:-0} - ${start_us:-0}) / 1000 ))" "$*" >> "$startup_log" 2>/dev/null || true
 }
-mark "session-init started (Hyprland pid ${HYPRLAND_INSTANCE_SIGNATURE:-unknown})"
+# The compositor by its signature, and its pid from the lock file beside its
+# socket (pid first, then its display).
+hyprland_pid=""
+read -r hyprland_pid 2>/dev/null <"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr/${HYPRLAND_INSTANCE_SIGNATURE:-}/hyprland.lock" || true
+mark "session-init started (Hyprland ${HYPRLAND_INSTANCE_SIGNATURE:-unknown}${hyprland_pid:+, pid $hyprland_pid})"
 
 start_shell() {
   (( shell_started )) && return 0
@@ -64,14 +75,18 @@ fi
 [[ -n $XCURSOR_THEME && $XCURSOR_THEME != null ]] || XCURSOR_THEME=breeze_cursors
 [[ $XCURSOR_SIZE =~ ^[0-9]+$ ]] || XCURSOR_SIZE=24
 export XCURSOR_THEME XCURSOR_SIZE
-hyprctl setcursor "$XCURSOR_THEME" "$XCURSOR_SIZE" >/dev/null 2>&1 || true
+# Not waited for. Hyprland answers it from its main loop, which at this point
+# is still modesetting the outputs: ~150 ms of the 170 before "cursor set" on
+# 19.10., with the shell waiting behind it. Nothing below needs the answer
+# (the variables above are what the import hands on), and the shell sends the
+# same call itself once its settings are loaded (AppearanceService).
+hyprctl setcursor "$XCURSOR_THEME" "$XCURSOR_SIZE" >/dev/null 2>&1 &
 # Marked on its own. The first two timelines put 1.1-2.2 s between "session-init
-# started" and "environment imported", and that gap holds three things: jq,
-# this hyprctl call - answered from Hyprland's main loop, which at this point
-# is still modesetting the outputs - and the systemd import below. The user
-# manager was idle through both logins (its startup had finished 2.3 s before
+# started" and "environment imported", and that gap held three things: jq,
+# the hyprctl call above and the systemd import below. The user manager was
+# idle through both logins (its startup had finished 2.3 s before
 # session-init began), so the import is not the obvious suspect it looked like;
-# this mark is what tells the three apart at the next login.
+# this mark is what tells them apart.
 mark "cursor set"
 
 # PAM_KWALLET5_LOGIN is what pam_kwallet_init (plasma-kwallet-pam.service, below)
@@ -117,11 +132,15 @@ step "session target" systemctl --user start buchhwin-shell-session.target
 # (scripts/wallet-unlock.sh). kwalletd6 is a compatibility shim over the same
 # service (KF 6.16), not a second wallet with its own lock - whatever asks
 # org.kde.kwalletd6 ends up here.
-pam_wallet() {
-  [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/kwallet5.socket" ]] \
-    && systemctl --user cat plasma-kwallet-pam.service >/dev/null 2>&1
-}
-if pam_wallet; then
+# Asked once, for the hand-over here and for the wait and the wallet step
+# below: each `systemctl --user cat` cost ~20 ms, the first of them before
+# the shell had started.
+pam_wallet=0
+if [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/kwallet5.socket" ]] \
+   && systemctl --user cat plasma-kwallet-pam.service >/dev/null 2>&1; then
+  pam_wallet=1
+fi
+if (( pam_wallet )); then
   step "kwallet handed the login" systemctl --user start plasma-kwallet-pam.service
 fi
 # The shell starts before the portal work: it only needs the environment above,
@@ -135,16 +154,18 @@ start_shell
 # session; on Arch it has one (Exec=/usr/bin/ksecretd), so the same early
 # restart could activate a second ksecretd that never got the password. Up to
 # three seconds, ten while the ksecretd PAM started is running but has not
-# registered yet, and the mark says how long it took. `busctl list` reads the
-# bus and starts nothing; `status`, or any plain call to an activatable name,
-# would start a second ksecretd without the password
-# (org.kde.secretservicecompat has a service file).
+# registered yet, and the mark says how long it took. The bus driver's
+# NameHasOwner starts nothing; `status`, or any plain call to an activatable
+# name, would start a second ksecretd without the password
+# (org.kde.secretservicecompat has a service file). It costs ~2-4 ms where
+# `busctl list`, which looked up every name's process, took 10-25 ms - up to
+# three of them in each step of this wait.
 name_owned() {
-  busctl --user list --no-pager 2>/dev/null \
-    | awk -v name="$1" '$1 == name && $2 != "-" { found = 1 } END { exit !found }'
+  [[ $(busctl --user --auto-start=no --no-pager --timeout=3 call org.freedesktop.DBus /org/freedesktop/DBus \
+         org.freedesktop.DBus NameHasOwner s "$1" 2>/dev/null) == "b true" ]]
 }
 wait_for_secrets() {
-  pam_wallet || return 0
+  (( pam_wallet )) || return 0
   local waited=0 limit=3000
   while (( waited < limit )); do
     { name_owned org.kde.ksecretd || name_owned org.freedesktop.secrets; } \
@@ -178,7 +199,7 @@ step "portal restarted" timeout 20 systemctl --user restart xdg-desktop-portal.s
 # fallback key - a logout from everything on the next session switch - which
 # is why this waits, and why launch-brave.sh refuses a shut wallet.
 wallet_step() {
-  pam_wallet || return 0
+  (( pam_wallet )) || return 0
   local tool="$project_dir/scripts/wallet-unlock.sh" result status
   [[ -x $tool ]] || { mark "kwallet: scripts/wallet-unlock.sh missing, wallet state unknown"; return 0; }
   result=$("$tool" ensure --prompt --wait 3 --timeout 90 2>/dev/null)
@@ -195,11 +216,33 @@ wallet_step
 # Standard XDG autostart (entries matching XDG_CURRENT_DESKTOP, e.g. KDE
 # Connect, calendar reminders) unless turned off in Settings > Autostart.
 if ! command -v jq >/dev/null 2>&1 || [[ ! -r $settings ]] || [[ $(jq -r '.autostart.system' "$settings" 2>/dev/null || echo true) != false ]]; then
-  # Entries that are useless here (scripts/lib/autostart-skip.sh) are masked for
-  # this user manager run only; the session launcher unmasks them at logout.
+  # Entries that are useless here (scripts/lib/autostart-skip.sh) are kept
+  # out of this session. install/install.sh links a drop-in for each
+  # (systemd/autostart-skip.conf: a condition on XDG_CURRENT_DESKTOP, so the
+  # unit is skipped here and runs in Plasma), which needs nothing at login.
+  # Without it the units are masked for this user manager run only, and the
+  # session launcher unmasks them at logout - but a mask makes the user
+  # manager reload (306 ms on 19.10., before any autostart app could start),
+  # so only entries this system has are masked: three of the four names were
+  # masked on Arch for entries that do not exist there.
   # shellcheck source=lib/autostart-skip.sh
   source "$project_dir/scripts/lib/autostart-skip.sh"
-  mapfile -t skipped_units < <(autostart_skip_units)
+  mapfile -t listed_units < <(autostart_skip_units)
+  autostart_dirs=("${XDG_CONFIG_HOME:-$HOME/.config}")
+  IFS=: read -r -a config_dirs <<<"${XDG_CONFIG_DIRS:-/etc/xdg}"
+  autostart_dirs+=("${config_dirs[@]}")
+  skipped_units=()
+  for index in "${!BUCHHWIN_AUTOSTART_SKIP[@]}"; do
+    unit=${listed_units[index]:-}
+    [[ -n $unit ]] || continue
+    [[ -e ${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$unit.d/buchhwin-shell.conf ]] && continue
+    for dir in "${autostart_dirs[@]}"; do
+      if [[ -n $dir && -e $dir/autostart/${BUCHHWIN_AUTOSTART_SKIP[index]}.desktop ]]; then
+        skipped_units+=("$unit")
+        break
+      fi
+    done
+  done
   if (( ${#skipped_units[@]} )); then
     step "autostart entries masked" systemctl --user mask --runtime "${skipped_units[@]}"
     systemctl --user stop "${skipped_units[@]}" 2>/dev/null || true

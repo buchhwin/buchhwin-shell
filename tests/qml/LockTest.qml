@@ -135,12 +135,61 @@ ShellRoot {
         T.eq(L.pamService(true, "login"), "buchhwin-lock", "only the test services are accepted")
         T.eq(L.pamService(true, "test-fingerprint"), "test-fingerprint", "nested fingerprint fixture")
         T.eq(L.pamService(false, "test-fingerprint"), "buchhwin-lock", "fingerprint fixture only nested")
+        T.eq([L.pamService(true, "test-password"), L.pamService(true, "test-fingerprint-late")],
+             ["test-password", "test-fingerprint-late"], "the password-checking fixtures are test services too")
+        T.eq(L.pamService("yes", "test-permit"), "buchhwin-lock", "only a real true opens the test services")
+
+        // The test hooks need the nested lock directory as well as the flag:
+        // session-action.sh names the real session's `…/lock`, and a flag
+        // that leaked into it must not reach a fixture.
+        T.eq([L.testHooksAllowed(true, "/run/user/1000/buchhwin-shell/lock-nested"),
+              L.testHooksAllowed(true, "/run/user/1000/buchhwin-shell/lock-nested/")],
+             [true, true], "a nested session's lock directory allows the hooks")
+        T.eq(L.testHooksAllowed(true, "/run/user/1000/buchhwin-shell/lock"), false,
+             "the real session's lock directory refuses them, flag or not")
+        T.eq(L.testHooksAllowed(true, "/run/user/1000/buchhwin-shell/lock-nestedx"), false, "only that exact name")
+        T.eq([L.testHooksAllowed(true, ""), L.testHooksAllowed(true, undefined)], [true, true],
+             "a lock started by hand (no directory) keeps them")
+        T.eq([L.testHooksAllowed(false, ""), L.testHooksAllowed(false, "/run/user/1000/buchhwin-shell/lock-nested"),
+              L.testHooksAllowed("1", "")], [false, false, false], "never without the nested flag")
+        T.eq(L.pamService(L.testHooksAllowed(true, "/run/user/1000/buchhwin-shell/lock"), "test-permit"), "buchhwin-lock",
+             "a leaked test-permit in the real session's lock is the real service")
+        T.eq(L.lidOverride(L.testHooksAllowed(true, "/run/user/1000/buchhwin-shell/lock"), "1"), null,
+             "and so is a leaked lid override")
 
         // Password-only conversation while the fingerprint reader blocks the prompt
         T.eq(L.passwordService("buchhwin-lock", true), "buchhwin-lock-password", "installed password-only service")
         T.eq(L.passwordService("buchhwin-lock", false), "buchhwin-lock", "falls back without the PAM file")
         T.eq(L.passwordService("test-fingerprint", false), "test-permit", "fixture pair")
+        T.eq(L.passwordService("test-fingerprint-late", false), "test-password", "the late reader pairs with the password check")
         T.eq(L.passwordService("test-deny", true), "test-deny", "test services stay")
+
+        // A password submitted before the reader spoke goes the password-only
+        // way once the reader announces itself, instead of waiting it out.
+        T.eq(L.passwordInstead(true, true, "buchhwin-lock", "buchhwin-lock-password"), true,
+             "the reader spoke after an early submit: switch")
+        T.eq([L.passwordInstead(false, true, "buchhwin-lock", "buchhwin-lock-password"),
+              L.passwordInstead(true, false, "buchhwin-lock", "buchhwin-lock-password")], [false, false],
+             "not before the reader speaks, and not without a pending password")
+        T.eq(L.passwordInstead(true, true, "buchhwin-lock", "buchhwin-lock"), false,
+             "without a password-only service the password waits for the prompt, as before")
+        T.eq(L.passwordInstead(true, true, "test-fingerprint-late", "test-password"), true, "the fixture pair switches too")
+
+        // Which fastfetch logos are worth asking fastfetch-image.py about.
+        T.eq([L.logoMayBePicture({ type: "file", source: "~/.config/buchhwin-shell/saturn.txt" }),
+              L.logoMayBePicture({ type: "data", source: "$1 o" }),
+              L.logoMayBePicture({ type: "builtin", source: "arch" }),
+              L.logoMayBePicture({ type: "small", source: "arch" })], [false, false, false, false],
+             "text and named logos are no picture")
+        T.eq([L.logoMayBePicture({}), L.logoMayBePicture({ source: "" }), L.logoMayBePicture(null),
+              L.logoMayBePicture("logo")], [false, false, false, false], "no logo, no source: no picture")
+        T.eq([L.logoMayBePicture({ type: "kitty-direct", source: "~/Pictures/me.png" }),
+              L.logoMayBePicture({ type: "Sixel", source: "/tmp/x" })], [true, true], "an image type is asked about")
+        T.eq([L.logoMayBePicture({ source: "~/Pictures/me.png" }), L.logoMayBePicture({ type: "auto", source: "~/pic" }),
+              L.logoMayBePicture({ type: "something-new", source: "~/pic" })], [true, true, true],
+             "with no type, or one not known here, the helper decides by the file")
+        T.eq([L.logoMayBePicture({ source: "~/.config/buchhwin-shell/saturn.txt" }),
+              L.logoMayBePicture({ type: "auto", source: "/x/LOGO.TXT" })], [false, false], "a .txt file is text")
         T.eq([L.systemService("buchhwin-lock"), L.systemService("buchhwin-lock-password"), L.systemService("test-permit")], [true, true, false], "PAM directories")
 
         // Fingerprint mode and lid

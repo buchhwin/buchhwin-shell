@@ -127,6 +127,68 @@ check '--remove --apply deletes the prefix' '[[ ! -e $prefix ]]'
 check '--remove --apply deletes its link' '[[ ! -L $home/.local/share/xdg-desktop-portal/portals/hyprland.portal ]]'
 check '--remove --apply leaves everything else' '[[ -e $home/.local/share/xdg-desktop-portal/portals/kde.portal ]]'
 
+# ---- the checkout and its patches -------------------------------------------
+# checkout_component out of the script, against a local repository standing
+# in for a component's: a cached checkout of the pin is reused, and each run
+# starts from the clean pin - an edited patch applies (the old patch in the
+# reused tree made `git apply` fail on every run), a removed one is gone
+# from the tree, and a stray file is cleaned out.
+upstream="$sandbox/upstream"
+git_q() { git -c user.name=test -c user.email=test@example.invalid -c commit.gpgsign=false -c init.defaultBranch=main "$@"; }
+git_q init -q "$upstream"
+printf 'one\n' > "$upstream/a.txt"
+git_q -C "$upstream" add a.txt
+git_q -C "$upstream" commit -q -m one
+git_q -C "$upstream" tag v1
+pin=$(git -C "$upstream" rev-parse HEAD)
+patches="$sandbox/proj/install/patches/Comp"
+mkdir -p "$patches"
+make_patch() {   # make_patch TEXT: a patch that turns "one" into TEXT
+  printf '%s\n' "$1" > "$upstream/a.txt"
+  git -C "$upstream" diff > "$patches/0001-change.patch"
+  git -C "$upstream" checkout -q -- a.txt
+}
+checkout() {
+  (
+    project_dir="$sandbox/proj"
+    logged() { "$@" >>"$sandbox/checkout.log" 2>&1; }
+    eval "$(sed -n '/^checkout_component() {/,/^}/p' "$script")"
+    checkout_component Comp "file://$upstream" v1 "$pin" "$sandbox/src/Comp" >/dev/null
+  )
+}
+make_patch two
+status=0; checkout || status=$?
+check "the patch is applied to the pinned checkout (status $status)" '[[ $status -eq 0 && $(cat "$sandbox/src/Comp/a.txt") == two ]]'
+make_patch three
+: > "$sandbox/src/Comp/stray.o"
+status=0; checkout || status=$?
+check "an edited patch applies to the reused checkout (status $status)" '[[ $status -eq 0 && $(cat "$sandbox/src/Comp/a.txt") == three ]]'
+check 'a stray file in the reused checkout is cleaned out' '[[ ! -e $sandbox/src/Comp/stray.o ]]'
+rm -f -- "$patches/0001-change.patch"
+status=0; checkout || status=$?
+check "a removed patch is gone from the tree (status $status)" '[[ $status -eq 0 && $(cat "$sandbox/src/Comp/a.txt") == one ]]'
+printf 'not a patch\n' > "$patches/0002-broken.patch"
+status=0; checkout || status=$?
+check "a patch that does not apply fails the checkout (status $status)" '[[ $status -ne 0 ]]'
+rm -f -- "$patches/0002-broken.patch"
+
+# ---- the build record ----------------------------------------------------------
+# Tags, commits, patch hashes and the build options: a changed option makes
+# the build out of date like a moved pin.
+record() {   # record OPTIONS: the manifest of one component with OPTIONS
+  (
+    project_dir="$sandbox/proj"
+    components=("Comp|cmake|file://$upstream|v1|$pin|$1")
+    eval "$(sed -n '/^manifest() {/,/^}/p' "$script")"
+    manifest
+  )
+}
+make_patch two
+check 'the record names the component, its tag and its commit' '[[ $(record "") == "Comp v1 ${pin:0:12} "* ]]'
+check 'the record holds the patches' '[[ $(record "") == *"0001-change.patch "* ]]'
+check 'a changed build option changes the record' '[[ $(record "-DA=on") != "$(record "-DA=off")" ]]'
+check 'the same options give the same record' '[[ $(record "-DA=on") == "$(record "-DA=on")" ]]'
+
 if (( failures )); then
   printf 'TESTS FAILED build-hyprland (%d failed)\n' "$failures"
   exit 1

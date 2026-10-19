@@ -6,8 +6,8 @@ ungroup, moveMember, moveToScreen) change the layout in memory and nothing
 else: the caller takes the undo step (beginChange) and writes layout.json
 (save), the way the editor's EditLayer.change does. Settings > Widgets called
 three of them bare, so Remove, the visibility switch and the style changed the
-desktop at once, were gone after the next restart and could not be undone
-(ui-b#0). This reads every settings page and fails on a call outside a
+desktop at once, were gone after the next restart and could not be undone.
+This reads every settings page and fails on a call outside a
 `change(() => ...)` wrapper or a beginChange/save pair in the same handler.
 """
 

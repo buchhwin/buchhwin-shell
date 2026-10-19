@@ -87,19 +87,22 @@ Singleton {
         ? DockLogic.screensFor(SettingsService.value("dock.screens"), Quickshell.screens.map(screen => screen.name)) : []
     readonly property var dockReadouts: dockDuplicatesHidden
         ? NotchLogic.DOCK_READOUTS.filter(type => Logic.dockHasType(LayoutService.dockLayout, type)) : []
-    // The types the strip on this screen leaves out; [] with "keep".
-    function dockDuplicatesOn(screenName) {
+    // The types the strip on this screen leaves out; [] with "keep". The pill
+    // bar asks the same with its own editor's state (`editing`): a bar shows
+    // the taskbar's readouts a second time just as the strip did.
+    function dockDuplicatesOn(screenName, editing) {
         if (!dockDuplicatesHidden) return []
         return NotchLogic.dockDuplicateTypes(dockDuplicates, {
             enabled: SettingsService.value("dock.enabled") === true,
             span: SettingsService.value("dock.span"),
             visibility: SettingsService.value("dock.visibility"),
             screens: dockScreenNames
-        }, dockReadouts, screenName, arranging)
+        }, dockReadouts, screenName, editing === undefined ? arranging : editing)
     }
-    // While the notch is arranged it shows both of its lists at once and every
-    // item in them, whether or not it has anything to say: an item left out
-    // would make the indices the drop maths produces count a shorter list.
+    // While the notch is arranged it shows every item of the list being
+    // arranged (the strip on the collapsed notch, the overview on the expanded
+    // one), whether or not it has anything to say: an item left out would make
+    // the indices the drop maths produces count a shorter list.
     readonly property bool arranging: LayoutService.notchEditing
     // Which of the notch's two shapes the editor is working on: the strip that
     // is always there, or the overview it opens into. The strip is only as
@@ -108,27 +111,31 @@ Singleton {
     readonly property bool arrangingExpanded: arranging && arrangeZone === "expanded"
 
     // The notch's own blocks: the four things it draws better than a widget
-    // can, and which therefore have no entry in WidgetRegistry. Everything
+    // can (NotchLogic.BLOCKS). Three of them have no entry in WidgetRegistry;
+    // the weather has one, which is what the strip loads for it. Everything
     // else in the catalogue is a widget and is named by the registry.
-    readonly property var blocks: [
-        { type: "weather", label: "Weather", icon: "\u{f0590}" },
-        { type: "media", label: "Media", icon: "\u{f075a}" },
-        { type: "events", label: "Events", icon: "\u{f00ed}" },
-        { type: "status", label: "Status", icon: "\u{f05a9}" }
-    ]
+    readonly property var blocks: NotchLogic.BLOCKS
 
     // What a type is called and which glyph names it, wherever it comes from.
+    // A widget is called by the notch's own word where a block carries its
+    // registry name already (NotchLogic.widgetLabel: the calendar widget).
     function entry(type) {
         for (const block of blocks) if (block.type === type) return block
         const widget = WidgetRegistry.type(type)
-        if (widget) return { type: type, label: widget.label, icon: widget.icon }
+        if (widget) return { type: type, label: NotchLogic.widgetLabel(type, widget.label), icon: widget.icon }
         return { type: type, label: type, icon: "" }
     }
 
-    // The whole catalogue the notch offers, its own blocks first.
+    // The whole catalogue the notch offers, its own blocks first and every
+    // type once (NotchLogic.catalogue).
     function catalogue() {
-        return blocks.concat(WidgetRegistry.availableTypes()
-            .map(widget => ({ type: widget.name, label: widget.label, icon: widget.icon })))
+        return NotchLogic.catalogue(blocks, WidgetRegistry.availableTypes())
+    }
+
+    // Whether the strip can draw a type: everything but the media, events
+    // and status blocks, which only the overview has (NotchLogic.stripTakes).
+    function stripTakes(type) {
+        return NotchLogic.stripTakes(type)
     }
     readonly property int eventCount: Math.max(1, Math.min(4, SettingsService.value("notch.eventCount") || 2))
 
@@ -141,13 +148,12 @@ Singleton {
     // after 1400 ms, a popup after the notification duration - so the notch
     // mirrors what is on rather than keeping a second clock that can disagree
     // with the first.
-    readonly property bool displayOsd: SettingsService.value("notch.displayOsd")
-    readonly property bool displayNotifications: SettingsService.value("notch.displayNotifications")
-    readonly property bool displayMedia: SettingsService.value("notch.displayMedia")
     readonly property bool osdRing: SettingsService.value("notch.osdStyle") !== "bar"
+    // Each kind's own switch, by the setting NotchDisplay names for it: the
+    // one mapping of kind to setting, which this used to write out again.
     function displayEnabled(kind) {
-        return kind === "osd" ? displayOsd : kind === "notification" ? displayNotifications
-            : kind === "media" ? displayMedia : false
+        const key = NotchDisplay.setting(kind)
+        return key.length > 0 && SettingsService.value(key) === true
     }
 
     // kind -> { stamp, content } | null. `stamp` only goes up, so "the most

@@ -8,7 +8,7 @@
 // gsettings, and the Breeze theme draws with the colours of the user's
 // gtk.css (`@import 'colors.css'`), which Plasma's kded writes for its own
 // scheme - and kded does not run here, so GTK apps stayed dark when the shell
-// went light (round 12). While following, the two settings.ini keys (dark
+// went light. While following, the two settings.ini keys (dark
 // variant, icon theme) follow too, and a colors.css of the other brightness
 // is left out of gtk.css, so the theme's own palette for the variant shows
 // (scripts/apptheme-restore.py --gtk; only files that exist). The values the

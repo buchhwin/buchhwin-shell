@@ -151,7 +151,7 @@ ColumnLayout {
         }
     }
 
-    SystemClock { id: clock; precision: SystemClock.Minutes }
+    SystemClock { id: clock; precision: SystemClock.Minutes; enabled: WallClock.ticking }
 
     ShellText {
         Layout.fillWidth: true

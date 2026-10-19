@@ -56,3 +56,27 @@ function note(connectivity) {
     if (connectivity === "limited" || connectivity === "none") return "No internet"
     return ""
 }
+
+// How long "no internet" must hold before the glyph takes its "!". After a
+// reconnect or a resume NetworkManager reports the connection before its
+// check has reached the internet again (at a boot here 0.4 s of "site" only),
+// and the alert glyph and "· No internet" flashed for that moment.
+var LIMITED_SETTLE_MS = 3000
+
+// Whether "no internet" is shown: limited now (`limitedNow`), and since
+// `since` (ms, -1 while not) for at least `settle`.
+function limitedShown(limitedNow, since, now, settle) {
+    const wait = settle === undefined ? LIMITED_SETTLE_MS : Math.max(0, Number(settle) || 0)
+    return limitedNow === true && Number(since) >= 0 && Number(now) - Number(since) >= wait
+}
+
+// How long to wait before asking limitedShown again (ms), or -1 when there is
+// nothing to wait for: not limited, or shown already. Asked again whenever
+// the wait ends, because a Timer can end a moment before the clock says its
+// interval has passed, and the "!" would stay away for good. Never more than
+// `settle`, so a clock set back does not stretch it.
+function limitedWait(limitedNow, since, now, settle) {
+    const wait = settle === undefined ? LIMITED_SETTLE_MS : Math.max(0, Number(settle) || 0)
+    if (limitedNow !== true || !(Number(since) >= 0) || limitedShown(limitedNow, since, now, wait)) return -1
+    return Math.min(wait, Math.max(1, Number(since) + wait - Number(now)))
+}

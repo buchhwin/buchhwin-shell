@@ -21,6 +21,9 @@ Singleton {
     property int trackers: 0
     property var status: Logic.parseStatus("")
     property bool loading: false
+    // When the last snapshot was read (Logic.stale): a viewer that starts
+    // tracking within a poll of it gets that answer, not a new script run.
+    property real readAt: 0
     // Synthetic devices from tests/fixtures for screenshots; actions stay off.
     property bool preview: false
     property string message: ""
@@ -51,7 +54,7 @@ Singleton {
         trackers = Math.max(0, trackers - 1)
         if (trackers === 0) closeNotifications()
     }
-    onTrackersChanged: if (trackers > 0) refresh()
+    onTrackersChanged: if (trackers > 0 && Logic.stale(readAt, Date.now())) refresh()
 
     function stateText(item) { return Logic.stateText(item) }
     function batteryText(item) { return Logic.batteryText(item.battery) }
@@ -272,7 +275,10 @@ Singleton {
         stdout: StdioCollector {
             onStreamFinished: {
                 root.loading = false
-                if (!root.preview) root.status = Logic.parseStatus(text)
+                if (!root.preview) {
+                    root.status = Logic.parseStatus(text)
+                    root.readAt = Date.now()
+                }
             }
         }
     }
@@ -281,16 +287,15 @@ Singleton {
         id: actionProc
         property var job: null
         property int exitCode: 0
-        // The error text may arrive before or after the exit.
+        // Quickshell (0.3.x) ends stdout and stderr before it announces the
+        // exit, so the error text is complete by the time `exited` runs and
+        // report() is called from there alone.
         function report() {
             const detail = actionErrors.text.trim().split("\n")[0]
             if (exitCode === 0) root.say(root.doneText(job), false)
             else root.say("Could not reach " + job.name + (detail.length ? ": " + detail : ""), true)
         }
-        stderr: StdioCollector {
-            id: actionErrors
-            onStreamFinished: if (actionProc.exitCode !== 0 && !actionProc.running && actionProc.job) actionProc.report()
-        }
+        stderr: StdioCollector { id: actionErrors }
         onStarted: exitCode = 0
         onExited: code => {
             exitCode = code
@@ -357,7 +362,7 @@ Singleton {
     }
 
     Timer {
-        interval: 10000
+        interval: Logic.POLL_MS
         repeat: true
         running: root.trackers > 0 && !root.preview
         onTriggered: root.refresh()

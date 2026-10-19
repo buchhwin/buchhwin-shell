@@ -173,6 +173,52 @@ check(len(stiffer) == 1 and stiffer[0].startswith("spring:springA"), f"a spring 
 wrong_curve = checks.animation_drift(conf, SPRING_JS, lua)
 check(any("animates with 'curveA'" in p for p in wrong_curve), f"a Lua leaf on the bezier where the table has a spring is reported: {wrong_curve}")
 
+# The environment, the window rules, the panels' no_anim rule and the hidden
+# helpers' classes, which the settings above do not cover.
+ENV_CONF = "env = XCURSOR_SIZE,24\nenv = XDG_CURRENT_DESKTOP,buchhwin-shell:Hyprland  # why\n"
+ENV_LUA = 'hl.env("XCURSOR_SIZE", "24")\n-- hl.env("XCURSOR_SIZE", "32")\nhl.env("XDG_CURRENT_DESKTOP", "buchhwin-shell:Hyprland")\n'
+conf_env, lua_env = checks._conf_env(ENV_CONF), checks._lua_env(ENV_LUA)
+check(conf_env == {"XCURSOR_SIZE": "24", "XDG_CURRENT_DESKTOP": "buchhwin-shell:Hyprland"}, f"env lines are read: {conf_env}")
+check(checks.env_drift(conf_env, lua_env) == [], f"the same env in both dialects is no drift: {checks.env_drift(conf_env, lua_env)}")
+drifted = checks.env_drift(conf_env, checks._lua_env(ENV_LUA.replace('"24"', '"32"', 1)))
+check(len(drifted) == 1 and drifted[0].startswith("env XCURSOR_SIZE"), f"a value in one dialect only is: {drifted}")
+check(checks.env_drift(conf_env, {"XCURSOR_SIZE": "24"}) != [], "and so is a line missing in one")
+
+RULES_CONF = """windowrule {
+    name = buchhwin-hidden-windows
+    match:class = ^(helper|other)$
+    workspace = special:hidden silent
+    float = on
+    opacity = 0.0 override
+}
+"""
+RULES_LUA = """hl.window_rule({
+    name = "buchhwin-hidden-windows",
+    match = { class = "^(helper|other)$" },
+    workspace = "special:hidden silent",
+    float = true,
+    opacity = "0.0 override",
+})
+"""
+conf_rules, lua_rules = checks._conf_window_rules(RULES_CONF), checks._lua_window_rules(RULES_LUA)
+rule = conf_rules.get("buchhwin-hidden-windows", {})
+check(rule.get("match:class") == "^(helper|other)$" and len(rule) == 4,
+      f"a conf window rule is read field by field: {conf_rules}")
+check(checks.window_rule_drift(conf_rules, lua_rules) == [], f"the same rule in both dialects is no drift: {checks.window_rule_drift(conf_rules, lua_rules)}")
+off = checks.window_rule_drift(conf_rules, checks._lua_window_rules(RULES_LUA.replace("float = true", "float = false")))
+check(len(off) == 1 and "float" in off[0], f"a field that differs is reported: {off}")
+check(any("only in" in p for p in checks.window_rule_drift(conf_rules, {})), "a rule in one dialect only is reported")
+check(checks.hidden_window_problems(["helper"], conf_rules, lua_rules) == [], "a hidden class both rules match passes")
+hidden = checks.hidden_window_problems(["helper", "bridge"], conf_rules, lua_rules)
+check(len(hidden) == 2 and all("bridge" in p for p in hidden), f"a class the rules do not match is reported in each dialect: {hidden}")
+check(checks.hidden_window_classes('var classes = ["a", "b"]\n') == ["a", "b"], "HiddenWindows.js's classes are read")
+
+layers = checks._conf_layer_rules("layerrule = no_anim on, match:namespace ^(buchhwin-(launcher|osd))$\n")
+check(checks.no_anim_problems({"launcher", "colorPicker"}, layers, "conf") == [],
+      "a panel in the no_anim rule passes, and the colour picker is left out on purpose")
+missing_panel = checks.no_anim_problems({"launcher", "startMenu"}, layers, "conf")
+check(len(missing_panel) == 1 and "startMenu" in missing_panel[0], f"a panel outside it is reported: {missing_panel}")
+
 if failures:
     for failure in failures:
         print("FAIL hypr_drift: " + failure)

@@ -7,12 +7,13 @@ import qs.services
 import qs.shell.components
 import "../../services/origin/OriginLogic.js" as Origin
 import "../components/PanelPlaceLogic.js" as Place
+import "OsdLogic.js" as Logic
 
 // On-screen display for volume, microphone mute, screen brightness and the
 // keyboard backlight, and for a short message such as the new desktop mode. It
 // reacts to value changes from any source (hardware keys, other apps) and
-// stays hidden while the control center or the volume popup, where the same
-// sliders live, is open.
+// stays hidden for a kind while a panel that shows the same control is open:
+// the volume popup, or the control center with that tile (OsdLogic.suppressed).
 //
 // It comes out of the notch when there is one, because that is what a notch is
 // for, and sits at the bottom of the screen when there is not. A notch hidden
@@ -25,7 +26,6 @@ PanelWindow {
     property string message: ""
     property string messageIcon: ""
     property bool armed: false
-    readonly property bool suppressed: ["controlCenter", "volumePopup"].indexOf(PanelService.active) >= 0
     readonly property real level: kind === "brightness" ? BrightnessService.value
         : kind === "kbdBacklight" ? KbdBacklightService.value
         : kind === "mic" ? AudioService.micVolume : AudioService.volume
@@ -48,7 +48,8 @@ PanelWindow {
     property bool showing: false
 
     function show(nextKind) {
-        if (!armed || suppressed || !SettingsService.value("desktop.osd")) return
+        if (!armed || !SettingsService.value("desktop.osd")) return
+        if (Logic.suppressed(nextKind, PanelService.active, LayoutService.quickTypes)) return
         kind = nextKind
         showing = true
         hideTimer.restart()
@@ -78,6 +79,17 @@ PanelWindow {
                           targetScreen ? targetScreen.width : 0, "centre", Metrics.screenMargin,
                           barEdge, targetScreen ? targetScreen.height : 0)
     readonly property real boxWidth: Metrics.osdWidth
+    // The box out of a bar's pill ends at the pill's outer edge rather than
+    // at the screen margin further in: never further in than what it comes
+    // out of, never less than 0 (as ShellPanel's PanelPlaceLogic.outerClear).
+    // What it comes out of in bar mode is an item inside a pill, so the end
+    // of a floating bar or of the pills counts too (PillBar's inset); an
+    // attached bar runs to the screen's sides.
+    readonly property bool fromFloatingBar: !LayoutService.notchRect(screenName)
+        && LayoutService.barItemRect(screenName, "volume") !== null
+        && !(LayoutService.bar.style === "bar" && LayoutService.bar.position === "attached")
+    readonly property real sideMargin: Logic.sideMargin(notch, targetScreen ? targetScreen.width : 0, Metrics.screenMargin,
+        fromFloatingBar ? Math.max(Metrics.barMargin, SettingsService.gapsOut) : -1)
     readonly property real boxHeight: Metrics.pillHeight + Metrics.spaceMd * 2
     // Out of the notch when there is one, at the bottom of the screen when
     // there is not - and nothing at all until the screen is known, because a
@@ -98,10 +110,10 @@ PanelWindow {
         : barAtBottom
         ? Origin.above(notch, boxWidth, boxHeight,
                        targetScreen ? targetScreen.width : 0,
-                       Metrics.screenMargin, Metrics.spaceSm)
+                       sideMargin, Metrics.spaceSm)
         : Origin.under(notch, boxWidth,
                        targetScreen ? targetScreen.width : 0,
-                       Metrics.screenMargin, Metrics.spaceSm)
+                       sideMargin, Metrics.spaceSm)
     // The notch can be the display itself, and then this surface stays away
     // rather than drawing the same thing twice. There is no second timer: the
     // notch mirrors `showing`, which this one already owns.
@@ -111,7 +123,11 @@ PanelWindow {
     onLevelChanged: publish()
     onMutedStateChanged: publish()
     onShowingChanged: publish()
+    // Whether the notch holds this OSD now, so the slot is cleared once when
+    // it leaves and left alone while it is not there (OsdLogic.publishes).
+    property bool published: false
     function publish() {
+        if (!Logic.publishes(inNotch, published)) return
         NotchService.setDisplay("osd", screenName, inNotch ? {
             kind: "osd", icon: icon,
             level: isMessage ? undefined : level,
@@ -119,6 +135,7 @@ PanelWindow {
             muted: mutedState,
             value: isMessage ? message : valueText
         } : null)
+        published = inNotch
     }
 
     // A dock shown at the bottom of this screen: the box stands above it
@@ -130,7 +147,7 @@ PanelWindow {
                           targetScreen ? targetScreen.height : 0,
                           Math.max(Metrics.osdBottomMargin, dockLift + Metrics.spaceMd), Metrics.screenMargin)
     // And beside a side bar, clear of a dock beyond it (the bottom has its
-    // lift above): the box came out over the dock (round 12, ui-rest#4).
+    // lift above): the box came out over the dock.
     readonly property var sideDock: SettingsService.value("dock.enabled") === true && DockService.position !== "bottom"
         ? Object.assign({ position: DockService.position, shown: DockService.shownOn[screenName] === true,
              reach: DockService.reachOn[screenName] || 0 },
@@ -169,15 +186,34 @@ PanelWindow {
     // Two seconds of quiet after the default sink changes, so the OSD only
     // answers a key. The sink is compared rather than its own signal waited
     // for: which of "sink" and "volume" is notified first is not promised.
+    // The same for the input: a headset unplugged leaves no source or the
+    // built-in microphone, whose mute state differs (no source reads as
+    // muted), and that raised "Microphone muted" with no key pressed.
     Timer { id: sinkSettling; interval: Animations.sinkSettle }
+    Timer { id: sourceSettling; interval: Animations.sinkSettle }
     property var lastSink: null
+    property bool sinkSeen: false
+    property var lastSource: null
+    property bool sourceSeen: false
     function volumeMoved() {
-        if (AudioService.sink !== lastSink) {
-            const first = lastSink === null
-            lastSink = AudioService.sink
-            if (!first) { sinkSettling.restart(); return }
+        const sink = AudioService.sink
+        if (sink !== lastSink) {
+            const changed = Logic.deviceChanged(lastSink, sink, sinkSeen)
+            lastSink = sink
+            sinkSeen = sinkSeen || sink !== null
+            if (changed) { sinkSettling.restart(); return }
         }
         if (!sinkSettling.running) show("volume")
+    }
+    function micMoved() {
+        const source = AudioService.source
+        if (source !== lastSource) {
+            const changed = Logic.deviceChanged(lastSource, source, sourceSeen)
+            lastSource = source
+            sourceSeen = sourceSeen || source !== null
+            if (changed) { sourceSettling.restart(); return }
+        }
+        if (!sourceSettling.running) show("mic")
     }
 
     Connections {
@@ -185,7 +221,8 @@ PanelWindow {
         function onVolumeChanged() { window.volumeMoved() }
         function onMutedChanged() { window.volumeMoved() }
         function onSinkChanged() { window.volumeMoved() }
-        function onMicMutedChanged() { window.show("mic") }
+        function onMicMutedChanged() { window.micMoved() }
+        function onSourceChanged() { window.micMoved() }
     }
     Connections {
         target: BrightnessService

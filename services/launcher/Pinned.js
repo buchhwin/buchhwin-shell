@@ -53,6 +53,12 @@ function full(text) {
     return ids(text).length >= LIMIT
 }
 
+// Whether pinning `id` would be refused for the limit, so the caller can say
+// so instead of a click or a key that does nothing. Unpinning never is.
+function refused(text, id) {
+    return full(text) && !has(text, id)
+}
+
 // The apps themselves, in the pinned order. An id whose app is not installed
 // right now is skipped **for drawing only** - it stays in the string, because
 // an app that is missing today may be back tomorrow and a list that forgets

@@ -21,6 +21,12 @@ Item {
     property string edge: "bottom"
     readonly property bool vertical: edge === "left" || edge === "right"
     property bool keyFocus: false
+    // Whether it runs and is in front: handed in by the apps widget
+    // (DockService.runningOf/activeOf) - the shell's Settings runs while its
+    // panel is open, and which app is in front is not part of `app`, so a
+    // focus change rebuilds no app.
+    property bool running: app.running === true
+    property bool active: app.active === true
     property bool dragging: false
     // Pulled far enough off the dock that letting go unpins it.
     property bool removing: false
@@ -31,10 +37,13 @@ Item {
     signal newWindow()
     signal menuWanted()
     signal dragStarted()
-    // `acrossOut`: how far the pointer is off the dock, away from the edge;
-    // Infinity for a drag the system took away (nothing is dropped then).
+    // `acrossOut`: how far the pointer is off the dock, away from the edge.
     signal dragMoved(real along, real acrossOut)
     signal dragEnded(real along, real acrossOut)
+    // The system took the drag away - a pull past the dock's surface is
+    // one (a pointer leave cancels the press): where it was last, and
+    // whether it was still going away from the dock (DockLogic.cancelOutcome).
+    signal dragCanceled(real along, real acrossOut, bool rising)
 
     readonly property bool hovered: mouse.containsMouse
     readonly property real drawn: Math.round(iconSize * Metrics.dockIconFill)
@@ -94,7 +103,7 @@ Item {
                 anchors.centerIn: parent
                 glyph: root.app.glyph
                 size: parent.width * Metrics.dockGlyphFill
-                color: parent.settings ? Colors.accentText : Colors.mutedText
+                color: parent.settings ? Colors.accentFillText : Colors.mutedText
             }
         }
     }
@@ -120,20 +129,20 @@ Item {
     // the accent. A starting app gets one faint dot. On the edge side.
     Row {
         id: dots
-        visible: root.app.running || root.launching
+        visible: root.running || root.launching
         spacing: Metrics.dockDotGap
         rotation: root.vertical ? 90 : 0
         x: root.vertical ? (root.edge === "left" ? -Metrics.dockPadding / 2 - width / 2 : root.width + Metrics.dockPadding / 2 - width / 2)
                          : (root.width - width) / 2
         y: root.vertical ? (root.height - height) / 2 : root.height + (Metrics.dockPadding - height) / 2
         Repeater {
-            model: root.app.active ? 1 : Math.max(1, Math.min(root.app.count, Metrics.dockMaxDots))
+            model: root.active ? 1 : Math.max(1, Math.min(root.app.count, Metrics.dockMaxDots))
             Rectangle {
-                width: root.app.active ? Metrics.dockDotActive : Metrics.dockDot
+                width: root.active ? Metrics.dockDotActive : Metrics.dockDot
                 height: Metrics.dockDot
                 radius: height / 2
-                color: root.app.urgent ? Colors.warning : root.app.active ? Colors.accentFill : Colors.mutedText
-                opacity: !root.app.running ? Effects.disabledOpacity : 1
+                color: root.app.urgent ? Colors.warning : root.active ? Colors.accentFill : Colors.mutedText
+                opacity: !root.running ? Effects.disabledOpacity : 1
             }
         }
     }
@@ -148,6 +157,10 @@ Item {
         property real startAlong: 0
         property real startAway: 0
         property bool moved: false
+        // The drag's last place, for a cancel: Qt reports none with it.
+        property real lastAlong: 0
+        property real lastOut: 0
+        property bool rising: false
         function along(event) { return root.vertical ? event.y : event.x }
         // How far the pointer is from the dock's edge, across it: what a
         // pull off the dock grows.
@@ -166,6 +179,9 @@ Item {
             startAlong = along(event)
             startAway = away(event)
             moved = false
+            lastAlong = startAlong
+            lastOut = 0
+            rising = false
             if (event.button === Qt.RightButton) root.menuWanted()
         }
         onPositionChanged: event => {
@@ -180,8 +196,12 @@ Item {
                 moved = true
                 root.dragStarted()
             }
+            const out = acrossOut(event)
+            rising = out > lastOut
+            lastOut = out
+            lastAlong = along(event)
             root.dragOffset = delta
-            root.dragMoved(along(event), acrossOut(event))
+            root.dragMoved(lastAlong, out)
         }
         onReleased: event => {
             if (moved) {
@@ -195,9 +215,10 @@ Item {
             else if (event.button === Qt.MiddleButton) root.newWindow()
         }
         onCanceled: {
-            if (moved) root.dragEnded(startAlong, Infinity)
+            const was = moved
             moved = false
             root.dragOffset = 0
+            if (was) root.dragCanceled(lastAlong, lastOut, rising)
         }
     }
 

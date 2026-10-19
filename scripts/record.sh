@@ -141,6 +141,17 @@ notify() {
 supervise() {
   local file=$1 mode=$2 backend=$3 audio=$4 notify_enabled=$5
   shift 5
+  # The recorder, and what the supervisor opens afterwards, get the
+  # session's environment back rather than the shell's own settings (two
+  # malloc arenas, no Mesa threads; scripts/lib/app-env.sh, pitfall 85), as
+  # launch-app.sh gives every application. Without the file it runs as it did.
+  local app_env
+  app_env=$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null) || app_env=${BASH_SOURCE[0]}
+  app_env="${app_env%/*}/lib/app-env.sh"
+  # shellcheck source=lib/app-env.sh
+  if [[ -r $app_env ]] && source "$app_env" && declare -F app_env_restore >/dev/null; then
+    app_env_restore || true
+  fi
   "$@" &
   local pid=$!
   local started

@@ -63,9 +63,29 @@ ShellRoot {
         T.eq(P.label("nothing", templates), "nothing", "or when the template has none")
         T.eq(P.osdText("Gaming", P.cycleMode("work", all, true)), "Gaming · automatic off",
              "the OSD says what became of the automatic profile")
-        T.eq(P.osdText("Docked", P.cycleMode("laptop", all, true)), "Docked",
+        T.eq(P.osdText("Desk", P.cycleMode("laptop", all, true)), "Desk",
              "and says nothing when nothing became of it")
         T.eq(P.osdText("Gaming", null), "Gaming", "nor when there was no step at all")
+
+        // Do Not Disturb through a switch: NotificationService's { active, by }
+        // before and after it.
+        const off = { active: false, by: "" }
+        const gamingOwn = { active: true, by: "gaming" }
+        const users = { active: true, by: "" }
+        T.eq(P.dndChange(off, gamingOwn, "gaming"), { dndOn: true, dndOff: false }, "a mode that turns it on")
+        T.eq(P.osdText("Gaming", P.cycleMode("work", all, false), P.dndChange(off, gamingOwn, "gaming")),
+             "Gaming · Do Not Disturb", "says so")
+        T.eq(P.dndChange(gamingOwn, off, "laptop"), { dndOn: false, dndOff: true }, "leaving the mode that owns it")
+        T.eq(P.osdText("Laptop", P.cycleMode("gaming", all, false), P.dndChange(gamingOwn, off, "laptop")),
+             "Laptop · automatic on · notifications back", "says they are back, after what became of the automatic mode")
+        T.eq(P.dndChange(gamingOwn, { active: true, by: "docked" }, "docked"), { dndOn: true, dndOff: false },
+             "a mode that takes it over keeps it on, and says so")
+        T.eq(P.dndChange(users, users, "gaming"), { dndOn: false, dndOff: false }, "the user's own is neither")
+        T.eq(P.dndChange(users, off, "work"), { dndOn: false, dndOff: false },
+             "and one that ended for its own reasons is not the switch's")
+        T.eq(P.dndChange(off, off, "work"), { dndOn: false, dndOff: false }, "nothing on, nothing to say")
+        T.eq(P.dndChange(undefined, undefined, ""), { dndOn: false, dndOff: false }, "nor without a state")
+        T.eq(P.osdText("Work", null, { dndOn: false, dndOff: false }), "Work", "an unchanged one adds nothing")
         T.ok(all.every(name => P.icon(name).length > 0), "every profile has a glyph")
         T.eq(P.icon("nonsense"), P.icon("minimal"), "and an unknown one borrows the plain one")
 

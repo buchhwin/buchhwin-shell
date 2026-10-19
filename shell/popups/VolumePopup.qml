@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
@@ -61,7 +62,9 @@ PopupPanel {
             title: "Output"
             maxHeight: Metrics.rowHeight * 3
             Repeater {
-                model: AudioService.sinks
+                // Kept rows (see AudioPage): PipeWire's nodes keep their
+                // identity, AudioService's lists do not.
+                model: ScriptModel { values: AudioService.sinks }
                 ListRow {
                     focusOnTab: true
                     level: 1
@@ -95,7 +98,7 @@ PopupPanel {
                 title: "No app is playing audio"
             }
             Repeater {
-                model: AudioService.playbackStreams
+                model: ScriptModel { values: AudioService.playbackStreams }
                 // Inset like the output rows above (ListRow's spaceLg), so the
                 // app icons line up with the device icons instead of sitting
                 // at the card's padding.

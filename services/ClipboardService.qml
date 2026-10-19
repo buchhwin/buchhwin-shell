@@ -1,6 +1,7 @@
 pragma Singleton
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import QtQuick
 import "clipboard/ClipboardLogic.js" as Logic
 
@@ -66,6 +67,87 @@ Singleton {
         Quickshell.execDetached(["rm", "-rf", "--", thumbDir])
         entries = []
         readyThumbs = ({})
+        // cliphist starts its ids at 1 again.
+        if (ageMarks.length) saveMarks([])
+    }
+
+    // ---- forgetting (both off by default; ClipboardLogic has how) ------------
+    readonly property bool forgetAtLogout: SettingsService.value("clipboard.forgetAtLogout") === true
+    readonly property int maxAgeHours: Logic.maxAgeHours(SettingsService.value("clipboard.maxAgeHours"))
+    readonly property bool expiring: enabled && maxAgeHours > 0
+
+    // The session ends from the shell (SessionService: log out, restart, shut
+    // down). A session that ends otherwise - a crash, the power - is caught
+    // at the next login below.
+    function sessionEnding() { if (forgetAtLogout) wipe() }
+
+    // The first start of the shell in a login: the runtime directory is
+    // emptied when the login ends, so a mark there that is missing means a
+    // new one (a restarted shell finds it). Named after the database, so a
+    // nested session's history is its own.
+    readonly property string loginMark: Paths.runtimeDir + "/clipboard-" + Qt.md5(dbPath)
+    property bool loginChecked: false
+    function checkLogin() {
+        if (loginChecked || !SettingsService.loaded) return
+        loginChecked = true
+        loginCheck.running = true
+    }
+    Process {
+        id: loginCheck
+        command: ["sh", "-c", "[ -e \"$1\" ] && exit 0; mkdir -p -m 700 -- \"${1%/*}\" && : > \"$1\"; exit 3", "sh", root.loginMark]
+        onExited: code => { if (code === 3 && root.forgetAtLogout) root.wipe() }
+    }
+    Connections {
+        target: SettingsService
+        function onLoadedChanged() { root.checkLogin() }
+    }
+    Component.onCompleted: {
+        checkLogin()
+        if (x11Display.length > 0) Hyprland.refreshToplevels()
+    }
+
+    // Entries older than the limit go at each read of the list, which runs
+    // every 30 minutes while the limit is set, besides the panel's own reads.
+    property var ageMarks: []
+    property bool marksRead: false
+    onExpiringChanged: if (expiring) refresh()
+    Timer { interval: 30 * 60000; repeat: true; running: root.expiring; onTriggered: root.refresh() }
+
+    function forgetOld(list) {
+        if (!expiring || !marksRead) return list
+        const ids = list.map(entry => entry.id)
+        const now = Date.now()
+        const maxAge = maxAgeHours * 3600000
+        const marks = Logic.withMark(ageMarks, now, ids.reduce((top, id) => Math.max(top, Number(id)), 0), maxAge)
+        if (JSON.stringify(marks) !== JSON.stringify(ageMarks)) saveMarks(marks)
+        const expired = Logic.expiredIds(ids, marks, now, maxAge)
+        if (!expired.length) return list
+        Quickshell.execDetached(Logic.deleteCommand(dbPath, expired))
+        return list.filter(entry => expired.indexOf(entry.id) < 0)
+    }
+
+    function saveMarks(marks) {
+        ageMarks = marks
+        marksFile.setText(JSON.stringify({ marks: marks }) + "\n")
+    }
+
+    // Ids and times only, but when something was copied is the user's too.
+    FileView {
+        id: marksFile
+        path: Paths.cacheDir + "/clipboard-ages.json"
+        atomicWrites: true
+        printErrors: false
+        onLoaded: {
+            try {
+                const data = JSON.parse(text())
+                root.ageMarks = Array.isArray(data.marks) ? data.marks : []
+            } catch (error) {
+                root.ageMarks = []
+            }
+            root.marksRead = true
+        }
+        onLoadFailed: root.marksRead = true
+        onSaved: Quickshell.execDetached(["chmod", "600", "--", marksFile.path])
     }
 
     Process {
@@ -74,7 +156,7 @@ Singleton {
         command: ["cliphist", "-db-path", root.dbPath, "-preview-width", "160", "list"]
         stdout: StdioCollector {
             onStreamFinished: {
-                const list = root.parse(text)
+                const list = root.forgetOld(root.parse(text))
                 root.entries = list.slice(0, 200)
                 root.pruneThumbnails(list)
                 root.loading = false
@@ -187,18 +269,49 @@ Singleton {
     // only while an X11 window has the focus, and Citrix's client sets it as
     // its window loses the focus - copied in Citrix, it could not be pasted
     // here (16.10.). Not tied to the history: pasting is the point, not
-    // keeping. Restarted after a pause if it ever ends, like the monitors.
+    // keeping. Started with the session's first X11 window and kept from then
+    // on (ClipboardLogic.bridgeWanted has why); restarted after a growing
+    // pause if it ever ends, five times in a row at most, like the monitors.
     readonly property string x11Display: Quickshell.env("DISPLAY") || ""
     property bool bridgePaused: false
+    property int bridgeFailures: 0
+    // An X11 window has been there this session. Hyprland's windows say
+    // whether they are X11 ones only in their IPC objects, which a
+    // refreshToplevels() fills (one socket request, no process): asked once at
+    // the start (a restarted shell may find Citrix running) and after every
+    // window that opens, until the first X11 one; from then on nothing here
+    // looks at the windows any more.
+    property bool sawX11: false
+    readonly property bool x11WindowOpen: !sawX11 && x11Display.length > 0
+        && Logic.anyX11(Hyprland.toplevels.values.map(toplevel => toplevel.lastIpcObject))
+    // Noted a turn later: x11WindowOpen depends on sawX11, and setting it
+    // from inside the change of x11WindowOpen is a binding loop that also
+    // leaves x11WindowOpen true (probed offscreen).
+    function noteX11() { sawX11 = true }
+    onX11WindowOpenChanged: if (x11WindowOpen) Qt.callLater(root.noteX11)
+    Connections {
+        target: root.x11Display.length > 0 ? Hyprland : null
+        enabled: !root.sawX11
+        function onRawEvent(event) { if (event.name === "openwindow") x11Look.restart() }
+    }
+    Timer { id: x11Look; interval: 100; onTriggered: Hyprland.refreshToplevels() }
+
     Process {
         stderr: ErrorLog { label: "ClipboardService.x11Bridge" }
-        running: root.x11Display.length > 0 && !root.bridgePaused
+        running: Logic.bridgeWanted(root.x11Display, root.sawX11, root.bridgePaused)
         command: Paths.bound(["python3", "-I", Paths.script("x11-clipboard-bridge.py"), "--display", root.x11Display])
         onRunningChanged: {
-            if (running || root.x11Display.length === 0 || root.bridgePaused) return
+            if (running) { bridgeHealthy.restart(); return }
+            bridgeHealthy.stop()
+            if (!Logic.bridgeWanted(root.x11Display, root.sawX11, root.bridgePaused)) return
+            root.bridgeFailures += 1
+            const delay = Logic.bridgeRestartDelay(root.bridgeFailures)
+            if (delay < 0) return
             root.bridgePaused = true
+            bridgeRestart.interval = delay
             bridgeRestart.restart()
         }
     }
-    Timer { id: bridgeRestart; interval: 5000; onTriggered: root.bridgePaused = false }
+    Timer { id: bridgeRestart; onTriggered: root.bridgePaused = false }
+    Timer { id: bridgeHealthy; interval: 60000; onTriggered: root.bridgeFailures = 0 }
 }

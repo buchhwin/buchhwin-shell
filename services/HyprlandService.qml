@@ -105,15 +105,17 @@ Singleton {
         if (!perMonitor || !HyprCompat.detected) return
         const order = Workspaces.monitorOrder(monitorList)
         if (!order.length) return
-        const rules = []
-        for (let index = 0; index < order.length; ++index)
-            for (let local = 1; local <= Workspaces.perMonitorBlock; ++local)
-                rules.push(HyprCompat.commands.workspaceRule(Workspaces.globalId(local, index), order[index]))
         // The rules only when they say something new: this runs on every
         // workspace that comes or goes now, and the same thirty rules again
-        // would be a process for nothing. A config reload forgets them.
+        // would be a process for nothing - and building them first, to throw
+        // them away, cost 0.4 ms of the GUI thread each time at the desk. A
+        // config reload forgets them.
         const ruleKey = order.join(",")
         if (ruleKey !== appliedRules) {
+            const rules = []
+            for (let index = 0; index < order.length; ++index)
+                for (let local = 1; local <= Workspaces.perMonitorBlock; ++local)
+                    rules.push(HyprCompat.commands.workspaceRule(Workspaces.globalId(local, index), order[index]))
             appliedRules = ruleKey
             ruledUpTo = Math.max(ruledUpTo, order.length * Workspaces.perMonitorBlock)
             HyprCompat.configure(HyprCompat.commands.combine(rules))
@@ -125,31 +127,33 @@ Singleton {
         // The ones already in the wrong place are moved, windows and all;
         // that is what the rule would have done a second earlier.
         const placed = Hyprland.workspaces.values.map(workspace => ({
-            id: workspace.id, monitor: workspace.monitor ? workspace.monitor.name : "" }))
+            id: workspace.id, monitor: workspace.monitor ? workspace.monitor.name : "",
+            windows: workspace.toplevels.values.length }))
         const moves = Workspaces.misplaced(order, placed)
         const steps = moves.map(move => HyprCompat.commands.moveWorkspaceToMonitor(move.id, move.monitor))
-        // And a screen left showing someone else's - Hyprland fills an
-        // emptied monitor with the next free number - is sent to its own,
-        // the focus put back where the hand is afterwards.
+        // And every screen whose view the moves changed - one left showing
+        // someone else's (Hyprland fills an emptied monitor with the next
+        // free number), one a workspace was moved to - is shown what it
+        // should (Workspaces.views), the focus put back where the hand is
+        // afterwards.
         const actives = Hyprland.monitors.values
             .filter(monitor => order.indexOf(monitor.name) >= 0)
             .map(monitor => ({ monitor: monitor.name, id: monitor.activeWorkspace ? monitor.activeWorkspace.id : 0 }))
-            .map(active => {
-                const moved = moves.find(move => move.id === active.id)
-                return moved ? { monitor: active.monitor, id: -1 } : active
-            })
-        const homes = Workspaces.homes(order, placed, actives)
-        for (const home of homes) {
-            steps.push(HyprCompat.commands.focusMonitor(home.monitor))
-            steps.push(HyprCompat.commands.workspace(home.id))
+        const views = Workspaces.views(order, placed, actives, moves)
+        for (const view of views) {
+            steps.push(HyprCompat.commands.focusMonitor(view.monitor))
+            steps.push(HyprCompat.commands.workspace(view.id))
         }
-        if (homes.length && focusedMonitorName.length) steps.push(HyprCompat.commands.focusMonitor(focusedMonitorName))
+        if (views.length && focusedMonitorName.length) steps.push(HyprCompat.commands.focusMonitor(focusedMonitorName))
         HyprCompat.dispatchInOrder(steps)
     }
-    onMonitorListChanged: ruleTimer.restart()
+    onMonitorListChanged: {
+        keepMonitors = Math.max(keepMonitors, monitorList.length)
+        ruleTimer.restart()
+    }
     // A workspace appearing or going is where the strays come from (see
-    // `homes`), so the check runs then too. Idempotent: with every block in
-    // place it sends nothing.
+    // `Workspaces.views`), so the check runs then too. Idempotent: with every
+    // block in place it sends nothing.
     Connections {
         target: Hyprland.workspaces
         function onValuesChanged() {
@@ -165,12 +169,16 @@ Singleton {
         if (!perMonitor) releaseWorkspaceRules()
         ruleTimer.restart()
     }
+    // A held workspace's `persistent` lives in the same merged rule as its
+    // block's monitor, so the release took it along (Lua): the empty held
+    // ones went at once and keepEmpty stopped holding them, since keptOn
+    // still named them. They are held again in the same request.
     function releaseWorkspaceRules() {
         const ids = Workspaces.ruledIds(ruledUpTo)
         appliedRules = ""
         ruledUpTo = 0
         if (ids.length && HyprCompat.detected && HyprCompat.lua)
-            HyprCompat.configure(HyprCompat.commands.combine(ids.map(id => HyprCompat.commands.releaseWorkspaceRule(id))))
+            HyprCompat.configure(HyprCompat.commands.releaseRules(ids, keepsEmpty ? keptOn : ({})))
     }
     Connections {
         target: root
@@ -185,7 +193,27 @@ Singleton {
     }
     // Monitors arrive one at a time while a dock settles; one batch after they
     // have stopped moving rather than one per monitor.
-    Timer { id: ruleTimer; interval: 400; onTriggered: root.applyWorkspaceRules() }
+    //
+    // And not while a layout is on its way (DisplayService.layoutPending): a
+    // config reload puts every monitor back to the config's rules - auto
+    // positions and scales, a lid-shut panel on again - until the saved
+    // layout is back, and the blocks planned from that moment moved 1, 3 and
+    // 5 with their windows to another screen and back a second later, with
+    // an empty 1 left on the first one. Nor during the Displays page's
+    // countdown: an arrangement that is reverted moved every block twice for
+    // nothing; kept, it moves them once.
+    Timer {
+        id: ruleTimer
+        interval: 400
+        onTriggered: {
+            if (DisplayService.layoutPending || DisplayService.confirming) restart()
+            else root.applyWorkspaceRules()
+        }
+    }
+    Connections {
+        target: DisplayService
+        function onConfirmingChanged() { if (!DisplayService.confirming) ruleTimer.restart() }
+    }
 
     function switchLocal(localId) {
         const id = localToGlobal(localId)
@@ -265,28 +293,57 @@ Singleton {
     // Ids the × is closing, held back from keepAll until they are gone.
     property var closing: []
     property bool keepCapped: false
+    // The most monitors this session has had: the limit of held workspaces
+    // (Workspaces.keepLimit) goes by it. Counted from the monitors of the
+    // moment, an undock from the desk with 25 held put the limit at 20 -
+    // the runaway warning fired for nothing, and every new workspace on the
+    // laptop went again when it was left, the setting on or not.
+    property int keepMonitors: 1
+    // The monitors of the moment count as well: a change handler does not
+    // run for a binding's first value, so monitors already known when this
+    // service was made would never have reached keepMonitors.
+    function holdLimit() { return Workspaces.keepLimit(Math.max(keepMonitors, monitorList.length)) }
     // Where every workspace is: a new one, one gone or one moved to another
     // monitor is looked at again (a moved one gets its rule anew).
+    //
+    // Not at once: while monitors come, go or are rearranged, Hyprland makes
+    // workspaces in passing (an emptied monitor gets the next free number,
+    // a new one its first), and holding those kept them for good - three
+    // empty ones on the first screen of the desk before anything was opened,
+    // three more after each config reload, one beyond every block. Once the
+    // blocks have settled (ruleTimer), the passing ones are gone. A
+    // workspace switched to is still held first (focusWorkspace).
     readonly property string keptPlacement: keepsEmpty
         ? workspaces.map(item => item.id + "@" + (item.monitor ? item.monitor.name : "")).join(",") : ""
-    onKeptPlacementChanged: if (keepsEmpty) Qt.callLater(root.keepAll)
-    // Whether a workspace stays when it is empty and not shown: every one
-    // with the setting on, else one a persistent rule holds (Hyprland's
-    // `ispersistent`, as last read).
+    onKeptPlacementChanged: if (keepsEmpty) keepSoon.restart()
+    Timer {
+        id: keepSoon
+        interval: 500
+        onTriggered: {
+            if (ruleTimer.running) restart()
+            else root.keepAll()
+        }
+    }
+    // Whether a workspace stays when it is empty and not shown: one the
+    // shell holds with the setting on (Workspaces.isKept), else one a
+    // persistent rule holds (Hyprland's `ispersistent`, as last read).
     function keeps(workspace) {
         if (!workspace) return false
-        if (keepsEmpty) return closing.indexOf(workspace.id) < 0
         const ipc = workspace.lastIpcObject
-        return !!(ipc && ipc.ispersistent === true)
+        return Workspaces.isKept(workspace.id, keepsEmpty, keptOn, closing, !!(ipc && ipc.ispersistent === true))
     }
     function keepAll() {
         if (!keepsEmpty || !HyprCompat.detected) return
         const existing = workspaces.map(item => ({ id: item.id, monitor: item.monitor ? item.monitor.name : "" }))
-        const limit = Workspaces.keepLimit(monitorList.length)
+        const limit = holdLimit()
         const plan = Workspaces.keepPlan(existing, keptOn, closing, perMonitor ? Workspaces.monitorOrder(monitorList) : [], limit)
         const ids = Object.keys(plan).map(Number)
         const held = Object.keys(keptOn).length
-        if (!keepCapped && held + ids.filter(id => keptOn[id] === undefined).length >= limit) {
+        const wanted = held + ids.filter(id => keptOn[id] === undefined).length
+        // Warned once per time the limit is reached: below it again (the ×
+        // closed some), a second runaway is news again.
+        if (keepCapped && wanted < limit) keepCapped = false
+        if (!keepCapped && wanted >= limit) {
             keepCapped = true
             console.warn("buchhwin-shell: " + limit + " workspaces held open, holding no more")
         }
@@ -305,24 +362,28 @@ Singleton {
     onKeepsEmptyChanged: keepsEmpty ? keepAll() : releaseAll()
     // A reload forgets the rules, and the empty workspaces they held go with
     // them; sent again, each rule brings its workspace back on its monitor.
-    // After the block rules (ruleTimer).
+    // At once: each names the monitor it was held on, and a reload renames
+    // no monitor, so nothing has to wait for the block rules - sent 600 ms
+    // later, the held pips went away for that long and the notch's width
+    // jumped twice. Sent again after that, in case the first came too early.
+    function rehold() {
+        const ids = Object.keys(keptOn).map(Number)
+        if (!keepsEmpty || !ids.length || !HyprCompat.detected) return
+        HyprCompat.configure(HyprCompat.commands.combine(ids.map(id =>
+            HyprCompat.commands.keepWorkspaceRule(id, true, keptOn[id]))))
+    }
     Connections {
         target: root
-        function onConfigReloaded() { if (root.keepsEmpty) keepTimer.restart() }
-    }
-    Timer {
-        id: keepTimer
-        interval: 600
-        onTriggered: {
-            const ids = Object.keys(root.keptOn).map(Number)
-            if (!root.keepsEmpty || !ids.length || !HyprCompat.detected) return
-            HyprCompat.configure(HyprCompat.commands.combine(ids.map(id =>
-                HyprCompat.commands.keepWorkspaceRule(id, true, root.keptOn[id]))))
+        function onConfigReloaded() {
+            if (!root.keepsEmpty) return
+            root.rehold()
+            keepTimer.restart()
         }
     }
+    Timer { id: keepTimer; interval: 600; onTriggered: root.rehold() }
     Connections {
         target: HyprCompat
-        function onDetectedChanged() { if (HyprCompat.detected && root.keepsEmpty) root.keepAll() }
+        function onDetectedChanged() { if (HyprCompat.detected && root.keepsEmpty) keepSoon.restart() }
     }
 
     // The overview's ×: its windows to the workspace before it on its monitor
@@ -367,7 +428,7 @@ Singleton {
     }
     function focusWorkspace(id) {
         const monitor = keepsEmpty && HyprCompat.detected && id > 0 && keptOn[id] === undefined
-            && closing.indexOf(id) < 0 && Object.keys(keptOn).length < Workspaces.keepLimit(monitorList.length)
+            && closing.indexOf(id) < 0 && Object.keys(keptOn).length < holdLimit()
             ? keepMonitorFor(id) : ""
         if (monitor.length) {
             const next = Object.assign({}, keptOn)

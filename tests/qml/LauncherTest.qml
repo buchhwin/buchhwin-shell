@@ -76,7 +76,7 @@ ShellRoot {
         T.eq(Launch.actionContext(outlook, { id: "none", command: [] }, overrides, script), null, "an empty action: nothing")
         T.eq(Launch.actionContext(outlook, null, overrides, script), null, "no action")
 
-        // The file search (round 12): the home folder as a pattern of its
+        // The file search: the home folder as a pattern of its
         // own, so plocate's limit counts only matches under it - with the
         // query alone /usr and the hidden folders used up 200 matches and
         // "png" found nothing at home - and hidden folders left out after.

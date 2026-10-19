@@ -147,12 +147,16 @@ Item {
                 Accessible.checked: segment.active
                 Accessible.onPressAction: root.choose(segment.modelData.value)
 
-                // The label a glyph stands for, under a resting pointer; a
-                // segment that draws its label has nothing to add.
+                // The label a glyph stands for, or the option's own tip (the
+                // modes' shipped descriptions on Settings > Profiles), under a
+                // resting pointer; a segment that draws its label and has no
+                // tip of its own has nothing to add.
                 ToolTipHost {
                     id: tip
                     anchorItem: segment
-                    text: segment.iconOnly && root.enabledState ? (segment.modelData.label || "") : ""
+                    text: !root.enabledState ? ""
+                        : (segment.modelData.toolTip || "").length ? segment.modelData.toolTip
+                        : segment.iconOnly ? (segment.modelData.label || "") : ""
                     onTextChanged: if (!text.length) release()
                 }
 
@@ -200,13 +204,13 @@ Item {
                         Layout.preferredWidth: badgeText.implicitWidth + Metrics.spaceSm * 2
                         Layout.preferredHeight: badgeText.implicitHeight + Metrics.spaceXxs * 2
                         radius: Metrics.pillRadius(height)
-                        color: segment.active ? Colors.accent : Colors.surface2
+                        color: segment.active ? Colors.accentFill : Colors.surface2
                         ShellText {
                             id: badgeText
                             anchors.centerIn: parent
                             text: segment.modelData.badge || ""
                             role: "caption"
-                            color: segment.active ? Colors.accentText : Colors.mutedText
+                            color: segment.active ? Colors.accentFillText : Colors.mutedText
                         }
                     }
                 }

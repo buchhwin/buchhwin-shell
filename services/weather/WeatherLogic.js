@@ -25,7 +25,7 @@ function forecastUrl(lat, lon, unit) {
         "daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,uv_index_max",
         "timezone=auto",
         "forecast_days=7",
-        "wind_speed_unit=kmh",
+        "wind_speed_unit=" + (unit === "fahrenheit" ? "mph" : "kmh"),
         "temperature_unit=" + (unit === "fahrenheit" ? "fahrenheit" : "celsius")
     ]
     return forecastEndpoint + "?" + params.join("&")
@@ -259,4 +259,20 @@ function fromCache(text) {
 // The command that makes it so; a file that is not there is left so, quietly.
 function privateFileCommand(path) {
     return ["sh", "-c", "[ ! -f \"$1\" ] || chmod 600 -- \"$1\"", "sh", String(path)]
+}
+
+// When the forecast shown is worth fetching again, by the reason the shell
+// has to ask: "jump" after the wall clock jumped (a resume: the 30-minute
+// timer slept as well, and the evening's forecast was still shown in the
+// morning), "online" when the network comes back. Only while something shows
+// the weather, which the caller checks. A fetch that failed is tried again
+// when the network is back (it waited for the next 30-minute tick before); a
+// forecast older than ten minutes, as a view that opens asks for too; and
+// after a jump the forecast of another hour - the hourly strip starts at the
+// hour it was fetched in.
+function refreshWanted(reason, failed, updatedMs, nowMs) {
+    if (!updatedMs) return true
+    if (reason === "online" && failed) return true
+    if (nowMs - updatedMs > 10 * 60000) return true
+    return reason === "jump" && Math.floor(nowMs / 3600000) !== Math.floor(updatedMs / 3600000)
 }

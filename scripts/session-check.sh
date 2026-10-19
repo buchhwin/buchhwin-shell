@@ -9,7 +9,9 @@ project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." &
 source "$project_dir/scripts/lib/hypr.sh"
 # shellcheck source=../install/lib/distro.sh
 source "$project_dir/install/lib/distro.sh"
-distro=$(distro_detect 2>/dev/null) || distro=fedora
+# The family, as doctor.sh asks it: an Arch derivative gets Arch's hints, a
+# system nobody knows only the package names (distro_install_hint).
+distro=$(distro_family 2>/dev/null) || distro=""
 config_home=${XDG_CONFIG_HOME:-$HOME/.config}
 settings="$config_home/buchhwin-shell/settings.json"
 shell_path=${BUCHHWIN_SHELL_PATH:-$HOME/.local/share/buchhwin-shell}
@@ -62,6 +64,30 @@ faillock_gap() {
   return 1
 }
 
+# lid_report ACTION SOURCE INHIBITORS LOGIND_DROPIN: the lid line of the
+# report. The shell acts on the lid itself, whatever the setting: it holds
+# logind's lid inhibitor all the time and suspends only after the lid has
+# been shut for 2 s (services/IdleService.qml), because a lid that closes and
+# opens again in passing is no decision (testing.md pitfall 96). Without the
+# inhibitor logind suspends at the first edge - for "sleep" too, which used
+# to be reported as the system default and never checked. logind's own lid
+# handling off (install/system-install.sh --logind-lid writes the drop-in) is
+# the backstop for a shell that is not running. tests/session-launcher-test.sh
+# covers it.
+lid_report() {
+  local lid=$1 source_label=$2 inhibitors=$3 dropin=$4 label hint=""
+  case $lid in
+    suspend) label="sleep after 2 s shut (the shell)" ;;
+    *) label=$lid ;;
+  esac
+  if [[ $inhibitors == *buchhwin-shell* ]]; then
+    ok "lid ($source_label): $label (logind inhibited)"
+    return
+  fi
+  [[ -e $dropin ]] || hint="; sudo install/system-install.sh --logind-lid keeps logind off the lid even then"
+  fail "lid ($source_label): '$lid' without the shell's logind inhibitor - logind acts on the lid by itself, and a lid shut in passing suspends at once$hint"
+}
+
 section "Session"
 if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then ok "Hyprland is running ($(hyprctl version -j 2>/dev/null | jq -r '.tag // .version // "?"'))"; else fail "no Hyprland session (HYPRLAND_INSTANCE_SIGNATURE is missing)"; exit 1; fi
 [[ ${XDG_CURRENT_DESKTOP:-} == buchhwin-shell:Hyprland ]] && ok "XDG_CURRENT_DESKTOP=$XDG_CURRENT_DESKTOP" || warn "XDG_CURRENT_DESKTOP is '${XDG_CURRENT_DESKTOP:-}' (expected buchhwin-shell:Hyprland)"
@@ -81,6 +107,11 @@ if quickshell ipc --path "$shell_path" show >/dev/null 2>&1; then
   ok "Quickshell responds ($(quickshell ipc --path "$shell_path" show | grep -c '^target') IPC targets)"
 else
   fail "Quickshell is not running or not responding (Super+Ctrl+R restarts it)"
+fi
+# The shell is made on Quickshell 0.3; Fedora packages a 0.2.1 snapshot.
+qs_line=$(quickshell --version 2>/dev/null) || qs_line=""
+if [[ $qs_line =~ ([0-9]+)\.([0-9]+)\.[0-9]+ ]] && (( BASH_REMATCH[1] == 0 && BASH_REMATCH[2] < 3 )); then
+  warn "Quickshell ${BASH_REMATCH[0]} is older than 0.3.0, the version the shell is made on; expect differences"
 fi
 # A shell started without HYPRLAND_INSTANCE_SIGNATURE comes up blind: Settings
 # > Displays stays empty, the saved scaling is never applied and no dispatch
@@ -132,11 +163,14 @@ if [[ -n $log ]]; then
   problems=$(sed -E 's/\x1b\[[0-9;]*m//g' <<<"$log" | grep -E 'ERROR|TypeError|ReferenceError|is not a type' | grep -vE 'desktopentry' | tail -3)
   [[ -z $problems ]] && ok "shell log has no errors" || warn "shell log: $problems"
   # The shell starts before the portal work on purpose (a slow portal used to
-  # keep the screen black), so Qt's registration attempt can fail once. Only a
-  # portal that stays unreachable (no owner now) is a problem.
+  # keep the screen black). Qt registers the shell with the portal that is
+  # just starting then, and the login's portal restart ends that portal and
+  # its registration with it - the warning is that, nothing retries it, and
+  # the shell uses no portal. Only a portal that stays unreachable (no owner
+  # now) is a problem.
   if grep -q 'Failed to register with host portal' <<<"$log"; then
     [[ -n $(bus_owner org.freedesktop.portal.Desktop) ]] \
-      && ok "portal registration retried after the shell started" \
+      && ok "the login's portal restart dropped an early Qt registration of the shell (harmless)" \
       || warn "the portal is not reachable (the shell could not register with it)"
   fi
 fi
@@ -185,7 +219,7 @@ case "$wallet_state" in
   "no service") warn "no secret service on the bus: the login did not hand ksecretd the password (startup.log says what happened)" ;;
   *)          warn "the secret service is running; its lock state could not be read" ;;
 esac
-portal_backend=$(busctl --user --no-pager list 2>/dev/null | awk '$1 == "org.freedesktop.impl.portal.desktop.kwallet" { print $3 }')
+portal_backend=$(bus_owner org.freedesktop.impl.portal.desktop.kwallet)
 case "$portal_backend" in
   ksecretd) ok "the Secret portal backend is ksecretd (the same wallet as in Plasma)" ;;
   ""|-)     warn "the Secret portal backend (org.freedesktop.impl.portal.desktop.kwallet) is not on the bus: portal-keyed secrets (Spotify, Flatpaks) are unavailable" ;;
@@ -211,6 +245,10 @@ for wrapper in launch-brave launch-chrome launch-chromium-browser; do
 done
 # Process names are cut to 15 characters (polkit-kde-authentication-agent-1).
 running polkit-kde-auth && ok "PolicyKit agent is running" || fail "PolicyKit agent is missing"
+# nm-applet is the session's only NetworkManager secret agent
+# (scripts/lib/autostart-skip.sh): without it no VPN, saved-secret or
+# enterprise (802.1X) password is asked for.
+running nm-applet && ok "NetworkManager secret agent (nm-applet) is running" || warn "no NetworkManager secret agent: VPN and enterprise passwords are not asked for (nm-applet is not running)"
 
 section "Power and hardware"
 if [[ $(setting '.power.lockBeforeSleep') != false ]]; then
@@ -272,13 +310,8 @@ source_label=$([[ $power_source == battery ]] && echo "on battery" || echo "plug
 lid=$(setting ".power.$power_source.lidAction // .power.lidAction // \"suspend\"")
 profile=$(setting ".power.$power_source.profile // \"keep\"")
 ok "power source: $source_label (automatic profile: $profile)"
-if [[ $lid != suspend ]]; then
-  inhibitors=$(systemd-inhibit --list 2>/dev/null) || inhibitors=""
-  [[ $inhibitors == *buchhwin-shell* ]] && ok "lid ($source_label): $lid (logind inhibited)" || fail "lid setting '$lid' ($source_label) without a logind inhibitor"
-else
-  ok "lid ($source_label): sleep (system default)"
-fi
-running python3 'bluetooth-agent.py' && ok "Bluetooth pairing agent is running" || warn "Bluetooth pairing agent is not running (no adapter?)"
+lid_report "$lid" "$source_label" "$(systemd-inhibit --list 2>/dev/null)" /etc/systemd/logind.conf.d/50-buchhwin.conf
+running python3 'bluetooth-agent.py' && ok "Bluetooth pairing agent is running" || ok "Bluetooth pairing agent: not running (it starts while a Bluetooth view is open or a pairing is under way)"
 night=$(setting '.nightLight.mode // "off"')
 if [[ $night == manual ]]; then pgrep -u "$(id -u)" -x gammastep >/dev/null && ok "Night Light is active" || fail "Night Light is on, but gammastep is not running"; else ok "Night Light: $night"; fi
 [[ -n ${XCURSOR_THEME:-} ]] && ok "cursor $XCURSOR_THEME ${XCURSOR_SIZE:-}" || warn "XCURSOR_THEME is not set"
@@ -289,9 +322,23 @@ if [[ $(setting '.clipboard.history') != false ]]; then
 fi
 if [[ $(setting '.autostart.system') != false ]]; then
   systemctl --user is-active --quiet xdg-desktop-autostart.target && ok "standard autostart is active" || warn "xdg-desktop-autostart.target is not active"
+  # Skipped by the drop-in install/install.sh links (systemd/autostart-skip.conf)
+  # or, without it, masked for this login by session-init.sh - and an entry
+  # this system does not have needs neither.
   source "$project_dir/scripts/lib/autostart-skip.sh"
-  for unit in $(autostart_skip_units); do
-    [[ $(systemctl --user is-enabled "$unit" 2>/dev/null) == masked-runtime ]] || warn "autostart entry not skipped: $unit"
+  mapfile -t skip_units < <(autostart_skip_units)
+  IFS=: read -r -a skip_dirs <<<"$config_home:${XDG_CONFIG_DIRS:-/etc/xdg}"
+  for index in "${!BUCHHWIN_AUTOSTART_SKIP[@]}"; do
+    unit=${skip_units[index]:-}
+    [[ -n $unit ]] || continue
+    [[ -e $config_home/systemd/user/$unit.d/buchhwin-shell.conf ]] && continue
+    entry_found=0
+    for dir in "${skip_dirs[@]}"; do
+      [[ -n $dir && -e $dir/autostart/${BUCHHWIN_AUTOSTART_SKIP[index]}.desktop ]] && { entry_found=1; break; }
+    done
+    (( entry_found )) || continue
+    [[ $(systemctl --user is-enabled "$unit" 2>/dev/null) == masked-runtime ]] \
+      || warn "autostart entry not skipped: $unit (install/install.sh --apply adds the drop-in that skips it)"
   done
 fi
 for tool in grim slurp wl-copy cliphist swappy gammastep curl; do

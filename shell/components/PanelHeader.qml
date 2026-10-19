@@ -18,7 +18,9 @@ RowLayout {
     property color iconColor: Colors.accentForeground
     // The popups' form: the icon on a round tile that fills with the accent
     // while `iconActive`, because there the icon is also the state (Wi-Fi on,
-    // sound muted) rather than a picture of the topic.
+    // sound muted) rather than a picture of the topic. The fill a switch that
+    // is on wears (Colors.accentFill), so the tile and the switch beside it
+    // are one colour: the raw teal was 1.3:1 on a light panel.
     property bool iconTile: false
     property bool iconActive: false
     property string title: ""
@@ -52,13 +54,13 @@ RowLayout {
         Layout.preferredWidth: Metrics.popupIconTile
         Layout.preferredHeight: Metrics.popupIconTile
         radius: width / 2
-        color: root.iconActive ? Colors.accent : Colors.surface2
+        color: root.iconActive ? Colors.accentFill : Colors.surface2
         Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
         ShellIcon {
             anchors.centerIn: parent
             glyph: root.icon
             size: Metrics.iconMd
-            color: root.iconActive ? Colors.accentText : Colors.text
+            color: root.iconActive ? Colors.accentFillText : Colors.text
         }
     }
     ShellButton {

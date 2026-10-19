@@ -7,6 +7,8 @@ import qs.shell.components
 import "../../services/calendar/EventDraftLogic.js" as Draft
 import "../../services/calendar/EventEditLogic.js" as Edit
 import "../../services/calendar/RecurrenceLogic.js" as Rec
+import "../../services/dashboard/EventDateLogic.js" as Dates
+import "../../services/appearance/DateFormat.js" as DateFormat
 
 // New calendar event (PanelService args { mode: "new", day: "YYYY-MM-DD" })
 // or the details of an existing one ({ mode: "details", event }). Opened over
@@ -56,6 +58,19 @@ ShellPanel {
         if (saveState === "error" || saveState === "preview") CalendarService.resetSave()
     }
 
+    // The last day the From field could be read as: an Until on that day
+    // follows a new From date (EventDateLogic.withDate).
+    property string followDate: ""
+
+    // Previous day / Next day. The From field's own handler takes an end that
+    // follows it along at once; the end of a longer event is moved here by as
+    // much, and an end the handler already moved is not moved a second time.
+    function shiftDay(days) {
+        const next = Dates.shiftDay(draft, days)
+        dateField.text = next.date
+        endDateField.text = next.endDate
+    }
+
     function setRule(changes) {
         rule = Object.assign({}, rule, changes)
         if (saveState === "error" || saveState === "preview") CalendarService.resetSave()
@@ -72,6 +87,9 @@ ShellPanel {
         titleField.text = values.title
         locationField.text = values.location
         notesField.text = values.notes
+        // Before the date goes in, so the end the form was filled with is
+        // measured against this form's date and not the last one's.
+        followDate = Dates.dayOf(values.date)
         startField.text = values.start
         endField.text = values.end
         dateField.text = values.date
@@ -245,11 +263,11 @@ ShellPanel {
             subtitle: {
                 if (root.details && !root.editing) {
                     const event = root.event
-                    const day = SettingsService.locale.toString(event.start, "dddd, MMMM d")
+                    const day = DateFormat.date(event.start, SettingsService.locale, "long")
                     return day + " · " + CalendarService.formatRange(event)
                 }
                 const date = Draft.parseDate(root.draft.date)
-                return date ? SettingsService.locale.toString(date, "dddd, MMMM d, yyyy") : "Choose a date"
+                return date ? DateFormat.date(date, SettingsService.locale, "year") : "Choose a date"
             }
         }
 
@@ -329,7 +347,7 @@ ShellPanel {
                 ShellButton {
                     icon: Icons.back; variant: "ghost"; compact: true; toolTip: "Previous day"
                     focusOnTab: true
-                    onClicked: { dateField.text = Draft.shiftDate(dateField.text, -1); endDateField.text = Draft.shiftDate(endDateField.text, -1) }
+                    onClicked: root.shiftDay(-1)
                 }
                 ShellTextField {
                     id: dateField
@@ -339,17 +357,19 @@ ShellPanel {
                     placeholder: "YYYY-MM-DD"
                     error: !Draft.parseDate(text)
                     onTextChanged: {
-                        // Keep a one-day all-day event on one day while the date moves.
-                        const endFollows = root.draft.endDate === root.draft.date
-                        root.update({ date: text })
-                        if (endFollows && Draft.parseDate(text)) endDateField.text = Draft.formatDate(Draft.parseDate(text))
+                        // Keep a one-day all-day event on one day while the
+                        // date moves, typed key by key as well as stepped.
+                        const next = Dates.withDate(root.draft, text, root.followDate)
+                        root.followDate = next.followed
+                        root.update({ date: next.date })
+                        if (endDateField.text !== next.endDate) endDateField.text = next.endDate
                     }
                     onAccepted: root.submit()
                 }
                 ShellButton {
                     icon: Icons.forward; variant: "ghost"; compact: true; toolTip: "Next day"
                     focusOnTab: true
-                    onClicked: { dateField.text = Draft.shiftDate(dateField.text, 1); endDateField.text = Draft.shiftDate(endDateField.text, 1) }
+                    onClicked: root.shiftDay(1)
                 }
             }
 
@@ -681,7 +701,7 @@ ShellPanel {
                 text: root.saving ? "Deleting …" : root.recurring && root.wholeSeries ? "Delete series" : "Delete"
                 variant: "danger"
                 confirm: true
-                confirmText: "Click again to delete"
+                confirmText: root.recurring && root.wholeSeries ? "Delete series?" : "Delete?"
                 visible: root.canChange || root.saving
                 enabledState: root.canChange && !root.saving
                 focusOnTab: true
@@ -731,7 +751,10 @@ ShellPanel {
             ShellButton {
                 text: CalendarService.writeAllowed ? "Save" : "Show request"
                 variant: "accent"
+                // Not while the shell cannot write: a form opened before the one-shot
+                // bindings check answered (createEvent and changeEvent refuse too).
                 enabledState: root.check.ok && !root.saving && (!root.editing || root.changedFields.length > 0)
+                    && !CalendarService.writesBlocked
                 focusOnTab: true
                 onClicked: root.submit()
             }

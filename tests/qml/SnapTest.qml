@@ -25,6 +25,18 @@ ShellRoot {
         result = Snap.snap({ x: 990, y: 590, width: 100, height: 40 }, [], Object.assign({}, opts, { threshold: 0 }))
         T.eq([result.x, result.y], [900, 560], "stays on screen")
 
+        // The widget inspector on the half away from the selected widget: a
+        // clock at the right edge (centre 1796 of 1920) had it on the right,
+        // over the clock, and one at the left edge on the left.
+        T.eq([Snap.inspectorOnLeft({ x: 1701, width: 190 }, 1920, false),
+              Snap.inspectorOnLeft({ x: 200, width: 190 }, 1920, false),
+              Snap.inspectorOnLeft({ x: 1000, width: 100 }, 1920, false)], [true, false, true],
+             "the inspector stands away from the selection")
+        T.eq([Snap.inspectorOnLeft({ x: 1701, width: 190 }, 1920, true), Snap.inspectorOnLeft({ x: 200, width: 190 }, 1920, true)],
+             [false, false], "on the right while the picker takes the left")
+        T.eq([Snap.inspectorOnLeft(null, 1920, false), Snap.inspectorOnLeft(null, 1920, true)], [true, false],
+             "no single widget: the left, or the right beside the picker")
+
         T.finish("SnapTest")
     }
 }

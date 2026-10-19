@@ -12,6 +12,16 @@ ColumnLayout {
     spacing: Metrics.pageGap
 
     readonly property var back: ({ page: "network" })
+    // VPN rows are keyed by the connection's uuid and read it here: turning
+    // one on or off (or any Wi-Fi switch) gives NetworkService a new list,
+    // and a Repeater on the list itself built every row again - the
+    // keyboard lost the switch it had just pressed, and an armed Delete on
+    // another tunnel was disarmed.
+    readonly property var vpnByUuid: {
+        const table = {}
+        for (const item of NetworkService.vpns) table[item.uuid] = item
+        return table
+    }
 
     PageActivity {
         onOpened: NetworkService.setScanning(true)
@@ -59,8 +69,10 @@ ColumnLayout {
         Repeater {
             // Kept rows, not rebuilt ones; see NetworkPopup.
             model: ScriptModel { values: NetworkService.wifiUsable ? NetworkService.networks : [] }
+            // Not a tab stop of its own: its Connect button does what a click
+            // on the row does, and a stop for both made two or three per
+            // network on the way down the page.
             ListRow {
-                focusOnTab: true
                 level: 1
                 required property var modelData
                 Layout.fillWidth: true
@@ -83,15 +95,17 @@ ColumnLayout {
                         // The saved password goes with it and nothing can bring
                         // it back, so it takes two clicks.
                         confirm: true
-                        confirmText: "Forget"
+                        confirmText: "Forget?"
                         toolTip: "Forget network"
                         onClicked: NetworkService.forget(modelData)
                     }
+                    // Plain, not the accent: with every network in range
+                    // wearing one, the accent marked nothing, and the row
+                    // connects on a click by itself.
                     ShellButton {
                         focusOnTab: true
                         text: modelData.connected ? "Disconnect" : "Connect"
                         compact: true
-                        variant: modelData.connected ? "surface" : "accent"
                         onClicked: NetworkService.activate(modelData, root.back)
                     }
                 }
@@ -147,19 +161,24 @@ ColumnLayout {
         title: "VPN"
         description: "Turn VPN connections on or off, and add WireGuard tunnels. They are NetworkManager's, so Plasma lists the same ones."
 
-        EmptyState { Layout.fillWidth: true; visible: NetworkService.vpns.length === 0; icon: "󰖂"; title: "No VPN connections set up yet" }
+        EmptyState { Layout.fillWidth: true; visible: NetworkService.vpns.length === 0; row: true; icon: "󰖂"; title: "No VPN connections set up yet" }
         Repeater {
-            model: NetworkService.vpns
+            model: ScriptModel { values: NetworkService.vpns.map(item => item.uuid) }
+            // Not a tab stop either: the switch in it is the same action.
             ListRow {
-                focusOnTab: true
+                id: vpnRow
                 level: 1
-                required property var modelData
+                required property string modelData
+                // Gone in the same turn as its row: an empty one until then.
+                readonly property var vpn: root.vpnByUuid[modelData]
+                    || ({ name: "", uuid: modelData, type: "", active: false, device: "" })
                 Layout.fillWidth: true
                 icon: "󰖂"
-                title: modelData.name
-                subtitle: (modelData.active ? "Connected" : "Off") + " · " + (modelData.type === "wireguard" ? "WireGuard" : "VPN")
-                active: modelData.active
-                onClicked: NetworkService.setVpn(modelData.uuid, !modelData.active)
+                title: vpnRow.vpn.name
+                // "Connecting …" while a switch is under way (NetworkService.vpnPending).
+                subtitle: NetworkService.vpnStatus(vpnRow.vpn) + " · " + (vpnRow.vpn.type === "wireguard" ? "WireGuard" : "VPN")
+                active: vpnRow.vpn.active
+                onClicked: NetworkService.setVpn(vpnRow.vpn.uuid, !NetworkService.vpnChecked(vpnRow.vpn))
                 // One item in the row's trailing slot, as the Wi-Fi rows have:
                 // the slot is a plain Item, and two children of it both sat
                 // at its origin, the switch on top of the delete button.
@@ -168,21 +187,21 @@ ColumnLayout {
                     // A tunnel goes for good, so the button asks twice.
                     ShellButton {
                         focusOnTab: true
-                        visible: modelData.type === "wireguard"
+                        visible: vpnRow.vpn.type === "wireguard"
                         compact: true
                         variant: "ghost"
                         icon: Icons.remove
                         toolTip: "Delete this tunnel"
                         confirm: true
-                        confirmText: "Delete"
-                        onClicked: NetworkService.wgDelete(modelData.uuid)
+                        confirmText: "Delete?"
+                        onClicked: NetworkService.wgDelete(vpnRow.vpn.uuid)
                     }
                     ShellToggle {
                         focusOnTab: true
                         anchors.verticalCenter: parent.verticalCenter
-                        accessibleName: modelData.name
-                        checked: modelData.active
-                        onToggled: value => NetworkService.setVpn(modelData.uuid, value)
+                        accessibleName: vpnRow.vpn.name
+                        checked: NetworkService.vpnChecked(vpnRow.vpn)
+                        onToggled: value => NetworkService.setVpn(vpnRow.vpn.uuid, value)
                     }
                 }
             }

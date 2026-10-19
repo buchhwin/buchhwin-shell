@@ -15,8 +15,9 @@ expected_targets=(desktop editor welcome emoji launcher controlCenter notificati
 [[ -n ${BUCHHWIN_EXPECTED_TARGETS:-} ]] && read -r -a expected_targets <<<"$BUCHHWIN_EXPECTED_TARGETS"
 
 # Warnings from the environment or Quickshell itself rather than from this shell:
-# malformed desktop entries (swappy's Exec line), Plasma owning the notification
-# name in nested tests, PipeWire nodes without a channel map, the KDE calendar
+# malformed desktop entries (swappy's Exec line), another owner of the
+# notification name (the live session's run only, see below), PipeWire nodes
+# without a channel map, the KDE calendar
 # plugin reading an empty settings key ("QSettings::value: Empty key passed":
 # KF6XmlGui's language override, KDEPrivate::initializeLanguages, which runs
 # once org.kde.akonadi is imported - CalendarService.qml - and loads
@@ -27,9 +28,16 @@ expected_targets=(desktop editor welcome emoji launcher controlCenter notificati
 # Qt 6.12's text-input plugin (Arch) noting that a field gave up a focus no
 # surface had any more, or that one surface's field asked for the text input
 # while another surface still held it - the start menu's search field handing
-# over to the dock's menu and the welcome tour does that (round 12). Only
+# over to the dock's menu and the welcome tour does that. Only
 # those two messages, not the category.
 known_warnings='quickshell\.desktopentry|Could not register notification server|Registration will be attempted again|channelVolumes and channelMap are not the same size|QSettings::value: Empty key passed|playerctld|qt\.qml\.propertyCache\.append|qt\.svg: |QWaylandTextInputv3::disableSurface.*but 0x0 is focused|QWaylandTextInputv3::(enable|disable)Surface.*Trying to (enable|disable) 0x[0-9a-f]+ but 0x[0-9a-f]+ (has focus|is focused)'
+# A nested shell never asks for the notification name (BUCHHWIN_NESTED=1,
+# NotificationService.serverWanted), so there those two lines mean the flag
+# was lost and the test shell queues for the host's notifications (pitfall
+# 121) - a defect, not noise. Unless the run turned the nested server on.
+if [[ ${1:-} == --nested && ${BUCHHWIN_NESTED_NOTIFICATIONS:-0} != 1 ]]; then
+  known_warnings=${known_warnings//'|Could not register notification server|Registration will be attempted again'/}
+fi
 
 if [[ ${1:-} == --nested ]]; then
   # The trap comes first: a start that fails half-way (set -e ends this script
@@ -47,25 +55,50 @@ else
   [[ -e $config_path/shell.qml ]] || config_path=$project_dir
 fi
 
+# The shell's log is read by its instance id, once quickshell lists it as
+# running: `quickshell log --path` falls back to the log of an instance that
+# is gone while none runs, and the runtime directory keeps those for an hour
+# (scripts/lib/quickshell-dirs.sh). A run read "Configuration Loaded" from
+# an earlier shell of this path while the new one was still starting, and
+# the next request ended it without a word.
+instance=""
+running_instance() {
+  local listed
+  listed=$(quickshell list --path "$config_path" --json 2>/dev/null) || listed=""
+  jq -r '.[0].id // empty' <<<"$listed" 2>/dev/null || true
+}
+instance_log() {
+  quickshell log --id "$instance" 2>/dev/null | sed -E 's/\x1b\[[0-9;]*m//g' || true
+}
 log=""
 for _ in {1..100}; do
-  log=$(quickshell log --path "$config_path" 2>/dev/null | sed -E 's/\x1b\[[0-9;]*m//g' || true)
-  grep -q 'Configuration Loaded' <<<"$log" && break
+  [[ -n $instance ]] || instance=$(running_instance)
+  if [[ -n $instance ]]; then
+    log=$(instance_log)
+    grep -q 'Configuration Loaded' <<<"$log" && break
+  fi
   sleep 0.1
 done
+if [[ -z $instance ]]; then
+  printf 'Shell did not start: quickshell lists no running instance of %s.\n' "$config_path" >&2
+  exit 1
+fi
 if ! grep -q 'Configuration Loaded' <<<"$log"; then
   printf 'Shell did not finish loading.\n%s\n' "$log" >&2
   exit 1
 fi
 sleep "${BUCHHWIN_SMOKE_SETTLE:-1}"
-log=$(quickshell log --path "$config_path" 2>/dev/null | sed -E 's/\x1b\[[0-9;]*m//g' || true)
+log=$(instance_log)
 
 status=0
 # A step this machine cannot run (the pointer tool without its build tools)
 # is a skip, not a pass: the script exits 77 for it when nothing failed, and
 # scripts/test.sh names it in its summary.
 skipped=0
-targets=$(quickshell ipc --path "$config_path" show)
+if ! targets=$(quickshell ipc --path "$config_path" show); then
+  printf 'The shell did not answer for its IPC targets.\n' >&2
+  exit 1
+fi
 for target in "${expected_targets[@]}"; do
   if grep -q "^target $target\$" <<<"$targets"; then
     printf 'ok       ipc target %s\n' "$target"
@@ -123,7 +156,7 @@ if [[ ${1:-} == --nested && ${BUCHHWIN_SMOKE_POINTER:-1} == 1 ]]; then
     }
     cursor_now() { hyprctl -j cursorpos 2>/dev/null | jq -r '"\(.x | floor),\(.y | floor)"' 2>/dev/null || true; }
 
-    # The pointer steps failed two deploys of round 12 with the cursor at
+    # The pointer steps failed two deploys with the cursor at
     # 960,600 - the exact centre of the nested window's output, as in both
     # failures of pitfall 41: something warped it there, a hand would have
     # left it anywhere. Two things do that. The nested shell moves the
@@ -291,6 +324,32 @@ if [[ ${1:-} == --nested && ${BUCHHWIN_SMOKE_POINTER:-1} == 1 ]]; then
         printf 'failed   Super+D (open: %s, after Escape: %s)\n' "${opened:-none}" "${shut:-none}"
         status=1
       fi
+      # Escape on a control center page goes back to its overview and keeps
+      # the panel; a second Escape closes it.
+      quickshell ipc --path "$config_path" call controlCenter openPage network >/dev/null 2>&1 || true
+      paged=""
+      for _ in {1..20}; do
+        paged=$(popup_state)
+        [[ $paged == controlCenter ]] && break
+        sleep 0.1
+      done
+      "$project_dir/scripts/nested-keys" combo ESCAPE || true
+      sleep 0.3
+      kept=$(popup_state)
+      "$project_dir/scripts/nested-keys" combo ESCAPE || true
+      shut=$(popup_state)
+      for _ in {1..20}; do
+        [[ -z $shut ]] && break
+        sleep 0.1
+        shut=$(popup_state)
+      done
+      if [[ $paged == controlCenter && $kept == controlCenter && -z $shut ]]; then
+        printf 'ok       Escape on a control center page goes back, a second one closes it\n'
+      else
+        printf 'failed   Escape on a control center page (open: %s, after one Escape: %s, after two: %s)\n' "${paged:-none}" "${kept:-none}" "${shut:-none}"
+        status=1
+        [[ -n $shut ]] && quickshell ipc --path "$config_path" call controlCenter toggle >/dev/null 2>&1 || true
+      fi
     else
       printf 'skip     keys (tool cannot build)\n'
       skipped=1
@@ -351,7 +410,7 @@ fi
 # inactive - and the sandbox has it off, so a TypeError, a binding loop or an
 # "Unable to assign" in Dock, DockZone, a dock Pill, the Saturn button, the
 # apps, the start menu or the dock's menu never reached the log read below,
-# while the user runs the dock (round 12, tests-docs#1). After the pointer
+# while the user runs the dock. After the pointer
 # steps: a taskbar along the whole bottom edge would sit under their click
 # outside. Nothing in either is clicked, and the dock is off again at the end
 # (a kept sandbox keeps the Taskbar's layout; the deploy's starts fresh).
@@ -444,9 +503,151 @@ if [[ ${1:-} == --nested ]]; then
     status=1
     [[ -n $shut ]] && ipc_call popup close >/dev/null || true
   fi
+
+  # Everything else that is built only when it opens: Settings builds the
+  # page it shows, the control center its page, a popup its body, and the
+  # panels below are opened by no step above - so a TypeError, a binding loop
+  # or an "Unable to assign" in any of them reached the user's session first.
+  # Each is opened and closed again over IPC, and the log read below covers
+  # them. Left out is what would start something on the host the nested shell
+  # shares: Network and Bluetooth scan with the real NetworkManager and BlueZ,
+  # and Settings > Audio's level meter records the real microphone.
+  not_opened=()
+  walked=0
+  pages=$(sed -n 's/^[[:space:]]*{ id: "\([A-Za-z]*\)".*/\1/p' "$project_dir/services/settings/SettingsNavLogic.js")
+  first=1
+  for page in $pages; do
+    case $page in network | bluetooth | audio) continue ;; esac
+    if [[ $(ipc_call settings open "$page") != true ]]; then not_opened+=("settings $page"); continue; fi
+    if (( first )); then
+      [[ $(popup_is settings) == settings ]] || not_opened+=("settings")
+      first=0
+    fi
+    walked=$(( walked + 1 ))
+    sleep 0.3
+  done
+  ipc_call settings close >/dev/null
+  [[ -z $(popup_is "") ]] || not_opened+=("settings (did not close)")
+  (( walked >= 10 )) || not_opened+=("settings pages (only $walked found in SettingsNavLogic.js)")
+  first=1
+  for page in audio dnd power drives tray; do
+    ipc_call controlCenter openPage "$page" >/dev/null
+    if (( first )); then
+      [[ $(popup_is controlCenter) == controlCenter ]] || not_opened+=("controlCenter")
+      first=0
+    fi
+    walked=$(( walked + 1 ))
+    sleep 0.3
+  done
+  ipc_call controlCenter close >/dev/null
+  [[ -z $(popup_is "") ]] || not_opened+=("controlCenter (did not close)")
+  # At a screen x like a pill click: a negative number would read as an
+  # option to the IPC client.
+  for popup in vpn media volume battery weather events privacy system profile; do
+    if [[ $(ipc_call popup open "$popup" 600) != true || $(popup_is "${popup}Popup") != "${popup}Popup" ]]; then
+      not_opened+=("popup $popup")
+    fi
+    walked=$(( walked + 1 ))
+    ipc_call popup close >/dev/null
+    [[ -z $(popup_is "") ]] || not_opened+=("popup $popup (did not close)")
+  done
+  for panel in notifications overview clipboard emoji wallpaperPicker powerMenu; do
+    ipc_call "$panel" open >/dev/null
+    [[ $(popup_is "$panel") == "$panel" ]] || not_opened+=("$panel")
+    walked=$(( walked + 1 ))
+    ipc_call "$panel" close >/dev/null
+    [[ -z $(popup_is "") ]] || not_opened+=("$panel (did not close)")
+  done
+  ipc_call editor open >/dev/null
+  editing=""
+  for _ in {1..20}; do
+    editing=$(ipc_call editor get | jq -r '.editing' 2>/dev/null || true)
+    [[ $editing == true ]] && break
+    sleep 0.1
+  done
+  [[ $editing == true ]] || not_opened+=("editor")
+  walked=$(( walked + 1 ))
+  ipc_call editor close >/dev/null
+  if (( ${#not_opened[@]} == 0 )); then
+    printf 'ok       %d settings pages, control center pages, popups and panels open and close\n' "$walked"
+  else
+    printf 'failed   of %d surfaces opened one by one, these did not open or close: %s\n' "$walked" "${not_opened[*]}"
+    status=1
+    ipc_call popup close >/dev/null
+  fi
+
+  # The test shell is a nested one, so it never asks for the host's
+  # notification name. Asking for it is what a lost BUCHHWIN_NESTED looks
+  # like (pitfall 121); the log check below reports it too, this asks the
+  # shell directly.
+  if [[ ${BUCHHWIN_NESTED_NOTIFICATIONS:-0} != 1 ]]; then
+    server=$(ipc_call notifications get)
+    if [[ $(jq -r '.serverWanted == false and .server == false' <<<"$server" 2>/dev/null) == true ]]; then
+      printf 'ok       the nested shell leaves the notification name to the host\n'
+    else
+      printf 'failed   the nested shell wants the notification name (notifications get: %s)\n' "${server:-none}"
+      status=1
+    fi
+  fi
+
+  # Do Not Disturb goes with gaming: on when gaming is entered with it
+  # off, as the mode's (dndBy), off again when it is left
+  # (LayoutService.modeDndTransition). The nested shell runs no
+  # notification server; Do Not Disturb is its own state all the same.
+  mode_before=$(ipc_call mode get)
+  ipc_call mode set work >/dev/null
+  ipc_call notifications setDnd off >/dev/null
+  ipc_call mode set gaming >/dev/null
+  dnd_in=$(ipc_call notifications get | jq -r '"\(.dndActive) \(.dndBy)"' 2>/dev/null || true)
+  ipc_call mode set work >/dev/null
+  dnd_out=$(ipc_call notifications get | jq -r '.dndActive' 2>/dev/null || true)
+  ipc_call mode set "${mode_before:-minimal}" >/dev/null
+  if [[ $dnd_in == "true gaming" && $dnd_out == false ]]; then
+    printf 'ok       Do Not Disturb comes and goes with gaming\n'
+  else
+    printf 'failed   Do Not Disturb across gaming: in %s, out %s\n' "${dnd_in:-none}" "${dnd_out:-none}"
+    status=1
+  fi
+
+  # A configuration reload keeps every workspace on its monitor and BUCHTEST
+  # where it was. BUCHTEST's place used to be a runtime rule that a reload
+  # forgets: both outputs then sat at 0,0, and the per-monitor blocks swapped
+  # screens by connector name (pitfall 120). Every Settings > Shortcuts save
+  # and every deploy that touches hypr/ reloads the live session the same way.
+  placement() {
+    { hyprctl -j workspaces | jq -c '[.[] | select(.id > 0) | {id, monitor}] | sort_by(.id)'
+      hyprctl -j monitors | jq -c '[.[] | {name, x, y}] | sort_by(.name)'
+      ipc_call workspaces get | jq -c '.offsets' ; } 2>/dev/null || true
+  }
+  placed_before=$(placement)
+  placed_after=""
+  # Only ever the nested compositor, by the signature nested-session.sh wrote
+  # for this sandbox: a reload of the session's own Hyprland would move the
+  # user's workspaces about on their screens.
+  nested_signature=$(cat "$base/instance" 2>/dev/null) || nested_signature=""
+  if [[ -z $nested_signature || ${HYPRLAND_INSTANCE_SIGNATURE:-} != "$nested_signature" ]]; then
+    printf 'failed   no configuration reload: HYPRLAND_INSTANCE_SIGNATURE is not the nested session'"'"'s\n'
+    status=1
+  else
+    hyprctl reload >/dev/null 2>&1 || true
+    # The shell re-plans 400 ms after the reload and restores a saved layout
+    # at 800 ms: read after both, and once more if it was still moving.
+    for _ in 1 2; do
+      sleep 1.5
+      placed_after=$(placement)
+      [[ $placed_after == "$placed_before" ]] && break
+    done
+    if [[ -n $placed_before && $placed_after == "$placed_before" ]]; then
+      printf 'ok       a configuration reload keeps the workspaces and BUCHTEST in place\n'
+    else
+      printf 'failed   a configuration reload moved things:\n         before %s\n         after  %s\n' \
+        "$(tr '\n' ' ' <<<"$placed_before")" "$(tr '\n' ' ' <<<"$placed_after")"
+      status=1
+    fi
+  fi
 fi
 
-log=$(quickshell log --path "$config_path" 2>/dev/null | sed -E 's/\x1b\[[0-9;]*m//g' || true)
+log=$(instance_log)
 problems=$(grep -E 'WARN|ERROR|CRIT|TypeError|ReferenceError|is not a type|Cannot assign|Unable to assign' <<<"$log" \
   | grep -vE "$known_warnings" || true)
 if [[ -n $problems ]]; then
@@ -454,6 +655,47 @@ if [[ -n $problems ]]; then
   status=1
 else
   printf 'ok       log has no shell warnings\n'
+fi
+
+# The way out (nested only, and not when the session is kept). The log read
+# above is over before the trap ends the session, so a binding loop or a
+# TypeError while the shell stops - every deploy and reload stops the live
+# one, and a live shell's log ended with one - was never read. The shell is
+# stopped over IPC as reload-shell.sh does it, and what its log file got from
+# then on is checked the same way.
+if [[ ${1:-} == --nested && ${BUCHHWIN_SMOKE_KEEP:-0} != 1 ]]; then
+  shell_log="$base/state/buchhwin-shell/quickshell.log"
+  logged=$(wc -l 2>/dev/null <"$shell_log") || logged=0
+  quickshell kill --path "$config_path" >/dev/null 2>&1 || true
+  stopped=0
+  for _ in {1..100}; do
+    listed=$(quickshell list --path "$config_path" --json 2>/dev/null) || listed=""
+    if [[ $listed != *'"id"'* ]]; then stopped=1; break; fi
+    sleep 0.1
+  done
+  # Its last lines can land a moment after the instance is gone.
+  sleep 0.3
+  goodbye=$(tail -n +"$(( logged + 1 ))" "$shell_log" 2>/dev/null | sed -E 's/\x1b\[[0-9;]*m//g' || true)
+  problems=$(grep -E 'WARN|ERROR|CRIT|TypeError|ReferenceError|is not a type|Cannot assign|Unable to assign' <<<"$goodbye" \
+    | grep -vE "$known_warnings" || true)
+  if (( ! stopped )); then
+    printf 'failed   the shell did not stop over IPC within 10 s\n'
+    status=1
+  elif [[ -n $problems ]]; then
+    printf 'Log problems while the shell stopped:\n%s\n' "$problems"
+    status=1
+  else
+    printf 'ok       the shell stops without warnings\n'
+  fi
+  # Its instance directory is of no use once the run has passed (the
+  # sandbox keeps quickshell.log), and nested-session.sh stop only clears
+  # those of shells it ends itself: every run left one for the hourly sweep.
+  # A failed run keeps it for `quickshell log --id`.
+  if (( stopped && status == 0 )) && [[ -r "$project_dir/scripts/lib/quickshell-dirs.sh" ]]; then
+    # shellcheck source=lib/quickshell-dirs.sh
+    source "$project_dir/scripts/lib/quickshell-dirs.sh"
+    quickshell_remove_instance "$instance"
+  fi
 fi
 [[ $status -eq 0 && $skipped -eq 1 ]] && exit 77
 exit "$status"

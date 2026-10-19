@@ -8,9 +8,11 @@ set -euo pipefail
 # starts by its program, anything else through gtk-launch. Without a
 # default terminal, scripts/launch-terminal.sh decides, as it does for the
 # shell's own terminals.
-# One process for the path rather than three (readlink, dirname, a subshell):
-# this is the start of every Super+Enter.
-self=$(readlink -f -- "${BASH_SOURCE[0]}")
+# The path as it was called, and no process for it unless this file itself
+# is a link: this is the start of every Super+Enter. The directory above may
+# be one (the session's link to the stable worktree) and works the same.
+self=${BASH_SOURCE[0]}
+[[ $self == /* && ! -L $self ]] || self=$(readlink -f -- "$self")
 project_dir=${self%/*/*}
 category=${1:?usage: launch-default.sh browser|files|terminal}
 shift

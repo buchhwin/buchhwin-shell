@@ -5,6 +5,7 @@ import qs.theme
 import qs.services
 import qs.shell.components
 import "../../../services/settings/SwatchLogic.js" as Swatch
+import "../../../services/wallpaper/WallpaperLogic.js" as WallpaperLogic
 
 // Settings > Terminal: kitty appearance, Starship prompt with a live preview
 // and the Fastfetch greeting. Which terminal opens - for Super+Enter, the
@@ -48,7 +49,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Preview"
-        description: "New kitty windows use these settings; open windows update font, opacity and cursor right away."
+        description: "New kitty windows use these settings; open windows update font, transparency and cursor right away."
 
         // The Starship preview, the Git sample and the greeting are the
         // session's own zsh; with the account's ~/.zshrc they say nothing.
@@ -178,7 +179,8 @@ ColumnLayout {
                 Layout.preferredHeight: Metrics.thumbnailSize
                 visible: TerminalService.fastfetchImage.length > 0
                 radius: Metrics.radiusInner
-                source: TerminalService.fastfetchImage.length ? "file://" + TerminalService.fastfetchImage : ""
+                // Encoded: a "#" or "?" in the file's name stays part of it.
+                source: WallpaperLogic.folderUrl(TerminalService.fastfetchImage)
             }
             ColumnLayout {
                 Layout.fillWidth: true
@@ -245,11 +247,14 @@ ColumnLayout {
             }
             ShellText { text: root.options.fontSize + " pt"; role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl }
         }
+        // Said as Appearance and the dock say it: transparency, 0% solid.
+        // The slider runs the same way as theirs (right is more solid) and
+        // the stored value is still the terminals' own opacity.
         SettingRow {
-            label: "Opacity"
+            label: "Transparency"
             // Not "the session terminal": that is whatever Default apps
             // says, kitty when it says nothing.
-            hint: "Alacritty takes this opacity too when it is your terminal (" + ShortcutService.keyHint("SUPER + RETURN", true) + ")"
+            hint: "Alacritty takes this transparency too when it is your terminal (" + ShortcutService.keyHint("SUPER + RETURN", true) + ")"
             ShellSlider {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -257,7 +262,7 @@ ColumnLayout {
                 value: root.options.opacity
                 onReleased: value => root.set("opacity", Math.round(value * 100) / 100)
             }
-            ShellText { text: Math.round(root.options.opacity * 100) + "%"; role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl }
+            ShellText { text: Math.round((1 - root.options.opacity) * 100) + "%"; role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl }
         }
         SettingRow {
             label: "Padding"
@@ -318,7 +323,8 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Alacritty"
-        description: "Alacritty keeps its own configuration and takes the opacity above."
+        scope: "terminal.alacrittyDaemon"
+        description: "Alacritty keeps its own configuration and takes the transparency above."
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
@@ -346,7 +352,7 @@ ColumnLayout {
                 model: ["shell"].concat(TerminalService.promptColors)
                 ColorSwatch {
                     required property string modelData
-                    fill: modelData === "shell" ? Colors.accent : modelData
+                    fill: modelData === "shell" ? Colors.accent : modelData // style: the swatch shows the accent itself
                     label: modelData === "shell" ? "Shell accent" : Swatch.nameOf(modelData)
                     selected: root.options.promptColor.toLowerCase() === modelData
                     mark: modelData === "shell" ? "󰏘" : ""
@@ -427,12 +433,14 @@ ColumnLayout {
         }
         SettingRow {
             label: "Directory depth"
-            ShellSlider {
+            // Whole steps (IntegerSlider): the slider's own step, a twentieth
+            // of the range, was rounded back and the arrow keys went nowhere.
+            IntegerSlider {
                 focusOnTab: true
                 Layout.fillWidth: true
                 from: 1; to: 10
                 value: root.options.directoryDepth
-                onReleased: value => root.set("directoryDepth", Math.round(value))
+                onPicked: value => root.set("directoryDepth", value)
             }
             ShellText { text: String(root.options.directoryDepth); role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl }
         }

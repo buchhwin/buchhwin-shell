@@ -6,6 +6,7 @@ import qs.services
 import qs.shell.components
 import Quickshell.Io
 import "../../../services/wallpaper/WallpaperLogic.js" as WallpaperLogic
+import "../../../services/settings/LoginLogic.js" as LoginLogic
 
 // Settings > Login Screen: how the SDDM greeter looks. The greeter runs as
 // another user and cannot read these settings, so installing them copies them
@@ -17,8 +18,12 @@ ColumnLayout {
     // The wallpaper the greeter will get. Empty is "the one this session has",
     // which is what the installer already falls back to; a path pins it.
     readonly property string wallpaper: SettingsService.expandHome(SettingsService.value("login.wallpaper"))
-    readonly property string command: "sudo install/system-install.sh --sddm-theme"
-        + (root.wallpaper.length ? " --wallpaper '" + root.wallpaper + "'" : "")
+    // Text for a terminal, with every path one word for the shell whatever
+    // the file is called, and the installer of the tree this shell runs
+    // from (LoginLogic).
+    readonly property string installer: Paths.shellFile("install/system-install.sh")
+    readonly property string command: LoginLogic.installCommand(root.installer, root.wallpaper)
+    readonly property string removeCommand: LoginLogic.removeCommand(root.installer)
 
     // What the greeter is showing *now*, which is a copy made the last time
     // that command was run. Reading it is the point of this page: a stale copy
@@ -60,7 +65,10 @@ ColumnLayout {
 
         SettingRow {
             label: "Wallpaper"
-            hint: "The greeter runs as its own user and cannot read your home directory, so whichever picture you choose is copied into the installed theme by the command below. Until you run it, the login screen keeps the copy it already has - which is why one that was changed long ago can look as though it cannot be changed at all."
+            // Until the command runs, the login screen keeps the copy it has,
+            // which is why one changed long ago can look as though it cannot
+            // be changed at all.
+            hint: "Copied into the installed theme by the command below: the greeter runs as its own user and cannot read your home. Until then the login screen keeps its old copy."
             ShellSelect {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -177,27 +185,56 @@ ColumnLayout {
         title: "Apply"
         description: "The greeter runs as the sddm user and cannot read your settings, so they are copied into the installed theme. That needs root, so it stays a step you run yourself."
 
+        // The copy button beside the command, as a code block has it: the
+        // installer's absolute path wraps the line, and a button in a row of
+        // its own under it ended below the card's edge.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Metrics.spaceSm
+            ShellText {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                text: root.command
+                font.family: Typography.monoFamily
+                wrapMode: Text.Wrap
+            }
+            ShellButton {
+                Layout.alignment: Qt.AlignTop
+                focusOnTab: true
+                icon: Icons.copy
+                variant: "ghost"
+                compact: true
+                toolTip: "Copy command"
+                onClicked: Quickshell.clipboardText = root.command
+            }
+        }
+        // The way back is a command too, copied the same way, rather than a
+        // flag to be typed onto the line above by hand.
         ShellText {
             Layout.fillWidth: true
-            text: root.command
-            font.family: Typography.monoFamily
+            text: "To undo it, run this; it puts the previous theme and display manager back. From a TTY you can also remove /etc/sddm.conf.d/buchhwin-theme.conf."
+            role: "caption"
             wrapMode: Text.Wrap
         }
         RowLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceSm
+            ShellText {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                text: root.removeCommand
+                font.family: Typography.monoFamily
+                wrapMode: Text.Wrap
+            }
             ShellButton {
+                Layout.alignment: Qt.AlignTop
                 focusOnTab: true
                 icon: Icons.copy
-                text: "Copy command"
-                onClicked: Quickshell.clipboardText = root.command
+                variant: "ghost"
+                compact: true
+                toolTip: "Copy undo command"
+                onClicked: Quickshell.clipboardText = root.removeCommand
             }
-        }
-        ShellText {
-            Layout.fillWidth: true
-            text: "Undo is the same script with --sddm-theme-remove. From a TTY you can also remove /etc/sddm.conf.d/buchhwin-theme.conf."
-            role: "caption"
-            wrapMode: Text.Wrap
         }
     }
 }

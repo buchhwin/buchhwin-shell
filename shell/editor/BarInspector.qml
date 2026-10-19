@@ -137,7 +137,13 @@ EditorPanel {
             Layout.fillWidth: true
             current: panel.place ? panel.place.zone : "center"
             options: [{ value: "left", label: "Left" }, { value: "center", label: "Center" }, { value: "right", label: "Right" }]
-            onSelected: value => LayoutService.pillMoveTo(panel.target, panel.pill.id, value, panel.zones[value].length)
+            // To the end of another zone. A click on the zone the pill is in
+            // already (the control answers that too) moved it to that zone's
+            // end and took an undo step.
+            onSelected: value => {
+                if (panel.place && value !== panel.place.zone)
+                    LayoutService.pillMoveTo(panel.target, panel.pill.id, value, panel.zones[value].length)
+            }
         }
         RowLayout {
             Layout.fillWidth: true

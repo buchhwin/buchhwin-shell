@@ -83,7 +83,7 @@ ShellRoot {
 
         // 1 → 2 → 3 with 2 empty: the shell hears 3 come and be shown ~2 ms
         // before it hears 2 go, and the row was "1 2 3" in between (nested
-        // trace, round 13). An empty one its screen does not show is gone.
+        // trace). An empty one its screen does not show is gone.
         const passing = [{ id: 1, name: "1", windows: 1, toplevels: 1, screen: "DP-1" },
                          { id: 2, name: "2", windows: 0, toplevels: 0, screen: "DP-1" },
                          { id: 3, name: "3", windows: 0, toplevels: 0, screen: "DP-1" }]
@@ -277,6 +277,92 @@ ShellRoot {
              [["mail", false]], "a named stray is just its name: the name was the point")
         T.eq(W.entries("fixed", 2, [{ id: 11, name: "11", windows: 1, screen: "DP-1" }], "DP-1", 11, 10, 11)[0].stray,
              false, "on its own monitor it is not a stray at all")
+
+        // Undocked with empty workspaces held open: every held one of the
+        // gone screens lands on the laptop. With the blocks on, the empty
+        // ones that are not shown are not drawn; they are still there.
+        const laptopAfterDock = [{ id: 1, name: "1", windows: 2, toplevels: 2, kept: true, screen: "eDP-1" },
+                                 { id: 2, name: "2", windows: 0, toplevels: 0, kept: true, screen: "eDP-1" },
+                                 { id: 11, name: "11", windows: 0, toplevels: 0, kept: true, screen: "eDP-1" },
+                                 { id: 12, name: "12", windows: 1, toplevels: 1, kept: true, screen: "eDP-1" },
+                                 { id: 13, name: "13", windows: 0, toplevels: 0, kept: true, screen: "eDP-1" },
+                                 { id: 21, name: "mail", windows: 0, toplevels: 0, kept: true, screen: "eDP-1" },
+                                 { id: 22, name: "22", windows: 0, toplevels: 0, kept: true, screen: "eDP-1" }]
+        T.eq(ids(W.entries("open", 5, laptopAfterDock, "eDP-1", 13, 0, 13, true)), [1, 2, 12, 13, 21],
+             "empty strays not shown are left out; one with a window, the one shown and a named one stay")
+        T.eq(ids(W.entries("open", 5, laptopAfterDock, "eDP-1", 13, 0, 13)), [1, 2, 11, 12, 13, 21, 22],
+             "without the blocks a high number is only a workspace past ten")
+        T.eq(ids(W.entries("fixed", 2, laptopAfterDock, "eDP-1", 1, 0, 1, true)), [1, 2, 12, 21], "the same in Fixed")
+        T.eq(W.idleStray({ id: 11, name: "11", windows: 0 }, 10, 12, true), false, "on its own monitor's block it is no stray")
+
+        // ---- the laptop panel at a desk -----------------------------------
+        //
+        // Hyprland's automatic layout puts the panel first; numbered by place
+        // it took 1-10 whenever the lid was open, and every block moved one
+        // screen when the lid opened or closed.
+        const desk = [{ name: "eDP-1", x: 0, y: 0 }, { name: "DP-8", x: 1920, y: 0 }, { name: "DP-10", x: 4224, y: 0 }]
+        T.eq(W.monitorOrder(desk), ["DP-8", "DP-10", "eDP-1"], "the panel after the desk's screens")
+        T.eq(W.monitorOrder(desk.slice(1)), ["DP-8", "DP-10"], "lid shut: the same blocks for the same screens")
+        T.eq(W.monitorOrder([{ name: "eDP-1", x: 0, y: 0 }]), ["eDP-1"], "a laptop on its own is unchanged")
+        T.eq(W.monitorOrder([{ name: "LVDS-1", x: 1920, y: 0 }, { name: "eDP-1", x: 0, y: 0 }]), ["eDP-1", "LVDS-1"],
+             "two panels and nothing else: by place")
+        T.eq([W.offsetFor(desk, "DP-8"), W.offsetFor(desk, "eDP-1")], [0, 20], "the panel's block is the last one")
+
+        // ---- what each screen shows after the moves ------------------------
+        //
+        // A login at the desk: Hyprland gave the three screens 1, 2 and 3,
+        // and 2 and 3 belong to the first. Hyprland shows a moved workspace
+        // on the screen it lands on without telling the shell, so the first
+        // screen stayed on 3 while its pips said 1.
+        const login = ["W-1", "W-2", "W-3"]
+        const loginPlaced = [{ id: 1, monitor: "W-1", windows: 0 }, { id: 2, monitor: "W-2", windows: 0 }, { id: 3, monitor: "W-3", windows: 0 }]
+        const loginActives = [{ monitor: "W-1", id: 1 }, { monitor: "W-2", id: 2 }, { monitor: "W-3", id: 3 }]
+        const loginMoves = W.misplaced(login, loginPlaced)
+        T.eq(loginMoves, [{ id: 2, monitor: "W-1" }, { id: 3, monitor: "W-1" }], "2 and 3 go to the first screen")
+        T.eq(W.views(login, loginPlaced, loginActives, loginMoves),
+             [{ monitor: "W-1", id: 1 }, { monitor: "W-2", id: 11 }, { monitor: "W-3", id: 21 }],
+             "the first screen back on 1, the others on their own first")
+        // Docking: the new first screen takes 3 and 5 from the laptop, which
+        // was on 5. The view goes with the work, not to the lowest of the
+        // block.
+        const dock = ["DESKB", "BUCHTEST", "DESKA"]
+        const dockPlaced = [{ id: 3, monitor: "BUCHTEST", windows: 1 }, { id: 5, monitor: "BUCHTEST", windows: 1 },
+                            { id: 11, monitor: "DESKA", windows: 0 }, { id: 12, monitor: "DESKB", windows: 0 }]
+        const dockActives = [{ monitor: "BUCHTEST", id: 5 }, { monitor: "DESKA", id: 11 }, { monitor: "DESKB", id: 12 }]
+        T.eq(W.views(dock, dockPlaced, dockActives, W.misplaced(dock, dockPlaced)),
+             [{ monitor: "BUCHTEST", id: 11 }, { monitor: "DESKA", id: 21 }, { monitor: "DESKB", id: 5 }],
+             "the screen the laptop's 5 moved to shows 5; the laptop shows its own that was on screen")
+        T.eq(W.views(dock, dockPlaced.map(item => Object.assign({}, item, { windows: 0 })), dockActives, W.misplaced(dock, dockPlaced))
+             .find(view => view.monitor === "DESKB").id, 5, "a screen whose own went away takes the one that was on screen")
+        // A screen that keeps its own and takes one in: back to its own,
+        // unless the arrival is somebody's work.
+        const arrive = (windows) => W.views(["A", "B"], [{ id: 1, monitor: "A", windows: 0 }, { id: 3, monitor: "B", windows: windows }],
+                                            [{ monitor: "A", id: 1 }, { monitor: "B", id: 3 }], [{ id: 3, monitor: "A" }])
+        T.eq(arrive(0), [{ monitor: "A", id: 1 }, { monitor: "B", id: 11 }], "an empty arrival: A stays on its own 1")
+        T.eq(arrive(2), [{ monitor: "A", id: 3 }, { monitor: "B", id: 11 }], "one with windows that was on screen: A shows it")
+        T.eq(W.views(["A", "B"], [{ id: 1, monitor: "A" }, { id: 11, monitor: "B" }], [{ monitor: "A", id: 1 }, { monitor: "B", id: 11 }], []), [],
+             "nothing moved, nothing to show")
+        T.eq(W.views(["A", "B"], [{ id: 1, monitor: "A" }, { id: 25, monitor: "A" }, { id: 11, monitor: "A" }],
+                     [{ monitor: "A", id: 25 }, { monitor: "B", id: 0 }], [{ id: 11, monitor: "B" }]),
+             [{ monitor: "B", id: 11 }], "a screen on a gone monitor's workspace stays; the one 11 moves to shows it")
+        T.eq([W.views(null, null, null, null), W.views(["A"], [], [null, { monitor: "Z", id: 1 }], [null])], [[], []],
+             "nothing known, nothing to do")
+
+        // ---- held open: which ones count ----------------------------------
+
+        T.eq([W.isKept(3, true, { 3: "DP-1" }, [], false), W.isKept(4, true, { 3: "DP-1" }, [], false), W.isKept(4, true, {}, [], true)],
+             [true, false, true], "with the setting on: one the shell holds, not one past the limit, one a rule holds")
+        T.eq([W.isKept(3, true, { 3: "DP-1" }, [3], true), W.isKept(3, false, { 3: "DP-1" }, [], false), W.isKept(3, false, {}, [], true)],
+             [false, false, true], "never one being closed; off, only a persistent rule counts")
+        T.eq(W.isKept("3", true, null, null, false), false, "nothing known, nothing held")
+        // After an undock from three screens with 25 held, the limit stays
+        // the session's: a new workspace on the laptop is still held.
+        const heldAtDesk = {}
+        for (let id = 1; id <= 25; ++id) heldAtDesk[id] = "eDP-1"
+        T.eq(W.keepPlan([{ id: 27, monitor: "eDP-1" }], heldAtDesk, [], ["eDP-1"], W.keepLimit(3)), { 27: "eDP-1" },
+             "under the session's limit a new one is held")
+        T.eq(W.keepPlan([{ id: 27, monitor: "eDP-1" }], heldAtDesk, [], ["eDP-1"], W.keepLimit(1)), {},
+             "the limit of the screens of the moment refused it")
 
         T.finish("WorkspaceTest")
     }

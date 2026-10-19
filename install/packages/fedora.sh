@@ -19,8 +19,8 @@ brave_repofile="https://brave-browser-rpm-release.s3.brave.com/brave-browser.rep
 core=(hyprland quickshell)
 
 packages=(
-  # terminal and prompt
-  kitty zsh starship fastfetch
+  # terminal and prompt; zsh/.zshrc sources both plugins when they are there
+  kitty zsh starship fastfetch zsh-autosuggestions zsh-syntax-highlighting
   # the backends the shell drives
   brightnessctl wireplumber pipewire-utils playerctl NetworkManager
   plocate jq curl grim slurp swappy wl-clipboard cliphist gammastep
@@ -28,6 +28,16 @@ packages=(
   # bridge (scripts/x11-clipboard-bridge.py)
   xclip
   swaylock swayidle kdialog udisks2 wireguard-tools
+  # the Bluetooth daemon
+  bluez
+  # nm-applet is the session's only NetworkManager secret agent - without it
+  # no VPN or saved-secret password is asked for - and plasma-nm the dialog
+  # an enterprise (802.1X) network is set up in (kcm_networkmanagement)
+  network-manager-applet plasma-nm
+  # WebP wallpapers (the picker offers them; Qt reads them through this),
+  # the Notification portal the session's portals.conf names (gtk), and the
+  # user directories the wallpaper folder and the start menu's places use
+  qt6-qtimageformats xdg-desktop-portal-gtk xdg-user-dirs
   # setpriv: the shell's long-running helpers die with it (--pdeathsig).
   # util-linux requires util-linux-core, so setpriv is there whichever of the
   # two carries it on this release.
@@ -43,12 +53,14 @@ packages=(
   # merkuro is where the shell sends you to set calendars up (Settings >
   # Calendar, "Open in Merkuro").
   akonadi-server kdepim-addons merkuro
-  # interface and monospace faces; the icon font is fetched below
-  rsms-inter-fonts jetbrains-mono-fonts
   # what the font step itself needs: fc-cache/fc-list and an unpacker.
   # bsdtar is not on every Fedora, unzip is the fallback that must exist.
   fontconfig unzip
 )
+
+# Interface and monospace faces and the emoji the picker draws; the icon
+# font is fetched (bootstrap.sh, step 4). --skip-fonts leaves these out.
+font_packages=(rsms-inter-fonts jetbrains-mono-fonts google-noto-color-emoji-fonts)
 
 # Features that fail quietly rather than loudly when they are missing: the
 # recording key does nothing, the fingerprint page has nothing to enrol, the

@@ -1,5 +1,6 @@
 import QtQuick
 import qs.theme
+import "WheelLogic.js" as Wheel
 
 // One UI slider: a thick rounded track with a large round handle on top.
 // value is normalized from `from` to `to`; `moved` fires while dragging so
@@ -30,8 +31,13 @@ Item {
     // page that relaid itself left knobs gliding after the track. Under the
     // finger it follows directly, or the spring would fight the hand.
     property real shownRatio: ratio
+    // `false` for a value that only ever creeps on by itself (a track's
+    // position, a second at a time): the spring ran for ~180 ms after every
+    // tick to move the knob under two pixels, which redrew the panel - and
+    // the blur behind it - for a sixth of every second of playback.
+    property bool glide: true
     Behavior on shownRatio {
-        enabled: Animations.motionEnabled && !root.pressed
+        enabled: Animations.motionEnabled && !root.pressed && root.glide
         SpringMotion { kind: "fast"; precision: 0.001 }
     }
 
@@ -44,15 +50,35 @@ Item {
         root.moved(target)
         root.released(target)
     }
-    // Where one wheel event takes the value: a twentieth of the range, the
-    // way the wheel turned. NaN for an event that turned nothing: Qt starts
-    // and ends a touchpad swipe with one (ScrollBegin, ScrollEnd), and reading
-    // it as "down" moved a focused slider a step at each end of the swipe.
-    // Handed on, those reach the list around it (ScrollFeel).
-    function wheelTarget(angle) {
-        if (!angle) return NaN
-        const step = (to - from) / 20
-        return Math.max(from, Math.min(to, value + (angle > 0 ? step : -step)))
+    // Where `steps` wheel steps take the value: a twentieth of the range each,
+    // the way the wheel turned, and no further than either end. NaN for no
+    // step at all.
+    function wheelTarget(steps) {
+        if (!steps) return NaN
+        return Math.max(from, Math.min(to, value + steps * (to - from) / 20))
+    }
+    // What the events of one turn of the wheel left over: a step is a notch
+    // of it, however finely the wheel slices it (WheelLogic.js). One step per
+    // event made a high-resolution wheel's eighth of a notch a whole step.
+    property var wheelCarry: null
+    // One wheel event, from the MouseArea below or from a test with a plain
+    // object of the same fields. Returns whether the slider took it; what it
+    // did not take goes on to the list around it (ScrollFeel). The rule is
+    // WheelLogic.sliderStep: the wheel moves a slider that has the focus or
+    // one under Ctrl, and a touchpad swipe only under Ctrl - a swipe over a
+    // focused slider took every one of its 12 to 41 updates as a step and
+    // ran the volume to an end; it scrolls the page now. Qt starts and ends a
+    // swipe with an event that turned nothing (ScrollBegin, ScrollEnd); those
+    // are always handed on, and reading them as "down" once moved a focused
+    // slider a step at each end of the swipe.
+    function wheel(event) {
+        const answer = Wheel.sliderStep(root.wheelCarry, event.phase, event.angleDelta.y, event.pixelDelta.y,
+                                        root.activeFocus, (event.modifiers & Qt.ControlModifier) !== 0)
+        root.wheelCarry = answer.carry
+        if (!answer.taken) return false
+        const next = root.wheelTarget(answer.steps)
+        if (!isNaN(next)) root.commit(next)
+        return true
     }
     // Disabled, the keys are not the slider's: they go on to the panel.
     Keys.onLeftPressed: event => {
@@ -150,16 +176,8 @@ Item {
         }
         onPositionChanged: event => { if (pressed) { root.liveValue = valueAt(event.x); root.moved(root.liveValue) } }
         onReleased: root.released(root.liveValue)
-        // Scrolling a page must not change sliders it passes over: the wheel
-        // only moves a slider that was used before (it has focus) or with Ctrl
-        // held. Otherwise the event goes on to the scrolling view.
-        onWheel: event => {
-            const next = root.wheelTarget(event.angleDelta.y)
-            if (isNaN(next) || (!root.activeFocus && !(event.modifiers & Qt.ControlModifier))) {
-                event.accepted = false
-                return
-            }
-            root.commit(next)
-        }
+        // Scrolling a page must not change sliders it passes over: what the
+        // slider does not take (`wheel` above) goes on to the scrolling view.
+        onWheel: event => { event.accepted = root.wheel(event) }
     }
 }

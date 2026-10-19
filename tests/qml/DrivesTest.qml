@@ -155,6 +155,73 @@ ShellRoot {
         T.ok(D.phoneHarmless("mount", "Location is already mounted"), "phone already mounted")
         T.ok(D.phoneHarmless("unmount", "Location is not mounted"), "phone already unmounted")
         T.ok(!D.phoneHarmless("unmount", "Unable to open MTP device"), "real phone error stays an error")
+
+        // Reads of `drives.py list` in a row (moved here from the resident
+        // python monitor). The answer is its last list or error line.
+        // The sample is pretty-printed; the helper prints one line.
+        const listed = D.readResult("noise\n" + JSON.stringify(JSON.parse(sample.text())) + "\n")
+        T.eq([listed.kind, listed.drives.length, listed.phones.length], ["drives", 4, 1], "a list answer")
+        T.eq(D.readResult("{\"kind\":\"error\",\"message\":\"timed out\"}\n").kind, "error", "an error answer")
+        T.eq(D.readResult("").kind, "error", "no answer at all (a crashed helper) is an error")
+        const withStick = { kind: "drives", mtp: true, phones: listed.phones, drives: listed.drives.concat([
+            { id: "Kingston_1", name: "DataTraveler", bus: "usb", size: 0, canPowerOff: true, ejectable: true,
+              volumes: [{ id: "sdg1", device: "/dev/sdg1", label: "", fsType: "exfat", size: 1, mountPoints: [],
+                          readOnly: false, encrypted: false, unlocked: false, clearDevice: "" }] }]) }
+
+        let step = D.settle(D.emptyReadState(), listed)
+        T.eq([step.say, step.events], ["drives", []], "the first read is shown, with no events for what is plugged in already")
+        step = D.settle(step.state, listed)
+        T.eq([step.say, step.events], ["", []], "an unchanged read says nothing")
+        step = D.settle(step.state, withStick)
+        T.eq([step.say, step.events], ["drives", [{ kind: "added", id: "Kingston_1" }]], "a stick plugged in is added")
+        step = D.settle(step.state, listed)
+        T.eq(step.events, [{ kind: "removed", id: "Kingston_1" }], "and removed again")
+        step = D.settle(step.state, { kind: "error", message: "timed out" })
+        T.eq([step.say, step.state.retries, step.state.drives.length], ["error", 1, 4],
+             "a failed read is an error and keeps the last list")
+        step = D.settle(step.state, { kind: "error", message: "timed out" })
+        T.eq(step.state.retries, 2, "failed reads in a row are counted")
+        let after = D.settle(step.state, listed)
+        T.eq([after.say, after.events, after.state.retries], ["drives", [], 0],
+             "the same list after an error is shown again (the drives read as unavailable until then)")
+        after = D.settle(step.state, withStick)
+        T.eq(after.events, [{ kind: "added", id: "Kingston_1" }], "a drive plugged in while UDisks2 could not be read is added")
+        const fresh = D.settle(D.emptyReadState(), { kind: "error", message: "not available" })
+        T.eq([fresh.say, fresh.state.first], ["error", true], "a start without UDisks2 says so")
+        T.eq(D.settle(fresh.state, withStick).events, [], "and its first list has no events either")
+        T.eq(D.settle(D.settle(D.emptyReadState(), listed).state, Object.assign({}, listed, { mtp: false })).say, "drives",
+             "gvfs-mtp going away is said")
+
+        const unmounted = JSON.parse(JSON.stringify(listed.drives))
+        unmounted[0].volumes[0].mountPoints = []
+        T.eq(D.diff(listed.drives, unmounted), [{ kind: "unmounted", id: "sdb1", drive: "Example_Flash_Drive_0001" }],
+             "a volume unmounted")
+        T.eq(D.diff(unmounted, listed.drives), [{ kind: "mounted", id: "sdb1", drive: "Example_Flash_Drive_0001" }],
+             "and mounted (an unlock shows up the same way)")
+        T.eq(D.diff(listed.drives, listed.drives), [], "no events without changes")
+        T.eq(D.diffPhones(listed.phones, [Object.assign({}, listed.phones[0], { mounted: !listed.phones[0].mounted }),
+                                         { id: "mtp-new", name: "New", uri: "mtp://New/", mountPoint: "", mounted: false }]),
+             [{ kind: "phoneAdded", id: "mtp-new" },
+              { kind: listed.phones[0].mounted ? "phoneUnmounted" : "phoneMounted", id: "mtp-example_phone_0005" }],
+             "phone events")
+        T.eq(D.diffPhones(listed.phones, []), [{ kind: "phoneRemoved", id: "mtp-example_phone_0005" }], "a phone gone")
+        T.eq(D.diff([{ id: "toString", volumes: [] }], []), [{ kind: "removed", id: "toString" }],
+             "an id that is also an object's member name is an id like any other")
+        T.eq([1, 2, 5, 9].map(D.retryDelay), [2000, 5000, 60000, 60000], "tries again sooner, then every minute")
+
+        // The watchers: their banners are no news; everything else asks for a read.
+        T.ok(!D.watcherNews("Monitoring the udisks daemon. Press Ctrl+C to exit.")
+             && !D.watcherNews("Monitoring events. Press Ctrl+C to quit.") && !D.watcherNews(""), "banners and blank lines")
+        T.ok(D.watcherNews("13:40:56.188: The udisks-daemon is running (name-owner :1.48).")
+             && D.watcherNews("Volume added:      'Pixel 7'") && D.watcherNews("  MountPoints:   /run/media/u/X"),
+             "the daemon back, a phone's volume, a property line")
+        T.eq([1, 2, 5, 6].map(D.watcherRestartDelay), [5000, 10000, 80000, -1], "watcher restarts double, five at most")
+
+        // "Open automatically" waits behind the lock screen.
+        T.eq(D.autoOpenAction(true, true, false), "open", "plugged in at the desktop: opened")
+        T.eq(D.autoOpenAction(true, true, true), "wait", "plugged in behind the lock: opened after the unlock")
+        T.eq(D.autoOpenAction(true, false, false), "none", "only locked volumes: the passphrase comes first")
+        T.eq(D.autoOpenAction(false, true, true), "none", "the setting off (or turned off meanwhile)")
         T.finish("DrivesTest")
     }
 }

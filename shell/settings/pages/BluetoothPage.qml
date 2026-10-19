@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
@@ -22,7 +23,7 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "Bluetooth"
         description: !BluetoothService.available ? "No Bluetooth adapter found"
-            : (root.adapter.name || "Bluetooth adapter") + " · " + BluetoothService.summary
+            : (root.adapter && root.adapter.name || "Bluetooth adapter") + " · " + BluetoothService.summary
 
         SettingRow {
             Layout.fillWidth: true
@@ -49,7 +50,7 @@ ColumnLayout {
         }
         ShellText {
             Layout.fillWidth: true
-            visible: BluetoothService.enabled && BluetoothService.agentAllowed && !BluetoothService.agentReady
+            visible: BluetoothService.agentStarting
             text: "Pairing service is starting … Devices that need a confirmation code can be paired in a moment."
             role: "caption"
             wrapMode: Text.Wrap
@@ -62,11 +63,16 @@ ColumnLayout {
         title: "My devices"
         description: "Paired devices. Connect, disconnect or remove them."
 
-        EmptyState { Layout.fillWidth: true; visible: root.known.length === 0; icon: "󰂯"; title: "No paired devices" }
+        EmptyState { Layout.fillWidth: true; visible: root.known.length === 0; row: true; icon: "󰂯"; title: "No paired devices" }
         Repeater {
-            model: root.known
+            // Kept rows (ScriptModel; BlueZ's device objects keep their
+            // identity): `known` and `nearby` are new lists whenever
+            // discovery finds a device or one connects, and every row was
+            // built again - the keyboard focus and an armed Remove went.
+            model: ScriptModel { values: root.known }
+            // Not a tab stop of its own: its button does what a click on the
+            // row does, and a stop for both made two or three per device.
             ListRow {
-                focusOnTab: true
                 level: 1
                 required property var modelData
                 Layout.fillWidth: true
@@ -85,7 +91,7 @@ ColumnLayout {
                         // The pairing is gone; the device has to be paired
                         // again from both ends.
                         confirm: true
-                        confirmText: "Remove"
+                        confirmText: "Remove?"
                         toolTip: "Remove device"
                         onClicked: BluetoothService.forget(modelData)
                     }
@@ -111,13 +117,15 @@ ColumnLayout {
         EmptyState {
             Layout.fillWidth: true
             visible: BluetoothService.nearby.length === 0
+            row: true
             icon: BluetoothService.discovering ? Icons.busy : "󰂯"
             title: BluetoothService.discovering ? "Searching …" : "No devices found"
         }
         Repeater {
-            model: BluetoothService.nearby
+            model: ScriptModel { values: BluetoothService.nearby }
+            // Not a tab stop of its own: its button does what a click on the
+            // row does, and a stop for both made two or three per device.
             ListRow {
-                focusOnTab: true
                 level: 1
                 required property var modelData
                 Layout.fillWidth: true
@@ -138,7 +146,8 @@ ColumnLayout {
         RowLayout {
             ShellButton {
                 focusOnTab: true
-                icon: Icons.refresh
+                // Stopping is no refresh: it wears the glyph that closes.
+                icon: BluetoothService.discovering ? Icons.close : Icons.refresh
                 text: BluetoothService.discovering ? "Stop searching" : "Search again"
                 compact: true
                 onClicked: BluetoothService.setDiscovering(!BluetoothService.discovering)

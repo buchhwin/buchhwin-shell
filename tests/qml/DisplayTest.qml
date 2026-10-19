@@ -297,6 +297,67 @@ ShellRoot {
         T.eq(D.kept({ version: 1, monitors: { "DP-4": { description: "" } } }, deskB, "", false, null).monitors["DP-4"].description,
              "Sample FHD B2", "an entry without a description under the connected name is replaced, as before")
 
+        // ---- What a lid edge does -----------------------------------------
+        //
+        // At a desk the laptop stays awake and the panel goes off, whatever
+        // the action: "Sleep" suspended the whole desk two seconds after the
+        // lid went down, and "Nothing" left the panel on behind the lid with
+        // the first block of workspaces.
+        const atDesk = [{ name: "eDP-1", disabled: false }, { name: "DP-8", disabled: false }]
+        const alone = [{ name: "eDP-1", disabled: false }]
+        const steps = (action, list, panelName) => {
+            const s = D.lidClose(action, list, panelName === undefined ? "eDP-1" : panelName)
+            return [s.panel, s.lock, s.suspend]
+        }
+        T.eq(steps("suspend", atDesk), [true, false, false], "Sleep at a desk: the panel off, no suspend")
+        T.eq(steps("nothing", atDesk), [true, false, false], "Nothing at a desk: the panel off all the same")
+        T.eq(steps("lock", atDesk), [true, true, false], "Lock at a desk: locked, and the panel off")
+        T.eq(steps("screenOff", atDesk), [true, false, false], "Screen off at a desk: the panel off")
+        T.eq(steps("suspend", alone), [false, false, true], "the laptop alone sleeps")
+        T.eq(steps("lock", alone), [false, true, false], "or locks")
+        T.eq(steps("screenOff", alone), [true, false, false], "or turns its screen off")
+        T.eq(steps("nothing", alone), [false, false, false], "or does nothing")
+        T.eq(steps("suspend", [{ name: "eDP-1", disabled: false }, { name: "DP-8", disabled: true }]), [false, false, true],
+             "a screen that is off is no desk")
+        T.eq(steps("suspend", [{ name: "DP-8", disabled: false }], ""), [false, false, true], "no panel known: the action as it says")
+        T.eq(steps("suspend", null), [false, false, true], "nothing known: the action as it says")
+
+        // And when it opens again. Logged in at the desk with the lid shut,
+        // the panel was remembered at Hyprland's automatic place, x 0: back
+        // there it came first in the monitor order.
+        const deskShut = D.parseMonitors(JSON.stringify([
+            { name: "eDP-1", description: "Sample Panel 14", width: 1920, height: 1200, refreshRate: 60, x: 0, y: 0, scale: 1,
+              disabled: true, availableModes: ["1920x1200@60.00Hz"] },
+            { name: "DP-8", description: "Sample 4K A1", width: 3840, height: 2160, refreshRate: 60, x: 1920, y: 0, scale: 1.67,
+              availableModes: ["3840x2160@60.00Hz"] },
+            { name: "DP-10", description: "Sample 4K A2", width: 3840, height: 2160, refreshRate: 60, x: 4224, y: 0, scale: 1.67,
+              availableModes: ["3840x2160@60.00Hz"] }]))
+        const remembered = Object.assign({}, deskShut.find(m => m.name === "eDP-1"), { disabled: false })
+        const opened = D.lidOpenTarget(deskShut, null, "eDP-1", remembered)
+        T.eq([opened.name, opened.disabled, opened.x, opened.y], ["eDP-1", false, 6528, 0], "no saved place: after the desk's screens")
+        T.ok(!D.overlapping(deskShut.map(m => m.name === "eDP-1" ? opened : m)), "and on none of them")
+        const panelFile = D.toSaved(D.update(deskShut, "eDP-1", { disabled: false, x: 0, y: 2160 }))
+        panelFile.monitors["eDP-1"].lidOpen = true
+        const toSaved = D.lidOpenTarget(deskShut, panelFile, "eDP-1", remembered)
+        T.eq([toSaved.x, toSaved.y], [0, 2160], "a saved place that is free: there, as the saved layout puts it a moment later")
+        const onTop = D.toSaved(D.update(deskShut, "eDP-1", { disabled: false, x: 2000, y: 0 }))
+        T.eq(D.lidOpenTarget(deskShut, onTop, "eDP-1", remembered).x, 6528, "a saved place on another screen: after them")
+        // Switched off in Settings > Displays with the lid open: the lid did
+        // not take it, and does not bring it back.
+        const keptOff = D.toSaved(D.update(deskShut, "eDP-1", { disabled: true }))
+        keptOff.monitors["eDP-1"].lidOpen = true
+        T.eq(D.lidOpenTarget(deskShut, keptOff, "eDP-1", null), null, "a panel kept off stays off")
+        T.eq(D.lidOpenTarget(deskShut, keptOff, "eDP-1", remembered), null, "whatever was remembered")
+        const oldOff = D.toSaved(D.update(deskShut, "eDP-1", { disabled: true }))
+        T.eq(D.lidOpenTarget(deskShut, oldOff, "eDP-1", null).disabled, false, "an old file's off is the lid's: it comes back")
+        // The laptop alone: the panel was only dark (dpms), or the screens
+        // went while the lid was shut and it came back by itself.
+        T.eq(D.lidOpenTarget(D.update(deskShut, "eDP-1", { disabled: false }).slice(0, 1), null, "eDP-1", null), null,
+             "on already and nothing remembered: nothing to switch on")
+        const lone = D.lidOpenTarget([deskShut[0]], null, "eDP-1", null)
+        T.eq([lone.disabled, lone.x], [false, 0], "alone and off: on where it is")
+        T.eq(D.lidOpenTarget(deskShut, null, "", remembered), null, "no panel: nothing")
+
         // ---- Automatic Laptop / Docked mode ----------------------------
         T.eq(D.suggestedMode(["DP-4", "DP-6"], "eDP-1"), "docked", "docked with the lid shut: the panel is off but there")
         T.eq(D.suggestedMode(["eDP-1", "DP-4"], "eDP-1"), "docked", "docked with the lid open")
@@ -307,6 +368,32 @@ ShellRoot {
         T.eq([D.hasInternalPanel(["DP-4"], "eDP-1"), D.hasInternalPanel(["DP-4"], ""), D.externalCount(["eDP-1", "DP-4", "DP-6"], "eDP-1")],
              [true, false, 2], "the two halves")
         T.eq(D.suggestedMode(null, undefined), "", "nothing known")
+
+        // ---- A refresh and the unapplied draft (Settings > Displays) ----
+        const draftLive = D.parseMonitors(JSON.stringify(sample))
+        const draftEdited = D.update(draftLive, "DP-1", { scale: 1.25 })
+        const draftSame = D.refreshedDraft(draftLive, draftLive.map(monitor => Object.assign({}, monitor)), draftEdited)
+        T.eq([draftSame.dropped, draftSame.draft.find(monitor => monitor.name === "DP-1").scale], [false, 1.25],
+             "unapplied changes stay through a refresh of the same monitors")
+        T.ok(D.changed(draftLive, draftSame.draft), "and the draft is still one with changes")
+        const draftClean = D.refreshedDraft(draftLive, draftLive, draftLive.slice())
+        T.eq([draftClean.dropped, D.changed(draftLive, draftClean.draft)], [false, false], "a draft without changes follows the monitors")
+        const draftLid = draftLive.map(monitor => monitor.name === "eDP-1" ? Object.assign({}, monitor, { disabled: true }) : monitor)
+        const draftUnder = D.refreshedDraft(draftLive, draftLid, draftEdited)
+        T.eq([draftUnder.dropped, draftUnder.draft.find(monitor => monitor.name === "eDP-1").disabled,
+              draftUnder.draft.find(monitor => monitor.name === "DP-1").scale], [false, true, 1.25],
+             "a monitor changed underneath takes its new state, the others keep their edits")
+        const draftBoth = D.refreshedDraft(draftLive, draftLive.map(monitor => monitor.name === "DP-1" ? Object.assign({}, monitor, { scale: 2 }) : monitor),
+                                           draftEdited)
+        T.eq([draftBoth.dropped, draftBoth.draft.find(monitor => monitor.name === "DP-1").scale], [true, 2],
+             "a monitor changed by the user and underneath as well: the live state, and the draft said to be gone")
+        const draftPlugged = draftLive.concat(D.parseMonitors(JSON.stringify([{ name: "HDMI-A-1", width: 1920, height: 1080,
+                                                                              refreshRate: 60, x: 4480, y: 0, scale: 1 }])))
+        const draftGone = D.refreshedDraft(draftLive, draftPlugged, draftEdited)
+        T.eq([draftGone.dropped, D.changed(draftPlugged, draftGone.draft)], [true, false],
+             "a monitor plugged in: the draft cannot stay, and says it went")
+        T.eq([D.refreshedDraft([], draftLive, []).draft.length, D.refreshedDraft(undefined, draftLive, undefined).dropped], [2, false],
+             "the first reading is the draft")
         T.finish("DisplayTest")
     }
 }

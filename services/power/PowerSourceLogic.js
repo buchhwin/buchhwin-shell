@@ -7,7 +7,8 @@
 
 var SOURCES = ["battery", "ac"]
 // Settings that exist once per source (power.battery.KEY, power.ac.KEY).
-var KEYS = ["screenOffMinutes", "lockMinutes", "suspendMinutes", "dimBeforeScreenOff", "lidAction", "profile"]
+var KEYS = ["screenOffMinutes", "lockMinutes", "suspendMinutes", "dimBeforeScreenOff", "lidAction", "profile",
+            "lockedScreenOffMinutes"]
 // Single power.KEY values before the split; they seed both sources.
 var LEGACY_KEYS = ["screenOffMinutes", "lockMinutes", "suspendMinutes", "dimBeforeScreenOff", "lidAction"]
 var PROFILES = ["keep", "powerSaver", "balanced", "performance"]

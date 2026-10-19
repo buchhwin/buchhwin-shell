@@ -53,7 +53,7 @@ ColumnLayout {
     ]
     SettingRow {
         Layout.fillWidth: true
-        label: "Middle click"
+        label: "Middle-click"
         hint: "On the collapsed notch"
         ShellSelect {
             focusOnTab: true
@@ -65,7 +65,7 @@ ColumnLayout {
     }
     SettingRow {
         Layout.fillWidth: true
-        label: "Right click"
+        label: "Right-click"
         hint: "On the collapsed notch"
         ShellSelect {
             focusOnTab: true
@@ -170,7 +170,8 @@ ColumnLayout {
     }
     // A taskbar along the whole edge of a screen, always shown, already
     // holds the clock and the status glyphs; "Hide" leaves them out of that
-    // screen's strip (notch.dockDuplicates, NotchLogic.dockDuplicates).
+    // screen's strip and its bar (notch.dockDuplicates, NotchLogic.dockDuplicates;
+    // the bar through BarLogic.withoutTypes).
     SettingRow {
         Layout.fillWidth: true
         label: "Beside a taskbar"

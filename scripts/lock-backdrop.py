@@ -15,6 +15,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 
 from PIL import Image, ImageFilter
 
@@ -23,7 +24,10 @@ MAX_SIDE = 64
 
 def blur(image):
     """A tiny, blurred copy of `image` (RGB)."""
-    image = image.convert("RGB")
+    # grim's PPM is RGB already, and converting it anyway copied the whole
+    # frame once more (a third of the time the reduction takes).
+    if image.mode != "RGB":
+        image = image.convert("RGB")
     width, height = image.size
     scale = MAX_SIDE / max(width, height, 1)
     small = image.resize((max(1, round(width * scale)), max(1, round(height * scale))), Image.Resampling.BOX)
@@ -39,21 +43,47 @@ def safe_name(name):
     return re.sub(r"[^A-Za-z0-9._-]", "_", name)
 
 
-def capture(directory):
+def capture(directory, timeout=5):
     directory = pathlib.Path(directory)
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    written = []
+    # Every monitor's grim is started before the first frame is read: the
+    # lock waits for this script, and one capture after another put each
+    # further screen's capture and decode on top (a 4K frame is 25 MB of
+    # PPM). The frames are then read and reduced in turn, all within one
+    # `timeout` rather than one each.
+    deadline = time.monotonic() + timeout
+    grims = []
     for name in monitors():
         try:
-            frame = subprocess.run(["grim", "-o", name, "-t", "ppm", "-"], capture_output=True, timeout=5, check=True).stdout
-            small = blur(Image.open(io.BytesIO(frame)))
-        except (subprocess.SubprocessError, OSError, ValueError):
+            grims.append((name, subprocess.Popen(["grim", "-o", name, "-t", "ppm", "-"],
+                                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)))
+        except OSError:
             continue
-        target = directory / (safe_name(name) + ".png")
-        handle = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(handle, "wb") as stream:
-            small.save(stream, "PNG")
-        written.append(name)
+    written = []
+    try:
+        for name, grim in grims:
+            try:
+                frame, _ = grim.communicate(timeout=max(0.1, deadline - time.monotonic()))
+                if grim.returncode != 0:
+                    continue
+                small = blur(Image.open(io.BytesIO(frame)))
+            except subprocess.TimeoutExpired:
+                grim.kill()
+                grim.communicate()
+                continue
+            except (OSError, ValueError):
+                continue
+            target = directory / (safe_name(name) + ".png")
+            handle = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(handle, "wb") as stream:
+                small.save(stream, "PNG")
+            written.append(name)
+    finally:
+        # None is left behind, whatever went wrong above.
+        for _, grim in grims:
+            if grim.poll() is None:
+                grim.kill()
+                grim.wait()
     return written
 
 

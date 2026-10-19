@@ -16,6 +16,15 @@ Rectangle {
     id: root
     readonly property var items: LayoutService.lockItems
 
+    // The cells lean only while the pointer is over the sketch and Settings
+    // is on screen. Always leaning, every cell's Wiggle redrew the whole
+    // Settings surface on every frame for as long as the page was open, and
+    // went on ticking for the minute the panel keeps a closed page; the frame
+    // and the handles say "arrangeable" by themselves.
+    readonly property bool leaning: activity.active && previewHover.hovered
+    PageActivity { id: activity }
+    HoverHandler { id: previewHover }
+
     implicitHeight: grid.implicitHeight + loginSketch.height + Metrics.spaceXl * 3
     radius: Metrics.radiusCard
     color: Colors.lockBase
@@ -88,24 +97,39 @@ Rectangle {
                         }
                     }
                 }
-                // Editable, so it says so - each cell at its own point of the
-                // cycle, and still while it is under the hand.
+                // Editable, so it says so while the pointer is over it - each
+                // cell at its own point of the cycle, and still while it is
+                // under the hand.
                 Wiggle {
                     id: wiggle
                     index: cell.index
-                    running: grid.editing && !cell.dragging && !cell.sizing
+                    running: grid.editing && root.leaning && !cell.dragging && !cell.sizing
                 }
+                // In the lock screen's own inks, whatever the theme: the
+                // danger wash and glyph are made for a light or dark card, and
+                // on this always-dark tile the light theme's dark red was
+                // 1.2:1. The fills are the lock face's power button's (a field
+                // that lightens under the pointer), which keep its error red
+                // above 3:1 both ways. The glyph is drawn here, over a button
+                // with no icon of its own, because a button takes its glyph's
+                // colour from its variant.
                 ShellButton {
+                    id: removeBadge
                     focusOnTab: true
                     anchors.top: parent.top
                     anchors.left: parent.left
                     anchors.margins: Metrics.spaceXxs
                     z: 3
-                    icon: Icons.remove
-                    variant: "danger"
                     compact: true
+                    color: removeBadge.hovered || removeBadge.down ? Colors.lockButton : Colors.lockField
                     toolTip: "Take off the lock screen"
                     onClicked: LayoutService.lockRemove(cell.modelData.id)
+                    ShellIcon {
+                        anchors.centerIn: parent
+                        glyph: Icons.remove
+                        size: removeBadge.iconSize
+                        color: Colors.lockError
+                    }
                 }
             }
         }

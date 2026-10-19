@@ -138,3 +138,32 @@ function artPath(url) {
 function artFileUrl(url) {
     return artKind(url) === "file" ? "file://" + String(url).slice("file://".length) : ""
 }
+
+// The covers fetched into the cache stay below both of these: any player can
+// name any url, one per track, and the 30-day sweep alone let a player that
+// cycles its urls fill the disk 20 MB at a time.
+var COVER_FILES = 200
+var COVER_BYTES = 100 * 1024 * 1024
+
+// argv that fetches a remote cover `url` into `file` in `coverDir` - unless
+// the file is there already - and fails without leaving a part file behind.
+// `sweep` (the first fetch of a session) also drops covers older than 30 days
+// and makes the directory the user's alone: album art of everything played is
+// nobody else's business, and the other caches are private too. What is
+// written is the user's alone as well (umask 077). curl takes http(s) only,
+// three redirects at most, stops past 20 MB or 15 s; after a fetch the oldest
+// covers go until COVER_FILES and COVER_BYTES hold again. The cap counts the
+// newest first, so the cover just fetched is always kept. The paths and the
+// url are arguments, never part of the script.
+function coverCommand(coverDir, file, url, sweep) {
+    const cleanup = sweep ? 'chmod 700 -- "$1" 2>/dev/null; find "$1" -type f -mtime +30 -delete 2>/dev/null; ' : ""
+    const cap = '( cd -- "$1" && find . -maxdepth 1 -type f -name "*.img" -printf "%T@ %s %f\\n" | sort -rn'
+        + ' | awk -v files=' + COVER_FILES + ' -v bytes=' + COVER_BYTES
+        + ' \'{ n++; total += $2; if (n > files || total > bytes) print $3 }\' | xargs -r rm -f -- ); :'
+    return ["sh", "-c",
+        'umask 077; mkdir -p -- "$1" && ' + cleanup
+        + '{ test -s "$2" || { curl -fsSL --http1.1 --proto =http,https --proto-redir =http,https --max-redirs 3'
+        + ' --max-filesize 20M --max-time 15 -o "$2.part" -- "$3" && mv -f -- "$2.part" "$2" && { ' + cap + '; }; }'
+        + ' || { rm -f -- "$2.part"; exit 1; }; }',
+        "sh", coverDir, file, url]
+}

@@ -146,7 +146,10 @@ Singleton {
         preview = false
     }
 
-    // Recorders installed later are found without a restart.
+    // Recorders installed later are found without a restart. Asked when
+    // Settings > Desktop opens and with every start (whose probe names them
+    // too), not at the shell's start: that was a `flatpak info` on every
+    // login for a line only that page shows.
     function refreshBackends() {
         if (probeProc.running) return
         probeProc.mode = "none"
@@ -181,10 +184,7 @@ Singleton {
         stdout: StdioCollector { onStreamFinished: root.state = Logic.parseState(text) }
     }
 
-    Component.onCompleted: {
-        statusProc.running = true
-        refreshBackends()
-    }
+    Component.onCompleted: statusProc.running = true
 
     FileView {
         id: stateFile

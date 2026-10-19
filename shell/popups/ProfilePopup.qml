@@ -43,7 +43,7 @@ PopupPanel {
                 labelFills: true
                 visible: AdaptiveService.hasInternal
                 label: "Automatic"
-                hint: "Laptop without, Docked with an external display"
+                hint: "Laptop without, Desk with an external display"
                 ShellToggle {
                     focusOnTab: true
                     checked: SettingsService.value("desktop.autoProfile")

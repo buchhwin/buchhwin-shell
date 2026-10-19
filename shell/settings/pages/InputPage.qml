@@ -43,6 +43,12 @@ ColumnLayout {
                 onSelected: value => SettingsService.set("input.kbVariant", value)
             }
         }
+        // The layout is the machine's; the repeat below is the profile's. The
+        // note sits close under the two rows it is about, and a line parts
+        // them from the repeat: at the rows' own gap it read as the repeat
+        // rate's.
+        ScopeNote { path: "input.kbLayout"; Layout.topMargin: -Metrics.spaceSm }
+        Divider {}
         SettingRow {
             label: "Repeat rate"
             hint: "Characters per second"
@@ -79,6 +85,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Mouse and pointer"
+        scope: "input.sensitivity"
 
         SettingRow {
             label: "Speed"
@@ -95,9 +102,18 @@ ColumnLayout {
                 value: (SettingsService.value("input.sensitivity") + 1) / 2
                 onReleased: value => SettingsService.set("input.sensitivity", Math.round((value * 2 - 1) * 20) / 20)
             }
+            // The middle is libinput's own speed: "0%" there read as no speed
+            // at all. It says Default, and the rest is signed, faster or
+            // slower than that. As wide as its widest reading, so the slider
+            // does not shift while the knob passes the middle.
             ShellText {
-                text: Math.round((speedSlider.pressed ? speedSlider.liveValue * 2 - 1 : SettingsService.value("input.sensitivity")) * 100) + "%"
-                role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl
+                readonly property int percent: Math.round((speedSlider.pressed ? speedSlider.liveValue * 2 - 1
+                                                                               : SettingsService.value("input.sensitivity")) * 100)
+                text: percent === 0 ? "Default" : (percent > 0 ? "+" : "-") + Math.abs(percent) + "%"
+                role: "small"; muted: true
+                Layout.minimumWidth: Math.max(Metrics.iconXl, speedDefaultProbe.implicitWidth, speedEndProbe.implicitWidth)
+                ShellText { id: speedDefaultProbe; visible: false; role: "small"; text: "Default" }
+                ShellText { id: speedEndProbe; visible: false; role: "small"; text: "+100%" }
             }
         }
         SettingRow {
@@ -121,6 +137,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Touchpad"
+        scope: "input.touchpadNaturalScroll"
 
         SettingRow {
             Layout.fillWidth: true

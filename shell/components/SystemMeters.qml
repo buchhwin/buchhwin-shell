@@ -38,27 +38,31 @@ ColumnLayout {
                 + " of " + SystemStatsService.formatBytes(SystemStatsService.disk.total) : "" }
     ]
 
+    // Three rows that stay, each reading its entry: `stats` is a new array of
+    // new objects on every sample, and as the model it rebuilt all three rows
+    // every two seconds - and a bar that is built anew starts at its new
+    // width, so the glide below never ran.
     Repeater {
-        model: root.stats
+        model: root.stats.length
         ColumnLayout {
             id: stat
-            required property var modelData
             required property int index
+            readonly property var entry: root.stats[index]
             visible: index < root.maxRows
             Layout.fillWidth: true
             spacing: Metrics.spaceXs
-            readonly property color barColor: modelData.usage > 0.9 ? Colors.danger
-                : modelData.usage > 0.75 ? Colors.warning : Colors.accentFill
+            readonly property color barColor: entry.usage > 0.9 ? Colors.danger
+                : entry.usage > 0.75 ? Colors.warning : Colors.accentFill
 
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Metrics.spaceSm
-                ShellIcon { glyph: stat.modelData.glyph; size: Metrics.iconSm; color: Colors.mutedText }
-                ShellText { text: stat.modelData.label }
+                ShellIcon { glyph: stat.entry.glyph; size: Metrics.iconSm; color: Colors.mutedText }
+                ShellText { text: stat.entry.label }
                 ShellText {
                     Layout.fillWidth: true
                     visible: root.showDetail
-                    text: stat.modelData.detail
+                    text: stat.entry.detail
                     role: "small"; muted: true
                     elide: Text.ElideRight
                 }
@@ -66,7 +70,7 @@ ColumnLayout {
                 // percentage to the right edge, so this does it instead.
                 Item { Layout.fillWidth: !root.showDetail }
                 ShellText {
-                    text: SystemStatsService.percent(stat.modelData.usage)
+                    text: SystemStatsService.percent(stat.entry.usage)
                     font.features: { "tnum": 1 }
                 }
             }
@@ -76,7 +80,7 @@ ColumnLayout {
                 radius: height / 2
                 color: Colors.track
                 Rectangle {
-                    width: parent.width * Math.max(0, Math.min(1, stat.modelData.usage))
+                    width: parent.width * Math.max(0, Math.min(1, stat.entry.usage))
                     height: parent.height
                     radius: parent.radius
                     color: stat.barColor

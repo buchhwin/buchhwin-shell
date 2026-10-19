@@ -105,11 +105,29 @@ function cycleMode(current, list, wasAuto) {
 
 // What the OSD says. The automatic half only when the key changed it: a line
 // that says the same thing every time is noise, which is the note the user
-// made about the arrange row.
-function osdText(label, step) {
-    const name = String(label || "")
-    if (!step || !step.autoChanged) return name
-    return name + " · automatic " + (step.auto ? "on" : "off")
+// made about the arrange row. The same for Do Not Disturb (`dnd`, from
+// dndChange): a mode that turns it on says so, and so does leaving it, since
+// no strip shows a bell and notifications going quiet - or coming back - is
+// otherwise something only their absence tells.
+function osdText(label, step, dnd) {
+    const parts = [String(label || "")]
+    if (step && step.autoChanged) parts.push("automatic " + (step.auto ? "on" : "off"))
+    if (dnd && dnd.dndOn) parts.push("Do Not Disturb")
+    else if (dnd && dnd.dndOff) parts.push("notifications back")
+    return parts.join(" · ")
+}
+
+// What a switch into `mode` did to Do Not Disturb, from NotificationService's
+// `{ active, by }` before and after it: on by that mode (it found it off, or
+// took it over from the mode left), or off with the mode that owned it. The
+// user's own Do Not Disturb is neither - a switch does not touch it.
+function dndChange(before, after, mode) {
+    const was = before || {}
+    const now = after || {}
+    const dndOn = now.active === true && String(now.by || "") === String(mode || "") && String(mode || "").length > 0
+        && !(was.active === true && was.by === now.by)
+    const dndOff = was.active === true && String(was.by || "").length > 0 && now.active !== true
+    return { dndOn: dndOn, dndOff: dndOff }
 }
 
 // A mode's own name and glyph. Both were written out at each call site; the
@@ -124,7 +142,7 @@ function label(name, templates) {
 // A profile is a set of modes, not one of them, so it gets a glyph of its own
 // rather than borrowing whichever mode happens to be active.
 function profileIcon() {
-    return "\u{f003b}"
+    return "\u{f05d2}" // Icons.profile
 }
 
 function icon(name) {
@@ -181,15 +199,30 @@ function uniqueName(text, taken) {
 //   level and whether the lock screen asks the fingerprint reader. They
 //   follow the battery and the reader this machine has, and a profile that
 //   carried them set a desktop's lid action on a laptop. A state stored
-//   before this still names them; the sanitizer drops them on the next read.
+//   before this still names them; the sanitizer drops them on the next read;
+// - the pointer devices, like the keyboard's layout: the same touchpad acts
+//   the same whatever the profile (how fast the keys repeat stays a taste
+//   and the profile's);
+// - the clipboard's history, a privacy choice like asking ipinfo.io: one who
+//   turned it off because they copy passwords must not have a profile switch
+//   turn the recorders on again;
+// - what the login starts (autostart: this machine's apps, its XDG entries),
+//   how the machine looks for updates and what a new drive does;
+// - whether new Alacritty windows come from one running Alacritty: a way of
+//   running the terminal, not a look of it;
+// - which screens show the dock and the notch, like the displays.
 var GLOBAL_SETTINGS = ["configVersion", "notch.headerAdopted", "desktop.quickSizesAdopted",
                        "onboarding",
                        "weather.locationName", "weather.lat", "weather.lon", "weather.autoLocate",
                        "calendar.hiddenCalendars", "calendar.newEventCalendar",
                        "colorPicker.history", "wallpaper.recentFolders",
                        "display", "input.kbLayout", "input.kbVariant",
+                       "input.sensitivity", "input.accelProfile", "input.mouseNaturalScroll",
+                       "input.touchpadNaturalScroll", "input.touchpadScrollFactor", "input.tapToClick",
+                       "input.disableWhileTyping",
                        "desktop.settingsMoveX", "desktop.settingsMoveY",
-                       "power", "lock.fingerprint", "dock.screens"]
+                       "power", "lock.fingerprint", "dock.screens", "notch.screens",
+                       "clipboard", "autostart", "updates", "drives", "terminal.alacrittyDaemon"]
 
 function isGlobalSetting(path) {
     const text = String(path || "")

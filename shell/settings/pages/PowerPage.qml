@@ -69,6 +69,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: PowerService.hasBattery
         title: "Low battery"
+        scope: "power"
         description: "Warnings while running on battery; below 10% and 5% they stay until you close them"
 
         SettingRow {
@@ -115,6 +116,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Sleep"
+        scope: "power"
         description: PowerService.hasBattery ? "These apply on battery and when plugged in" : ""
 
         SettingRow {
@@ -157,6 +159,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "When idle"
+        scope: "power"
         description: (PowerService.hasBattery ? page.sourceLabel + " · " : "") + "Apps that are playing video prevent this automatically."
 
         SettingRow {
@@ -177,6 +180,16 @@ ColumnLayout {
                 current: String(page.sourceValue("lockMinutes"))
                 options: [{ value: "0", label: "Never" }, { value: "5", label: "5 min" }, { value: "10", label: "10 min" }, { value: "15", label: "15 min" }, { value: "30", label: "30 min" }]
                 onSelected: value => page.setSourceValue("lockMinutes", parseInt(value))
+            }
+        }
+        SettingRow {
+            label: "Screen off when locked"
+            SegmentedControl {
+                focusOnTab: true
+                Layout.fillWidth: true
+                current: String(page.sourceValue("lockedScreenOffMinutes"))
+                options: [{ value: "0", label: "Never" }, { value: "1", label: "1 min" }, { value: "2", label: "2 min" }, { value: "5", label: "5 min" }]
+                onSelected: value => page.setSourceValue("lockedScreenOffMinutes", parseInt(value))
             }
         }
         SettingRow {
@@ -206,13 +219,14 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: PowerService.hasBattery ? "Lid and power profile" : "Lid"
+        scope: "power"
         description: PowerService.hasBattery ? page.sourceLabel : ""
 
         SettingRow {
             label: "When the lid closes"
             hint: page.sourceValue("lidAction") === "screenOff"
                 ? "Everything keeps running and only the laptop screen turns off; on a docking station the windows move to the external display"
-                : "With an external display connected the laptop stays awake"
+                : "With an external display connected the laptop stays awake and its screen turns off"
             SegmentedControl {
                 focusOnTab: true
                 Layout.fillWidth: true

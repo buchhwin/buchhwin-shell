@@ -95,7 +95,11 @@ Variants {
         readonly property real barSpan: BarLogic.barThickness(edge, pillHeight,
             Metrics.verticalBarPadding * scaleFactor)
         readonly property var geometry: BarLogic.geometry(bar.style, bar.position, edge, barLength, {
-            height: barSpan, margin: Metrics.barMargin, radius: barRadius, border: Metrics.borderWidth
+            height: barSpan, margin: Metrics.barMargin, radius: barRadius, border: Metrics.borderWidth,
+            // Along the edge the pills start and end at the windows' gap (the
+            // mode's gaps_out), not 6 px in: the left pill and the window under
+            // it line up instead of the bar overhanging the window column.
+            inset: Math.max(Metrics.barMargin, SettingsService.gapsOut)
         }, bar.reserve)
         readonly property real zoneInset: BarLogic.zoneInset(bar.style, bar.position,
             Metrics.barHighlightInset * scaleFactor, Metrics.barSidePadding * scaleFactor)
@@ -122,8 +126,19 @@ Variants {
         // matches them right (services/model/KeyedLogic.js) - a pill taken
         // out of the middle used to hand its neighbours' data on by position.
         property var lastPills: ({ left: [], center: [], right: [] })
+        // Beside a taskbar (notch.dockDuplicates "hide"): the readouts a dock
+        // along the whole edge of this screen shows already - the clock, the
+        // status glyphs, the bell - are left out of the bar too, as they are
+        // out of the notch's strip; a pill left with nothing goes. With the
+        // default "keep" this is [] and the zones are the layout's own. The
+        // editor arranges every item there is, and under a fullscreen window
+        // the dock draws nothing, so the bar keeps them then.
+        readonly property var dockDuplicates: NotchService.dockDuplicatesOn(fullscreenOn ? "" : modelData.name, editing)
+        function shownPills(list) {
+            return BarLogic.withoutTypes(list, dockDuplicates)
+        }
         function keptPills(zone, next) {
-            const list = Keyed.keep(lastPills[zone], next, "pillKey")
+            const list = Keyed.keepList(lastPills[zone], next, "pillKey")
             lastPills[zone] = list
             return list
         }
@@ -407,7 +422,7 @@ Variants {
         // columns than items counts one gap too many into its width, so every
         // zone was a group gap wider than its pills - the end zone stood one
         // gap further from the edge than the start zone and the centre half a
-        // gap off (round 12, D6; probed: 2 items of 30 and 40 with a gap of 4
+        // gap off (probed: 2 items of 30 and 40 with a gap of 4
         // are 78 wide at `columns: 1000`, 74 at `rows: 1`).
         //
         // `start`, `centre` and `end` is what they mean; the ids and the
@@ -431,7 +446,7 @@ Variants {
             spacing: window.zoneGap
             Repeater {
                 id: leftRepeater
-                model: ScriptModel { values: window.keptPills("left", window.pillKeys(window.bar.left)); objectProp: "pillKey" }
+                model: ScriptModel { values: window.keptPills("left", window.pillKeys(window.shownPills(window.bar.left))); objectProp: "pillKey" }
                 Pill {
                     required property var modelData
                     required property int index
@@ -473,7 +488,7 @@ Variants {
             spacing: window.zoneGap
             Repeater {
                 id: centerRepeater
-                model: ScriptModel { values: window.keptPills("center", window.pillKeys(window.bar.center)); objectProp: "pillKey" }
+                model: ScriptModel { values: window.keptPills("center", window.pillKeys(window.shownPills(window.bar.center))); objectProp: "pillKey" }
                 Pill {
                     required property var modelData
                     required property int index
@@ -513,7 +528,7 @@ Variants {
             }
             Repeater {
                 id: rightRepeater
-                model: ScriptModel { values: window.keptPills("right", window.pillKeys(window.bar.right)); objectProp: "pillKey" }
+                model: ScriptModel { values: window.keptPills("right", window.pillKeys(window.shownPills(window.bar.right))); objectProp: "pillKey" }
                 Pill {
                     required property var modelData
                     required property int index

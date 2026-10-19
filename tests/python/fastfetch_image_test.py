@@ -94,7 +94,7 @@ with tempfile.TemporaryDirectory() as directory:
     check(module.get(back)["kind"] == "image", "and get says so")
 
     # A text logo of one's own (the Saturn the buchhwin profile ships) is its
-    # own kind (V12): not an image to decode, not the system logo, and `size`
+    # own kind: not an image to decode, not the system logo, and `size`
     # does not write an image width into it.
     saturn = base / "saturn.txt"
     saturn.write_text("  .-.\n ( o )\n  '-'\n", encoding="utf-8")

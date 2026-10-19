@@ -139,6 +139,21 @@ ShellRoot {
         T.eq(H.pointerAnimated("full"), true, "a dragged window follows the pointer in Full")
         T.eq(H.pointerAnimated("reduced"), false, "and stops in Reduced, which no pace could say")
 
+        // Reduced is "shorter, no movement" on the compositor too: workspaces
+        // cross-fade, windows appear and go with their fade alone.
+        const reduced = H.entries("reduced")
+        const leafOf = (table, leaf) => table.filter(e => e.leaf === leaf)[0]
+        T.eq(reduced.filter(e => e.enabled && /slide|popin/.test(e.style)).map(e => e.leaf), [], "nothing slides or zooms in Reduced")
+        T.eq(["windows", "windowsOut", "windowsMove"].map(leaf => leafOf(reduced, leaf).enabled), [false, false, false],
+             "windows neither zoom nor glide")
+        T.eq([leafOf(reduced, "workspaces").style, leafOf(reduced, "specialWorkspace").style], ["fade", "fade"], "workspaces cross-fade")
+        T.eq(leafOf(reduced, "workspaces").spring, "buchhwinEffects", "on the spring that does not overshoot")
+        T.eq([leafOf(reduced, "fade").enabled, leafOf(reduced, "fadeIn").enabled, leafOf(reduced, "layers").enabled], [true, true, true],
+             "the fades stay")
+        T.ok(reduced.every(e => e.spring === "" || H.SPRINGS.some(c => c.name === e.spring)), "every spring Reduced names exists")
+        T.eq([leafOf(H.entries("full"), "workspaces").style, leafOf(H.entries("full"), "windowsMove").enabled], ["slide", true],
+             "Full is the table as written")
+
         T.finish("AnimationTest")
     }
 }

@@ -131,6 +131,16 @@ Singleton {
         if (node && node.audio) node.audio.muted = !node.audio.muted
     }
 
+    // One step of a volume key (shell.qml's audio up/down): `delta` added to
+    // the node's volume, within 0 and 1 as `wpctl set-volume -l 1.0` keeps
+    // it, and the mute left alone, as wpctl leaves it. False while the node
+    // is not bound, so the caller can hand the key to wpctl.
+    function stepVolume(node, delta) {
+        if (!node || !node.audio) return false
+        node.audio.volume = Math.max(0, Math.min(1, node.audio.volume + Number(delta)))
+        return true
+    }
+
     function setDefaultSink(node) { if (node) Pipewire.preferredDefaultAudioSink = node }
     function setDefaultSource(node) { if (node) Pipewire.preferredDefaultAudioSource = node }
 

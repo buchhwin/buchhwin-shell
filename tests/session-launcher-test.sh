@@ -50,10 +50,13 @@ touch "$project/hypr/hyprland.conf" "$project/hypr/hyprland.lua"
 # XDG_STATE_HOME from whoever ran the suite sent the startup timeline somewhere
 # else and failed the check that reads it back - a test that depends on its
 # caller's environment is a test that can lie about the thing under test.
+# The runtime directory too: the logout's unmask reads the masks there.
+runtime="$sandbox/run"
+mkdir -p "$runtime"
 launch() {
   : > "$calls"
   env -u BUCHHWIN_SHELL_PATH -u BUCHHWIN_HYPR_CONFIG -u XDG_CONFIG_HOME -u BUCHHWIN_NESTED \
-    HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CACHE_HOME="$home/.cache" \
+    HOME="$home" XDG_STATE_HOME="$home/.local/state" XDG_CACHE_HOME="$home/.cache" XDG_RUNTIME_DIR="$runtime" \
     "$@" bash "$project/session/buchhwin-shell-session" 2>"$sandbox/stderr.log"
 }
 configs() { sed -n 's/^start-hyprland -- --config //p' "$calls" | xargs -rn1 basename | paste -sd' '; }
@@ -93,10 +96,19 @@ check '[[ $(configs) == hyprland.lua && $status -eq 3 ]]' "no retry after the fa
 status=0; launch STUB_FAIL_CONFIG=hyprland.conf BUCHHWIN_HYPR_CONFIG=conf || status=$?
 check '[[ $(configs) == hyprland.conf && $status -eq 3 ]]' "conf failures are not retried"
 
-# After the session: skipped autostart units unmasked, session target stopped.
+# After the session: the autostart units session-init.sh masked are
+# unmasked - only those, by the links `mask --runtime` left, since an unmask
+# makes the user manager reload too - and the session target stopped.
+mkdir -p "$runtime/systemd/user"
+ln -sf /dev/null "$runtime/systemd/user/app-print\x2dapplet@autostart.service"
+ln -sf /dev/null "$runtime/systemd/user/app-sealertauto@autostart.service"
 launch
-check 'grep -q "^systemctl --user unmask --runtime app-geoclue\\\\x2ddemo\\\\x2dagent@autostart.service app-sealertauto@autostart.service app-org.freedesktop.problems.applet@autostart.service app-print\\\\x2dapplet@autostart.service$" "$calls"' "autostart units unmasked at logout"
+check 'grep -q "^systemctl --user unmask --runtime app-sealertauto@autostart.service app-print\\\\x2dapplet@autostart.service$" "$calls"' \
+  "the masked autostart units are unmasked at logout ($(grep unmask "$calls"))"
 check '[[ $(tail -n1 "$calls") == "systemctl --user stop buchhwin-shell-session.target" ]]' "session target stopped last"
+rm -f "$runtime/systemd/user/"*
+launch
+check '! grep -q "unmask" "$calls"' "nothing masked, nothing unmasked (no reload at logout)"
 
 # Autostart skip list.
 source "$project_dir/scripts/lib/autostart-skip.sh"
@@ -105,12 +117,17 @@ check '[[ $(autostart_skip_units | paste -sd" ") == "app-geoclue\\x2ddemo\\x2dag
 # session-init.sh: environment and portal before the shell, masks before autostart.
 # The runtime directory is the sandbox's too: the real one has a kwallet socket
 # on a machine that ran a KDE login, and the real bus has a secret service.
-runtime="$sandbox/run"
-mkdir -p "$runtime"
+# And the autostart entries are the sandbox's: the machine running this has
+# some of the skipped ones in /etc/xdg/autostart, or none.
 stub busctl 'exit 0'
+xdg_dirs="$sandbox/xdg"
+mkdir -p "$xdg_dirs/autostart"
+for entry in geoclue-demo-agent sealertauto org.freedesktop.problems.applet print-applet; do
+  printf '[Desktop Entry]\nType=Application\nExec=true\n' > "$xdg_dirs/autostart/$entry.desktop"
+done
 init() {
   : > "$calls"
-  env -u BUCHHWIN_NESTED HOME="$home" XDG_CONFIG_HOME="$home/.config" \
+  env -u BUCHHWIN_NESTED HOME="$home" XDG_CONFIG_HOME="$home/.config" XDG_CONFIG_DIRS="$xdg_dirs" \
     XDG_STATE_HOME="$home/.local/state" XDG_CACHE_HOME="$home/.cache" XDG_RUNTIME_DIR="$runtime" "$@" \
     bash "$project/scripts/session-init.sh" "$project" 2>"$sandbox/stderr.log"
 }
@@ -133,27 +150,77 @@ check '[[ $(grep -n "cursor set" "$timeline" | cut -d: -f1) -lt $(grep -n "envir
 check 'grep -q "XDG_SESSION_TYPE" "$calls" && grep -q "QT_QPA_PLATFORM " "$calls"' \
   "the session type and the Qt platform reach the user manager (ksecretd reads them)"
 check '! grep -q "plasma-kwallet-pam" "$calls"' "no kwallet socket, no kwallet step"
+check 'grep -q "^hyprctl setcursor breeze_cursors 24$" "$calls"' "the cursor is still sent to Hyprland"
+# But not waited for: at login Hyprland answers it from a main loop that is
+# still modesetting, and the shell used to start behind that answer. A
+# stand-in Hyprland that takes two seconds to answer holds nothing up.
+stub hyprctl 'if [ "$1" = setcursor ] && [ -n "${STUB_SLOW_CURSOR:-}" ]; then sleep 2; fi; exit 0'
+init STUB_SLOW_CURSOR=1
+shell_ms=$(sed -n 's/^[0-9:]* +\( *\)\([0-9]*\)ms shell started$/\2/p' "$timeline")
+check '[[ -n $shell_ms && $shell_ms -lt 1000 ]]' "a slow cursor call does not hold up the shell (started at ${shell_ms:-?} ms)"
+stub hyprctl
+# The first mark names the compositor by its signature, and its pid from the
+# lock file beside its socket.
+mkdir -p "$runtime/hypr/sig-test"
+printf '4242\nwayland-test\n' > "$runtime/hypr/sig-test/hyprland.lock"
+init HYPRLAND_INSTANCE_SIGNATURE=sig-test
+check 'head -n1 "$timeline" | grep -q "session-init started (Hyprland sig-test, pid 4242)$"' "the first mark names Hyprland and its pid ($(head -n1 "$timeline"))"
+check 'grep -qE "^[0-9]{2}:[0-9]{2}:[0-9]{2} \+ *[0-9]+ms " "$timeline" && ! grep -qvE "^[0-9]{2}:[0-9]{2}:[0-9]{2} \+ *[0-9]+ms " "$timeline"' \
+  "every mark has its time and its milliseconds"
+rm -rf "$runtime/hypr"
+# Only the entries this system has are masked: a mask makes the user manager
+# reload before anything autostarts.
+rm "$xdg_dirs/autostart/geoclue-demo-agent.desktop" "$xdg_dirs/autostart/sealertauto.desktop" \
+  "$xdg_dirs/autostart/org.freedesktop.problems.applet.desktop"
+init
+check 'grep -q "^systemctl --user mask --runtime app-print\\\\x2dapplet@autostart.service$" "$calls"' \
+  "only the entry this system has is masked ($(grep "mask --runtime" "$calls"))"
+# An entry of the user's own autostart directory counts too.
+mkdir -p "$home/.config/autostart"
+printf '[Desktop Entry]\nType=Application\nExec=true\n' > "$home/.config/autostart/sealertauto.desktop"
+init
+check 'grep -q "^systemctl --user mask --runtime app-sealertauto@autostart.service app-print\\\\x2dapplet@autostart.service$" "$calls"' \
+  "and one in ~/.config/autostart ($(grep "mask --runtime" "$calls"))"
+rm -rf "$home/.config/autostart"
+# With the drop-in install.sh links (systemd/autostart-skip.conf) an entry
+# needs no mask; with none left, there is no mask step and no reload.
+dropin="$home/.config/systemd/user/app-print\x2dapplet@autostart.service.d"
+mkdir -p "$dropin"
+ln -s "$project_dir/systemd/autostart-skip.conf" "$dropin/buchhwin-shell.conf"
+init
+check '! grep -q "mask" "$calls" && grep -q "systemctl --user start buchhwin-shell-autostart.target" "$calls"' \
+  "an entry with the drop-in is not masked, and autostart still starts ($(grep mask "$calls"))"
+rm -rf "$home/.config/systemd"
+rm "$xdg_dirs/autostart/print-applet.desktop"
+init
+check '! grep -q "mask" "$calls" && ! grep -q "autostart entries masked" "$timeline"' "no entry to skip: no mask step at all"
+for entry in geoclue-demo-agent sealertauto org.freedesktop.problems.applet print-applet; do
+  printf '[Desktop Entry]\nType=Application\nExec=true\n' > "$xdg_dirs/autostart/$entry.desktop"
+done
 
 # KWallet: with the PAM socket the unit runs, and the mark says what the bus
 # says - not merely that socat ran.
 python3 -c 'import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$runtime/kwallet5.socket"
-# `list` says who owns the names (the secret service and the Secret portal
-# backend are the same ksecretd); `get-property` says whether the wallet is open.
-owned='printf "NAME PID PROCESS\norg.freedesktop.secrets 42 ksecretd\norg.freedesktop.impl.portal.desktop.kwallet 42 ksecretd\n"'
+# The bus driver says who owns the names (ksecretd's own name and the Secret
+# portal backend, both ksecretd's; NameHasOwner), `list` shows the same;
+# `get-property` says whether the wallet is open.
+owned='case "$*" in *" NameHasOwner s org.kde.ksecretd"|*" NameHasOwner s org.freedesktop.impl.portal.desktop.kwallet") echo "b true" ;; *" NameHasOwner s "*) echo "b false" ;; *) printf "NAME PID PROCESS\norg.kde.ksecretd 42 ksecretd\norg.freedesktop.impl.portal.desktop.kwallet 42 ksecretd\n" ;; esac'
 stub busctl "case \"\$*\" in *get-property*) echo 'b false' ;; *) $owned ;; esac"
 init
 kwallet=$(line_of "systemctl --user start plasma-kwallet-pam.service")
 check '[[ -n $kwallet && $kwallet -lt $(line_of "systemctl --user restart xdg-desktop-portal.service") ]]' \
   "the wallet is handed the login before the portal restart"
-check '[[ $(line_of "busctl --user list") -lt $(line_of "systemctl --user restart xdg-desktop-portal.service") ]]' \
+check '[[ -n $(line_of "NameHasOwner s org.freedesktop.impl.portal.desktop.kwallet") && $(line_of "NameHasOwner s org.freedesktop.impl.portal.desktop.kwallet") -lt $(line_of "systemctl --user restart xdg-desktop-portal.service") ]]' \
   "the portal is only restarted once the bus has been asked for the Secret backend"
+check '! grep -qE "^busctl (--[a-z0-9=-]+ )*list( |$)" "$calls"' "the bus driver is asked, not the whole list of names"
+check '[[ $(grep -c "^systemctl --user cat plasma-kwallet-pam.service" "$calls") -eq 1 ]]' "the wallet unit is looked up once"
 check 'grep -q "secret service and its portal backend on the bus" "$timeline"' "the backend's arrival is marked"
 check 'grep -q "kwallet unlocked: open (already)" "$timeline"' "unlocked only when the bus has the secret service and the wallet is open"
 check '! grep -qE -- "--auto-start=yes|status org.freedesktop.secrets" "$calls"' "the check never activates a second ksecretd"
-check 'grep -q -- "--auto-start=no .*get-property org.freedesktop.secrets" "$calls"' "the lock state is read without activating anything"
-check '[[ $(line_of "get-property org.freedesktop.secrets") -gt $(line_of "systemctl --user restart xdg-desktop-portal.service") ]]' \
+check 'grep -q -- "--auto-start=no .*get-property org.kde.ksecretd" "$calls"' "the lock state is read without activating anything"
+check '[[ $(line_of "get-property org.kde.ksecretd") -gt $(line_of "systemctl --user restart xdg-desktop-portal.service") ]]' \
   "the wallet is asked after the portal work, before autostart"
-check '[[ $(line_of "get-property org.freedesktop.secrets") -lt $(line_of "systemctl --user start buchhwin-shell-autostart.target") ]]' \
+check '[[ $(line_of "get-property org.kde.ksecretd") -lt $(line_of "systemctl --user start buchhwin-shell-autostart.target") ]]' \
   "nothing autostarts before the wallet step has run"
 # The owner is there but the wallet stayed shut (what session-check found on
 # 2026-10-09): the step asks the service to unlock, once, without auto-start.
@@ -183,7 +250,7 @@ init
 check 'grep -q "kwallet unlocked: open (already)" "$timeline"' "autostart off: the wallet is still checked"
 check '! grep -q "mask\|buchhwin-shell-autostart.target" "$calls"' "autostart off: no masks, no autostart target"
 rm "$home/.config/buchhwin-shell/settings.json"
-stub busctl 'printf "NAME PID PROCESS\norg.freedesktop.secrets - -\n"'
+stub busctl 'case "$*" in *" NameHasOwner s "*) echo "b false" ;; *) printf "NAME PID PROCESS\norg.freedesktop.secrets - -\n" ;; esac'
 # No ksecretd running (the host's real one must not stretch the wait).
 stub pgrep 'exit 1'
 init
@@ -288,6 +355,27 @@ if declare -F faillock_gap >/dev/null; then
   check '! gap >/dev/null' "session-check: openSUSE as shipped has no pam_faillock anywhere"
   cp "$sandbox/faillock/counting" "$pam_etc/common-auth"
   check '[[ $(gap) == common-auth ]]' "session-check: openSUSE with pam_faillock added to common-auth is a gap"
+fi
+# session-check.sh's lid line, `lid_report`, taken out the same way: the
+# shell holds logind's lid inhibitor for every lid setting and suspends after
+# 2 s itself, so a missing inhibitor is an error for "sleep" too.
+eval "$(sed -n '/^lid_report() {$/,/^}$/p' "$project_dir/scripts/session-check.sh")"
+check 'declare -F lid_report >/dev/null' "session-check: lid_report found"
+if declare -F lid_report >/dev/null; then
+  ok() { printf 'ok %s\n' "$*"; }
+  fail() { printf 'error %s\n' "$*"; }
+  held=$'WHO UID USER PID COMM WHAT WHY MODE\nbuchhwin-shell 1000 u 52272 systemd-inhibit handle-lid-switch The shell handles the lid block'
+  check '[[ $(lid_report suspend "on battery" "$held" "$sandbox/none") == "ok lid (on battery): sleep after 2 s shut (the shell) (logind inhibited)" ]]' \
+    "session-check: sleep is the shell's, after 2 s, with the inhibitor ($(lid_report suspend "on battery" "$held" "$sandbox/none"))"
+  check '[[ $(lid_report suspend "on battery" "" "$sandbox/none") == "error lid (on battery): '"'"'suspend'"'"' without the shell"* ]]' \
+    "session-check: sleep without the inhibitor is an error ($(lid_report suspend "on battery" "" "$sandbox/none"))"
+  check '[[ $(lid_report lock "plugged in" "$held" "$sandbox/none") == "ok lid (plugged in): lock (logind inhibited)" ]]' "session-check: another action names itself"
+  check '[[ $(lid_report nothing "plugged in" "" "$sandbox/none") == error*"--logind-lid keeps logind off the lid even then" ]]' \
+    "session-check: without logind's drop-in the error names the backstop"
+  : > "$sandbox/50-buchhwin.conf"
+  check '[[ $(lid_report nothing "plugged in" "" "$sandbox/50-buchhwin.conf") == error* && $(lid_report nothing "plugged in" "" "$sandbox/50-buchhwin.conf") != *logind-lid* ]]' \
+    "session-check: with it, the error does not offer it again"
+  unset -f ok fail
 fi
 # A derivative under sudo: no BUCHHWIN_DISTRO (sudo drops it), an os-release
 # distro_detect refuses, so the name says "fedora" - the stack has to decide.

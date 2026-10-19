@@ -51,35 +51,6 @@ function loadAverage(text) {
     return values.length === 3 && values.every(value => !isNaN(value)) ? values : []
 }
 
-// `top -b -n 2 -o %CPU` output (LC_ALL=C): the rows of the LAST iteration
-// (the first one averages since each process started) → [{ pid, name, cpu, memory }]
-// with cpu and memory in percent. The top process itself is skipped.
-function topProcesses(text, count) {
-    const lines = String(text || "").split("\n")
-    let header = -1
-    for (let i = lines.length - 1; i >= 0; --i) {
-        if (/^\s*PID\s+USER\b/.test(lines[i])) { header = i; break }
-    }
-    if (header < 0) return []
-    const columns = lines[header].trim().split(/\s+/)
-    const cpuColumn = columns.indexOf("%CPU")
-    const memoryColumn = columns.indexOf("%MEM")
-    const nameColumn = columns.indexOf("COMMAND")
-    if (cpuColumn < 0 || memoryColumn < 0 || nameColumn < 0) return []
-    const result = []
-    for (const line of lines.slice(header + 1)) {
-        const fields = line.trim().split(/\s+/)
-        if (fields.length <= nameColumn) continue
-        const name = fields.slice(nameColumn).join(" ")
-        const cpu = Number(fields[cpuColumn].replace(",", "."))
-        const mem = Number(fields[memoryColumn].replace(",", "."))
-        if (name === "top" || isNaN(cpu) || isNaN(mem)) continue
-        result.push({ pid: Number(fields[0]), name: name, cpu: cpu, memory: mem })
-        if (result.length >= (count || 5)) break
-    }
-    return result
-}
-
 // top's %CPU is a share of one CPU (Irix mode: a process busy on four cores
 // says 400 %), while the meter above the list is the whole machine's: the
 // popup said "CPU 5 %" over "code 54.8 %". → percent of the whole machine.

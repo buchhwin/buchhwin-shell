@@ -37,8 +37,8 @@ ShellCard {
     // for the popup. Measured from the parts' own implicit heights, which do
     // not change with whether they are shown, so none of this depends on
     // itself - and the card's natural height is all of it at once.
-    readonly property real coreHeight: topRow.implicitHeight
-        + (tight ? 0 : column.spacing + transport.implicitHeight)
+    readonly property real coreHeight: idle ? idleState.implicitHeight
+        : topRow.implicitHeight + (tight ? 0 : column.spacing + transport.implicitHeight)
     readonly property real seekHeight: column.spacing + seek.implicitHeight
     readonly property real chipsHeight: column.spacing + chips.implicitHeight
     // A live stream has no length (MprisService.trackLength), so no bar.
@@ -56,6 +56,11 @@ ShellCard {
     signal clicked()
     property bool clickOpens: false
 
+    // Nothing playing: the empty state the media popup shows, in the middle
+    // of the card, rather than a grey cover, "Nothing playing" and three
+    // transport buttons that cannot do anything.
+    readonly property bool idle: !MprisService.hasPlayer
+
     // Each transport button says for itself whether it can act, as the media
     // popup's do. The row used to fade as a whole with no player while its
     // buttons still hovered, took the focus and clicked.
@@ -68,7 +73,7 @@ ShellCard {
         cursorShape: Qt.PointingHandCursor
         onClicked: root.clicked()
     }
-    FocusRing { active: nowPlaying.activeFocus; controlRadius: root.radius }
+    FocusRing { active: nowPlaying.activeFocus || idleState.activeFocus; controlRadius: root.radius }
 
     ColumnLayout {
         id: column
@@ -85,9 +90,33 @@ ShellCard {
         anchors.rightMargin: Metrics.spaceLg
         spacing: Metrics.spaceMd
 
+        // The same stop for the keys as what is playing below: the card's
+        // click opens the media popup with nothing playing too.
+        EmptyState {
+            id: idleState
+            Layout.fillWidth: true
+            visible: root.idle
+            // A short card has room for the two lines, not for the glyph.
+            icon: root.tight ? "" : "󰎆"
+            title: "Nothing playing"
+            description: "Music and videos show up here"
+            property bool focusOnTab: false
+            readonly property bool available: root.clickOpens
+            activeFocusOnTab: focusOnTab && root.clickOpens
+            Keys.onReturnPressed: root.clicked()
+            Keys.onEnterPressed: root.clicked()
+            Keys.onSpacePressed: root.clicked()
+            Accessible.role: Accessible.Button
+            Accessible.ignored: !root.clickOpens
+            Accessible.name: title
+            Accessible.description: description
+            Accessible.onPressAction: if (root.clickOpens) root.clicked()
+        }
+
         RowLayout {
             id: topRow
             Layout.fillWidth: true
+            visible: !root.idle
             spacing: Metrics.spaceMd
 
             // The cover is masked rather than clipped: `clip` on a Rectangle
@@ -172,6 +201,9 @@ ShellCard {
             // Named on the slider, as everywhere outside a SettingRow: the
             // times beside it are siblings, and a screen reader said "slider".
             accessibleName: "Position"
+            // The position moves on by a second's worth every second; a spring
+            // on that redrew the open control center for a sixth of each one.
+            glide: false
             visible: root.seekShown
             enabledState: MprisService.active !== null && MprisService.active.canSeek
             value: MprisService.hasLength ? Math.min(1, MprisService.active.position / MprisService.trackLength) : 0
@@ -183,7 +215,7 @@ ShellCard {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignHCenter
             spacing: Metrics.spaceLg
-            visible: !root.tight
+            visible: !root.tight && !root.idle
             Item { Layout.fillWidth: true }
             ShellButton { toolTip: "Previous"; icon: Icons.previous; variant: "ghost"; iconSize: Metrics.iconMd; enabledState: root.canPrevious; onClicked: MprisService.previous() }
             ShellButton { toolTip: MprisService.playing ? "Pause" : "Play"; icon: MprisService.playing ? Icons.pause : Icons.play; variant: "ghost"; iconSize: Metrics.iconLg; enabledState: MprisService.hasPlayer; onClicked: MprisService.togglePlaying() }

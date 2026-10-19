@@ -1,10 +1,12 @@
 # shellcheck shell=bash
 # XDG autostart entries that are useless in buchhwin-shell. systemd's
 # xdg-autostart generator turns every matching /etc/xdg/autostart entry into
-# app-<escaped name>@autostart.service; session-init.sh masks these units for
-# the running user manager only (`mask --runtime`, nothing under ~/.config),
-# and session/buchhwin-shell-session unmasks them when the session ends, so
-# Plasma keeps starting them. Source this file.
+# app-<escaped name>@autostart.service; install/install.sh links a drop-in for
+# each (systemd/autostart-skip.conf) that skips it while XDG_CURRENT_DESKTOP
+# names buchhwin-shell, so Plasma keeps starting them. An entry without the
+# drop-in yet is masked for the running user manager only (session-init.sh,
+# `mask --runtime`, nothing under ~/.config), and session/buchhwin-shell-session
+# unmasks it when the session ends. Source this file.
 #   geoclue-demo-agent               GeoClue demo agent (the shell asks for no location)
 #   sealertauto                      SELinux troubleshooter applet
 #   org.freedesktop.problems.applet  ABRT problem reporting applet

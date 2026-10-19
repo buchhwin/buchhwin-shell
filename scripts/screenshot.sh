@@ -7,7 +7,11 @@ set -euo pipefail
 #   screenshot.sh region | screen | window
 # A nested test session keeps its screenshots in its own state directory: the
 # user's Pictures folder is the host's, and a test must not fill it.
-here=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
+# The path as it was called, resolved only when this file itself is a link
+# (as in launch-default.sh).
+self=${BASH_SOURCE[0]}
+[[ $self == /* && ! -L $self ]] || self=$(readlink -f -- "$self")
+here=${self%/*}
 # shellcheck source=lib/nested-guard.sh
 source "$here/lib/nested-guard.sh"
 mode=${1:-region}

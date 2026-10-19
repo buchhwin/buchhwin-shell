@@ -25,8 +25,9 @@ set -euo pipefail
 # two keys into the same database at the same moment - the snapshot put the
 # old cursor back on top of them. Every writer is a merge now, and the merges
 # take turns through the lock in lib/xrdb.sh.
+here=$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")
 # shellcheck source=lib/nested-guard.sh
-source "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/lib/nested-guard.sh"
+source "$here/lib/nested-guard.sh"
 if nested_environment; then
   printf 'apply-x11-dpi: skipped in a nested test session\n' >&2
   exit 0
@@ -37,6 +38,6 @@ if [[ -z ${DISPLAY:-} ]] || ! command -v xrdb >/dev/null 2>&1; then
   exit 0
 fi
 # shellcheck source=lib/xrdb.sh
-source "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/lib/xrdb.sh"
+source "$here/lib/xrdb.sh"
 [[ $want == reset ]] && want=96
 xrdb_merge "Xft.dpi: $want"

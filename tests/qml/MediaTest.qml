@@ -5,7 +5,8 @@ import "../../services/media/MediaLogic.js" as M
 
 // The media popup's and the media card's arithmetic: a length that is a real
 // one (a live stream has none, or INT64_MAX µs), the times drawn beside the
-// seek bar, and how many player chips fit in one row.
+// seek bar, how many player chips fit in one row - and the command that
+// fetches a remote cover.
 ShellRoot {
     Component.onCompleted: {
         // ---- a real length ------------------------------------------------
@@ -49,8 +50,8 @@ ShellRoot {
         T.eq(M.nextHiddenIndex(3, 0, -1), 0, "no active player: the first")
 
         // ---- cover art: what MprisService does with a url -----------------
-        // Schemes in any case (security#2: "HTTPS://" went past curl to Qt's
-        // own network stack); any other scheme is no cover at all.
+        // Schemes in any case ("HTTPS://" went past curl to Qt's own network
+        // stack); any other scheme is no cover at all.
         T.eq(["https://cdn.example/a.jpg", "HTTPS://cdn.example/a.jpg", "Http://cdn.example/a.jpg"].map(M.artKind),
              ["remote", "remote", "remote"], "http(s) in any case is fetched by curl")
         T.eq(["file:///tmp/a.png", "FILE:///tmp/a.png"].map(M.artKind), ["file", "file"], "a path in any case is checked")
@@ -64,6 +65,35 @@ ShellRoot {
         T.eq([M.artPath("https://x/a.png"), M.artPath("")], ["", ""], "only a file url has a path")
         T.eq(M.artFileUrl("FILE:///tmp/a%20b.png"), "file:///tmp/a%20b.png", "a checked file is handed out in lower case, still encoded")
         T.eq(M.artFileUrl("https://x/a.png"), "", "and nothing else is")
+
+        // ---- the cover fetch --------------------------------------------------
+        // curl in a shell script that MprisService runs: what the url can do
+        // there is what this holds to account. A url is a player's to name,
+        // so it never becomes part of the script.
+        const hostile = "https://cdn.example/a.jpg?'; rm -rf ~; echo '$(id)`id`"
+        const first = M.coverCommand("/c/covers", "/c/covers/ab cd.img", hostile, true)
+        T.eq(first.slice(0, 2), ["sh", "-c"], "a shell script")
+        T.eq(first.slice(3), ["sh", "/c/covers", "/c/covers/ab cd.img", hostile],
+             "the directory, the file and the url are its arguments, as they are")
+        const script = first[2]
+        T.ok(script.indexOf("cdn.example") < 0 && script.indexOf("rm -rf ~") < 0 && script.indexOf("/c/covers") < 0,
+             "and none of them is written into the script")
+        T.ok(script.indexOf('-- "$3"') > 0, "the url reaches curl as one argument, after --")
+        T.ok(script.indexOf("umask 077;") === 0, "what it writes is the user's alone, from the first command on")
+        T.ok(script.indexOf("--proto =http,https") > 0 && script.indexOf("--proto-redir =http,https") > 0,
+             "http(s) only, redirects included")
+        T.ok(script.indexOf("--http1.1") > 0, "over HTTP/1.1 (Qt's HTTP/2 client was the shell's noisiest neighbour)")
+        T.ok(script.indexOf("--max-redirs 3") > 0 && script.indexOf("--max-filesize 20M") > 0 && script.indexOf("--max-time 15") > 0,
+             "a few redirects, a picture's size, a few seconds")
+        T.ok(script.indexOf('-o "$2.part"') > 0 && script.indexOf('mv -f -- "$2.part" "$2"') > 0,
+             "into a part file, moved into place only once it is all there")
+        T.ok(script.indexOf('rm -f -- "$2.part"; exit 1') > 0, "a fetch that fails leaves no part file behind")
+        T.ok(script.indexOf('test -s "$2"') > 0, "a cover already there is not fetched again")
+        T.ok(script.indexOf("-mtime +30 -delete") > 0 && script.indexOf('chmod 700 -- "$1"') > 0,
+             "the first fetch of a session sweeps old covers and makes the folder the user's alone")
+        const later = M.coverCommand("/c/covers", "/c/covers/x.img", "https://cdn.example/b.jpg", false)[2]
+        T.ok(later.indexOf("-mtime") < 0 && later.indexOf("chmod") < 0 && later.indexOf("umask 077;") === 0,
+             "a later one only fetches, still private")
 
         T.finish("MediaTest")
     }

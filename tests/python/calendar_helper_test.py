@@ -9,7 +9,7 @@ Where the Akonadi bindings are installed (Fedora) the helper runs as the
 shell runs it, in a process of its own. Where they are not packaged (Arch,
 Leap, the CI container) it said so in its own JSON and this test used to stop
 there with exit 0 - a skip nobody saw, and the helper's request checks ran on
-no machine at all (round 12, tests-docs#4). There it is now loaded against
+no machine at all. There it is now loaded against
 stand-ins for PySide6 and the bindings, as calendar_exclude_test.py does, and
 its main() is driven in this process: the same requests, the same answers,
 nothing that could talk to Akonadi.

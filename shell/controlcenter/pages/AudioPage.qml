@@ -1,12 +1,18 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
 
-// Promt §5: outputs and applications side by side, input and device info below.
-// Four CardSections: the one way to put a group of controls on a card, so the
+// Outputs and applications side by side, input and device info below. Four
+// CardSections: the one way to put a group of controls on a card, so the
 // page's cards are the ones the rest of the control center draws.
+//
+// The lists are kept rows (ScriptModel over PipeWire's nodes, which keep their
+// identity): AudioService's lists are new whenever any node comes or goes - a
+// notification sound, a browser tab - and every row built again ended a
+// slider drag under the hand and closed an open output select.
 GridLayout {
     id: root
     columns: width >= Metrics.compactWidth ? 2 : 1
@@ -19,7 +25,7 @@ GridLayout {
         title: "Output"
         spacing: Metrics.spaceSm
         Repeater {
-            model: AudioService.sinks
+            model: ScriptModel { values: AudioService.sinks }
             ListRow {
                 level: 1
                 required property var modelData
@@ -58,7 +64,7 @@ GridLayout {
         spacing: Metrics.spaceSm
         EmptyState { visible: AudioService.playbackStreams.length === 0; row: true; icon: "󰝛"; title: "No app is playing audio" }
         Repeater {
-            model: AudioService.playbackStreams
+            model: ScriptModel { values: AudioService.playbackStreams }
             StreamRow { required property var modelData; node: modelData; Layout.fillWidth: true }
         }
     }
@@ -68,7 +74,7 @@ GridLayout {
         title: "Input"
         spacing: Metrics.spaceSm
         Repeater {
-            model: AudioService.sources
+            model: ScriptModel { values: AudioService.sources }
             ListRow {
                 level: 1
                 required property var modelData

@@ -225,6 +225,8 @@ ShellPanel {
             }
         }
 
+        // The displays numbered as Settings > Displays and its Identify
+        // overlay number them, so "which one is DP-8" has an answer.
         SegmentedControl {
             Layout.fillWidth: true
             visible: Quickshell.screens.length > 1
@@ -232,8 +234,8 @@ ShellPanel {
             accessibleName: "Set it on"
             compact: true
             current: root.target
-            options: [{ value: "", label: "All displays" }]
-                .concat(Quickshell.screens.map(screen => ({ value: screen.name, label: screen.name })))
+            options: Logic.screenChoices(Quickshell.screens.map(screen => screen.name),
+                                         name => DisplayService.displayNumber(name))
             onSelected: value => root.target = value
         }
 
@@ -367,8 +369,8 @@ ShellPanel {
                             width: Metrics.thumbBadge
                             height: width
                             radius: width / 2
-                            color: Colors.accent
-                            ShellIcon { anchors.centerIn: parent; glyph: Icons.check; size: Metrics.iconXs; color: Colors.accentText }
+                            color: Colors.accentFill
+                            ShellIcon { anchors.centerIn: parent; glyph: Icons.check; size: Metrics.iconXs; color: Colors.accentFillText }
                         }
 
                         ShellIcon {
@@ -392,12 +394,12 @@ ShellPanel {
                             width: Metrics.thumbBadge
                             height: width
                             radius: Metrics.radiusInner
-                            color: picked ? Colors.accent : Colors.pill
+                            color: picked ? Colors.accentFill : Colors.pill
                             ShellIcon {
                                 anchors.centerIn: parent
                                 glyph: Icons.check
                                 size: Metrics.iconXs
-                                color: parent.picked ? Colors.accentText : Colors.mutedText
+                                color: parent.picked ? Colors.accentFillText : Colors.mutedText
                             }
                             MouseArea {
                                 anchors.fill: parent
@@ -425,7 +427,7 @@ ShellPanel {
             text: (WallpaperService.slideshowSource === "chosen"
                     ? WallpaperService.slideshowCount + " of " + WallpaperService.images.length
                       + " in the slideshow · " : "")
-                + "Enter sets · Ctrl+F or right click marks a favorite · Esc closes"
+                + "Enter sets · Ctrl+F or a right-click marks a favorite · Esc closes"
             role: "caption"; muted: true
             horizontalAlignment: Text.AlignHCenter
         }

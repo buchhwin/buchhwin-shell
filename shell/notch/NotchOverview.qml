@@ -7,6 +7,7 @@ import qs.shell.components
 import "../../services/notch/NotchLogic.js" as Logic
 import "../../services/arrange/FitLogic.js" as Fit
 import "../../services/LayoutLogic.js" as LayoutLogic
+import "../../services/appearance/DateFormat.js" as DateFormat
 
 // Content of the expanded notch. Two arrangements of the same blocks:
 // "wide" puts the media beside the events so the notch grows sideways, and
@@ -18,13 +19,13 @@ Item {
     required property var notch
     readonly property CalendarDemand calendarDemand: CalendarDemand { active: NotchService.shows("events") }
     readonly property date now: clock.date
-    readonly property var event: Logic.nextEvent(CalendarService.eventsFor(now), now)
+    // "6:52 PM" or "18:52", as the bar's clock says it.
+    readonly property bool twelve: SettingsService.twelveHourClock
     readonly property bool mediaPreview: NotchService.mediaPreview
     readonly property bool hasMedia: mediaPreview || (MprisService.hasPlayer && MprisService.title.length > 0)
     readonly property var current: WeatherService.current
     readonly property var events: Logic.upcomingEvents(CalendarService.eventsFor(now), now, NotchService.eventCount)
     readonly property bool wide: NotchService.wide
-    readonly property var rows: Logic.rows({ event: event !== null, media: hasMedia })
     // The overview's body, in the order the list has it. The weather is not
     // here: it sits beside the time in the header, which is where a notch puts
     // it. Anything that is not one of the notch's own blocks is a widget - the
@@ -44,9 +45,15 @@ Item {
     // quietly what it is missing ("No events") - which is what widgets do too.
     // Taking a block off the notch for good is what the editor's remove
     // button is for.
-    readonly property var bodyItems: NotchService.expandedItems.filter(item =>
+    //
+    // The one exception is the item's own: `options.hideEmpty` on a block
+    // (NotchLogic.hidesEmpty - the built-in presets' music) leaves its cell
+    // out while it has nothing to draw, and the grid closes up around it.
+    readonly property var listedItems: NotchService.expandedItems.filter(item =>
         item.type === "media" || item.type === "events" || item.type === "status"
             || WidgetRegistry.isAvailable(item.type))
+    readonly property var bodyItems: listedItems.filter(item =>
+        !Logic.hidesEmpty(item, root.hasContent(item.type), NotchService.arranging))
     readonly property var bodyTypes: bodyItems.map(item => item.type)
     // Whether a block has anything to draw right now. While the notch is
     // arranged one that has not is still in the body, as a named placeholder:
@@ -88,8 +95,10 @@ Item {
     // draw it in. It used to be tracked on every opening, so a hover over a
     // notch without the weather could still send a request when the data was
     // more than ten minutes old. Followed rather than read once: the editor
-    // can add or remove the item while the overview is open.
-    readonly property bool showsWeather: root.bodyTypes.indexOf("weather") >= 0
+    // can add or remove the item while the overview is open. From the list
+    // and not from what is drawn: a weather cell that hides while it has no
+    // forecast would otherwise never ask for one.
+    readonly property bool showsWeather: root.listedItems.some(item => item.type === "weather")
     property bool weatherTracked: false
     onShowsWeatherChanged: syncWeather()
     function syncWeather() {
@@ -102,7 +111,7 @@ Item {
     Component.onCompleted: syncWeather()
     Component.onDestruction: { if (weatherTracked) WeatherService.untrack(); root.clearRects() }
 
-    SystemClock { id: clock; precision: SystemClock.Minutes }
+    SystemClock { id: clock; precision: SystemClock.Minutes; enabled: WallClock.ticking }
 
     // Plain text, always: a track title, an artist or an event title is
     // somebody else's string, and Qt's default format renders one that looks
@@ -273,7 +282,7 @@ Item {
             rowSpacing: 0
             NotchText {
                 Layout.fillWidth: !clockBlock.header
-                text: Logic.timeText(root.now)
+                text: Logic.timeText(root.now, root.twelve)
                 font.pixelSize: clockBlock.oneRow ? Typography.notchTimeSize : Typography.notchLargeTimeSize
                 font.weight: Typography.light
                 font.features: { "tnum": 1 }
@@ -282,8 +291,8 @@ Item {
                 Layout.fillWidth: !clockBlock.header
                 Layout.alignment: Qt.AlignVCenter
                 visible: !clockBlock.oneRow || clockBlock.header
-                text: SettingsService.locale.toString(root.now,
-                    clockBlock.columns >= 2 && !clockBlock.header ? "dddd, MMMM d" : "ddd, MMM d")
+                text: DateFormat.date(root.now, SettingsService.locale,
+                    clockBlock.columns >= 2 && !clockBlock.header ? "long" : "short")
                 muted: true
                 font.pixelSize: Typography.smallSize
             }
@@ -349,7 +358,7 @@ Item {
                 Layout.fillWidth: true
                 spacing: 0
                 NotchText {
-                    text: eventRow.event ? Logic.eventWhen(eventRow.event, root.now) : ""
+                    text: eventRow.event ? Logic.eventWhen(eventRow.event, root.now, root.twelve) : ""
                     muted: true
                     font.pixelSize: Typography.captionSize
                     font.features: { "tnum": 1 }
@@ -536,9 +545,11 @@ Item {
                     // both themes. Charging is the green or, with Settings >
                     // Power > Status colors on the accent, the accent made
                     // for black - the colour the accent glyphs wear too.
+                    // The glyph 4 px off its figure, as the bar's battery
+                    // (WidgetBase's columnSpacing): at 2 "63%" read glued on.
                     RowLayout {
                         required property var modelData
-                        spacing: Metrics.spaceXxs
+                        spacing: Metrics.spaceXs
                         NotchGlyph {
                             text: modelData.icon
                             size: Metrics.iconSm

@@ -58,6 +58,10 @@ for name in ("default", "buchhwin"):
           "the shipped %s profile names no wallpaper file" % name)
     check((shipped_settings.get("login") or {}).get("wallpaper", "") == "",
           "the shipped %s profile names no login picture" % name)
+    check((shipped_settings.get("appearance") or {}).get("accentFromWallpaper") is False,
+          "the shipped %s profile has its accent set, not taken from a wallpaper another machine lacks" % name)
+    check((shipped_settings.get("launcher") or {}).get("searchUrl", "") == "",
+          "the shipped %s profile has no search address of its own" % name)
 
 # ---- the export leaves out at least what a profile never keeps -----------------
 # ProfileLogic.GLOBAL_SETTINGS is the shell's list of settings that belong to
@@ -93,7 +97,8 @@ with tempfile.TemporaryDirectory() as temp:
 
     settings = {
         "configVersion": 1,
-        "appearance": {"accent": "#50e2cb", "blurStrength": 0.9, "gapsIn": 3, "theme": "dark"},
+        "appearance": {"accent": "#50e2cb", "accentFromWallpaper": True, "blurStrength": 0.9, "gapsIn": 3,
+                       "theme": "dark"},
         "weather": {"enabled": True, "locationName": "Exampletown", "lat": 12.34, "lon": 56.78, "unit": "celsius"},
         "wallpaper": {"path": str(home / "Pictures" / "w.webp"), "folder": str(home / "Pictures" / "Walls"),
                       "recentFolders": str(home / "Pictures")},
@@ -101,7 +106,14 @@ with tempfile.TemporaryDirectory() as temp:
         "onboarding": {"completed": True},
         "colorPicker": {"history": "#112233,#445566"},
         "recording": {"folder": "~/Videos/Recordings"},
-        "input": {"kbLayout": "de", "repeatRate": 30},
+        "input": {"kbLayout": "de", "repeatRate": 30, "tapToClick": False, "touchpadScrollFactor": 1.5},
+        "launcher": {"searchEngine": "custom", "searchUrl": "https://intranet.corp.invalid/search?q=%s",
+                     "pinned": "org.kde.dolphin.desktop,firefox.desktop"},
+        "autostart": {"apps": "Citrix_subscribed_XenApp 7.x.RDS-Example $S1-2", "system": False},
+        "clipboard": {"history": False, "maxItems": 50},
+        "updates": {"checkHours": 6, "shellAuto": True},
+        "drives": {"autoOpen": True},
+        "terminal": {"alacrittyDaemon": False, "fontSize": 12},
         "display": {"x11Scale": 1.5},
         "notch": {"headerAdopted": True, "bodyHeight": 32},
         "power": {"lowBatteryLevel": 20, "ac": {"lidAction": "nothing"}},
@@ -146,7 +158,17 @@ with tempfile.TemporaryDirectory() as temp:
     check("blurStrength" not in profile["settings"]["appearance"] and "gapsIn" not in profile["settings"]["appearance"],
           "the mode-scoped appearance travels with the modes, not with the settings")
     check(profile["settings"]["appearance"]["accent"] == "#50e2cb", "the accent is a setting")
-    check(profile["settings"]["input"] == {"repeatRate": 30}, "the keyboard layout is this machine's, the repeat rate is not")
+    check(profile["settings"]["appearance"]["accentFromWallpaper"] is False,
+          "as it is set: taken from the wallpaper, it would be another machine's first image's")
+    check(profile["settings"]["input"] == {"repeatRate": 30},
+          "the keyboard layout and the pointer are this machine's, the repeat rate is not")
+    launcher = profile["settings"]["launcher"]
+    check(launcher.get("searchUrl") == "" and "searchEngine" not in launcher,
+          "a search address of the user's own ships empty, and its custom engine gives way to the default")
+    check(launcher.get("pinned") == "org.kde.dolphin.desktop,firefox.desktop", "the launcher's pins are a profile's")
+    check(not {"autostart", "clipboard", "updates", "drives"} & set(profile["settings"]),
+          "what the login starts, the clipboard history, updates and drives are this machine's")
+    check(profile["settings"]["terminal"] == {"fontSize": 12}, "and so is how Alacritty runs, the terminal's look is not")
     check("display" not in profile["settings"], "the screens are this machine's")
     check(profile["settings"]["notch"] == {"bodyHeight": 32}, "a one-shot marker is this machine's files'")
     check("power" not in profile["settings"], "power - the lid, sleep, the battery - is this machine's")
@@ -180,18 +202,20 @@ with tempfile.TemporaryDirectory() as temp:
         check(not target.exists(), label + ": and writes nothing")
         return answer.get("error", "")
 
-    error = refused("launcher.searchUrl", "https://search.invalid/?q=%s&from=someone@example.org", "email")
+    error = refused("terminal.symbol", "someone@example.org", "email")
     check("e-mail" in error, "an e-mail address in a field is named: %r" % error)
-    error = refused("autostart.apps", "/home/someone/bin/tool.desktop", "home")
+    error = refused("launcher.pinned", "/home/someone/bin/tool.desktop", "home")
     check("/home/<user>" in error, "another user's /home path in a field is named: %r" % error)
     error = refused("terminal.symbol", "12.345, 67.890", "coordinate")
     check("coordinate" in error, "a coordinate pair in a field is named: %r" % error)
     # Put together from pieces, so this file passes the suite's own check.
-    error = refused("launcher.searchUrl", "https://maps.invalid/?lat=12." + "345&lon=67." + "890&q=%s", "coordinate-keys")
+    error = refused("terminal.timeFormat", "lat=12." + "345&lon=67." + "890", "coordinate-keys")
     check("coordinate" in error, "a coordinate under a lat/lon key is named: %r" % error)
-    error = refused("autostart.apps", str(home / "bin" / "x.desktop"), "own-home")
+    error = refused("launcher.pinned", str(home / "bin" / "x.desktop"), "own-home")
     check(str(home) in error or "/home" in error or "path under" in error,
           "a path under the home directory outside the known path fields is named: %r" % error)
+    error = refused("launcher.pinned", "firefox.desktop,Citrix_subscribed_XenApp 7.x.RDS-Example $S1-2", "citrix")
+    check("Citrix" in error, "a Citrix app's id, which names the employer's farm, is named: %r" % error)
 
     # ---- a profile that is not in use: its own state -----------------------------
     stored = {"settings": {"appearance": {"accent": "#0a0b0c", "panelColor": "#202020"},

@@ -33,8 +33,7 @@ Singleton {
     readonly property int avatarInitialSize: size(34)
     // The start menu's fastfetch Saturn: small enough to stand beside two
     // lines of text, large enough that it is still letters. At 8 px the
-    // planet's and the ring's letters ran into one mass (round 12, D13 d;
-    // the ring's tone moved off the planet's too, Colors.saturnRing). At 9
+    // planet's and the ring's letters ran into one mass (the ring's tone moved off the planet's too, Colors.saturnRing). At 9
     // the logo is about 300 x 180 px: one step, because the menu is one
     // fixed height and its home view has the pins, Frequent and Places
     // under the head (10 would be 330 x 200).

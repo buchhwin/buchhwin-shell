@@ -120,7 +120,9 @@ Singleton {
         // when X11 is sharp - so that one gets the scaled size, or the pointer
         // shrinks by a third the moment it crosses into an X11 window.
         const x11Size = String(Math.round(SettingsService.cursorSize * x11Scale))
-        if (realSession) Quickshell.execDetached([Paths.script("apply-cursor-env.sh"), theme, size, x11Size])
+        // The dialect saves the script asking hyprctl again; "unknown" before
+        // HyprCompat's probe has answered makes it ask.
+        if (realSession) Quickshell.execDetached([Paths.script("apply-cursor-env.sh"), theme, size, x11Size, HyprCompat.dialect])
     }
 
     function refreshCursorThemes() { cursorScan.running = true }

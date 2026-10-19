@@ -15,7 +15,9 @@ Item {
     property color trackColor: Colors.subtleText
     property color successColor: Colors.positive
     property color errorColor: Colors.danger
-    property color badgeTextColor: Colors.accentText
+    // The check or the cross on the badge, which wears the success or the
+    // error colour: a mark made for that fill, not the accent's ink.
+    property color badgeTextColor: Colors.textOn(activeColor)
 
     implicitWidth: size * 1.5
     implicitHeight: size * 1.5

@@ -170,8 +170,8 @@ shoot() {
   env -u WAYLAND_DISPLAY -u HYPRLAND_INSTANCE_SIGNATURE -u BUCHHWIN_NESTED -u BUCHHWIN_SHELL_PATH \
     -u QT_QPA_PLATFORMTHEME HOME="$sandbox/home" XDG_RUNTIME_DIR="$sandbox/runtime" \
     BUCHHWIN_NESTED_DIR="$sandbox/no-nested" QS_ICON_THEME=breeze-dark MALLOC_ARENA_MAX=2 \
-    mesa_glthread=false GALLIUM_THREAD=0 \
-    BUCHHWIN_APP_ENV_UNSET="MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME" \
+    mesa_glthread=false GALLIUM_THREAD=0 MALLOC_CONF=narenas:2 QT_WAYLAND_DISABLE_WINDOWDECORATION=1 QSG_DISTANCEFIELD_ANTIALIASING=gray BUCHHWIN_ICON_THEME_AUTO=1 \
+    BUCHHWIN_APP_ENV_UNSET="MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO" \
     BUCHHWIN_APP_QPA_THEME=kde bash "$project_dir/scripts/screenshot.sh" region
 }
 wait_for() {
@@ -189,7 +189,7 @@ wait_for "$sandbox/swappy.env" || true
 check '[[ -s $sandbox/swappy.env ]]' "Edit opens the editor"
 check 'grep -qE "^systemd-run .*--unit=app-buchhwin-swappy-[0-9]+\.scope -- swappy -f .*/Screenshots/Screenshot_.*\.png$" "$calls"' \
   "in a scope of its own, named after swappy.desktop ($(grep systemd-run "$calls" | head -1))"
-check '! grep -qE "^(MALLOC_ARENA_MAX|mesa_glthread|GALLIUM_THREAD|QS_ICON_THEME|BUCHHWIN_APP_[A-Z_]+)=" "$sandbox/swappy.env"' \
+check '! grep -qE "^(MALLOC_ARENA_MAX|MALLOC_CONF|mesa_glthread|GALLIUM_THREAD|QT_WAYLAND_DISABLE_WINDOWDECORATION|QSG_DISTANCEFIELD_ANTIALIASING|QS_ICON_THEME|BUCHHWIN_ICON_THEME_AUTO|BUCHHWIN_APP_[A-Z_]+)=" "$sandbox/swappy.env"' \
   "without the shell's own settings ($(grep -E "^(MALLOC|mesa|GALLIUM|QS_|BUCHHWIN_APP)" "$sandbox/swappy.env" 2>/dev/null | tr '\n' ' '))"
 check 'grep -qx "QT_QPA_PLATFORMTHEME=kde" "$sandbox/swappy.env"' "and with the session's platform theme back"
 

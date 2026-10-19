@@ -58,10 +58,42 @@ ShellPanel {
         for (const child of item.children) if (pendingEdits(child)) return true
         return false
     }
-    // Sidebar rows (group headings and pages) filtered by the search.
+    // Sidebar rows (group headings and pages) filtered by the search, and
+    // their keys, which is what the sidebar's Repeater runs over (Nav.rowKey).
     readonly property var rows: Nav.rows(search)
+    readonly property var rowKeys: rows.map(row => Nav.rowKey(row))
+    readonly property var rowByKey: Nav.rowsByKey(rows)
+    // What a delegate reads in the moment between its key leaving the list
+    // and the delegate going with it.
+    readonly property var blankRow: ({ kind: "page", id: "", title: "", icon: "", first: false, last: false })
     readonly property var visiblePageIds: Nav.pageIds(rows)
     readonly property var current: Nav.pageById(page) || Nav.PAGES[0]
+
+    // Up and Down in the search field walk the pages. A held key repeats
+    // some thirty times a second, and every step built the page it landed on
+    // (in one go, up to ~100 ms for a large page) only for the next step to
+    // throw it away. While the key repeats, the sidebar's selection walks on
+    // its own and the page follows once the key has rested; a single press
+    // still shows its page at once.
+    property string steppedTo: ""
+    readonly property string selectedPage: steppedTo.length ? steppedTo : page
+    function stepPage(delta, repeating) {
+        settleSearch()
+        const next = Nav.step(rows, selectedPage, delta) || selectedPage
+        if (repeating) {
+            steppedTo = next
+            stepRest.restart()
+        } else {
+            choosePage(next)
+        }
+    }
+    function choosePage(id) {
+        stepRest.stop()
+        page = id
+        steppedTo = ""
+    }
+    Timer { id: stepRest; interval: 150; onTriggered: if (root.steppedTo.length) root.choosePage(root.steppedTo) }
+    onSteppedToChanged: Qt.callLater(revealPage)
 
     // The search starts empty on every open, as in the launcher, the overview
     // and the other searchable panels: a kept one reopened Settings on a
@@ -80,9 +112,9 @@ ShellPanel {
     // another panel). Only a page Settings has: the name used to go straight
     // into the page Loader's path, so `settings open foo` showed Appearance's
     // title over an empty body, logged a load error, and the bad name stuck
-    // for every later open (round 12, security#6).
+    // for every later open.
     function openPage(asked) {
-        if (typeof asked === "string" && Nav.pageById(asked)) page = asked
+        if (typeof asked === "string" && Nav.pageById(asked)) choosePage(asked)
     }
     onPageChanged: {
         contentFlick.contentY = 0
@@ -92,16 +124,18 @@ ShellPanel {
     // The first page the search leaves visible becomes the page.
     function selectFirstMatch() {
         selectTimer.stop()
-        if (visiblePageIds.length) page = visiblePageIds[0]
+        if (visiblePageIds.length) choosePage(visiblePageIds[0])
     }
     // A selection the timer has not made yet, made now.
     function settleSearch() {
         if (selectTimer.running) selectFirstMatch()
     }
 
-    // Scroll the sidebar so the selected page row is visible.
+    // Scroll the sidebar so the selected page row is visible (the one the
+    // arrow keys are on while they repeat).
     function revealPage() {
-        const index = rows.findIndex(item => item.kind === "page" && item.id === page)
+        const target = root.selectedPage
+        const index = rows.findIndex(item => item.kind === "page" && item.id === target)
         const row = index >= 0 ? sidebarRepeater.itemAt(index) : null
         // Before the panel is laid out the list has no height yet.
         if (!row || sidebarFlick.height <= 0) return
@@ -110,9 +144,9 @@ ShellPanel {
         // The page comes in with its group's heading above it whenever the
         // two fit together: only the first page of a group used to bring its
         // heading, and scrolled to the row alone, the group's card was cut
-        // square under the search field (round 12, D14). A group too long for
+        // square under the search field. A group too long for
         // that brings the row to the edge.
-        const headingAt = Nav.headingIndex(rows, page)
+        const headingAt = Nav.headingIndex(rows, target)
         const heading = headingAt >= 0 ? sidebarRepeater.itemAt(headingAt) : null
         const withHeading = heading !== null && bottom - heading.y <= sidebarFlick.height
         const top = withHeading ? heading.y : row.y
@@ -181,8 +215,8 @@ ShellPanel {
                 // Up/Down walk the visible pages; headings are skipped. A
                 // selection still waiting on the timer lands first, so the
                 // step starts from the match and not from the page before.
-                Keys.onUpPressed: { root.settleSearch(); root.page = Nav.step(root.rows, root.page, -1) || root.page }
-                Keys.onDownPressed: { root.settleSearch(); root.page = Nav.step(root.rows, root.page, 1) || root.page }
+                Keys.onUpPressed: event => root.stepPage(-1, event.isAutoRepeat)
+                Keys.onDownPressed: event => root.stepPage(1, event.isAutoRepeat)
                 Timer { id: selectTimer; interval: 200; onTriggered: root.selectFirstMatch() }
             }
 
@@ -191,7 +225,7 @@ ShellPanel {
             //
             // Its rows fade out at an edge the list goes on past, instead of
             // ending in a straight cut: the groups' cards were cut square
-            // right under the search field (round 12, D14). Only while there
+            // right under the search field. Only while there
             // is more to scroll to, so a list that fits draws as it always
             // did, without a layer.
             Flickable {
@@ -213,23 +247,32 @@ ShellPanel {
                     maskSpreadAtMin: 1.0
                 }
 
+                // Dense rows, so more of the 27 pages fit at the default size:
+                // at a control's height (44 px) and 8 px apart, about a third
+                // of them did, and Devices, Apps and System were always below
+                // the fold. A row is a small control's height now, its group's
+                // rows 2 px apart on the one card; a heading keeps its air.
                 ColumnLayout {
                     id: sidebarColumn
                     width: sidebarFlick.width
-                    spacing: Metrics.spaceSm
+                    spacing: Metrics.spaceXxs
 
                     Repeater {
                         id: sidebarRepeater
-                        model: root.rows
+                        // Keyed by strings (Nav.rowKey): a row stays while its
+                        // key does, and a keystroke builds nothing.
+                        model: ScriptModel { values: root.rowKeys }
                         Item {
                             id: sidebarRow
-                            required property var modelData
+                            required property string modelData
                             required property int index
-                            readonly property bool heading: modelData.kind === "heading"
+                            readonly property var row: root.rowByKey[modelData] || root.blankRow
+                            readonly property bool heading: row.kind === "heading"
                             Layout.fillWidth: true
-                            // Headings get space above them, less for the first.
-                            implicitHeight: heading ? headingLabel.implicitHeight + (index > 0 ? Metrics.spaceMd : Metrics.spaceXs)
-                                : Metrics.controlHeight + Metrics.spaceXs
+                            // Headings get space above them, less for the first,
+                            // and a little below, over their group's card.
+                            implicitHeight: heading ? headingLabel.implicitHeight + (index > 0 ? Metrics.spaceLg : Metrics.spaceXs) + Metrics.spaceXs
+                                : Metrics.controlHeightSm + Metrics.spaceXxs
 
                             // One card behind each group, the same surface the
                             // page's own sections use on the right, so the two
@@ -237,11 +280,11 @@ ShellPanel {
                             Rectangle {
                                 visible: !sidebarRow.heading
                                 anchors.fill: parent
-                                anchors.topMargin: sidebarRow.modelData.first ? 0 : -sidebarColumn.spacing
+                                anchors.topMargin: sidebarRow.row.first ? 0 : -sidebarColumn.spacing
                                 color: Colors.surface1
-                                topLeftRadius: sidebarRow.modelData.first ? Metrics.radiusCard : 0
+                                topLeftRadius: sidebarRow.row.first ? Metrics.radiusCard : 0
                                 topRightRadius: topLeftRadius
-                                bottomLeftRadius: sidebarRow.modelData.last ? Metrics.radiusCard : 0
+                                bottomLeftRadius: sidebarRow.row.last ? Metrics.radiusCard : 0
                                 bottomRightRadius: bottomLeftRadius
                             }
 
@@ -251,16 +294,17 @@ ShellPanel {
                                 anchors.left: parent.left
                                 anchors.bottom: parent.bottom
                                 anchors.leftMargin: Metrics.spaceMd
-                                text: sidebarRow.heading ? sidebarRow.modelData.title : ""
+                                anchors.bottomMargin: Metrics.spaceXs
+                                text: sidebarRow.heading ? sidebarRow.row.title : ""
                             }
                             ListRow {
                                 visible: !sidebarRow.heading
                                 level: 1
                                 anchors.fill: parent
-                                icon: sidebarRow.heading ? "" : sidebarRow.modelData.icon
-                                title: sidebarRow.heading ? "" : sidebarRow.modelData.title
-                                selected: !sidebarRow.heading && sidebarRow.modelData.id === root.page
-                                onClicked: root.page = sidebarRow.modelData.id
+                                icon: sidebarRow.heading ? "" : sidebarRow.row.icon
+                                title: sidebarRow.heading ? "" : sidebarRow.row.title
+                                selected: !sidebarRow.heading && sidebarRow.row.id === root.selectedPage
+                                onClicked: if (sidebarRow.row.id.length) root.choosePage(sidebarRow.row.id)
                             }
                         }
                     }
@@ -339,6 +383,9 @@ ShellPanel {
                         // The page that is shown, never a raw name: `current`
                         // is always one of Nav.PAGES.
                         source: "pages/" + root.current.id.charAt(0).toUpperCase() + root.current.id.slice(1) + "Page.qml"
+                        // A page chosen while Settings is open fades in
+                        // instead of swapping in one frame (Full motion only).
+                        PageFade { target: pageLoader; key: root.page; live: root.openProgress === 1 }
                     }
                 }
             }
@@ -355,7 +402,7 @@ ShellPanel {
             // Hidden while it holds nothing: a Loader keeps the height of the
             // item it last held, so after Displays (the one page with a
             // footer) every other page ended 64 px short of the panel, over an
-            // empty band (round 12, D3).
+            // empty band.
             Loader {
                 Layout.fillWidth: true
                 Layout.topMargin: sourceComponent ? Metrics.panelGap : 0

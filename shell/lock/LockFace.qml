@@ -9,6 +9,7 @@ import "../../services/arrange/ArrangeLogic.js" as Arrange
 import "../../services/LayoutLogic.js" as LayoutLogic
 import "../../services/notch/NotchLogic.js" as NotchLogic
 import "../../services/lock/LockLogic.js" as LockLogic
+import "../../services/appearance/DateFormat.js" as DateFormat
 
 // One screen of the lock screen (macOS style): the blurred capture of this
 // screen, date and a large clock at the top, avatar, name and password at the
@@ -17,7 +18,6 @@ import "../../services/lock/LockLogic.js" as LockLogic
 // password is drawn only on the screen that has the keyboard.
 Item {
     id: root
-    readonly property CalendarDemand calendarDemand: CalendarDemand {}
     required property var lockState
     required property string screenName
     focus: true
@@ -84,10 +84,17 @@ Item {
         // fingerprint ring and the pulse animate. The layer is drawn once,
         // when the capture arrives; the fade and the zoom above are applied
         // to the finished texture, where they cost a textured quad. `smooth`
-        // because the zoom scales that texture. Two `layer.` lines are the
-        // way back.
+        // because the zoom scales that texture, and the layer is drawn
+        // larger than it is. The `layer.` lines are the way back.
+        //
+        // A quarter of the screen's size: the capture is at most 64 pixels
+        // wide and blurred (scripts/lock-backdrop.py), so a layer at full
+        // size held 9 MB per laptop screen and 33 MB per 4K one, for the
+        // whole time the screen is locked, with nothing in it a quarter
+        // does not show. Without `textureSize` it is item-sized again.
         layer.enabled: true
         layer.smooth: true
+        layer.textureSize: Qt.size(Math.ceil(width / 4), Math.ceil(height / 4))
     }
     Rectangle { anchors.fill: parent; color: Colors.lockShade }
 
@@ -95,7 +102,7 @@ Item {
         id: content
         anchors.fill: parent
 
-        SystemClock { id: clock; precision: SystemClock.Minutes }
+        SystemClock { id: clock; precision: SystemClock.Minutes; enabled: WallClock.ticking }
 
         // What the user arranged, above the login block. A grid like the
         // notch's and the dashboard's, on the same ArrangeArea - but never
@@ -360,8 +367,7 @@ Item {
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight
-                text: SettingsService.locale.toString(clock.date,
-                    gridW >= 2 ? "dddd, d MMMM" : "ddd, d MMM")
+                text: DateFormat.date(clock.date, SettingsService.locale, gridW >= 2 ? "long" : "short")
                 font.pixelSize: Typography.lockDateSize
                 font.weight: Typography.semibold
             }
@@ -371,9 +377,12 @@ Item {
     Component {
         id: weatherBlock
         Item {
+            // The forecast the shell keeps in its cache, which WeatherService
+            // reads in this process too - never fetched from here. Tracking it
+            // made the lock process ask Open-Meteo and write the shared cache
+            // file beside the shell, while the lock only displays (testing.md
+            // pitfall 86).
             readonly property var current: WeatherService.current
-            Component.onCompleted: WeatherService.track()
-            Component.onDestruction: WeatherService.untrack()
             Column {
                 anchors.centerIn: parent
                 spacing: Metrics.spaceXxs
@@ -408,6 +417,11 @@ Item {
         id: eventsBlock
         Item {
             id: eventBody
+            // Only an events block asks for the calendar. The face asked on
+            // every screen at every lock, and with it the lock process started
+            // Plasma's calendar plugin and three Akonadi monitors for a lock
+            // screen that showed no events.
+            readonly property CalendarDemand calendarDemand: CalendarDemand {}
             // The same "what is next" the notch asks for, from the same pure
             // function, so the two never disagree about which event that is.
             readonly property var event: NotchLogic.nextEvent(CalendarService.eventsFor(clock.date), clock.date)
@@ -428,7 +442,7 @@ Item {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                     visible: gridH >= 2 && eventBody.event !== null
-                    text: eventBody.event ? NotchLogic.eventWhen(eventBody.event, clock.date) : ""
+                    text: eventBody.event ? NotchLogic.eventWhen(eventBody.event, clock.date, SettingsService.twelveHourClock) : ""
                     color: Colors.lockMuted
                     role: "small"
                 }

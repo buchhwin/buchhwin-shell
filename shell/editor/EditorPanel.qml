@@ -31,7 +31,7 @@ Rectangle {
         contentHeight: column.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
-        ScrollFeel { view: flick }
+        ScrollFeel { id: feel; view: flick }
 
         ColumnLayout {
             id: column
@@ -44,6 +44,24 @@ Rectangle {
                 text: root.title
                 role: "title"
             }
+        }
+    }
+
+    // A hint that there is more below, the one every ScrollList has: a card
+    // capped at the room above the editor's controls (the notch's "What it
+    // carries", with a named row per item) can end right after a group's
+    // last row, and then looked complete with more groups under its edge.
+    Rectangle {
+        visible: flick.contentHeight > flick.height + 1
+        x: flick.x + flick.width - width
+        y: flick.y + flick.visibleArea.yPosition * flick.height
+        width: Metrics.scrollHintWidth
+        height: Math.max(Metrics.spaceLg, flick.visibleArea.heightRatio * flick.height)
+        radius: width / 2
+        color: Colors.scrollHint
+        opacity: flick.moving || feel.scrolling ? 1 : Effects.mutedOpacity
+        Behavior on opacity {
+            NumberAnimation { duration: Animations.hover; easing.type: Animations.easing }
         }
     }
 }

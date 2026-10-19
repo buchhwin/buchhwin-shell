@@ -27,9 +27,10 @@
 #   install/build-hyprland-leap.sh --remove        delete the prefix and the links
 #   install/build-hyprland-leap.sh --list-packages the build dependencies
 #
-# Patches: install/patches/<component>/*.patch are applied to the checkout
-# before building (currently Hyprland: XWayland cursors keep their size under
-# xwayland:force_zero_scaling). A new patch needs --rebuild.
+# Patches: install/patches/<component>/*.patch are applied to a clean
+# checkout before building (currently Hyprland: XWayland cursors keep their
+# size under xwayland:force_zero_scaling). A new, changed or removed patch
+# makes the build out of date, and so does a changed build option.
 #
 # Hyprland's own dialogs (hyprland-guiutils, with its toolkit hyprtoolkit) are
 # built too; Leap packages neither, and Hyprland starts them through PATH.
@@ -59,7 +60,7 @@ while (( $# )); do
     --remove) action=remove; shift ;;
     --list-packages) action=list; shift ;;
     --jobs) jobs=${2:?--jobs needs a number}; shift 2 ;;
-    -h|--help) sed -n '2,39p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
@@ -137,6 +138,7 @@ fi
 # shellcheck source=install/lib/distro.sh
 . "$project_dir/install/lib/distro.sh"
 distro=$(distro_detect) || exit 2
+distro_untried "$distro" && exit 2
 
 say() { printf '\n%s\n' "$1"; }
 run() {
@@ -216,7 +218,7 @@ if $deps; then
   # newer -devel packages whose libraries would have replaced the system's.
   oss=$(leap_oss_alias)
   if [[ -z $oss ]] && $apply; then
-    printf '  No enabled repository serves Leap 16.0 repo-oss; enable it first.\n' >&2
+    printf '  No enabled repository serves Leap'"'"'s repo-oss; enable it first.\n' >&2
     exit 1
   fi
   oss=${oss:-repo-oss}
@@ -238,13 +240,15 @@ done
 
 # What a build records in PREFIX/.buchhwin-build, so a re-run (bootstrap.sh
 # runs this every time) can tell that the pins have not moved.
-# A component's patches are part of what was built: an edited or added patch
-# makes the build out of date.
+# A component's patches and build options are part of what was built: an
+# edited, added or removed patch, or a changed option, makes the build out
+# of date. (The options' hash came in later than the rest; a prefix built
+# before it is out of date once, for that reason alone.)
 manifest() {
-  local entry name tag commit patch
+  local entry name tag commit options patch
   for entry in "${components[@]}"; do
-    IFS='|' read -r name _ _ tag commit _ <<<"$entry"
-    printf '%s %s %s\n' "$name" "$tag" "${commit:0:12}"
+    IFS='|' read -r name _ _ tag commit options <<<"$entry"
+    printf '%s %s %s %s\n' "$name" "$tag" "${commit:0:12}" "$(printf '%s' "$options" | sha256sum | cut -c1-12)"
     for patch in "$project_dir/install/patches/$name"/*.patch; do
       [[ -e $patch ]] || continue
       printf '  %s %s\n' "${patch##*/}" "$(sha256sum "$patch" | cut -c1-12)"
@@ -256,6 +260,34 @@ if ! $rebuild && [[ -x $prefix/bin/Hyprland && -r $prefix/.buchhwin-build ]] \
     && [[ $(cat -- "$prefix/.buchhwin-build") == "$(manifest)" ]]; then
   up_to_date=true
 fi
+
+# checkout_component NAME URL TAG COMMIT SRC: SRC as the pinned commit with
+# this project's patches for NAME on top (install/patches/NAME/*.patch, in
+# name order). A cached checkout of the pin is reused, but always as a clean
+# tree: one that still carried an earlier version of a patch failed to apply
+# the edited one on every later run, and one with a patch since removed
+# built it in all the same. SRC is this script's own cache. Every step says
+# `|| return 1`: set -e alone would end the script inside the function,
+# where the ERR trap that restores the previous build does not run.
+checkout_component() {
+  local name=$1 url=$2 tag=$3 commit=$4 src=$5 patch
+  if [[ ! -d $src/.git ]] || [[ $(git -C "$src" rev-parse HEAD 2>/dev/null) != "$commit" ]]; then
+    rm -rf -- "$src"
+    logged git clone --depth 1 --branch "$tag" --recurse-submodules --shallow-submodules "$url" "$src" || return 1
+  fi
+  if [[ $(git -C "$src" rev-parse HEAD) != "$commit" ]]; then
+    printf '  %s %s is commit %s, not the pinned %s\n' "$name" "$tag" "$(git -C "$src" rev-parse HEAD)" "$commit" >&2
+    return 1
+  fi
+  logged git -C "$src" reset -q --hard "$commit" || return 1
+  logged git -C "$src" clean -qfdx || return 1
+  logged git -C "$src" submodule foreach --quiet --recursive 'git reset -q --hard && git clean -qfdx' || return 1
+  for patch in "$project_dir/install/patches/$name"/*.patch; do
+    [[ -e $patch ]] || continue
+    printf '  patch %s\n' "${patch##*/}"
+    logged git -C "$src" apply "$patch" || return 1
+  done
+}
 
 say "3. Build and install into $prefix"
 if $up_to_date; then
@@ -355,23 +387,7 @@ Cflags: -I\${includedir}
 PC
       continue
     fi
-    if [[ ! -d $src/.git ]] || [[ $(git -C "$src" rev-parse HEAD 2>/dev/null) != "$commit" ]]; then
-      rm -rf -- "$src"
-      logged git clone --depth 1 --branch "$tag" --recurse-submodules --shallow-submodules "$url" "$src"
-    fi
-    if [[ $(git -C "$src" rev-parse HEAD) != "$commit" ]]; then
-      printf '  %s %s is commit %s, not the pinned %s\n' "$name" "$tag" "$(git -C "$src" rev-parse HEAD)" "$commit" >&2
-      false
-    fi
-    # Project patches for this component, install/patches/<name>/*.patch, in
-    # name order. A checkout that already carries a patch (it reverse-applies
-    # cleanly) is left alone, so re-runs on the same checkout are harmless.
-    for patch in "$project_dir/install/patches/$name"/*.patch; do
-      [[ -e $patch ]] || continue
-      if git -C "$src" apply --reverse --check "$patch" >/dev/null 2>&1; then continue; fi
-      printf '  patch %s\n' "${patch##*/}"
-      logged git -C "$src" apply "$patch"
-    done
+    checkout_component "$name" "$url" "$tag" "$commit" "$src"
     rm -rf -- "$build"
     case $kind in
       meson)

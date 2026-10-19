@@ -83,7 +83,7 @@ ColumnLayout {
                 text: "Reset"
                 variant: "danger"
                 confirm: true
-                confirmText: "Click again"
+                confirmText: "Reset?"
                 onClicked: LayoutService.lockResetLayout()
             }
         }
@@ -119,6 +119,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Fingerprint"
+        scope: "lock.fingerprint"
         description: "Unlock the lock screen with a finger. Typing your password always works too."
 
         ListRow {
@@ -281,7 +282,7 @@ ColumnLayout {
                     // An enrolled finger cannot be brought back; the button
                     // asks twice, the way every destructive one does.
                     confirm: true
-                    confirmText: "Click again to delete"
+                    confirmText: "Delete?"
                     enabledState: FingerprintService.actionsAllowed
                     onClicked: FingerprintService.remove(fingerRow.modelData)
                 }

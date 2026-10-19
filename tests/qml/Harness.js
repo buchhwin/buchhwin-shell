@@ -4,8 +4,31 @@
 var failures = []
 var passed = 0
 
+// JSON writes NaN and Infinity as null and drops undefined and functions (or
+// writes them as null in a list), so T.eq(NaN, null), T.eq(f, undefined) and
+// T.eq({ a: undefined }, {}) all passed. Those are marked first and written
+// out by name. -0 stays 0: tests compare it with 0 on purpose. The mark is
+// a NUL, which JSON escapes: only a string that holds one could look like a
+// mark (a private-use character would be a glyph's - Nerd Fonts live there).
+const MARK = "\u0000"
+function marked(key, value) {
+    if (value === undefined) return MARK + "undefined"
+    if (typeof value === "function") return MARK + "function"
+    if (typeof value === "number" && !isFinite(value)) return MARK + String(value)
+    return value
+}
+
 function format(value) {
-    try { return JSON.stringify(value) } catch (error) { return String(value) }
+    try {
+        return JSON.stringify(value, marked).replace(/"\\u0000([^"]*)"/g, "$1")
+    } catch (error) {
+        return String(value)
+    }
+}
+
+// Whether two values are the same to eq, without counting an assertion.
+function same(actual, expected) {
+    return format(actual) === format(expected)
 }
 
 function ok(condition, message) {
@@ -14,8 +37,7 @@ function ok(condition, message) {
 }
 
 function eq(actual, expected, message) {
-    const same = format(actual) === format(expected)
-    ok(same, message + ": expected " + format(expected) + ", got " + format(actual))
+    ok(same(actual, expected), message + ": expected " + format(expected) + ", got " + format(actual))
 }
 
 function near(actual, expected, message, epsilon) {

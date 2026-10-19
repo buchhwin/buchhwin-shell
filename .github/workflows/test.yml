@@ -9,19 +9,26 @@
 #   * Hyprland refuses to start with superuser privileges, and a container job
 #     is root. The suite runs as an unprivileged user.
 #   * Hyprland needs `XDG_RUNTIME_DIR`, even for `--verify-config`.
-#   * The QML tests load the whole shell, and `CalendarService` imports four
-#     KDE PIM QML modules. Without them every QML test fails with "Type
-#     ErrorLog unavailable", which says nothing about the real cause.
+#   * The QML tests load the services they test, and through ErrorLog
+#     `CalendarService`, which imports four KDE PIM QML modules. Without them
+#     every QML test fails with "Type ErrorLog unavailable", which says
+#     nothing about the real cause. Every service at once is loaded by
+#     tests/ci-load-services.sh, after the suite; the panels under shell/
+#     are not, because their windows need a compositor.
 #
 # The repositories installed below are the ones `install/bootstrap.sh` adds,
 # because the last step checks that every package name it hands out exists -
 # and the first run of that check found one, `starship`, that only resolved on
-# the machine the list was written on. The `leap-packages` job does the same
-# for openSUSE Leap 16. The suite runs twice: on Fedora, and on Arch
-# (`test-arch`), the platform the shell is used on - Arch's Qt is newer
-# (6.12, with its own warnings and strict-mode differences, testing.md
-# pitfalls 59 and 94), and there the suite runs against the package list
-# bootstrap.sh hands out, installed rather than only looked up.
+# the machine the list was written on - and that the list installs as one
+# transaction. The `leap-packages` job does the same for openSUSE Leap 16, and
+# `downloads` fetches what the installers pin by checksum. The suite runs
+# twice: on Fedora, and on Arch (`test-arch`), the platform the shell is used
+# on - Arch's Qt is newer (6.12, with its own warnings and strict-mode
+# differences, testing.md pitfalls 59 and 94), and there the suite runs
+# against the package list bootstrap.sh hands out, installed rather than only
+# looked up. Once a week the whole run happens without a push, because the
+# repositories change under the lists (a Copr dropped, an OBS project moved,
+# an Arch package renamed) and the README promises a working one-liner.
 name: test
 
 on:
@@ -29,6 +36,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
+# The jobs only read the repository.
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -44,13 +57,14 @@ jobs:
           dnf -y copr enable sachesi/hyprland
           dnf -y copr enable atim/starship
           dnf -y config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
+          # dbus-daemon: dbus-run-session, for the services check.
           dnf -y install \
             hyprland quickshell \
             git jq zsh python3 python3-pillow tar findutils diffutils which gzip procps-ng \
-            qt6-qtdeclarative-devel \
+            qt6-qtdeclarative-devel dbus-daemon \
             plasma-workspace kdepim-addons akonadi-server kf6-kitemmodels
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # tests/deploy-test.sh clones the repository and makes a worktree.
           fetch-depth: 0
@@ -74,6 +88,34 @@ jobs:
             # browser to satisfy a check.
             BUCHHWIN_SKIP_ENVIRONMENT=1 scripts/test.sh
           '
+
+      - name: Every service loads
+        # Fedora's Quickshell is its own snapshot (0.2.1 from February 2026),
+        # older than the 0.3 the shell is made on. What it cannot load is
+        # reported here without failing the run, until the step is known to
+        # pass on it; on Arch (test-arch) it fails the run.
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eux
+          runuser -u ci -- bash -lc '
+            set -eux
+            cd "'"$GITHUB_WORKSPACE"'"
+            export XDG_RUNTIME_DIR=/tmp/xdg-ci GITHUB_ACTIONS=true
+            tests/ci-load-services.sh
+          '
+
+      - name: Versions
+        # Into the run's summary: which Quickshell and Hyprland the checks
+        # ran against. Never a reason to fail.
+        if: always()
+        shell: bash
+        run: |
+          {
+            printf '### Fedora\n\n'
+            printf -- '- %s\n' "$(quickshell --version 2>&1 | head -n1)" \
+              "$(runuser -u ci -- Hyprland --version 2>&1 | head -n1)"
+          } >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: The package list resolves on a fresh Fedora
         # The first time install/bootstrap.sh --list-packages is read by a
@@ -100,25 +142,48 @@ jobs:
             exit 1
           fi
           printf 'every package in bootstrap.sh exists\n'
+          # Names are not a transaction: two that exist can still conflict,
+          # and that is where an install stops. dnf resolves the whole list
+          # and is told no; a list it cannot resolve says so before asking.
+          mapfile -t wanted <<<"$list"
+          transaction=$(dnf install --assumeno "${wanted[@]}" 2>&1) || true
+          if grep -qE 'Failed to resolve the transaction|No match for argument|Problem( [0-9]+)?:' <<<"$transaction"; then
+            printf '%s\n' "$transaction" | tail -n 40
+            printf 'the package list does not install as one transaction on Fedora\n' >&2
+            exit 1
+          fi
+          printf 'the package list resolves as one transaction\n'
 
   leap-packages:
+    # 16.0 is what the lists were checked against and what the installers
+    # accept; the next release is looked at ahead of time, without failing
+    # the run (BUCHHWIN_DISTRO lets it in).
+    strategy:
+      fail-fast: false
+      matrix:
+        leap: ['16.0', '16.1']
+    continue-on-error: ${{ matrix.leap != '16.0' }}
     runs-on: ubuntu-latest
-    container: registry.opensuse.org/opensuse/leap:16.0
+    container: registry.opensuse.org/opensuse/leap:${{ matrix.leap }}
     steps:
       - name: What checkout needs
         run: zypper --non-interactive install --no-recommends git-core tar gzip
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: The package list resolves on a fresh Leap 16
         # The repositories bootstrap.sh adds on Leap, from the list itself, so
-        # the job cannot drift from what users get.
+        # the job cannot drift from what users get. Captured first, like the
+        # package lists below: a process substitution's failure is ignored,
+        # and a list that failed to source added no repository at all.
         shell: bash
         run: |
           set -eu
+          repos=$(bash -c '. install/packages/opensuse-leap.sh; printf "%s\n" "${repos[@]}"')
+          [ -n "$repos" ] || { echo "no Leap repositories in install/packages/opensuse-leap.sh" >&2; exit 1; }
           while IFS='|' read -r alias url priority; do
             zypper --non-interactive addrepo --priority "$priority" "$url" "$alias"
-          done < <(bash -c '. install/packages/opensuse-leap.sh; printf "%s\n" "${repos[@]}"')
+          done <<<"$repos"
           zypper --non-interactive addrepo https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
           zypper --non-interactive --gpg-auto-import-keys refresh
           # The packages, from any repository bootstrap.sh adds; the build
@@ -155,6 +220,29 @@ jobs:
             exit 1
           fi
           printf 'every package for Leap exists\n'
+          # What pkg_install_safe asks zypper before a user's install: the
+          # whole list from the repositories the bootstrap names, as one
+          # transaction that removes, downgrades and re-vendors nothing. The
+          # Leap blockers so far (sddm against sddm-qt6, X11:Wayland's
+          # libraries) were transactions; every name in them existed.
+          aliases=$(cut -d'|' -f1 <<<"$repos")
+          repo_args=(--repo "$oss")
+          while read -r alias; do repo_args+=(--repo "$alias"); done <<<"$aliases"
+          repo_args+=(--repo brave-browser)
+          # The build dependencies the same way, from repo-oss alone.
+          dry_run() {   # dry_run WHAT ARGS...
+            local what=$1 status=0 transaction
+            shift
+            transaction=$(LC_ALL=C zypper --non-interactive install --dry-run --no-recommends "$@" 2>&1) || status=$?
+            if [ "$status" -ne 0 ] || grep -qE 'going to be (REMOVED|DOWNGRADED)|change vendor' <<<"$transaction"; then
+              printf '%s\n' "$transaction" | tail -n 40
+              printf '%s does not install cleanly on Leap (zypper %d)\n' "$what" "$status" >&2
+              return 1
+            fi
+            printf '%s installs as one transaction on Leap\n' "$what"
+          }
+          dry_run 'the package list' "${repo_args[@]}" "${wanted[@]}"
+          dry_run 'the build dependencies' --repo "$oss" "${needed[@]}"
 
   arch-packages:
     runs-on: ubuntu-latest
@@ -163,7 +251,7 @@ jobs:
       - name: What checkout needs
         run: pacman -Syu --noconfirm --needed git
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: The package list resolves on a current Arch
         # Against the official repositories only: the AUR packages
@@ -198,7 +286,7 @@ jobs:
       - name: What checkout needs
         run: pacman -Syu --noconfirm --needed git
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # tests/deploy-test.sh clones the repository and makes a worktree.
           fetch-depth: 0
@@ -217,6 +305,14 @@ jobs:
           mapfile -t wanted <<<"$packages"
           pacman -S --noconfirm --needed "${wanted[@]}" \
             qt6-declarative which diffutils findutils tar gzip procps-ng
+          # What only Plasma brought before the list named it: the level
+          # meter's pw-record and the sound cards (pipewire-audio), WebP
+          # wallpapers (qt6-imageformats), the Notification portal, the
+          # secret agent and the 802.1X dialog.
+          pacman -Qo /usr/bin/pw-record /usr/lib/spa-0.2/alsa/libspa-alsa.so \
+            /usr/lib/qt6/plugins/imageformats/libqwebp.so \
+            /usr/share/xdg-desktop-portal/portals/gtk.portal /usr/bin/nm-applet \
+            /usr/lib/qt6/plugins/plasma/kcms/systemsettings_qwidgets/kcm_networkmanagement.so
 
       - name: Run the checks
         # As on Fedora: an unprivileged user (Hyprland refuses root), a
@@ -236,3 +332,92 @@ jobs:
             git config --global user.name CI
             BUCHHWIN_SKIP_ENVIRONMENT=1 scripts/test.sh
           '
+
+      - name: Every service loads
+        # Quickshell 0.3.2, the one the shell is made on: a service that does
+        # not load here does not load in the session either.
+        shell: bash
+        run: |
+          set -eux
+          runuser -u ci -- bash -lc '
+            set -eux
+            cd "'"$GITHUB_WORKSPACE"'"
+            export XDG_RUNTIME_DIR=/tmp/xdg-ci LANG=C.UTF-8 GITHUB_ACTIONS=true
+            tests/ci-load-services.sh
+          '
+
+      - name: What doctor.sh finds on the installed list
+        # The suite skips doctor.sh (it asks about a session host), but here
+        # the whole Arch list is installed: every miss is the list's. Strict,
+        # with Brave (the AUR) the one allowed miss, after the user's own
+        # setup. Not blocking until its first findings are triaged.
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -eux
+          runuser -u ci -- bash -lc '
+            set -eux
+            cd "'"$GITHUB_WORKSPACE"'"
+            export XDG_RUNTIME_DIR=/tmp/xdg-ci LANG=C.UTF-8
+            install/install.sh --apply
+            BUCHHWIN_DOCTOR_STRICT=1 BUCHHWIN_DOCTOR_ALLOW="brave-browser" scripts/doctor.sh
+          '
+
+      - name: shellcheck (not blocking until the first triage)
+        continue-on-error: true
+        shell: bash
+        run: |
+          pacman -S --noconfirm --needed shellcheck
+          shellcheck -S warning install/*.sh install/lib/*.sh install/packages/*.sh scripts/*.sh scripts/lib/*.sh
+
+      - name: Versions
+        # Into the run's summary: which Quickshell and Hyprland the checks
+        # ran against. Never a reason to fail.
+        if: always()
+        shell: bash
+        run: |
+          {
+            printf '### Arch\n\n'
+            printf -- '- %s\n' "$(quickshell --version 2>&1 | head -n1)" \
+              "$(runuser -u ci -- Hyprland --version 2>&1 | head -n1)"
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+  downloads:
+    # What the installers fetch rather than install, pinned by checksum, is
+    # otherwise only ever fetched on a user's --apply, where a mismatch stops
+    # the run halfway: the Nerd Fonts (Fedora, Leap), cliphist (Leap) and
+    # the Lua source the Leap Hyprland build compiles.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: The pinned downloads are what their checksums say
+        shell: bash
+        run: |
+          set -eu
+          # url|sha256 per line, from the files themselves.
+          fonts=$(bash -c 'eval "$(sed -n "/^nerd_fonts_release=/p; /^nerd_fonts_url=/p; /^nerd_fonts=(/,/^)/p" install/bootstrap.sh)"
+            for entry in "${nerd_fonts[@]}"; do
+              IFS="|" read -r _ archive _ _ sum <<<"$entry"
+              printf "%s|%s\n" "$nerd_fonts_url/$archive" "$sum"
+            done')
+          binaries=$(for distro in fedora opensuse-leap arch; do
+              bash -c '. "install/packages/$1.sh"; for entry in "${fetched_binaries[@]}"; do printf "%s\n" "${entry#*|}"; done' _ "$distro"
+            done)
+          lua=$(sed -n '/^components=(/,/^)/p' install/build-hyprland-leap.sh | grep -oP '^\s*"\Klua\|[^"]+' \
+            | awk -F'|' '{ print $3 "|" $5 }')
+          pins=$(printf '%s\n' "$fonts" "$binaries" "$lua" | grep -v '^$')
+          [ "$(grep -c . <<<"$pins")" -ge 4 ] || { printf 'expected at least four pins, found:\n%s\n' "$pins" >&2; exit 1; }
+          bad=0
+          while IFS='|' read -r url sum; do
+            file=$(mktemp)
+            if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 600 -o "$file" "$url"; then
+              printf 'cannot fetch %s\n' "$url"; bad=$((bad + 1))
+            elif [ "$(sha256sum "$file" | cut -d' ' -f1)" != "$sum" ]; then
+              printf 'checksum mismatch: %s\n' "$url"; bad=$((bad + 1))
+            else
+              printf 'ok %s\n' "$url"
+            fi
+            rm -f -- "$file"
+          done <<<"$pins"
+          [ "$bad" -eq 0 ] || { printf '%d pinned download(s) are not what the installers expect\n' "$bad" >&2; exit 1; }

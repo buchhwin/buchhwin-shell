@@ -7,6 +7,8 @@ import qs.theme
 import qs.services
 import qs.shell.components
 import "../../services/notch/NotchLogic.js" as Logic
+import "../../services/dock/DockLogic.js" as DockLogic
+import "../../services/appearance/DateFormat.js" as DateFormat
 
 // Desktop mode "notch": a black notch at the top centre of every screen, like
 // a MacBook notch, showing what its strip is given (the time, by default, and
@@ -22,8 +24,19 @@ import "../../services/notch/NotchLogic.js" as Logic
 // timers - following workspaces, the minute and the network behind a surface
 // that never mapped. Leaving notch mode destroys them (each reports its
 // rectangle away on the way out) and coming back builds them again.
+//
+// On every screen unless `notch.screens` names some (a machine setting, a
+// comma list like `dock.screens`; empty - the default - is every screen, and a
+// list that matches no screen here is every screen too, never none). A notch
+// left out of a screen is a window, a render thread and its buffers less;
+// that screen's panels and displays do what they do on a screen without one.
 Variants {
-    model: LayoutService.loaded && LayoutService.notchShown ? Quickshell.screens : []
+    model: {
+        if (!LayoutService.loaded || !LayoutService.notchShown) return []
+        const names = DockLogic.screensFor(SettingsService.value("notch.screens"),
+                                           Quickshell.screens.map(screen => screen.name))
+        return Quickshell.screens.filter(screen => names.indexOf(screen.name) >= 0)
+    }
 
     PanelWindow {
         id: window
@@ -76,7 +89,7 @@ Variants {
         function toggleDisplay() {
             if (displayOpen) { closeDisplay(); return }
             displayOpen = true
-            NotificationService.heldPopup = NotificationService.popups.length ? NotificationService.popups[0] : null
+            NotificationService.heldPopup = NotificationService.notchPopup
         }
         // ---- pages: scrolled or swiped to on the collapsed notch -----------
         // -1 the date and the next event, 0 the strip, +1 what is playing
@@ -94,10 +107,10 @@ Variants {
             : null
         function dayPage(now) {
             const next = CalendarService.remainingToday(now).find(event => !event.allDay)
-            return { title: Qt.formatDate(now, "dddd, d MMMM"),
+            return { title: DateFormat.date(now, SettingsService.locale, "long"),
                      subtitle: next ? next.title + " \u00b7 " + CalendarService.formatRange(next) : "Nothing else today" }
         }
-        SystemClock { id: pageClock; precision: SystemClock.Minutes; enabled: window.page < 0 }
+        SystemClock { id: pageClock; precision: SystemClock.Minutes; enabled: window.page < 0 && WallClock.ticking }
         readonly property CalendarDemand calendarDemand: CalendarDemand { active: window.page < 0 }
         readonly property real pageWidth: Math.max(collapsedWidth,
             Math.min(Metrics.notchMaxExpandedWidth, pageLoader.item ? pageLoader.item.implicitWidth : collapsedWidth))
@@ -108,6 +121,16 @@ Variants {
                 window.page = Logic.swipeSettle(window.page, window.swipePosition, window.pages)
                 window.swipePosition = 0
             }
+        }
+        // Back to the strip a while after the pointer has left a page
+        // (NotchLogic.SWIPE.returnMs); a pointer that comes back keeps it.
+        // Started by the leave and by a page settling after it - the settle
+        // runs 150 ms after the last scroll, which can be past the edge.
+        onPageChanged: if (page !== 0 && !hover.hovered) pageReturn.restart()
+        Timer {
+            id: pageReturn
+            interval: Logic.SWIPE.returnMs
+            onTriggered: if (!hover.hovered) window.page = 0
         }
 
         readonly property real displayHeight: displayOpen && displayLoader.item
@@ -203,10 +226,13 @@ Variants {
         implicitHeight: Metrics.notchSurfaceHeight
         // Setting exclusiveZone switches Quickshell to ExclusionMode.Normal, so
         // "no reserve" is a zone of 0 rather than ExclusionMode.Ignore.
+        // The gap Hyprland puts back is the mode's own (Settings > Appearance >
+        // "Gap to screen edge", sent as gaps_out), not a fixed 12: at 0 a
+        // window ran under the notch, at 60 it stood far below it.
         exclusionMode: ExclusionMode.Normal
         exclusiveZone: NotchService.reserve
             ? Logic.reserveHeight(NotchService.shape, NotchService.bodyHeight,
-                                  Metrics.notchPillMargin, Metrics.windowGap) : 0
+                                  Metrics.notchPillMargin, SettingsService.gapsOut) : 0
         WlrLayershell.namespace: "buchhwin-notch"
         // Hyprland hides the Top layer under fullscreen windows; "Always show"
         // moves the notch to the Overlay layer while one is fullscreen.
@@ -290,9 +316,13 @@ Variants {
                 : null)
         }
 
+        // `rows` is what the overview's grid draws, by type: the smoke test
+        // reads its length to catch an overview that filtered everything
+        // away. It used to be the pre-grid overview's header and status rows,
+        // which were always there, so that check could never fail.
         readonly property var reportState: ({
             shown: active, expanded: expanded, content: contentShown,
-            rows: overviewLoader.item ? overviewLoader.item.rows : [],
+            rows: overviewLoader.item ? overviewLoader.item.bodyTypes : [],
             width: Math.round(bodyWidth.to), height: Math.round(bodyHeight.to),
             // The surface's own width and where it starts on the screen. A
             // rectangle the notch reports is in *its* coordinates, so these
@@ -570,11 +600,13 @@ Variants {
                 onHoveredChanged: {
                     if (hovered) {
                         closeTimer.stop()
+                        pageReturn.stop()
                         if (NotchService.expandOnHover && !window.hoverExpanded) openTimer.restart()
                     } else {
                         window.swiped = false
                         openTimer.stop()
                         closeTimer.restart()
+                        if (window.page !== 0) pageReturn.restart()
                     }
                 }
             }
@@ -582,7 +614,8 @@ Variants {
             // Collapsed: a click opens the overview or the dashboard, as the
             // hover mode and the click action say (NotchLogic.clickResult).
             // The middle and the right button do what their own settings say,
-            // nothing unless they are set.
+            // nothing unless they are set; unset, they put away a notification
+            // the notch shows.
             MouseArea {
                 anchors.fill: parent
                 enabled: !window.expanded
@@ -592,6 +625,15 @@ Variants {
                     if (mouse.button === Qt.LeftButton && window.showingNotification) window.toggleDisplay()
                     else if (mouse.button === Qt.LeftButton && window.paging)
                         window.openPanel(window.page > 0 ? "mediaPopup" : "dashboard")
+                    // A notification in the notch goes on a right or middle
+                    // click while that button has nothing else to do: a
+                    // critical one has no timer and held the notch - clock,
+                    // strip and pages - until it was dismissed in the centre.
+                    // It stays in the history, the bell lit.
+                    else if (window.showingNotification
+                             && ((mouse.button === Qt.RightButton && NotchService.rightAction === "none")
+                                 || (mouse.button === Qt.MiddleButton && NotchService.middleAction === "none")))
+                        NotificationService.hidePopup(NotificationService.notchPopup)
                     else if (mouse.button === Qt.MiddleButton) window.buttonAction(NotchService.middleAction)
                     else if (mouse.button === Qt.RightButton) window.buttonAction(NotchService.rightAction)
                     else if (NotchService.clickResult === "expand") NotchService.expand(window.screenName)
@@ -670,6 +712,8 @@ Variants {
                     // under the same keys, and this one - restarted by every
                     // frame of the morph - would win and report nothing.
                     screenName: window.expanded ? "" : window.screenName
+                    // Its widgets' screen stays this window's, expanded or not.
+                    widgetScreen: window.screenName
                     // No screen under a fullscreen window: the dock draws
                     // nothing there (Dock.qml), so a notch that stays over it
                     // (notch.fullscreen "show") keeps the time it would

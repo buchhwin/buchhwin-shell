@@ -4,6 +4,7 @@ import QtQuick
 import qs.services
 import "Harness.js" as T
 import "../../services/LayoutLogic.js" as L
+import "../../services/profile/ProfileLogic.js" as P
 
 // LayoutService itself, against the runner's sandboxed XDG_CONFIG_HOME: a
 // missing layout.json loads as an empty, writable layout; two edits in one
@@ -20,18 +21,48 @@ import "../../services/LayoutLogic.js" as L
 // Then a mode switch undone, and an automatic one that is no undo step (its
 // widgets kept by the undo). Then the dock: a preset undone with its
 // options, a change that changes nothing takes no step, and the dock's own
-// pieces stay on the dock, once. Last, layout.json is the user's alone (0600).
+// pieces stay on the dock, once. Then the cost of an edit: what is written is
+// the config as it is, an edit tells only what it changed (the notch, the
+// dock and the lock screen hear nothing of a bar edit, a mode switch or a
+// mode-scoped setting), a value the mode has already is no write, a mode
+// asked for again is no step, a switch writes only the settings that differ,
+// and a step is the one mode, not the whole layout. Then undo and a mode's
+// appearance: an unrelated Ctrl+Z keeps the gaps set since, and undoing a
+// Reset puts the old ones back on screen too. Last, layout.json is the
+// user's alone (0600).
 ShellRoot {
     id: root
     property int waits: 0
     property int tries: 0
     property int rectSignals: 0
     property int dockRectSignals: 0
+    // What each LayoutService surface announced, by name.
+    property var heard: ({})
+    property var settingPaths: []
+
+    function hear(name) {
+        const next = Object.assign({}, heard)
+        next[name] = (next[name] || 0) + 1
+        heard = next
+    }
+    function listen() {
+        heard = ({})
+        settingPaths = []
+    }
 
     Connections {
         target: LayoutService
         function onPlacementRectsChanged() { root.rectSignals += 1 }
         function onDockItemRectsChanged() { root.dockRectSignals += 1 }
+        function onNotchLayoutChanged() { root.hear("notch") }
+        function onDockLayoutChanged() { root.hear("dock") }
+        function onLockLayoutChanged() { root.hear("lock") }
+        function onBarChanged() { root.hear("bar") }
+        function onQuickChanged() { root.hear("quick") }
+    }
+    Connections {
+        target: SettingsService
+        function onSettingChanged(path, value) { root.settingPaths = root.settingPaths.concat([path]) }
     }
 
     FileView {
@@ -167,6 +198,12 @@ ShellRoot {
             }
             T.eq(LayoutService.changeNotch("notch.displayOsd", false), false,
                  "a notch setting that is not a layout option is refused")
+            // The value an option has already, as the editor's segments
+            // re-emit it: no undo step that undoes nothing.
+            const same = LayoutService.undoStack.length
+            T.eq(LayoutService.changeNotch("notch.hoverMode", SettingsService.value("notch.hoverMode")), true, "a notch option set to its own value")
+            T.eq(LayoutService.setBarOption("scale", LayoutService.bar.scale), true, "a bar option set to its own value")
+            T.eq(LayoutService.undoStack.length, same, "take no undo step")
             modeUndo.start()
         }
     }
@@ -175,8 +212,9 @@ ShellRoot {
     // it used to restore the name only, and the gaps, blur and animations of
     // the mode undone stayed. An automatic switch (a monitor plugged in)
     // takes no step, and undoing the edit before it keeps the mode the
-    // machine chose. Not into gaming: its template turns Do Not Disturb on,
-    // and the notification server is the session's (pitfall 82).
+    // machine chose. Not into gaming here: its template turns Do Not Disturb
+    // on, and this test runs NotificationService nowhere - ModeEntryTest
+    // switches into it, with the notification server off.
     Timer {
         id: modeUndo
         interval: 50
@@ -188,8 +226,8 @@ ShellRoot {
                  "a mode-scoped setting belongs to the mode in use")
             T.eq(LayoutService.setActiveMode(others[0]), true, "into a second mode")
             T.eq(L.modeConfig(LayoutService.config, LayoutService.activeProfile, others[0]).desktopMode,
-                 ({ work: "pills", laptop: "pills", docked: "pills", minimal: "widgets" })[others[0]],
-                 "a mode used for the first time takes its surface from its template (round 13)")
+                 ({ work: "pills", laptop: "pills", docked: "pills", minimal: "notch" })[others[0]],
+                 "a mode used for the first time takes its surface from its template")
             SettingsService.set("appearance.gapsOut", 3)
             const depth = LayoutService.undoStack.length
             LayoutService.undo()
@@ -261,7 +299,7 @@ ShellRoot {
             T.eq(LayoutService.undoStack.length, depth, "the step is gone")
 
             SettingsService.set("dock.span", "full")
-            T.eq(LayoutService.setBarOption("scale", 1.15), true, "an unrelated edit")
+            T.eq(LayoutService.setBarOption("scale", LayoutService.bar.scale === 1.15 ? 1.2 : 1.15), true, "an unrelated edit")
             LayoutService.undo()
             T.eq(SettingsService.value("dock.span"), "full", "its undo leaves the dock's options as Settings > Dock set them")
 
@@ -282,6 +320,112 @@ ShellRoot {
             T.eq(LayoutService.pillAdd("dock", "left", "apps", ""), false, "and gets no second one")
             T.eq(LayoutService.pillAdd("dock", "left", "start", ""), true, "a start button is added")
             T.eq(LayoutService.pillAddItem("dock", LayoutService.dockLayout.left[0].id, "start", ""), false, "once")
+            editCost.start()
+        }
+    }
+
+    function stored(leaf) {
+        return (L.modeConfig(LayoutService.config, LayoutService.activeProfile, LayoutService.activeMode).appearance || {})[leaf]
+    }
+    function modeScoped() {
+        const values = {}
+        for (const leaf of P.MODE_SCOPED) values[leaf] = SettingsService.value(P.modeScopedPath(leaf))
+        return values
+    }
+
+    // What an edit costs and whom it tells.
+    Timer {
+        id: editCost
+        interval: 50
+        onTriggered: {
+            T.eq(LayoutService.setBarOption("scale", 1.3), true, "a bar edit")
+            T.eq(LayoutService.pendingText, JSON.stringify(L.sanitize(LayoutService.config), null, 2) + "\n",
+                 "the text written is the config as it is, checked once")
+            const step = JSON.parse(LayoutService.undoStack[LayoutService.undoStack.length - 1])
+            T.eq([("profiles" in step.config), Object.keys(step.modes.list), step.modes.profile],
+                 [false, [LayoutService.activeMode], LayoutService.activeProfile],
+                 "its undo step holds the mode in use, not the whole layout")
+            T.ok(LayoutService.undoStack[LayoutService.undoStack.length - 1].length < JSON.stringify(LayoutService.undoConfig()).length,
+                 "and is smaller than the whole layout")
+
+            root.listen()
+            T.eq(LayoutService.setBarOption("scale", 1.15), true, "another")
+            T.eq([root.heard.bar || 0, root.heard.notch || 0, root.heard.dock || 0, root.heard.lock || 0, root.heard.quick || 0],
+                 [1, 0, 0, 0, 0], "a bar edit tells the bar, and not the notch, the dock, the lock screen or the tiles")
+
+            root.listen()
+            const blur = SettingsService.value("appearance.blurStrength") === 0.25 ? 0.35 : 0.25
+            SettingsService.set("appearance.blurStrength", blur)
+            T.eq(root.stored("blurStrength"), blur, "a mode-scoped setting is stored in the mode in use")
+            T.eq([root.heard.bar || 0, root.heard.notch || 0, root.heard.dock || 0, root.heard.lock || 0],
+                 [0, 0, 0, 0], "and tells no surface")
+            const revision = LayoutService.revision
+            const text = LayoutService.pendingText
+            SettingsService.set("appearance.blurStrength", blur)
+            T.eq([LayoutService.revision, LayoutService.pendingText === text], [revision, true],
+                 "the value the mode has already is no change and no write")
+
+            const depth = LayoutService.undoStack.length
+            root.listen()
+            T.eq(LayoutService.setActiveMode(LayoutService.activeMode), true, "the mode in use asked for again")
+            T.eq([LayoutService.undoStack.length, root.settingPaths.length], [depth, 0], "takes no step and writes no setting")
+
+            const from = LayoutService.activeMode
+            const to = LayoutService.modeNames.filter(name => name !== from && name !== "gaming")[0]
+            const beforeSwitch = root.modeScoped()
+            root.listen()
+            T.eq(LayoutService.setActiveMode(to), true, "a switch")
+            const afterSwitch = root.modeScoped()
+            T.eq(root.settingPaths.slice().sort(),
+                 P.MODE_SCOPED.filter(leaf => beforeSwitch[leaf] !== afterSwitch[leaf]).map(leaf => P.modeScopedPath(leaf)).sort(),
+                 "writes only the settings that differ between the two modes")
+            T.eq([root.heard.notch || 0, root.heard.dock || 0, root.heard.lock || 0], [0, 0, 0],
+                 "and tells neither the notch, the dock nor the lock screen")
+            root.listen()
+            T.eq(LayoutService.setActiveMode(from), true, "and back")
+            T.eq(root.settingPaths.length, P.MODE_SCOPED.filter(leaf => beforeSwitch[leaf] !== afterSwitch[leaf]).length,
+                 "with the same settings back")
+            T.eq(root.modeScoped(), beforeSwitch, "as they were")
+
+            // Several widgets removed at once (the editor's selection): one edit.
+            const screen = Quickshell.screens.length ? Quickshell.screens[0].name : "screen-a"
+            const first = LayoutService.addWidget(screen, "clock")
+            const second = LayoutService.addWidget(screen, "date")
+            const revisionBefore = LayoutService.revision
+            T.eq(LayoutService.removeItems([first, second]), true, "two widgets removed")
+            T.eq([LayoutService.widget(first), LayoutService.widget(second), LayoutService.revision - revisionBefore],
+                 [null, null, 1], "in one edit")
+            appearanceUndo.start()
+        }
+    }
+
+    // A mode-scoped setting takes no step of its own, and an unrelated Ctrl+Z
+    // put back the gaps the mode had before it: the screen kept the new ones,
+    // the file the old, and the next time the mode was entered the change was
+    // gone. And a Reset undone put the old gaps in the file but left the
+    // reset's on screen.
+    Timer {
+        id: appearanceUndo
+        interval: 50
+        onTriggered: {
+            const mode = LayoutService.activeMode
+            SettingsService.set("appearance.gapsOut", 5)
+            // An edge the bar is not at: one it has already takes no step.
+            T.eq(LayoutService.setBarOption("edge", LayoutService.bar.edge === "top" ? "bottom" : "top"), true, "an edit")
+            SettingsService.set("appearance.gapsOut", 13)
+            LayoutService.undo()
+            T.eq([root.stored("gapsOut"), SettingsService.value("appearance.gapsOut")], [13, 13],
+                 "undoing it keeps the gaps set since, in the file and on screen")
+            const other = LayoutService.modeNames.filter(name => name !== mode && name !== "gaming")[0]
+            LayoutService.setActiveMode(other)
+            LayoutService.setActiveMode(mode)
+            T.eq(SettingsService.value("appearance.gapsOut"), 13, "and the mode comes back with them")
+
+            T.eq(LayoutService.resetProfile(LayoutService.activeProfile, mode), true, "Reset of the mode in use")
+            const reset = SettingsService.value("appearance.gapsOut")
+            LayoutService.undo()
+            T.eq([root.stored("gapsOut"), SettingsService.value("appearance.gapsOut")], [13, 13],
+                 "undone, its gaps are back in the file and on screen (the reset's were " + reset + ")")
             fileMode.running = true
         }
     }

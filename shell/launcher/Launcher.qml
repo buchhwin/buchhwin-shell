@@ -6,18 +6,20 @@ import qs.services
 import qs.shell.components
 import "../../services/arrange/ArrangeLogic.js" as Arrange
 import "../../services/launcher/LauncherCatalogue.js" as LauncherCatalogue
+import "../../services/launcher/ResultsLogic.js" as Results
 
 // Super+D launcher with apps, commands (>), files (/), settings (@) and a
 // calculator (=). Keyboard: arrows, PageUp/PageDown, Home/End, Tab switches
 // mode, Ctrl+Up/Down switches category, Enter runs, Ctrl+Enter alternate
 // action, Esc clears then closes.
 //
-// **Its parts are arranged, like every other large surface.** Five blocks in
-// two zones (`LayoutLogic`, the `launcher` surface of the layout file): the
-// column, and the sidebar beside the result list that only the categories may
-// sit in. Stacked blocks and not the dashboard's free grid, because on a
-// search surface a free grid is one in which you can build yourself a result
-// list two rows high.
+// **Its parts are arranged, like every other large surface.** Five blocks -
+// the search field, the modes, the pinned apps, the categories and the
+// results - on the grid the dashboard and the control center have
+// (`LauncherCatalogue`, the `launcher` surface of the layout file): four
+// columns, up to eight rows that share the card's height, and a block goes
+// where it is put at the size it is dragged to. Only the search field cannot
+// be taken off.
 ShellPanel {
     id: root
     keyForward: searchField
@@ -54,6 +56,9 @@ ShellPanel {
     readonly property var mode: LauncherService.modeFor(query)
     // Only evaluated while the launcher is visible.
     readonly property var results: shown ? LauncherService.results(query, category) : []
+    // The rows run on the results' keys (ResultsLogic.keyed): a result still
+    // there after a keystroke keeps its row.
+    readonly property var resultRows: Results.keyed(results)
 
     readonly property bool editing: LayoutService.launcherEditing
 
@@ -80,10 +85,13 @@ ShellPanel {
             query = ""
             category = "All"
             selectedIndex = 0
-            // The emoji list is read on first use rather than at start; the
-            // first use is now, while the panel is still opening, so a ":"
-            // search answers on its first keystroke.
-            EmojiService.load()
+            // A refused pin is said for a moment, not again on the next open.
+            pinRefusedId = ""
+            // No emoji list here: it is read when ":" asks for it (the emoji
+            // mode's search loads it), not on every open. Read on open, a
+            // session that never searched an emoji held 172 KB of it parsed
+            // into 2-3 MB of objects; the first ":" result may come a frame
+            // later instead.
         }
     }
     onResultsChanged: selectedIndex = Math.min(selectedIndex, Math.max(0, results.length - 1))
@@ -131,7 +139,23 @@ ShellPanel {
 
     function togglePin() {
         const entry = results[selectedIndex]
-        if (entry && entry.appId) LauncherService.togglePin(entry.appId)
+        if (entry && entry.appId) pin(entry.appId)
+    }
+
+    // Pinning one more than the limit is refused (Pinned.toggle), and a
+    // refusal that says nothing reads as a click or a key that does nothing:
+    // the row says why for a moment, as the dock and the start menu say it.
+    property string pinRefusedId: ""
+    Timer { id: pinRefusedTimer; interval: Metrics.osdTimeout; onTriggered: root.pinRefusedId = "" }
+    function pin(appId) {
+        if (!appId) return
+        if (LauncherService.pinRefused(appId)) {
+            pinRefusedId = appId
+            pinRefusedTimer.restart()
+            return
+        }
+        pinRefusedId = ""
+        LauncherService.togglePin(appId)
     }
 
     function cycleMode(step) {
@@ -270,7 +294,7 @@ ShellPanel {
                     // Like the dashboard's and the control center's resets:
                     // the arrangement goes, so it asks twice.
                     confirm: true
-                    confirmText: "Reset"
+                    confirmText: "Reset?"
                     onClicked: LayoutService.launcherReset()
                 }
                 ShellButton {
@@ -697,36 +721,63 @@ ShellPanel {
                     readonly property real pitch: Metrics.rowHeight + spacing
                     readonly property real room: parent.height - Metrics.spaceSm * 2
                     height: Math.max(pitch, Math.floor((room + spacing) / pitch) * pitch) - spacing
-                    model: root.results
+                    model: ScriptModel {
+                        values: root.resultRows.keys
+                        // A view keeps what it shows where it was while rows
+                        // come and go above it, and kept rows are what make
+                        // that happen: after "k" the list stood 400 px down,
+                        // the first result out of sight. Every new list shows
+                        // the selected row, as a list built anew always did.
+                        onValuesChanged: list.revealSelected()
+                    }
                     currentIndex: root.selectedIndex
-                    onCurrentIndexChanged: positionViewAtIndex(currentIndex, ListView.Contain)
+                    // The selected row is brought into view when the selection
+                    // moves and when a new list comes - from here, never from
+                    // the view's own currentIndex, which the view moves itself
+                    // while it takes a new list: positioned then, before it
+                    // has taken the changes, it finds none of its rows and
+                    // lets every one of them go, and the kept rows are built
+                    // again after all.
+                    Connections {
+                        target: root
+                        function onSelectedIndexChanged() { list.revealSelected() }
+                    }
+                    function revealSelected() {
+                        forceLayout()
+                        if (count > 0) positionViewAtIndex(Math.max(0, Math.min(root.selectedIndex, count - 1)), ListView.Contain)
+                    }
                     boundsBehavior: Flickable.StopAtBounds
                     interactive: !root.editing
                     ScrollFeel { view: list }
 
                     delegate: ListRow {
-                        required property var modelData
+                        // The row's key; its result is looked up by it, so a
+                        // kept row shows what the key holds now.
+                        required property string modelData
                         required property int index
+                        readonly property var entry: root.resultRows.byKey[modelData] || ({})
+                        readonly property bool refused: root.pinRefusedId.length > 0 && entry.appId === root.pinRefusedId
                         level: 1
                         width: list.width
                         // The row height, no more: a list of forty-eight-pixel
                         // rows reads as a list, and the four pixels on top of
                         // each were a quarter of a row lost over eight of them.
                         // The calculator's row keeps its room for the big result.
-                        implicitHeight: modelData.kind === "calculator" ? Metrics.rowHeight + Metrics.spaceLg : Metrics.rowHeight
+                        implicitHeight: entry.kind === "calculator" ? Metrics.rowHeight + Metrics.spaceLg : Metrics.rowHeight
                         selected: index === root.selectedIndex
-                        icon: modelData.icon || ""
-                        iconSource: modelData.iconSource || ""
-                        title: modelData.title
-                        subtitle: modelData.subtitle || ""
-                        trailingText: index === root.selectedIndex ? "↵" : ""
+                        icon: entry.icon || ""
+                        iconSource: entry.iconSource || ""
+                        title: entry.title || ""
+                        subtitle: entry.subtitle || ""
+                        trailingText: refused ? "At most " + LauncherService.pinLimit + " pinned apps"
+                            : index === root.selectedIndex ? "↵" : ""
                         onClicked: { root.selectedIndex = index; root.run(false) }
                         // Right-click pins an app, and pins are what the row
                         // above shows. Ctrl+P does the same for whatever is
                         // selected, so it is reachable without the pointer.
-                        onRightClicked: if (modelData.appId) LauncherService.togglePin(modelData.appId)
+                        onRightClicked: if (entry.appId) root.pin(entry.appId)
                         ShellIcon {
-                            visible: modelData.appId !== undefined && LauncherService.isPinned(modelData.appId)
+                            visible: entry.appId !== undefined && LauncherService.isPinned(entry.appId)
                             glyph: Icons.pin
                             size: Metrics.iconXs
                             color: Colors.accentForeground

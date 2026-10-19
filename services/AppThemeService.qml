@@ -65,7 +65,9 @@ Singleton {
         : "No changes were needed."
     readonly property bool statusIsError: realSession && (lastError.length > 0 || (!busy && !state.applied && lastPlan.error.length > 0))
 
-    SystemClock { id: clock; precision: SystemClock.Hours }
+    // Re-armed when the wall clock jumps: after a night in suspend "auto"
+    // stayed dark past seven until the hour came round on its slept timer.
+    SystemClock { id: clock; precision: SystemClock.Hours; enabled: WallClock.ticking }
 
     onEnabledChanged: schedule()
     onAccentEnabledChanged: schedule()

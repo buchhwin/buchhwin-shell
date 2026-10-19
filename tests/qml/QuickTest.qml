@@ -115,6 +115,53 @@ ShellRoot {
         T.eq(types(L.addQuickTile(fresh, "not a widget", knows)), types(fresh), "as is one it does not know")
         T.eq(types(L.addQuickTile(withWidget, "cpu", knows)), types(withWidget), "and never twice")
 
+        // ---- what the tiles ask of the services ------------------------------
+        T.eq(Q.watches(["wifi", "phone"], true), { phone: true, fingerprint: false },
+             "the phone tile has KDE Connect polled, and no reader is asked without its tile")
+        T.eq(Q.watches(["fingerprint"], true), { phone: false, fingerprint: true }, "the fingerprint tile has the reader read")
+        T.eq(Q.watches(["phone", "fingerprint"], false), { phone: false, fingerprint: false },
+             "nothing while the overview is not shown")
+        T.eq(Q.watches(undefined, true), { phone: false, fingerprint: false }, "no tiles known")
+
+        // ---- what a tile draws at its size -----------------------------------
+        // Rows decide, not the shape's name: one column of three rows is
+        // "small" like one of two, and the brightness and battery tiles drew
+        // their one-line form in it with 80 px of empty card around it.
+        T.eq(Q.sliderCompact(3), false, "a slider tile of three rows has its title line")
+        T.eq(Q.sliderCompact(2), true, "two rows hold one line: the slider comes up beside the glyph")
+        T.eq(Q.sliderCompact(1), true, "and so does one")
+        T.eq(Q.sliderCompact(5), false, "a tall tile is never compact")
+        T.eq(Q.sliderCompact(undefined), true, "an unknown height is the smallest")
+        T.eq([Q.size("brightness").h, Q.size("battery").h].map(Q.sliderCompact), [false, false],
+             "where both start, they show their titles")
+        T.eq(Q.audioParts("small", 3), { tabs: false, device: true }, "a one-column audio tile of three rows has its device")
+        T.eq(Q.audioParts("small", 2), { tabs: false, device: false }, "two rows: the volume and the way to the page")
+        T.eq(Q.audioParts("wide", 2), { tabs: false, device: false }, "wide and short: the same")
+        T.eq(Q.audioParts("tall", 5), { tabs: true, device: true }, "tall: tabs, device and volume")
+        T.eq(Q.audioParts("large", 3), { tabs: true, device: true }, "large: the same")
+
+        // ---- the header's way to Settings and Escape --------------------------
+        T.eq(["network", "bluetooth", "audio", "power", "dnd", "drives", "tray"].map(Q.settingsPage),
+             ["network", "bluetooth", "audio", "power", "notifications", "desktop", "autostart"],
+             "each detail page has the Settings page that belongs to it")
+        T.eq(Q.settingsPage(""), "", "the overview leaves Settings where it was")
+        T.eq(Q.settingsPage("constructor"), "", "an unknown page too, inherited names included")
+        T.eq(Q.pageAfterEscape("network"), "", "Escape on a detail page goes back to the overview")
+        T.eq(Q.pageAfterEscape(""), null, "and on the overview it is not the page's to take")
+
+        // ---- chips sharing a row -----------------------------------------------
+        // The control center's four at its default width: Power, Dark mode,
+        // Displays and Focus need 160, 137, 160 and 106 of 600 px.
+        T.eq(Q.chipWidths([160, 137, 160, 106], 600, 8), [160, 137, 160, 119],
+             "the narrowest is raised first, nobody gets less than it needs")
+        T.eq(Q.chipWidths([160, 137, 160, 106], 840, 8), [204, 204, 204, 204], "with room, one width for all")
+        T.eq(Q.chipWidths([160, 137, 160, 106], 400, 8), [160, 137, 160, 106],
+             "a row too short keeps the needs, and the layout shrinks them")
+        T.eq(Q.chipWidths([100, 100], 208, 8), [100, 100], "exactly enough room")
+        T.eq(Q.chipWidths([], 600, 8), [], "no chips")
+        const shared = Q.chipWidths([160, 137, 160, 106], 600, 8)
+        T.eq(shared.reduce((sum, value) => sum + value, 0) + 3 * 8, 600, "the shares fill the row")
+
         T.finish("QuickTest")
     }
 }

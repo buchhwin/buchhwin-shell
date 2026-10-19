@@ -1,6 +1,7 @@
 import Quickshell
 import QtQuick
 import qs.theme
+import qs.services
 import qs.shell.components
 import "Harness.js" as T
 import "../../shell/settings/pages"
@@ -9,15 +10,24 @@ import "../../services/settings/SwatchLogic.js" as S
 import "../../services/appearance/PanelStyleLogic.js" as P
 
 // Settings fields and swatches, without a window: when a page is let go and
-// which fields hold a draft (ui-b#16), what a field for a stored value does as
-// the focus leaves it and as the page takes or refuses a value (ui-b#8,
-// ui-b#11), and the colour swatches as controls a keyboard and a screen reader
-// can use (ui-b#13, design#2).
+// which fields hold a draft, what a field for a stored value does as the focus
+// leaves it and as the page takes or refuses a value, and the colour swatches
+// as controls a keyboard and a screen reader can use.
 ShellRoot {
     id: root
     property var stored: ({ value: "https://example.org/?q=%s" })
     property var commits: []
     property int picked: 0
+
+    // The first item under `item` that `pred` takes, or null.
+    function find(item, pred) {
+        if (pred(item)) return item
+        for (const child of item.children) {
+            const found = root.find(child, pred)
+            if (found) return found
+        }
+        return null
+    }
 
     Item {
         id: host
@@ -38,6 +48,9 @@ ShellRoot {
                     root.stored = { value: value.trim() }
                 }
             }
+            // Settings > Launcher itself, for its custom search address: only
+            // an address the launcher can search with is stored.
+            LauncherPage { id: launcherPage; width: 600 }
             ColorSwatch {
                 id: swatch
                 fill: "#4f8ff7"
@@ -99,7 +112,27 @@ ShellRoot {
         T.eq(field.text, "https://third.example/?q=%s", "a change from elsewhere shows while nobody types in it")
         T.eq(F.holdsDraft(field), false, "the stored value in the field keeps no page")
 
-        // The login screen's accent (ui-b#11): the field stores only what
+        // The custom search address on the Launcher page: one without %s,
+        // left with Tab, is not stored over the working one; it stays as a
+        // draft until fixed.
+        const searchField = root.find(launcherPage, item => item.storedText !== undefined
+            && item.placeholder === "https://example.org/search?q=%s")
+        T.ok(searchField !== null, "the Launcher page has its address field")
+        SettingsService.set("launcher.searchUrl", "https://example.org/?q=%s")
+        if (searchField) {
+            T.eq(searchField.text, "https://example.org/?q=%s", "it shows the stored address")
+            searchField.text = "https://example.org/search"
+            searchField.edited = true
+            searchField.leave()
+            T.eq([SettingsService.value("launcher.searchUrl"), searchField.text, F.holdsDraft(searchField)],
+                 ["https://example.org/?q=%s", "https://example.org/search", true], "an unusable address is kept as a draft, not stored")
+            searchField.text = "https://example.org/search?q=%s"
+            searchField.settle(searchField.text)
+            T.eq([SettingsService.value("launcher.searchUrl"), F.holdsDraft(searchField)],
+                 ["https://example.org/search?q=%s", false], "a usable one is stored")
+        }
+
+        // The login screen's accent: the field stores only what
         // install/sddm-theme.sh copies, ^#[0-9a-fA-F]{6}$, and refuses the rest.
         const installerTakes = text => /^#[0-9a-fA-F]{6}$/.test(text)
         T.eq([P.normalizeHex("#4f8"), P.normalizeHex(" 4F8FF7 ")], ["#44ff88", "#4f8ff7"], "a short or bare hex is written out")

@@ -5,6 +5,7 @@ import Quickshell.Wayland
 import QtQuick
 import "power/DimLogic.js" as DimLogic
 import "lock/LockLogic.js" as LockLogic
+import "display/DisplayLogic.js" as DisplayLogic
 
 // Idle and lid behaviour for the buchhwin-shell session: screen off, lock and
 // suspend after inactivity (Wayland idle-notify, respecting apps that inhibit
@@ -87,19 +88,61 @@ Singleton {
     // lid closed at 15:46:52.8, opened 0.3 s later, and the machine slept with
     // the lid open - where opening it cannot wake it, so it looked dead until
     // it was switched off. The lock and the screen still act at once.
+    //
+    // At a desk the action does not suspend and the panel always goes off
+    // (DisplayLogic.lidClose has the why). The delay asks again before it
+    // suspends: a dock plugged in within it keeps the laptop awake.
+    property bool lidShut: false
+    // Another screen on beside the laptop panel.
+    readonly property bool docked: DisplayLogic.lidPlan(DisplayService.monitors, DisplayService.internalName) === "disable"
+    function lidSteps() {
+        return DisplayLogic.lidClose(lidAction, DisplayService.monitors, DisplayService.internalName)
+    }
     function lidClosed() {
-        if (lidAction === "suspend") lidSuspendDelay.restart()
-        else if (lidAction === "lock") SessionService.run("lock")
-        else if (lidAction === "screenOff") DisplayService.setLidClosed(true)
+        lidShut = true
+        const steps = lidSteps()
+        if (steps.panel) DisplayService.setLidClosed(true)
+        if (steps.lock) SessionService.run("lock")
+        if (steps.suspend) {
+            lidSuspendDelay.interval = 2000
+            lidSuspendDelay.restart()
+        }
     }
     function lidOpened() {
+        lidShut = false
         lidSuspendDelay.stop()
         DisplayService.setLidClosed(false)
+    }
+    // Docked or undocked with the lid shut, which is what logind did while it
+    // still had the lid: plugged in, the panel goes off; unplugged, the lid
+    // action applies as if the lid had just closed - "Sleep" no longer stays
+    // awake in a bag because it was shut at the desk. Not while the screens
+    // are off for idleness: some docks drop their screens then, and that is
+    // not an undock. The longer wait covers a dock that takes a moment to
+    // find its screens again.
+    onDockedChanged: {
+        if (lockProcess || !lidShut) return
+        if (docked) {
+            lidSuspendDelay.stop()
+            DisplayService.setLidClosed(true)
+            return
+        }
+        if (screenOff) return
+        const steps = lidSteps()
+        if (steps.lock) SessionService.run("lock")
+        if (steps.suspend) {
+            lidSuspendDelay.interval = 5000
+            lidSuspendDelay.restart()
+        }
     }
     Timer {
         id: lidSuspendDelay
         interval: 2000
-        onTriggered: if (root.lidAction === "suspend") SessionService.run("suspend")
+        onTriggered: {
+            const steps = root.lidSteps()
+            if (steps.suspend) SessionService.run("suspend")
+            else if (steps.panel) DisplayService.setLidClosed(true)
+        }
     }
 
     // What a lid switch never says: that it was already shut when the session
@@ -126,8 +169,12 @@ Singleton {
             if (!outputDone || exitCode < 0) return
             // Open, or no answer: DisplayService stops holding the laptop
             // panel off for the startup apply (DisplayService.lidKnown).
-            if (LockLogic.parseLidClosed(output, exitCode)) DisplayService.setLidClosed(true)
-            else DisplayService.lidChecked()
+            if (LockLogic.parseLidClosed(output, exitCode)) {
+                root.lidShut = true
+                DisplayService.setLidClosed(true)
+            } else {
+                DisplayService.lidChecked()
+            }
         }
         onStarted: { output = ""; outputDone = false; exitCode = -1 }
         stdout: StdioCollector { onStreamFinished: { lidAtStart.output = text; lidAtStart.outputDone = true; lidAtStart.finish() } }
@@ -154,7 +201,9 @@ Singleton {
                 root.dimEvent("active")
                 return
             }
-            // Re-read the backlight first: amdgpu does not report every change.
+            // Re-read the backlight first: the udev monitor sees a change made
+            // outside the shell only after its debounce, and the dim starts
+            // from the value now.
             BrightnessService.refresh()
             dimDelay.restart()
         }
@@ -170,6 +219,53 @@ Singleton {
         timeout: Math.max(1, root.lockMinutes) * 60
         respectInhibitors: true
         onIsIdleChanged: if (isIdle) SessionService.run("lock")
+    }
+
+    // The screen off soon after locking (Settings > Power, "Screen off when
+    // locked"; 0 is never, the default): with the screen-off time at "Never"
+    // on the charger, a locked laptop kept its panel lit for as long as it was
+    // locked - three hours one afternoon. Counted from the lock, because an
+    // idle monitor starts counting when it is enabled, and this one is
+    // enabled while the lock screen's marker is there (LockScreen writes
+    // `locked` into session-action.sh's directory once the session is locked,
+    // and removes it on unlock).
+    readonly property int lockedScreenOffMinutes: Math.max(0, Number(PowerService.current("lockedScreenOffMinutes")) || 0)
+    readonly property string lockDir: (Quickshell.env("XDG_RUNTIME_DIR") || "") + "/buchhwin-shell/lock"
+        + (Quickshell.env("BUCHHWIN_NESTED") === "1" ? "-nested" : "")
+    property bool lockDirReady: false
+    property bool locked: false
+    property bool lockedOff: false
+    // A FileView does not see a file appear in a directory that does not
+    // exist yet (probed offscreen), and the lock makes its directory only
+    // the first time it runs: made here first, the same way.
+    Process {
+        stderr: ErrorLog { label: "IdleService.lockDir" }
+        running: !root.lockProcess && root.lockedScreenOffMinutes > 0 && !root.lockDirReady
+            && (Quickshell.env("XDG_RUNTIME_DIR") || "").length > 0
+        command: ["install", "-d", "-m", "700", "--", root.lockDir]
+        onExited: code => { if (code === 0) root.lockDirReady = true }
+    }
+    FileView {
+        path: root.lockDirReady && root.lockedScreenOffMinutes > 0 ? root.lockDir + "/locked" : ""
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: root.locked = true
+        onLoadFailed: root.locked = false
+    }
+    IdleMonitor {
+        enabled: !root.lockProcess && !root.stayAwake && root.locked && root.lockedScreenOffMinutes > 0
+        timeout: Math.max(1, root.lockedScreenOffMinutes) * 60
+        respectInhibitors: true
+        onIsIdleChanged: {
+            if (isIdle && !root.screenOff) {
+                root.lockedOff = true
+                root.setScreen(false)
+            } else if (!isIdle && root.lockedOff) {
+                root.lockedOff = false
+                root.setScreen(true)
+            }
+        }
     }
 
     IdleMonitor {
@@ -192,7 +288,12 @@ Singleton {
         id: beforeSleep
         stderr: ErrorLog { label: "IdleService.beforeSleep" }
         running: root.realSession && root.lockBeforeSleep && !root.beforeSleepPaused
-        command: Paths.bound(["swayidle", "-w", "before-sleep", "'" + Paths.script("session-action.sh").replace(/'/g, "'\\''") + "' lock"])
+        // After a resume every SystemClock is re-armed at once (WallClock.qml);
+        // without this line WallClock's own minute check finds the jump
+        // within a minute.
+        command: Paths.bound(["swayidle", "-w", "before-sleep", "'" + Paths.script("session-action.sh").replace(/'/g, "'\\''") + "' lock",
+                              "after-resume", "echo resumed"])
+        stdout: SplitParser { onRead: data => { if (data.trim() === "resumed") WallClock.kick() } }
         onRunningChanged: {
             if (running) { beforeSleepHealthy.restart(); return }
             beforeSleepHealthy.stop()

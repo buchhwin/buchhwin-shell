@@ -21,6 +21,8 @@ ShellPanel {
     property bool toggleEnabled: true
     property string footerText: ""
     property string footerGlyph: Icons.settings
+    // Whether the footer leaves for somewhere else (PopupFooterLink.leaves).
+    property bool footerLeaves: true
     property Component body: null
     signal toggled(bool checked)
     signal footerClicked()
@@ -120,6 +122,7 @@ ShellPanel {
             visible: root.footerText.length > 0
             text: root.footerText
             glyph: root.footerGlyph
+            leaves: root.footerLeaves
             onClicked: root.footerClicked()
         }
     }

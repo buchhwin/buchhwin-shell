@@ -22,7 +22,10 @@ WidgetBase {
     // both.
     iconColor: PowerService.charging ? root.successInk
         : PowerService.low ? root.dangerInk : root.glyphInk
-    label: PowerService.percent + "%"
+    // No battery, no figure: a desktop's power glyph read "0%" (the display
+    // device's level is 0 when it is not a laptop battery). The glyph stays,
+    // and the detail still says what the power is doing.
+    label: PowerService.hasBattery ? PowerService.percent + "%" : ""
     name: PowerService.hasBattery ? "Battery" : "Power"
     meter: PowerService.hasBattery ? PowerService.percent / 100 : -1
     // The plain level is the accent as a fill, which a charging level in

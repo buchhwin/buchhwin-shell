@@ -60,6 +60,17 @@ function looksLikeAddress(text) {
     return ADDRESS.test(value)
 }
 
+// An address beyond doubt: with its scheme, a port or a path. A bare host
+// ("example.org", but also "readme.md" or "photo.jpg") may be a file or an
+// app's name typed in full, so the launcher offers it after the best app
+// (ResultsLogic.appsMode) rather than before everything.
+function addressLeads(text) {
+    const value = String(text || "").trim()
+    if (!looksLikeAddress(value)) return false
+    if (SCHEME.test(value)) return true
+    return /^[^/:]+(:\d+|\/)/.test(value)
+}
+
 // The address to open for something that looks like one.
 function addressUrl(text) {
     const value = String(text || "").trim()

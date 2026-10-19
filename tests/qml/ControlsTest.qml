@@ -11,7 +11,8 @@ import "Harness.js" as T
 // outline, and the disabled look of the chip, the segments, the select and
 // the field - dimmed, and then nothing answers. Then the segments that draw
 // only a glyph: their label is their name and their tooltip. Then the
-// slider's keys (a whole gesture, `moved` and `released`) and its fill from a
+// slider's keys (a whole gesture, `moved` and `released`), its wheel (a step
+// per notch, a swipe left to the page unless Ctrl is held) and its fill from a
 // middle, Escape in a field (back to what it had, not empty), and the inks of
 // a selected row. Where the focus goes as a select opens and closes needs a
 // window, which these tests do not open; one small window lays out the
@@ -106,6 +107,7 @@ ShellRoot {
 
     // The layout editor's toolbar: both controls at their own width.
     FloatingWindow {
+        id: toolbarWindow
         visible: true
         implicitWidth: 720
         implicitHeight: 120
@@ -129,10 +131,16 @@ ShellRoot {
             y: Metrics.controlHeightLg * 2
             ShellTextField { id: secret; width: 300; echoMode: TextInput.Password; onAccepted: {} }
             ShellButton { id: elsewhere; text: "Elsewhere"; focusOnTab: true }
+            // Three options: no filter, so the list is walked from the header.
+            ShellSelect {
+                id: plain
+                width: 160
+                options: [{ value: "a", label: "Alpha" }, { value: "b", label: "Beta" }, { value: "c", label: "Gamma" }]
+                current: "a"
+            }
         }
-        // A link that goes somewhere carries its chevron after the words
-        // (round 12, D13 a), and an accent button that cannot act drops the
-        // accent (D14).
+        // A link that goes somewhere carries its chevron after the words,
+        // and an accent button that cannot act drops the accent.
         Row {
             y: Metrics.controlHeightLg * 3
             ShellButton { id: forwardLink; text: "All apps"; trailingIcon: Icons.forward; variant: "ghost" }
@@ -164,6 +172,29 @@ ShellRoot {
             secret.text = ""
             T.eq(secret.revert(), false, "and nothing can put it back once the dialog has emptied the field")
 
+            // ---- the focus ring: built while it is shown -------------------
+            elsewhere.forceActiveFocus()
+            const ringOf = control => root.find(control, child => child.controlRadius !== undefined && child.inset !== undefined)
+            const outlinesOf = ring => root.find(ring, child => child instanceof Loader)
+            T.ok(ringOf(elsewhere).active && outlinesOf(ringOf(elsewhere)).item !== null, "the focused button's ring is drawn")
+            T.ok(!ringOf(forwardLink).active && outlinesOf(ringOf(forwardLink)).item === null,
+                 "a button without the focus has no outlines built at all")
+
+            // ---- select: a click hands the header the keys ---------------
+            plain.openList(false)
+            const plainHeader = root.find(plain, child => child instanceof Rectangle && child.parent === plain && child.down !== undefined)
+            T.eq([plain.expanded, plainHeader.activeFocus, plain.quietHeader], [true, true, true],
+                 "a click on a list without a filter gives its header the focus, quietly")
+            const plainRing = root.find(plainHeader, child => child.controlRadius !== undefined)
+            T.eq(plainRing.active, false, "with no ring: the open list marks the control")
+            plainHeader.Keys.escapePressed(null)
+            T.eq([plain.expanded, elsewhere.activeFocus], [false, true],
+                 "so Escape closes the list (not the panel) and hands the focus back")
+            plain.focusInput(Qt.TabFocusReason)
+            plain.openList(false)
+            T.eq([plain.quietHeader, plainRing.active], [false, true], "a header the keyboard already had keeps its ring")
+            plain.closeList()
+
             // ---- button: a trailing glyph, an accent that is off ----------
             const words = root.textItem(forwardLink, "All apps")
             const chevron = root.find(forwardLink, child => child.glyph === Icons.forward)
@@ -177,8 +208,15 @@ ShellRoot {
             T.ok(Qt.colorEqual(offAccent.color, Colors.surface2), "an accent button that cannot act is a grey disc, not a faded accent")
             T.ok(Qt.colorEqual(offAccent.foreground, Colors.mutedText), "with the muted ink")
             T.ok(offAccent.opacity < 1, "and dimmed like every disabled button")
-            T.ok(Qt.colorEqual(onAccent.color, Colors.accent) && Qt.colorEqual(onAccent.foreground, Colors.accentText),
-                 "one that can act keeps the accent")
+            T.ok(Qt.colorEqual(onAccent.color, Colors.accentFill) && Qt.colorEqual(onAccent.foreground, Colors.accentFillText),
+                 "one that can act keeps the accent, as a fill with its words")
+
+            // Last, as it takes the window away: an open list goes with its
+            // window, as a panel's does when the panel closes.
+            plain.openList(false)
+            T.eq(plain.expanded, true, "a list open in a window")
+            toolbarWindow.visible = false
+            T.eq(plain.expanded, false, "goes with the window")
             T.finish("ControlsTest")
         }
     }
@@ -287,17 +325,39 @@ ShellRoot {
         T.eq(root.slid.length, 6, "a disabled slider moves nothing")
         level.enabledState = true
         level.value = 0.5
-        T.eq([level.wheelTarget(120), level.wheelTarget(-120)], [0.55, 0.45], "a wheel step is a twentieth either way")
-        T.ok(isNaN(level.wheelTarget(0)), "an event that turned nothing (a swipe's start or end) is no step")
+        T.eq([level.wheelTarget(1), level.wheelTarget(-1)], [0.55, 0.45], "a wheel step is a twentieth either way")
+        T.ok(isNaN(level.wheelTarget(0)), "no step is no target")
         level.value = 1
-        T.eq(level.wheelTarget(120), 1, "and none past the end")
+        T.eq(level.wheelTarget(1), 1, "and none past the end")
         level.value = 0.5
+        // The wheel itself, with plain events (WheelLogic has the rules and
+        // their test). There is no window to give the slider the focus, so
+        // Ctrl stands in for it.
+        const withCtrl = (phase, angle, pixels) => ({ phase: phase, angleDelta: Qt.point(0, angle),
+                                                     pixelDelta: Qt.point(0, pixels), modifiers: Qt.ControlModifier })
+        root.slid = []
+        const eighths = [0, 1, 2, 3, 4, 5, 6, 7].map(() => level.wheel(withCtrl(Qt.NoScrollPhase, 15, 0)))
+        T.eq(eighths, [true, true, true, true, true, true, true, true], "a fine wheel's eighths are the slider's")
+        T.eq(root.slid, ["moved 0.55", "released 0.55"], "and eight of them are one step, not eight")
+        root.slid = []
+        T.eq(level.wheel({ phase: Qt.ScrollUpdate, angleDelta: Qt.point(0, -100), pixelDelta: Qt.point(0, -8), modifiers: 0 }),
+             false, "a swipe without Ctrl goes on to the page")
+        T.eq(level.wheel(withCtrl(Qt.ScrollBegin, 0, 0)), false, "a swipe's begin always goes on")
+        T.eq(level.wheel(withCtrl(Qt.ScrollUpdate, -480, -40)), true, "a swipe under Ctrl is the slider's")
+        T.eq(root.slid, ["moved 0.45", "released 0.45"], "one step for 40 px of travel")
+        level.wheelCarry = null
         const fillOf = slider => root.find(slider, child => child instanceof Rectangle && child.parent !== slider)
         const levelTrack = fillOf(level).parent
         T.eq([fillOf(level).x, fillOf(level).width], [0, levelTrack.width * 0.5], "a level fills from the left end")
         const speedTrack = fillOf(speed).parent
         T.eq([fillOf(speed).x, fillOf(speed).width], [speedTrack.width * 0.5, speedTrack.width * 0.25],
              "a value with a middle fills from the middle to the knob")
+        // A track's position creeps on a second at a time: no spring for it.
+        level.glide = false
+        level.value = 0.52
+        T.near(level.shownRatio, 0.52, "without the glide a new value is drawn at once")
+        level.value = 0.5
+        level.glide = true
         T.ok(Qt.colorEqual(fillOf(level).color, Colors.accentFill), "the fill is the accent made for fills")
 
         // ---- field: Escape ----------------------------------------------

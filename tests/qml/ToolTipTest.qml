@@ -31,6 +31,7 @@ ShellRoot {
                 // account. It is not a button and never acts.
                 InfoTip { id: mark; x: 200; y: 60; text: "What this setting does" }
                 InfoTip { id: unmarked; x: 240; y: 60; text: "" }
+                InfoTip { id: other; x: 280; y: 60; text: "Another setting" }
             }
         }
         ToolTipLayer { id: layer }
@@ -39,6 +40,55 @@ ShellRoot {
     // An item with no layer anywhere above it, the way a window that has not
     // got one yet looks: asking must be harmless, not an error.
     ShellButton { id: orphan; icon: "x"; toolTip: "Nobody draws me" }
+
+    // A panel's window as ShellPanel builds it: the surface is the card and a
+    // little room (300 x 200 here), the layer the whole screen, moved by the
+    // surface's offset. A bubble kept inside the screen ran past the
+    // surface's edge and was cut off.
+    FloatingWindow {
+        visible: true
+        implicitWidth: 300
+        implicitHeight: 200
+        Item {
+            id: stage
+            x: -500
+            y: -300
+            width: 1920
+            height: 1200
+            readonly property Item toolTipLayer: shifted
+            ShellButton { id: nearRight; x: 760; y: 330; icon: "x"; toolTip: "Dismiss all from this app, every one of them" }
+            ShellButton { id: nearBottom; x: 600; y: 460; icon: "x"; toolTip: "Near the surface's bottom" }
+            ToolTipLayer { id: shifted }
+        }
+    }
+    Timer {
+        id: windowed
+        interval: 200
+        onTriggered: {
+            // ---- on the way out --------------------------------------------
+            // A bubble fades where it was, saying what it said: it used to
+            // jump to the window's corner as an empty plate for the whole fade.
+            T.eq(layer.bubbleOpacity, 1, "the bubble is all there")
+            const before = [layer.bubbleX, layer.bubbleY, layer.bubbleWidth]
+            button.hideTip()
+            T.eq([layer.label, layer.target], ["", null], "hidden, the layer holds nobody")
+            T.ok(layer.visible, "while the bubble fades")
+            T.eq([layer.bubbleX, layer.bubbleY, layer.bubbleWidth], before, "where it was, as wide as it was")
+            T.eq(layer.shownLabel, "Explain me", "with its words")
+
+            nearRight.showTip()
+            T.ok(shifted.shownBounds.x === 500 && shifted.shownBounds.width === 300,
+                 "the layer knows what part of it the window shows: " + JSON.stringify(shifted.shownBounds))
+            T.ok(shifted.bubbleX + shifted.bubbleWidth <= 800 - 4 + 0.5,
+                 "a bubble near the surface's right edge stays inside it: " + (shifted.bubbleX + shifted.bubbleWidth))
+            T.ok(shifted.bubbleX >= 504, "and inside its left edge")
+            nearRight.hideTip()
+            nearBottom.showTip()
+            T.eq(shifted.above, true, "a control near the surface's bottom is explained from above, not past it")
+            nearBottom.hideTip()
+            T.finish("ToolTipTest")
+        }
+    }
 
     Component.onCompleted: {
         T.eq(button.tipLayer(), layer, "a control finds the layer through every level above it")
@@ -109,6 +159,26 @@ ShellRoot {
         T.eq([layer.label, mark.visible], ["", false], "losing its hint takes the bubble with it")
         mark.text = "What this setting does"
 
-        T.finish("ToolTipTest")
+        // ---- the wait --------------------------------------------------------
+        // One timer for the window, not one per control: the control under
+        // the pointer starts it, every way out stops it, and only for itself.
+        mark.arm()
+        T.ok(layer.pending !== null, "the pointer arriving starts the layer's wait")
+        mark.hide()
+        T.eq(layer.pending, null, "and leaving stops it")
+        mark.arm()
+        const waiting = layer.pending
+        other.arm()
+        T.ok(layer.pending !== waiting && layer.pending !== null, "the next control under the pointer takes the wait over")
+        mark.hide()
+        T.ok(layer.pending !== null, "and the one the pointer left cannot stop it")
+        other.hide()
+        T.eq(layer.pending, null, "its own control can")
+        silent.showTip()
+        T.eq(layer.pending, null, "a control with nothing to say waits for nothing")
+
+        // Shown now and taken away once it is all there (the timer below).
+        button.showTip()
+        windowed.start()
     }
 }

@@ -2,9 +2,11 @@ import Quickshell
 import Quickshell.Io
 import QtQuick
 import qs.services
+import qs.theme
 import "Harness.js" as T
 import "../../services/LayoutLogic.js" as L
 import "../../services/profile/ProfileLogic.js" as P
+import "../../services/arrange/ArrangeLogic.js" as Arrange
 
 // The profiles the repository ships (config/builtin-profiles/<id>). First the
 // pure half: always added and only once, never over a profile of the user's
@@ -27,6 +29,25 @@ ShellRoot {
         id: shippedFile
         path: Qt.resolvedUrl("../../config/builtin-profiles/buchhwin/profile.json").toString().replace("file://", "")
         blockLoading: true
+    }
+    FileView {
+        id: shippedDefaultFile
+        path: Qt.resolvedUrl("../../config/builtin-profiles/default/profile.json").toString().replace("file://", "")
+        blockLoading: true
+    }
+
+    // The panel's own lines around its cards: the header (as measured, its
+    // title row), the padding above and below, the gap under the header and
+    // the space the scroll list keeps (DashboardPanel's ScrollList).
+    readonly property int dashboardChrome: 41 + Metrics.panelPadding * 2 + Metrics.panelGap + Metrics.spaceLg
+
+    // How tall a mode's dashboard grid is at the width the profile ships.
+    function dashboardGridHeight(mode, storedWidth) {
+        const width = (storedWidth > 0 ? storedWidth : Metrics.dashboardWidth) - Metrics.panelPadding * 2
+        const columns = Arrange.columnsFor(width, Metrics.dashboardGridCell, Metrics.dashboardGridColumns)
+        const cells = ((mode.dashboard || {}).dashboard || []).map(group => ({ id: group.id, w: group.items[0].w, h: group.items[0].h }))
+        const rows = Arrange.gridRows(cells, columns)
+        return rows > 0 ? rows * Metrics.dashboardGridUnit + (rows - 1) * Metrics.cardGridGap : 0
     }
     // The body the shipped profile's notch should have: Island's, which the
     // profile's notch is.
@@ -78,12 +99,40 @@ ShellRoot {
              "its notch has the Island preset's body, so applying Island changes nothing about it")
         T.eq(raw.settings.wallpaper.path, "", "no wallpaper path of the machine it was exported on")
         // Minimal mode's dashboard: two columns of equal height, so the Today
-        // card under the weather is not cut off (round 12, D8).
+        // card under the weather is not cut off.
         const heightOf = type => raw.modes.minimal.dashboard.dashboard
             .map(group => group.items[0]).find(item => item.type === type).h
         T.eq([heightOf("weather"), heightOf("clock") + heightOf("calendar")], [4, heightOf("weather") + heightOf("events")],
              "minimal mode's dashboard columns are balanced: weather 4, clock + calendar = weather + events")
-        // Each mode a surface of its own (round 13: the four were the same
+
+        // ---- both shipped profiles --------------------------------------------
+        const rawDefault = JSON.parse(shippedDefaultFile.text())
+        for (const profile of [raw, rawDefault]) {
+            const desktop = profile.settings.desktop
+            // A stored height is a ceiling the cards scroll under. Shipped
+            // below what its cards need, the dashboard opened scrolling, with
+            // the Today card cut through its first row; 0 lets the card
+            // measure what it carries.
+            const tallest = Math.max(...Object.keys(profile.modes).map(name =>
+                root.dashboardGridHeight(profile.modes[name], desktop.dashboardWidth)))
+            T.ok(desktop.dashboardHeight === 0 || desktop.dashboardHeight >= tallest + root.dashboardChrome,
+                 profile.id + "'s dashboard fits its cards (stored " + desktop.dashboardHeight + ", cards "
+                 + tallest + " + " + root.dashboardChrome + ")")
+            T.eq(profile.settings.appearance.accentFromWallpaper, false,
+                 profile.id + ": the accent as measured, not one from a wallpaper another machine does not have")
+        }
+        T.eq(rawDefault.settings.desktop.launcherWidth, 0,
+             "Default's launcher opens at its designed width, where its mode names and categories fit")
+        // One order for the status readouts wherever a bar carries them: the
+        // battery at the outer end, where its percent is.
+        for (const name of ["work", "laptop", "docked"]) {
+            const status = shipped.modes[name].bar.right.map(pill => pill.items.map(item => item.type))
+                .find(types => types.indexOf("battery") >= 0)
+            T.eq(status, ["network", "volume", "battery"], name + "'s bar: network, volume, battery")
+        }
+        T.eq(shipped.modes.laptop.bar.right[shipped.modes.laptop.bar.right.length - 1].items.map(item => item.type),
+             ["notificationIndicator", "quickPanel"], "laptop's bar shows unread notifications beside the control center")
+        // Each mode a surface of its own (the four were once the same
         // placeholder, the widgets and the default bar), minimal as it was.
         T.eq(["minimal", "work", "gaming", "laptop", "docked"].map(name => shipped.modes[name].desktopMode),
              ["notch", "pills", "notch", "pills", "pills"], "minimal and gaming the notch, work, laptop and docked a bar")

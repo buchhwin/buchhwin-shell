@@ -51,10 +51,13 @@ GridLayout {
 
     // The pills, each keyed by all of itself and the options it is drawn
     // with, handed back as the very same objects while nothing changed
-    // (KeyedLogic, pitfall 76) - PillBar's way.
+    // (KeyedLogic, pitfall 76) - PillBar's way. And the list itself when not
+    // one of them changed (DockLogic.sameObjects): the model is then not
+    // handed anything new.
     property var store: ({ list: [] })
     function kept(next) {
         const list = Keyed.keep(store.list, next, "pillKey")
+        if (Logic.sameObjects(store.list, list)) return store.list
         store.list = list
         return list
     }

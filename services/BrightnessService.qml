@@ -15,6 +15,9 @@ Singleton {
     property real quietUntil: 0
     readonly property bool available: device.length > 0 && maximum > 0
     readonly property real value: available ? current / maximum : 0
+    // A nested session's shell sees the host's backlight and never writes
+    // it: `brightness preview` (shell.qml) shows the OSD there instead.
+    readonly property bool writable: Quickshell.env("BUCHHWIN_NESTED") !== "1"
 
     function refresh() {
         if (!device.length) return
@@ -23,7 +26,7 @@ Singleton {
     }
 
     function set(ratio) {
-        if (!available) return
+        if (!available || !writable) return
         pending = Math.max(0.01, Math.min(1, ratio))
         current = Math.round(pending * maximum)
         debounce.restart()
@@ -32,7 +35,7 @@ Singleton {
     // Exact raw value, written at once (the idle dim stage restores the
     // previous brightness unchanged). `quiet` hides the OSD.
     function setRaw(raw, quiet) {
-        if (!available) return
+        if (!available || !writable) return
         const target = Math.max(1, Math.min(maximum, Math.round(raw)))
         if (quiet) quietUntil = Date.now() + 1500
         debounce.stop()
@@ -55,6 +58,7 @@ Singleton {
     // is theirs.
     property int queuedSteps: 0
     function step(direction) {
+        if (!writable) return
         queuedSteps += direction > 0 ? 1 : -1
         if (!stepProc.running) sendSteps()
     }

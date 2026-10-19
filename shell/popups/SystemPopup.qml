@@ -20,8 +20,9 @@ PopupPanel {
     body: ColumnLayout {
         id: stats
         spacing: Metrics.pageGap
-        // How many CPUs top's per-process figures are shares of, from the
-        // CPU meter's own read of /proc/stat (SystemLogic.cpuTimes).
+        // How many CPUs the per-process figures are shares of (each is a
+        // share of one CPU, as top gives it), from the CPU meter's own read
+        // of /proc/stat (SystemLogic.cpuTimes).
         readonly property int cpus: SystemStatsService.lastCpu ? SystemStatsService.lastCpu.cpus || 1 : 1
         Component.onCompleted: { SystemStatsService.track(); SystemStatsService.trackProcesses() }
         Component.onDestruction: { SystemStatsService.untrack(); SystemStatsService.untrackProcesses() }
@@ -64,7 +65,7 @@ PopupPanel {
                         Layout.minimumWidth: Metrics.statColumnWidth
                         horizontalAlignment: Text.AlignRight
                         // The whole machine's share, as the CPU meter above
-                        // gives it: top's own figure is per CPU, so one busy
+                        // gives it: the process figure is per CPU, so one busy
                         // process read 54.8 % beside "CPU 5 %".
                         text: Logic.processShare(modelData.cpu, stats.cpus).toFixed(1) + "%"
                         role: "small"; muted: true

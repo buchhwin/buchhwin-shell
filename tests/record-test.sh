@@ -48,5 +48,18 @@ record
 sleep 0.5
 check '! grep -q notify-send "$calls"' "without --notify (a nested session) nothing is sent"
 
+# The recorder runs with the session's environment, not the shell's own
+# settings (pitfall 85): what start-shell.sh recorded as the shell's goes, and
+# the session's platform theme comes back - as launch-app.sh does for apps.
+rm -f "$sb/out/env.mp4"
+env -u QT_QPA_PLATFORMTHEME MALLOC_ARENA_MAX=2 BUCHHWIN_APP_ENV_UNSET=MALLOC_ARENA_MAX BUCHHWIN_APP_QPA_THEME=kde \
+  "$project_dir/scripts/record.sh" --state "$sb/state/recording.json" start --file "$sb/out/env.mp4" \
+  --mode screen --backend wf-recorder -- \
+  sh -c 'printf "%s|%s|%s" "${MALLOC_ARENA_MAX-unset}" "${QT_QPA_PLATFORMTHEME-unset}" "${BUCHHWIN_APP_ENV_UNSET-unset}" > "$1"' \
+  sh "$sb/out/env.mp4" >/dev/null 2>&1
+for _ in {1..50}; do [[ ! -e $sb/state/recording.json ]] && break; sleep 0.1; done
+check '[[ $(cat "$sb/out/env.mp4" 2>/dev/null) == "unset|kde|unset" ]]' \
+  "the recorder gets the session's environment back ($(cat "$sb/out/env.mp4" 2>/dev/null))"
+
 if (( failures )); then printf 'TESTS FAILED record (%d failed)\n' "$failures"; exit 1; fi
 printf 'TESTS PASSED record\n'

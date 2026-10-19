@@ -20,7 +20,17 @@ function focusables(root) {
     const found = []
     function walk(item) {
         if (!item || item.visible === false) return
-        if (item !== root && usable(item)) { found.push(item); return }
+        if (item !== root && usable(item)) {
+            found.push(item)
+            // A row's own controls sit inside the row, which is a stop
+            // itself (ListRow's `trailing`: a Remove beside a device, a
+            // volume's Unmount and Lock): they are stops after it. Anything
+            // else a stop holds is part of it.
+            const trailing = item.trailing
+            if (trailing && trailing.length !== undefined)
+                for (let i = 0; i < trailing.length; ++i) walk(trailing[i])
+            return
+        }
         const kids = item.children || []
         for (let i = 0; i < kids.length; ++i) walk(kids[i])
     }
@@ -72,4 +82,46 @@ function arrowStep(root, current, dx, dy) {
         if (score < bestScore) { best = item; bestScore = score }
     }
     return best
+}
+
+// Brings `item` into view in the lists around it. The walk focuses controls
+// wherever they are, scrolled out of sight or not, and the ring of a card
+// below the fold of the notification center was drawn where nobody could
+// see it. Each Flickable it sits in, from the nearest out, is moved just
+// enough to show it with `air` around it (as far as the list goes); one the
+// item is already shown in stays where it is. Returns how many moved.
+function reveal(item, air) {
+    const pad = Math.max(0, Number(air) || 0)
+    let moved = 0
+    let inner = item
+    for (let node = item ? item.parent : null; node; node = node.parent) {
+        if (node.contentItem === undefined || node.contentY === undefined || node.contentHeight === undefined) continue
+        const at = inner.mapToItem(node.contentItem, 0, 0)
+        if (node.height > 0 && reveals(node, "y", at.y - pad, inner.height + pad * 2)) moved += 1
+        if (node.width > 0 && reveals(node, "x", at.x - pad, inner.width + pad * 2)) moved += 1
+        inner = node
+    }
+    return moved
+}
+
+// One axis of `reveal`: the content position that shows [start, start +
+// size), inside the list's own bounds (its origin and margins, as a
+// ListView keeps them).
+function reveals(view, axis, start, size) {
+    const vertical = axis === "y"
+    const here = vertical ? view.contentY : view.contentX
+    const span = vertical ? view.height : view.width
+    const content = vertical ? view.contentHeight : view.contentWidth
+    if (!(content > span)) return false
+    const low = (vertical ? view.originY - view.topMargin : view.originX - view.leftMargin) || 0
+    const high = Math.max(low, low + (vertical ? view.topMargin + view.bottomMargin : view.leftMargin + view.rightMargin)
+                               + content - span)
+    let to = here
+    if (start < here) to = start
+    else if (start + size > here + span) to = Math.min(start, start + size - span)
+    to = Math.max(low, Math.min(high, to))
+    if (Math.abs(to - here) < 0.5) return false
+    if (vertical) view.contentY = to
+    else view.contentX = to
+    return true
 }

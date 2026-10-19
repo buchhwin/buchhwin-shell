@@ -330,3 +330,131 @@ function parseResult(text) {
     if (!match) return { code: -1, output: value.trim() }
     return { code: parseInt(match[1]), output: value.slice(0, match.index).trim() }
 }
+
+// ---- reading the list ------------------------------------------------------------
+// DrivesService reads the list with the one-shot `drives.py list` whenever a
+// watcher (`udisksctl monitor`, `gio mount -o`) prints a line, 400 ms after
+// the last of a burst. What a read means - the list to show, events for what
+// came and went, an error - is decided here, from the read before it; it used
+// to be decided in a resident python process that held 20 MB for events that
+// come a few times a week. A watcher's line only says "read again", and every
+// read is the whole state, so a line too many costs a read and nothing else.
+var DEBOUNCE_MS = 400
+// After a failed read (udisksd restarting, a call that timed out while a disk
+// hung): the next tries, the last one repeating.
+var RETRY_MS = [2000, 5000, 15000, 30000, 60000]
+
+// What the service starts from. `stale`: the shell has not shown this list
+// (at the start, and after every error). `first`: no read has succeeded yet.
+function emptyReadState() {
+    return { drives: [], phones: [], mtp: true, stale: true, first: true, retries: 0 }
+}
+
+// The answer of one `drives.py list`: its last list or error line, as
+// parseLine reads it. No such line (the helper crashed, no python3) is an
+// error as well.
+function readResult(text) {
+    const lines = String(text || "").split("\n")
+    for (let i = lines.length - 1; i >= 0; --i) {
+        const message = parseLine(lines[i].trim())
+        if (message && (message.kind === "drives" || message.kind === "error")) return message
+    }
+    return { kind: "error", message: "The drive list could not be read." }
+}
+
+// Events between two drive lists: added/removed drives, mounted/unmounted
+// volumes (an unlock is a mount: the volume's mount points appear).
+function diff(before, after) {
+    const events = []
+    const old = Object.create(null)
+    const now = Object.create(null)
+    for (const drive of before || []) old[drive.id] = drive
+    for (const drive of after || []) now[drive.id] = drive
+    for (const id in now) if (!(id in old)) events.push({ kind: "added", id: id })
+    for (const id in old) if (!(id in now)) events.push({ kind: "removed", id: id })
+    for (const id in now) {
+        const previous = Object.create(null)
+        for (const volume of (old[id] || { volumes: [] }).volumes) previous[volume.id] = volume
+        for (const volume of now[id].volumes) {
+            const was = !!previous[volume.id] && previous[volume.id].mountPoints.length > 0
+            const is = volume.mountPoints.length > 0
+            if (is && !was) events.push({ kind: "mounted", id: volume.id, drive: id })
+            else if (was && !is) events.push({ kind: "unmounted", id: volume.id, drive: id })
+        }
+    }
+    return events
+}
+
+// Events between two phone lists.
+function diffPhones(before, after) {
+    const events = []
+    const old = Object.create(null)
+    const now = Object.create(null)
+    for (const phone of before || []) old[phone.id] = phone
+    for (const phone of after || []) now[phone.id] = phone
+    for (const id in now) if (!(id in old)) events.push({ kind: "phoneAdded", id: id })
+    for (const id in old) if (!(id in now)) events.push({ kind: "phoneRemoved", id: id })
+    for (const id in now) {
+        if (!(id in old) || old[id].mounted === now[id].mounted) continue
+        events.push({ kind: now[id].mounted ? "phoneMounted" : "phoneUnmounted", id: id })
+    }
+    return events
+}
+
+// One read, given the state of the reads before it → { state, say, events }:
+// say "error" when it failed, "drives" when the shell has to show the list,
+// "" when nothing changed. The shell shows the drives as unavailable from an
+// error until it is shown the list again, and the list after a failed read
+// is mostly the one from before - unchanged, it used to go unsaid, and
+// "Drives are unavailable" stayed until something was plugged in. What is
+// there at the first read that succeeds was not plugged in just now: no
+// events for it (they would notify and open every drive the session starts
+// with).
+function settle(state, result) {
+    const previous = state || emptyReadState()
+    if (!result || result.kind !== "drives")
+        return { state: Object.assign({}, previous, { stale: true, retries: previous.retries + 1 }), say: "error", events: [] }
+    const events = previous.first ? []
+        : diff(previous.drives, result.drives).concat(diffPhones(previous.phones, result.phones))
+    const changed = events.length > 0 || result.mtp !== previous.mtp
+        || JSON.stringify(result.drives) !== JSON.stringify(previous.drives)
+        || JSON.stringify(result.phones) !== JSON.stringify(previous.phones)
+    return {
+        state: { drives: result.drives, phones: result.phones, mtp: result.mtp, stale: false, first: false, retries: 0 },
+        say: changed || previous.stale ? "drives" : "",
+        events: events
+    }
+}
+
+// Milliseconds until the next try after this many failed reads in a row.
+function retryDelay(retries) {
+    return RETRY_MS[Math.min(Math.max(retries, 1), RETRY_MS.length) - 1]
+}
+
+// A watcher's line that is its banner, not news. The rest - an object added,
+// a property changed, the daemon gone or back - asks for a read.
+function watcherNews(line) {
+    const text = String(line || "")
+    return text.trim().length > 0 && !/^Monitoring /.test(text)
+}
+
+// The pause before a watcher that ended starts again: 5 s, doubling, and -1
+// after the fifth end in a row (one that ran for a minute counts anew).
+function watcherRestartDelay(failures) {
+    if (failures < 1) return 0
+    if (failures > 5) return -1
+    return 5000 * Math.pow(2, failures - 1)
+}
+
+// ---- opening by itself -------------------------------------------------------------
+// What a drive or phone that has just appeared does with Settings > Drives
+// "open automatically": "open"; "wait" while the screen is locked - mounting
+// it then has the kernel read a stick nobody at the screen chose, and the
+// file manager's thumbnailers read its files, behind the lock (GNOME does not
+// automount while locked either) - and it opens once the lock is gone; or
+// "none". `openable`: not every volume of it is locked (a passphrase is
+// needed first, so nothing is opened by itself). The notice shows either way.
+function autoOpenAction(autoOpen, openable, screenLocked) {
+    if (!autoOpen || !openable) return "none"
+    return screenLocked ? "wait" : "open"
+}

@@ -19,6 +19,10 @@ local ipc = "quickshell --path " .. projectPath .. " ipc call "
 -- Monitors ----------------------------------------------------------------
 if nested then
     hl.monitor({ output = "", mode = nestedMode, position = "0x0", scale = nestedScale })
+    -- The headless test output scripts/nested-session.sh creates, by name: a
+    -- rule here survives `hyprctl reload`, the one it sends at runtime does
+    -- not, and the catch-all then put BUCHTEST on 0x0 over the nested window.
+    hl.monitor({ output = "BUCHTEST", mode = nestedMode .. "@60", position = "4000x0", scale = nestedScale })
 else
     hl.monitor({ output = "", mode = "preferred", position = "auto", scale = "auto" })
 end
@@ -29,8 +33,8 @@ hl.on("hyprland.start", function()
         -- start-shell.sh keeps the log in ~/.local/state/buchhwin-shell/.
         hl.exec_cmd(projectPath .. "/scripts/start-shell.sh " .. projectPath)
     else
-        -- session-init.sh imports the environment and restarts the portal, then
-        -- starts the shell through start-shell.sh.
+        -- session-init.sh imports the environment, starts the shell through
+        -- start-shell.sh, then restarts the portal and opens the wallet.
         hl.exec_cmd(projectPath .. "/scripts/session-init.sh " .. projectPath)
     end
 end)
@@ -269,7 +273,7 @@ hl.bind(keyFor("SUPER + E"), exec(fileManager), { description = "File manager" }
 hl.bind(keyFor("SUPER + CTRL + R"), exec(projectPath .. "/scripts/reload-shell.sh"), { description = "Restart buchhwin-shell" })
 hl.bind(keyFor("SUPER + ALT + E"), shell("editor toggle"), { description = "Layout editor" })
 hl.bind(keyFor("SUPER + ALT + D"), shell("desktop cycleMode"), { description = "Desktop mode: widgets, bar, notch" })
-hl.bind(keyFor("SUPER + ALT + P"), shell("mode cycle"), { description = "Mode: minimal, work, gaming, laptop, docked" })
+hl.bind(keyFor("SUPER + ALT + P"), shell("mode cycle"), { description = "Mode: minimal, work, gaming, laptop, desk" })
 hl.bind(keyFor("SUPER + P"), shell("profile toggle"), { description = "Profiles and modes" })
 -- F1, not ?: on a German layout ? is Shift+ss and unreliable as a binding.
 hl.bind(keyFor("SUPER + F1"), shell("shortcuts toggleSheet"), { description = "All keyboard shortcuts" })
@@ -369,13 +373,19 @@ hl.bind(keyFor("SUPER + mouse:273"), hl.dsp.window.resize(), { mouse = true, des
 
 -- Hardware keys talk to the system backends directly; the shell follows the
 -- resulting PipeWire, backlight and MPRIS events.
-hl.bind(keyFor("XF86AudioRaiseVolume"), exec("wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"), { locked = true, repeating = true, description = "Volume up" })
-hl.bind(keyFor("XF86AudioLowerVolume"), exec("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"), { locked = true, repeating = true, description = "Volume down" })
-hl.bind(keyFor("XF86AudioMute"), exec("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"), { locked = true, description = "Mute audio" })
-hl.bind(keyFor("XF86AudioMicMute"), exec("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"), { locked = true, description = "Mute microphone" })
+--
+-- Except the volume keys, which the shell answers in the PipeWire connection
+-- it holds anyway (the same 5 % steps, up to 100 %): a held key repeats about
+-- 25 times a second, and each repeat was a `wpctl` process connecting to
+-- PipeWire. Without a shell they run wpctl, as the conf dialect's do.
+hl.bind(keyFor("XF86AudioRaiseVolume"), shellOr("audio up", exec("wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+")), { locked = true, repeating = true, description = "Volume up" })
+hl.bind(keyFor("XF86AudioLowerVolume"), shellOr("audio down", exec("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-")), { locked = true, repeating = true, description = "Volume down" })
+hl.bind(keyFor("XF86AudioMute"), shellOr("audio mute", exec("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")), { locked = true, description = "Mute audio" })
+hl.bind(keyFor("XF86AudioMicMute"), shellOr("audio micMute", exec("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle")), { locked = true, description = "Mute microphone" })
 -- The backlight keys go through the shell, which runs the same brightnessctl
--- step and then re-reads the backlight for the OSD (amdgpu sends no udev
--- event). As `exec("brightnessctl … && " .. ipc .. "brightness refresh")`
+-- step and then re-reads the backlight at once for the OSD (the udev monitor
+-- sees the change too - amdgpu sends a change uevent per write - but only
+-- after its debounce). As `exec("brightnessctl … && " .. ipc .. "brightness refresh")`
 -- every repeat of a held key - about 25 a second - started sh, brightnessctl
 -- and the Quickshell IPC client. Without a shell the key runs brightnessctl.
 hl.bind(keyFor("XF86MonBrightnessUp"), shellOr("brightness up", exec("brightnessctl -e4 -n2 set 5%+")), { locked = true, repeating = true, description = "Brightness up" })
@@ -403,7 +413,8 @@ hl.layer_rule({ name = "buchhwin-layers", match = { namespace = "^(buchhwin-.*)$
 hl.layer_rule({ name = "buchhwin-session-menu", match = { namespace = "^(buchhwin-powerMenu)$" }, ignore_alpha = 0.5 })
 -- Surfaces that can never show what is behind them, or that are mostly empty:
 -- the wallpaper covers the screen, the notch is opaque black, and the screen
--- corners are four small shapes on a surface the size of the whole display.
+-- corners are two thin strips per screen, empty but for four small shapes
+-- (shell/desktop/ScreenCorners.qml).
 -- Blurring behind them buys nothing and costs a two-pass blur of their area on
 -- every frame.
 --

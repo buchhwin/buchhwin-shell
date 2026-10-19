@@ -37,11 +37,66 @@ ColumnLayout {
     readonly property var missing: LayoutService.tileChoices(
         Quick.missing(LayoutService.quickTypes), LayoutService.quickTypes)
 
-    // Fingerprint tile: reader state (cached) and the lid. KDE Connect is only
-    // polled while this page exists (it unloads with the control center).
+    // The page stays built between opens (ControlCenter.keepOverview), so
+    // what it asks of the services follows the panel, not the page: `live`
+    // while the panel is shown on this page, and only for a tile that is on
+    // it (QuickLogic.watches).
+    readonly property bool live: visible && (panel ? panel.shown : true)
+    readonly property var watched: Quick.watches(LayoutService.quickTypes, live)
+    readonly property bool tracksPhone: watched.phone
+    readonly property bool readsFingerprint: watched.fingerprint
+    property bool phoneTracked: false
+    function syncPhone() {
+        if (tracksPhone === phoneTracked) return
+        phoneTracked = tracksPhone
+        if (phoneTracked) KdeConnectService.track()
+        else KdeConnectService.untrack()
+    }
+    onTracksPhoneChanged: syncPhone()
+    // The reader and the lid; the service keeps its answer for five minutes.
+    onReadsFingerprintChanged: if (readsFingerprint) FingerprintService.peek()
+    // The cells are the shown overview's: closed, or behind a detail page,
+    // there are none to report.
+    onLiveChanged: {
+        settled = false
+        if (live) {
+            reportTimer.restart()
+            settleTimer.restart()
+        } else {
+            settleTimer.stop()
+            LayoutService.reportQuickCells({})
+            releaseFocus()
+        }
+    }
+    // A hidden item keeps the keyboard focus and still takes the keys: the
+    // tile that opened a detail page would go on taking Space behind it and
+    // turn Bluetooth off on a page that does not show it. The card takes the
+    // focus instead; Escape and the arrows still reach the panel from there,
+    // and Tab goes on from the first control.
+    function releaseFocus() {
+        if (!panel || !panel.shown) return
+        for (let item = root.Window.activeFocusItem; item; item = item.parent) {
+            if (item === root) { panel.card.forceActiveFocus(); return }
+        }
+    }
+    // The tiles glide only once the panel is in. ArrangeArea draws its first
+    // placement in place for as long as a panel takes to open - but only
+    // when the area itself appears, and a kept page never disappears: what
+    // changed while the panel was closed (another mode's tiles, another
+    // screen's width) would glide into place on every open instead.
+    property bool settled: false
+    Timer {
+        id: settleTimer
+        interval: Animations.popupOpen
+        onTriggered: root.settled = true
+    }
     Component.onCompleted: {
-        FingerprintService.peek()
-        KdeConnectService.track()
+        syncPhone()
+        if (readsFingerprint) FingerprintService.peek()
+        if (live) {
+            reportTimer.restart()
+            settleTimer.restart()
+        }
     }
     // Reported from the layout's resting cells, not from the items: an item
     // springs to its new place (ArrangeItem) and a report would fire
@@ -60,12 +115,12 @@ ColumnLayout {
     Timer {
         id: reportTimer
         interval: Animations.hover
-        onTriggered: root.reportCells()
+        onTriggered: if (root.live) root.reportCells()
     }
 
     Component.onDestruction: {
         LayoutService.reportQuickCells({})
-        KdeConnectService.untrack()
+        if (phoneTracked) KdeConnectService.untrack()
         LayoutService.quickEditing = false
     }
 
@@ -104,7 +159,7 @@ ColumnLayout {
         maxRows: LayoutService.gridMaxRows
         // While the panel's own corner is being pulled every cell changes in
         // every frame; gliding behind that reads as lag, not as motion.
-        animated: !(root.panel && root.panel.sizing)
+        animated: root.settled && !(root.panel && root.panel.sizing)
         dragLayer: root.panel ? root.panel.overlay : null
         model: LayoutService.quickItems.map(item => ({ id: item.id, w: item.w, h: item.h,
             minW: Quick.minSize(item.type).w, minH: Quick.minSize(item.type).h }))
@@ -171,7 +226,7 @@ ColumnLayout {
                 // It discards an arrangement the user built by hand. One undo
                 // step covers it, but only if they notice in time.
                 confirm: true
-                confirmText: "Reset"
+                confirmText: "Reset?"
                 toolTip: "Back to the default tiles"
                 onClicked: LayoutService.quickReset()
             }
@@ -216,9 +271,10 @@ ColumnLayout {
     }
 
     // One switch for the tunnels: off takes every active one down, on brings
-    // up the first. Without a tunnel it stays, as the way to add one: hidden,
-    // a tile the user placed looked broken, and there was no way to find
-    // where tunnels come from.
+    // up the one used last (NetworkService.preferredVpnUuid, else the first).
+    // Without a tunnel it stays, as the way to add one: hidden, a tile the
+    // user placed looked broken, and there was no way to find where tunnels
+    // come from.
     Component {
         id: vpnTile
         QuickTile {
@@ -227,12 +283,13 @@ ColumnLayout {
             icon: "󰖂"
             title: "VPN"
             subtitle: !NetworkService.vpns.length ? "Add a tunnel"
+                : NetworkService.vpnPendingText.length ? NetworkService.vpnPendingText
                 : NetworkService.activeVpns.length ? NetworkService.activeVpns[0].name : "Off"
             checked: NetworkService.activeVpns.length > 0
             showChevron: true
             onToggled: value => {
                 if (!NetworkService.vpns.length) PanelService.open("settings", { page: "network" })
-                else if (value) NetworkService.setVpn(NetworkService.vpns[0].uuid, true)
+                else if (value) NetworkService.setVpn(NetworkService.preferredVpnUuid, true)
                 else for (const tunnel of NetworkService.activeVpns) NetworkService.setVpn(tunnel.uuid, false)
             }
             onDetailsRequested: root.openPage("network")
@@ -296,8 +353,11 @@ ColumnLayout {
             // line over a slider does not fit in them. So at that size the
             // slider moves up beside the glyph and the title goes: the
             // control is what the tile is for, and it is the last thing that
-            // may be cut.
-            readonly property bool compact: fitClass === "small" || fitClass === "icon"
+            // may be cut. Decided on rows, not on the shape's name: a
+            // one-column cell of three rows is "small" too, and it drew the
+            // one-line form centred in 80 px of empty card although the
+            // title, the slider and Night Light fit (QuickLogic.sliderCompact).
+            readonly property bool compact: Quick.sliderCompact(gridH)
             ColumnLayout {
                 id: brightnessColumn
                 // Centred in the cell, not stretched across it: a layout that
@@ -337,7 +397,7 @@ ColumnLayout {
                         font.features: { "tnum": 1 }
                     }
                     ShellButton {
-                        icon: "󰖔"
+                        icon: Icons.nightLight
                         compact: true
                         visible: !brightnessCard.compact
                         variant: NightLightService.mode !== "off" ? "accent" : "ghost"
@@ -380,7 +440,7 @@ ColumnLayout {
             // The same rule as the brightness tile beside it, so the two keep
             // agreeing at every size: too short for a title over a bar, and
             // the bar comes up beside the glyph and the title goes.
-            readonly property bool compact: fitClass === "small" || fitClass === "icon"
+            readonly property bool compact: Quick.sliderCompact(gridH)
             ColumnLayout {
                 id: batteryColumn
                 // Centred in the cell, not stretched across it: a layout that
@@ -492,6 +552,7 @@ ColumnLayout {
         id: audioTile
         AudioCard { onOpenDetails: root.openPage("audio")
             shape: fitClass
+            rows: gridH
             readonly property bool shown: true
         }
     }
@@ -651,13 +712,23 @@ ColumnLayout {
                 // One grid row is 30 px and a chip is 64: below two rows the
                 // chips go compact rather than being cut off at the cell edge.
                 readonly property bool tight: gridH <= 1
+                // Shared as evenly as their words allow: the slack went by
+                // content length, and the last chip ended up 107 px with its
+                // words against the edge beside a 163 px one. Each keeps what
+                // it needs, the narrow ones are raised first, and a wide
+                // enough panel makes them all one width (QuickLogic.chipWidths).
+                readonly property var widths: Quick.chipWidths([powerChip.implicitWidth, themeChip.implicitWidth,
+                                                                displaysChip.implicitWidth, focusChip.implicitWidth],
+                                                               width, spacing)
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: Metrics.spaceSm
 
                 ChipButton {
+                    id: powerChip
                     Layout.fillWidth: true
+                    Layout.preferredWidth: chipRow.widths[0]
                     compact: chipRow.tight
                     icon: "󰓅"
                     title: "Power"
@@ -667,7 +738,9 @@ ColumnLayout {
                     onClicked: root.openPage("power")
                 }
                 ChipButton {
+                    id: themeChip
                     Layout.fillWidth: true
+                    Layout.preferredWidth: chipRow.widths[1]
                     compact: chipRow.tight
                     icon: Colors.dark ? "󰖔" : "󰖙"
                     title: "Dark mode"
@@ -676,7 +749,9 @@ ColumnLayout {
                     onClicked: SettingsService.set("appearance.theme", Colors.dark ? "light" : "dark")
                 }
                 ChipButton {
+                    id: displaysChip
                     Layout.fillWidth: true
+                    Layout.preferredWidth: chipRow.widths[2]
                     compact: chipRow.tight
                     icon: "󰍹"
                     title: "Displays"
@@ -686,9 +761,11 @@ ColumnLayout {
                     onClicked: PanelService.open("settings", { page: "displays" })
                 }
                 ChipButton {
+                    id: focusChip
                     Layout.fillWidth: true
+                    Layout.preferredWidth: chipRow.widths[3]
                     compact: chipRow.tight
-                    icon: "󰽥"
+                    icon: Icons.focus
                     title: "Focus"
                     subtitle: AdaptiveService.focusActive ? "On" : "Off"
                     active: AdaptiveService.focusActive
@@ -742,6 +819,10 @@ ColumnLayout {
             Loader {
                 id: widget
                 anchors.centerIn: parent
+                // Only while the overview is shown, as when the page itself
+                // went with the panel: a widget samples, polls or keeps the
+                // calendar's backend up for as long as it exists.
+                active: root.live
                 visible: widgetCard.hasData
                 source: WidgetRegistry.source(widgetCard.typeName)
                 onLoaded: {

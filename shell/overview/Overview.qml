@@ -10,11 +10,13 @@ import qs.services
 import qs.shell.components
 import "../../services/overview/OverviewLogic.js" as Logic
 import "../../services/model/KeyedLogic.js" as Keyed
+import "../../services/wallpaper/WallpaperLogic.js" as WallpaperLogic
 import "SelectionLogic.js" as Selection
 
 // Super+W: workspaces with live window previews. Type to filter, arrows to
-// select, Enter to focus, Delete to close; click a workspace to switch to it,
-// drag a window onto another workspace to move it there.
+// select a window or a workspace, Enter to focus or switch to it, Delete to
+// close it; click a workspace to switch to it, drag a window onto another
+// workspace to move it there.
 //
 // A ShellPanel without its chrome (`showCard: false`): the overview fills the
 // screen and draws its own dark backdrop, but focus, Escape, the scrim, the
@@ -39,16 +41,25 @@ ShellPanel {
     property var workspaces: []
     // The monitors as `hyprctl` last described them, for the grouping.
     property var monitors: []
-    readonly property var groups: Logic.groups(workspaces, monitors)
+    readonly property var groups: Logic.groups(workspaces, monitors, HyprlandService.perMonitor)
+    // What the keys walk: the windows and, while nothing is typed, the
+    // workspace cards (SelectionLogic.stops). `selected` is an index into
+    // them and `selectedKey` the stop it is on, so the selection stays on a
+    // window or a card while the list changes around it.
+    readonly property var stops: Selection.stops(groups, search.text)
     property int selected: 0
-    readonly property var flat: Logic.flatWindows(workspaces, search.text)
-    readonly property var selectedWindow: flat.length ? flat[Selection.clamp(selected, flat.length)] : null
+    property string selectedKey: ""
+    // Until a key moves the selection, it is on the first window: Enter
+    // right after Super+W, or after typing a search, focuses that one.
+    property bool navigated: false
+    readonly property var selectedStop: stops.length ? stops[Selection.clamp(selected, stops.length)] : null
+    readonly property var selectedWindow: selectedStop && selectedStop.kind === "window" ? selectedStop.window : null
     // The accent as text and outline on the scrim, which is dark in both
     // themes. accentForeground is made for cards: the light theme darkens it
     // for light ones, and on the scrim it sank into the dark. It was then
     // made readable against the lock's base, as dark as the scrim reads over
     // a dark wallpaper - but the light theme's scrim is thinner, and over a
-    // bright wallpaper the labels came to 2.5-3.2:1 (round 12, D10). Measured
+    // bright wallpaper the labels came to 2.5-3.2:1. Measured
     // on the scrim at its lightest now (Colors.overviewAccent), in both
     // themes; the shipped teal on the dark scrim is 6.8:1 and stays.
     readonly property color scrimAccent: Colors.overviewAccent
@@ -63,7 +74,7 @@ ShellPanel {
     // `overviewCardMinWidth`, below which a preview shows nothing at all and
     // wrapping is the lesser evil.
     readonly property int widestRow: groups.reduce(
-        (most, group) => Math.max(most, group.workspaces.length + 1), 1)
+        (most, group) => Math.max(most, group.workspaces.length + (group.newCard ? 1 : 0)), 1)
     // The room the rows really have, which is the flickable they sit in - not
     // the screen less a guess at the margins. Taking the screen made the count
     // one too high, and the card that did not fit wrapped to a line of its own,
@@ -95,18 +106,62 @@ ShellPanel {
     function focusWindow(entry) {
         if (entry) afterClose(HyprCompat.commands.focusWindow(entry.address))
     }
+    function select(index) {
+        selected = Selection.clamp(index, stops.length)
+        selectedKey = stops.length ? stops[selected].key : ""
+        navigated = true
+    }
+    // Enter: a window is focused, a workspace (or the new one) switched to.
+    function activate(stop) {
+        if (!stop) return
+        if (stop.kind === "window") focusWindow(stop.window)
+        else afterClose(HyprCompat.commands.workspace(stop.workspace))
+    }
+    // Delete: a window is closed, a workspace card does what its × does.
+    function remove(stop) {
+        if (!stop) return
+        if (stop.kind === "window") dispatch(HyprCompat.commands.closeWindow(stop.window.address))
+        else if (stop.kind === "card" && stop.closable && HyprlandService.keepsEmpty) closeCard(stop.entry)
+    }
+    // The ×, by click or by Delete. A workspace with windows only asks the
+    // first time, as ShellButton's `confirm` does: its windows go to the one
+    // before it (HyprlandService.closeWorkspace). One card is asked about at
+    // a time, and the question goes again on its own.
+    property int armedWorkspace: -1
+    function closeCard(entry) {
+        if (!entry) return
+        if ((entry.windows || []).length > 0 && armedWorkspace !== entry.id) {
+            armedWorkspace = entry.id
+            disarm.restart()
+            return
+        }
+        disarm.stop()
+        armedWorkspace = -1
+        HyprlandService.closeWorkspace(entry.id)
+    }
+    Timer {
+        id: disarm
+        interval: Animations.confirmTimeout
+        onTriggered: window.armedWorkspace = -1
+    }
     function toplevelFor(address) {
         const key = Logic.normalizeAddress(address)
         return Hyprland.toplevels.values.find(item => Logic.normalizeAddress(item.address) === key) || null
     }
 
     onWantedChanged: {
+        armedWorkspace = -1
         if (!wanted) return
         search.text = ""
-        selected = 0
+        navigated = false
+        selected = Selection.openingIndex(stops)
+        selectedKey = stops.length ? stops[selected].key : ""
         refresh()
     }
-    onFlatChanged: selected = Selection.clamp(selected, flat.length)
+    onStopsChanged: {
+        selected = navigated ? Selection.indexOf(stops, selectedKey, selected) : Selection.openingIndex(stops)
+        selectedKey = stops.length ? stops[selected].key : ""
+    }
 
     Timer { id: refreshTimer; interval: Animations.overviewRefresh; onTriggered: window.refresh() }
     Timer {
@@ -115,13 +170,30 @@ ShellPanel {
         onTriggered: if (window.pendingDispatch) { HyprCompat.dispatch(window.pendingDispatch); window.pendingDispatch = null }
     }
 
+    // One `hyprctl --batch` for the three answers: a shell and three hyprctl
+    // were ~35 ms of CPU and as long again before the cards were right, on
+    // every open and on every window or workspace event while open. A
+    // Hyprland whose batch answer is not three JSON documents gets the shell
+    // from then on, rather than an empty overview.
+    property bool batchRefused: false
     Process {
         id: loadProc
-        command: ["sh", "-c", "printf '{\"clients\":'; hyprctl -j clients; printf ',\"monitors\":'; hyprctl -j monitors; printf ',\"workspaces\":'; hyprctl -j workspaces; printf '}'"]
+        command: window.batchRefused
+            ? ["sh", "-c", "printf '{\"clients\":'; hyprctl -j clients; printf ',\"monitors\":'; hyprctl -j monitors; printf ',\"workspaces\":'; hyprctl -j workspaces; printf '}'"]
+            : ["hyprctl", "-j", "--batch", "clients; monitors; workspaces"]
         stdout: StdioCollector {
             onStreamFinished: {
+                let data = null
+                if (!window.batchRefused) {
+                    data = Logic.parseBatch(text, ["clients", "monitors", "workspaces"])
+                    if (!data) {
+                        window.batchRefused = true
+                        refreshTimer.restart()
+                        return
+                    }
+                }
                 try {
-                    const data = JSON.parse(text)
+                    if (!data) data = JSON.parse(text)
                     const monitors = data.monitors || []
                     const workspaces = Logic.build(data.clients, data.monitors, data.workspaces,
                                                    SettingsService.value("workspaces.mode"),
@@ -184,13 +256,16 @@ ShellPanel {
             // the field was there at 1.03:1 and found by its placeholder.
             // Grey in both themes, and the scrim is dark in both.
             border.color: Colors.subtleText
-            onAccepted: window.focusWindow(window.selectedWindow)
+            onAccepted: window.activate(window.selectedStop)
             onEscapePressed: if (!text.length) PanelService.close("overview")
-            Keys.onLeftPressed: event => { if (text.length) { event.accepted = false; return } window.selected = Selection.step(window.selected, -1, window.flat.length) }
-            Keys.onRightPressed: event => { if (text.length) { event.accepted = false; return } window.selected = Selection.step(window.selected, 1, window.flat.length) }
-            Keys.onUpPressed: window.selected = Selection.step(window.selected, -1, window.flat.length)
-            Keys.onDownPressed: window.selected = Selection.step(window.selected, 1, window.flat.length)
-            onDeleteOnEmpty: if (window.selectedWindow) window.dispatch(HyprCompat.commands.closeWindow(window.selectedWindow.address))
+            // Left and Right walk every stop in order; Up and Down go to the
+            // card a line above or below, the next monitor's row included
+            // (SelectionLogic.vertical).
+            Keys.onLeftPressed: event => { if (text.length) { event.accepted = false; return } window.select(Selection.step(window.selected, -1, window.stops.length)) }
+            Keys.onRightPressed: event => { if (text.length) { event.accepted = false; return } window.select(Selection.step(window.selected, 1, window.stops.length)) }
+            Keys.onUpPressed: window.select(Selection.vertical(window.stops, window.selected, -1, window.columns))
+            Keys.onDownPressed: window.select(Selection.vertical(window.stops, window.selected, 1, window.columns))
+            onDeleteOnEmpty: window.remove(window.selectedStop)
         }
 
         // A search that matches nothing used to leave every card on screen
@@ -207,7 +282,7 @@ ShellPanel {
         ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: search.text.length > 0 && window.flat.length === 0
+            visible: search.text.length > 0 && window.stops.length === 0
             spacing: Metrics.spaceSm
 
             Item { Layout.fillHeight: true }
@@ -239,7 +314,7 @@ ShellPanel {
             id: cardsFlick
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: !(search.text.length > 0 && window.flat.length === 0)
+            visible: !(search.text.length > 0 && window.stops.length === 0)
             contentHeight: cards.implicitHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
@@ -276,9 +351,11 @@ ShellPanel {
 
                         ShellText {
                             // Only worth a heading when there is more than one
-                            // screen to tell apart.
+                            // screen to tell apart. Named by the model where
+                            // the monitor names one: the connector changes
+                            // with the port a dock hands out.
                             visible: window.groups.length > 1 && row.modelData.monitor.length > 0
-                            text: "Monitor " + row.modelData.number + " \u00b7 " + row.modelData.monitor
+                            text: "Monitor " + row.modelData.number + " \u00b7 " + row.modelData.title
                             role: "label"
                             color: row.modelData.focused ? window.scrimAccent : Colors.scrimMutedText
                         }
@@ -288,14 +365,13 @@ ShellPanel {
                             spacing: Metrics.spaceXl
 
                             Repeater {
-                                // The row's own next free number, not the
-                                // session's: a global one would offer the
-                                // third monitor a number belonging to the first.
+                                // The row's "New workspace" card last, with
+                                // the number its row offers (OverviewLogic.groups:
+                                // its own block's next free one, or without
+                                // blocks the focused row only).
                                 model: ScriptModel {
                                     objectProp: "id"
-                                    values: row.modelData.workspaces.concat([{ id: Logic.nextFreeIn(row.modelData.workspaces, row.modelData.base),
-                                        label: "", name: "", windows: [], aspect: row.modelData.aspect, active: false,
-                                        monitor: row.modelData.monitor, placeholder: true }])
+                                    values: row.modelData.workspaces.concat(row.modelData.newCard ? [row.modelData.newCard] : [])
                                 }
 
                             ColumnLayout {
@@ -303,6 +379,10 @@ ShellPanel {
                                 required property var modelData
                                 readonly property bool placeholder: modelData.placeholder === true
                                 readonly property bool dropHover: drop.containsDrag
+                                // The keys' selection on the card itself (an
+                                // empty workspace, or past its windows).
+                                readonly property bool isSelected: !!window.selectedStop && window.selectedStop.kind !== "window"
+                                    && window.selectedStop.key === (placeholder ? "n:" + row.modelData.monitor : "c:" + modelData.id)
                                 width: window.workspaceWidth
                                 spacing: Metrics.spaceSm
                                 // The pointer anywhere on the card brings its
@@ -342,13 +422,18 @@ ShellPanel {
                                     // workspace, which has nothing to close
                                     // into - there it keeps its place, unseen,
                                     // or that card's frame started 14 px higher
-                                    // than its neighbours'. Faint until the card
-                                    // is pointed at.
+                                    // than its neighbours'. Nor on a workspace
+                                    // the overview filled in or one of Fixed's
+                                    // numbers: those are not there to close, or
+                                    // come back the moment they go
+                                    // (OverviewLogic.closable). Faint until the
+                                    // card is pointed at. Delete on a selected
+                                    // card does the same (`closeCard`).
                                     Rectangle {
                                         id: closeMark
                                         readonly property int windowCount: (card.modelData.windows || []).length
-                                        readonly property bool closable: !card.placeholder && row.modelData.workspaces.length > 1
-                                        property bool armed: false
+                                        readonly property bool closable: Logic.closable(card.modelData, row.modelData)
+                                        readonly property bool armed: !card.placeholder && window.armedWorkspace === card.modelData.id
                                         visible: HyprlandService.keepsEmpty
                                         implicitHeight: Metrics.controlHeightSm
                                         implicitWidth: armed ? armedLabel.implicitWidth + Metrics.controlPaddingSm * 2 : implicitHeight
@@ -375,28 +460,33 @@ ShellPanel {
                                             role: "small"
                                             color: Colors.dangerOnDark
                                         }
-                                        Timer {
-                                            id: disarm
-                                            interval: Animations.confirmTimeout
-                                            onTriggered: closeMark.armed = false
-                                        }
                                         MouseArea {
                                             id: closeMouse
                                             anchors.fill: parent
                                             enabled: closeMark.closable
                                             hoverEnabled: true
                                             cursorShape: Qt.PointingHandCursor
+                                            onEntered: closeTip.arm()
+                                            onExited: closeTip.release()
                                             onClicked: {
-                                                if (closeMark.windowCount > 0 && !closeMark.armed) {
-                                                    closeMark.armed = true
-                                                    disarm.restart()
-                                                    return
-                                                }
-                                                disarm.stop()
-                                                closeMark.armed = false
-                                                HyprlandService.closeWorkspace(card.modelData.id)
+                                                closeTip.release()
+                                                window.closeCard(card.modelData)
                                             }
                                         }
+                                        // The faint × says what it does; armed, its
+                                        // label says it already.
+                                        ToolTipHost {
+                                            id: closeTip
+                                            anchorItem: closeMark
+                                            text: closeMark.armed ? "" : "Close workspace " + card.modelData.label
+                                        }
+                                        // Disabled under the pointer (the row's other
+                                        // workspace closed) or asking already (Delete
+                                        // arms it too), the × takes its bubble down: a
+                                        // MouseArea that is switched off says nothing
+                                        // about the pointer leaving.
+                                        onClosableChanged: if (!closable) closeTip.release()
+                                        onArmedChanged: if (armed) closeTip.release()
                                         Accessible.ignored: !closable
                                         Accessible.role: Accessible.Button
                                         Accessible.name: closeMark.armed ? armedLabel.text : "Close workspace " + card.modelData.label
@@ -409,8 +499,12 @@ ShellPanel {
                                     Layout.preferredHeight: width * card.modelData.aspect
                                     radius: Metrics.radiusCard
                                     color: card.dropHover ? Colors.accentSoft : Colors.panelFor("overview")
-                                    border.width: card.modelData.active || card.dropHover ? Metrics.focusBorderWidth : Metrics.borderWidth
-                                    border.color: card.modelData.active || card.dropHover ? window.scrimAccent : Colors.panelBorder
+                                    // Selected by the keys: the scrim's own white,
+                                    // which the accent ring of the active
+                                    // workspace cannot be mistaken for.
+                                    border.width: card.isSelected || card.modelData.active || card.dropHover ? Metrics.focusBorderWidth : Metrics.borderWidth
+                                    border.color: card.isSelected ? Colors.scrimText
+                                        : card.modelData.active || card.dropHover ? window.scrimAccent : Colors.panelBorder
                                     clip: true
 
                                     // The wallpaper of the monitor this workspace is
@@ -444,10 +538,12 @@ ShellPanel {
                                         // cost 160-180 ms and ~90 MB per card, for 480
                                         // pixels. The thumbnails are 520 wide, so the
                                         // card still gets its 480. An image outside the
-                                        // folder has none and is read as before.
+                                        // folder has none and is read as before - as
+                                        // an encoded url, or a "#" or "?" in its name
+                                        // read as a fragment or a query.
                                         source: card.placeholder ? ""
                                             : WallpaperService.thumbFor(WallpaperService.currentFor(card.modelData.monitor))
-                                              || WallpaperService.currentFor(card.modelData.monitor)
+                                              || WallpaperLogic.folderUrl(WallpaperService.currentFor(card.modelData.monitor))
                                         // Concentric with the card: the same radius
                                         // less the border it sits inside.
                                         radius: Metrics.radiusCard - frame.border.width
@@ -514,7 +610,15 @@ ShellPanel {
                                             property bool sent: false
                                             readonly property bool dragging: dragArea.drag.active
                                             readonly property bool isSelected: !!window.selectedWindow && window.selectedWindow.address === modelData.address
-                                            readonly property var toplevel: window.wanted ? window.toplevelFor(modelData.address) : null
+                                            // Kept through the close fade, not only
+                                            // while wanted: without a source the capture
+                                            // drops its frame at once, and every preview
+                                            // turned into the window glyph while the
+                                            // overview was still nearly opaque. `live`
+                                            // stops at the close, so the last frame
+                                            // stays; the cards (built while shown) let
+                                            // every capture go when the fade ends.
+                                            readonly property var toplevel: window.shown ? window.toplevelFor(modelData.address) : null
                                             property real homeX: modelData.x * frame.width
                                             property real homeY: modelData.y * frame.height
                                             x: homeX + Metrics.spaceXxs
@@ -587,7 +691,12 @@ ShellPanel {
                                                     id: preview
                                                     anchors.fill: parent
                                                     captureSource: thumb.toplevel ? thumb.toplevel.wayland : null
-                                                    live: window.wanted
+                                                    // Not for a preview the search hides: a live
+                                                    // view asks for the next frame whether or not
+                                                    // it is drawn, and a busy hidden window kept
+                                                    // being exported. Its last frame stays, and
+                                                    // it captures again the moment it is back.
+                                                    live: window.wanted && thumb.visible
                                                     // Capture at preview size instead of the
                                                     // window's own resolution (the switcher
                                                     // does the same); a wall of full-size
@@ -649,7 +758,7 @@ ShellPanel {
 
         ShellText {
             Layout.alignment: Qt.AlignHCenter
-            text: "Enter focuses · Del closes · Drag moves · Middle-click closes · Esc closes"
+            text: "Arrows select · Enter opens · Del closes · Drag moves · Middle-click closes · Esc closes"
             role: "caption"
             color: Colors.scrimMutedText
         }

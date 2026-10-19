@@ -1,6 +1,7 @@
 pragma Singleton
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Io
 import QtQuick
 import qs.theme
 import "dock/DockLogic.js" as Logic
@@ -20,7 +21,8 @@ import "overview/OverviewLogic.js" as Overview
 // Intellihide reads the windows' geometry, which only Hyprland's IPC has:
 // `refreshToplevels()` after the events that may move a window over a dock,
 // and every second while a floating window - which moves without an event -
-// is on a dock's workspace. Off, always or edge-only: no reads at all.
+// could come over a drawn dock or leave it (DockLogic.needsPoll). Off,
+// always or edge-only: no reads at all.
 //
 // The lock face never reaches this (testing.md pitfall 86): nothing under
 // shell/lock/ or theme/ may name it.
@@ -36,6 +38,9 @@ Singleton {
     readonly property bool showRunning: SettingsService.value("dock.showRunning") !== false
     // Magnification is movement: Reduced and Off have none.
     readonly property bool magnifies: SettingsService.value("dock.magnification") === true && Animations.motionEnabled
+    // Each dock's running apps are its own screen's (DockLogic.RUNNING_ON),
+    // or those of every screen.
+    readonly property bool perScreen: SettingsService.value("dock.runningOn") === "screen"
     readonly property bool reserves: visibility === "always"
     readonly property bool intellihide: enabled && visibility === "intellihide"
     readonly property var screenNames: Logic.screensFor(SettingsService.value("dock.screens"),
@@ -85,14 +90,14 @@ Singleton {
     }
 
     // The windows as the apps need them: no geometry here, so a window that
-    // moves rebuilds nothing.
+    // moves rebuilds nothing - and no focus, which each icon reads for itself
+    // (activeOf), so a focus change rebuilds nothing either.
     readonly property var windows: enabled ? Hyprland.toplevels.values.map(toplevel => ({
         address: addressOf(toplevel),
         appClass: classOf(toplevel),
         workspace: toplevel.workspace ? toplevel.workspace.id : -1,
         workspaceName: toplevel.workspace ? toplevel.workspace.name : "",
         monitor: toplevel.monitor ? toplevel.monitor.name : "",
-        activated: addressOf(toplevel) === activeAddress,
         urgent: toplevel.urgent === true,
         seq: seen[addressOf(toplevel)] || 0
     })).filter(window => window.address.length) : []
@@ -103,7 +108,7 @@ Singleton {
     // Hyprland focuses no window, but Quickshell keeps the last one as
     // `activeToplevel` - it drops the empty `activewindowv2` (0.3.2) - so a
     // click on VS Code from an empty workspace was a click on the app in
-    // front, with one window: nothing (round 13).
+    // front, with one window: nothing.
     readonly property string activeAddress: {
         const toplevel = enabled ? Hyprland.activeToplevel : null
         if (!toplevel) return ""
@@ -166,27 +171,73 @@ Singleton {
     // only way Quickshell's ScriptModel matches them right (pitfall 76).
     // A field of a held object, not a property of its own: the binding below
     // reads it, and assigning a property it reads would be a binding loop.
-    property var store: ({ items: [] })
-    function kept(next) {
-        const list = Keyed.keep(store.items, next, "key", { windows: "address" })
-        store.items = list
+    // And when nothing changed at all, the list itself (DockLogic.sameObjects):
+    // the binding then notifies nobody, and no dock lays its icons out again.
+    property var store: ({ items: [], screens: {} })
+    function kept(next, name) {
+        const previous = name === undefined ? store.items : (store.screens[name] || [])
+        const list = Keyed.keep(previous, next, "key", { windows: "address" })
+        if (Logic.sameObjects(previous, list)) return previous
+        if (name === undefined) store.items = list
+        else store.screens[name] = list
         return list
     }
-    readonly property var items: enabled && entriesRevision >= 0
-        // The fields added before the keeping, so a change of them makes a
-        // new object and the delegate hears of it.
-        ? kept(Logic.build(pins, windows, lookup, { showRunning: showRunning }).map(item => Object.assign(item, {
-            // The shell's Settings has no window of its own: it is "running"
-            // while its panel is open.
-            running: item.special === "settings" ? PanelService.active === "settings" : item.running,
-            active: item.special === "settings" ? PanelService.active === "settings" : item.active,
+    // One resolver (DockLogic.resolver) for as long as the pins are the same
+    // list, held the same way.
+    property var resolverStore: ({ pins: null, find: null })
+    function resolverFor(list) {
+        if (resolverStore.pins !== list || !resolverStore.find) {
+            resolverStore.pins = list
+            resolverStore.find = Logic.resolver(list, lookup)
+        }
+        return resolverStore.find
+    }
+    // The fields added before the keeping, so a change of them makes a new
+    // object and the delegate hears of it.
+    function decorated(list) {
+        return list.map(item => Object.assign(item, {
             pinnable: item.pinned || pinnable(item.pin),
-            launching: launching[item.key] !== undefined })))
+            launching: launching[item.key] !== undefined }))
+    }
+    readonly property var items: enabled && entriesRevision >= 0
+        ? kept(decorated(Logic.build(pins, windows, lookup, { showRunning: showRunning, resolve: resolverFor(pins) })))
         : []
+    // Each screen's own apps, while the docks show only their screen's
+    // running apps: the pins with the windows they have there, and the apps
+    // with a window there. Built only then.
+    readonly property var screenItems: {
+        if (!enabled || !perScreen || entriesRevision < 0) return ({})
+        const result = {}
+        const find = resolverFor(pins)
+        for (const name of screenNames)
+            result[name] = kept(decorated(Logic.build(pins, Logic.windowsOn(windows, name), lookup,
+                                                      { showRunning: showRunning, resolve: find })), name)
+        return result
+    }
+    // The apps a dock on that screen shows.
+    function itemsOn(name) {
+        return perScreen && name && screenItems[name] ? screenItems[name] : items
+    }
     readonly property int pinnedCount: items.filter(item => item.pinned).length
-    readonly property int runningCount: items.filter(item => item.running).length
+    readonly property int runningCount: items.filter(item => runningOf(item)).length
 
-    function itemFor(key) { return items.find(item => item.key === key) || null }
+    // The shell's Settings has no window of its own: it is running and in
+    // front while its panel is open. Read by each icon for itself, as is
+    // which app is in front: a panel opened or closed and a focus change then
+    // rebuild no app, and only the icons that change hear of it.
+    readonly property bool settingsOpen: enabled && PanelService.active === "settings"
+    function runningOf(item) {
+        return !!item && (item.special === "settings" ? settingsOpen : item.running === true)
+    }
+    function activeOf(item) {
+        return !!item && (item.special === "settings" ? settingsOpen : Logic.isActive(item, activeAddress))
+    }
+
+    // An app by its key: as the dock on `name` shows it (its own windows,
+    // when the docks show their own screen's), else as every dock knows it.
+    function itemFor(key, name) {
+        return itemsOn(name).find(item => item.key === key) || items.find(item => item.key === key) || null
+    }
     // A window's title, for the menu: read where it is asked, so the apps
     // themselves never rebuild for a title that changed.
     function titleOf(address) {
@@ -217,6 +268,7 @@ Singleton {
     readonly property var coverWindows: intellihide ? Hyprland.toplevels.values.map(toplevel => {
         const ipc = toplevel.lastIpcObject || {}
         return {
+            address: addressOf(toplevel),
             appClass: classOf(toplevel),
             monitor: toplevel.monitor ? toplevel.monitor.name : "",
             workspace: toplevel.workspace ? toplevel.workspace.id : -1,
@@ -231,12 +283,56 @@ Singleton {
         for (const view of views) result[view.monitor] = Logic.covered(bodies[view.monitor], coverWindows, view, Metrics.dockCoverSlack)
         return result
     }
-    readonly property bool polling: intellihide && Logic.needsPoll(coverWindows, views)
+    // Only for a floating window that could come over a drawn dock or leave
+    // it (DockLogic.needsPoll): the focused one, one on the dock, one not
+    // placed yet.
+    readonly property bool polling: intellihide && Logic.needsPoll(coverWindows, views, bodies, activeAddress, Metrics.dockCoverSlack)
     function covered(name) { return coveredOn[name] === true }
 
     function refresh() { if (intellihide) Hyprland.refreshToplevels() }
-    onIntellihideChanged: if (intellihide) refresh()
-    Component.onCompleted: { syncSeen(); refresh() }
+    onIntellihideChanged: if (intellihide) { refresh(); seedSpecials() }
+    Component.onCompleted: {
+        syncSeen()
+        refresh()
+        if (intellihide) seedSpecials()
+    }
+    // Switched on again (a profile with the dock, Settings > Dock): what
+    // happened meanwhile was not heard. The windows opened while it was off
+    // get their place in the order now, in the toplevels' order (close to
+    // the order they opened in) - they had none and sorted first, then
+    // jumped to the end at the next window -, and the window in front
+    // counts as used last. Switched off, it lets the keys and the key's
+    // look go: a dock that came back held them at once.
+    onEnabledChanged: {
+        if (!enabled) {
+            conceal()
+            return
+        }
+        syncSeen()
+        const front = addressOf(Hyprland.activeToplevel)
+        if (front.length) mru = [front].concat(mru.filter(address => address !== front)).slice(0, 64)
+    }
+
+    // The special workspaces open when intellihide begins (DockLogic.
+    // specialsFrom): read once, merged under what activespecial said since.
+    property var freshSpecials: ({})
+    function seedSpecials() {
+        if (specialsReader.running) return
+        freshSpecials = {}
+        specialsReader.running = true
+    }
+    Process {
+        id: specialsReader
+        command: ["hyprctl", "-j", "monitors"]
+        stderr: ErrorLog { label: "DockService.specialsReader" }
+        stdout: StdioCollector {
+            onStreamFinished: {
+                let read = null
+                try { read = Logic.specialsFrom(JSON.parse(text)) } catch (error) { return }
+                root.specials = Logic.seededSpecials(root.specials, read, root.freshSpecials)
+            }
+        }
+    }
     Timer {
         id: refreshTimer
         interval: Animations.dockCoverRefresh
@@ -263,6 +359,8 @@ Singleton {
                 const next = Object.assign({}, root.specials)
                 next[monitor] = parts.join(",")
                 root.specials = next
+                // Newer than a read of the monitors still under way.
+                if (specialsReader.running) root.freshSpecials[monitor] = true
             }
             if (root.intellihide && Logic.COVER_EVENTS.indexOf(name) >= 0) refreshTimer.restart()
         }
@@ -299,7 +397,10 @@ Singleton {
         rectsOn = next
     }
     // A screen's dock that is gone (the screen unplugged, the dock moved off
-    // it): every report it made goes with it.
+    // it, switched off): every report it made goes with it, and so do the
+    // keys and a drag on it - a dock made there again later (docked again,
+    // switched on again) took the keyboard at once, or stayed shown for a
+    // drag that had no end.
     function forget(name) {
         reportBody(name, null)
         reportRects(name, null)
@@ -309,6 +410,8 @@ Singleton {
         reportAppsRoom(name, null)
         reportAppsRest(name, null)
         edgePointer(name, false)
+        endKeyboard(name)
+        endDrag(name)
     }
 
     // Where each dock's surface sits on its screen, for the apps' menu and the
@@ -376,52 +479,75 @@ Singleton {
     // dock has the keyboard.
     property string hotkeyScreen: ""
     property string keyboardScreen: ""
-    // Where the keys are: an index into `items`, or the start button before
-    // the apps (-1) or after them (items.length) - DockLogic.keyRange.
+    // Where the keys are: an index into the apps of the dock with the
+    // keyboard, or an item beside them that opens something - the start
+    // button, a taskbar's status, notifications and clock - before the apps
+    // (-1, -2 ...) or after them (from the apps' count on): DockLogic.keyRange.
     property int keyIndex: 0
     // The menu key on the dock: the apps widget on that screen opens the menu
     // of the app the keys are on.
     signal menuWanted()
-    // The start button of the dock with the keyboard, before or after its
-    // apps along the dock ("" for none), from where both reported they are.
-    function startSide(name) {
-        const start = LayoutService.dockItemRect(name, "start")
-        const apps = rectsOn[name] || []
-        if (!start) return ""
-        if (!apps.length) return "before"
-        const vertical = Logic.vertical(position)
-        return (vertical ? start.y : start.x) < (vertical ? apps[0].y : apps[0].x) ? "before" : "after"
+    readonly property var keyItems: itemsOn(keyboardScreen)
+    // The items beside the apps on a dock, before and after them along it,
+    // from where its pills and its apps reported they are.
+    function sidesOn(name) {
+        const items = Logic.layoutTypes(LayoutService.dockLayout).map(type => ({ type: type, rect: LayoutService.dockItemRect(name, type) }))
+        const apps = (rectsOn[name] || [])[0] || LayoutService.dockItemRect(name, "apps")
+        return Logic.keySides(items, apps, Logic.vertical(position), type => WidgetRegistry.actionOf(type).length > 0)
     }
-    readonly property string keyStart: keyboardScreen.length ? startSide(keyboardScreen) : ""
-    readonly property bool keyOnStart: keyboardScreen.length > 0 && Logic.keyOnStart(keyIndex, items.length, keyStart)
+    readonly property var keySides: keyboardScreen.length ? sidesOn(keyboardScreen) : ({ before: [], after: [] })
+    readonly property var keyStop: keyboardScreen.length
+        ? Logic.keyStop(keyIndex, keyItems.length, keySides.before, keySides.after) : null
+    readonly property bool keyOnStart: keyStop !== null && keyStop.kind === "item" && keyStop.type === "start"
+    // The item the keys are on beside the apps, "" for none (Dock.qml rings it).
+    readonly property string keyItemType: keyStop !== null && keyStop.kind === "item" ? keyStop.type : ""
+    function keyRangeNow() { return Logic.keyRange(keyItems.length, keySides.before.length, keySides.after.length) }
     function moveKey(delta) {
-        const range = Logic.keyRange(items.length, keyStart)
+        const range = keyRangeNow()
         keyIndex = Math.max(range.low, Math.min(range.high, keyIndex + delta))
     }
-    function keyHome() { keyIndex = Logic.keyRange(items.length, keyStart).low }
-    function keyEnd() { keyIndex = Logic.keyRange(items.length, keyStart).high }
-    // An app that went (its last window closed) must not leave the keys
-    // nowhere.
-    onItemsChanged: if (keyboardScreen.length) {
-        const range = Logic.keyRange(items.length, keyStart)
+    function keyHome() { keyIndex = keyRangeNow().low }
+    function keyEnd() { keyIndex = keyRangeNow().high }
+    // An app that went (its last window closed), or an item beside them, must
+    // not leave the keys nowhere.
+    function clampKey() {
+        if (!keyboardScreen.length) return
+        const range = keyRangeNow()
         if (keyIndex < range.low || keyIndex > range.high) keyIndex = Math.max(range.low, Math.min(range.high, keyIndex))
     }
+    onKeyItemsChanged: clampKey()
+    onKeySidesChanged: clampKey()
+    // A drag whose app went from its dock meanwhile never hears its end
+    // (DockLogic.dragLost).
+    function checkDrag() {
+        if (dragKey.length && Logic.dragLost(dragKey, itemsOn(dragScreen))) endDrag()
+    }
+    onItemsChanged: {
+        checkDrag()
+        if (Object.keys(launching).length) Qt.callLater(settleLaunches)
+    }
+    onScreenItemsChanged: checkDrag()
     onKeyboardScreenChanged: if (keyboardScreen.length) {
-        const active = items.findIndex(item => item.active)
+        const active = itemsOn(keyboardScreen).findIndex(item => activeOf(item))
         keyIndex = Math.max(0, active)
+        // A dock with items but no apps: on the nearest item.
+        clampKey()
     }
     function focusedName() {
         return Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
     }
-    // The start button's panel (the start menu, or the launcher), opened out
-    // of the button the way its click opens it.
-    function openStart(name) {
-        const rect = LayoutService.dockItemRect(name, "start")
-        if (!rect) return false
+    // An item's panel - the start button's start menu (or the launcher), the
+    // status' popups, the clock's dashboard -, opened out of the item the
+    // way its click opens it (Pill.qml).
+    function openItem(name, type) {
+        const rect = LayoutService.dockItemRect(name, type)
+        const panel = WidgetRegistry.actionOf(type)
+        if (!rect || !panel.length) return false
+        const entry = WidgetRegistry.type(type)
         endKeyboard()
-        return PanelService.open(WidgetRegistry.actionOf("start"), Object.assign({ onScreen: name,
+        return PanelService.open(panel, Object.assign({ onScreen: name,
             originX: rect.x, originY: rect.y, originWidth: rect.width, originHeight: rect.height },
-            Logic.panelAnchor(position, rect, Metrics.dockPanelGap, placeOf(name))))
+            Logic.panelAnchor(position, rect, Metrics.dockPanelGap, placeOf(name)), entry && entry.actionArgs ? entry.actionArgs : {}))
     }
     // Super+Shift+D: an off dock is switched on and shown for a moment, a dock
     // the key showed goes again, any other is shown and takes the keyboard -
@@ -490,6 +616,13 @@ Singleton {
     // ---- drag and menu --------------------------------------------------------------
     property string dragKey: ""
     property string dragScreen: ""
+    // A drag is over without its icon's word: the app went, the dock on that
+    // screen (`name`) went.
+    function endDrag(name) {
+        if (name !== undefined && dragScreen !== name) return
+        dragKey = ""
+        dragScreen = ""
+    }
     function menuOpenOn(name) {
         return PanelService.active === "dockMenu" && PanelService.args && PanelService.args.onScreen === name
     }
@@ -522,9 +655,10 @@ Singleton {
         if (address) HyprCompat.dispatch(HyprCompat.commands.closeWindow(address))
     }
 
-    // A click: start it, its window to the front, or the next of its windows.
-    function activate(key) {
-        const item = itemFor(key)
+    // A click: start it, its window to the front, or the next of its windows -
+    // of those on `name` when the docks show their own screen's.
+    function activate(key, name) {
+        const item = itemFor(key, name)
         if (!item) return false
         const target = Logic.clickTarget(item, activeAddress, mru)
         if (target.action === "launch") return launch(item)
@@ -560,31 +694,43 @@ Singleton {
     }
 
     // ---- started, not open yet ------------------------------------------------
-    // An app the dock started, until a window more than it had shows or a
-    // while has passed: its icon breathes meanwhile (DockItem), so a click
-    // that takes a second to answer is seen to have been taken.
+    // An app the dock started, until a window more than it had shows, it
+    // comes to the front, or a while has passed (DockLogic.launchDone): its
+    // icon breathes meanwhile (DockItem), so a click that takes a second to
+    // answer is seen to have been taken. Decided when the apps or the window
+    // in front change, and at the next deadline - no poll.
     property var launching: ({})
     function markLaunching(item) {
+        // Its windows on every screen, as they are counted when it settles:
+        // a dock of one screen's apps may know fewer.
+        const all = itemFor(item.key) || item
         const next = Object.assign({}, launching)
-        next[item.key] = { since: Date.now(), before: item.count || 0 }
+        next[item.key] = { since: Date.now(), before: all.count || 0, active: activeOf(all) }
         launching = next
-        launchTimer.start()
+        settleLaunches()
     }
+    function settleLaunches() {
+        const now = Date.now()
+        const next = {}
+        for (const key of Object.keys(launching)) {
+            const state = launching[key]
+            const item = itemFor(key)
+            if (item && !Logic.launchDone(state, { count: item.count, active: activeOf(item) }, now, Animations.dockLaunchLimit))
+                next[key] = state
+        }
+        if (Object.keys(next).length !== Object.keys(launching).length) launching = next
+        const wait = Logic.launchWait(next, now, Animations.dockLaunchLimit)
+        if (wait < 0) {
+            launchTimer.stop()
+        } else {
+            launchTimer.interval = Math.max(1, Math.ceil(wait))
+            launchTimer.restart()
+        }
+    }
+    onActiveAddressChanged: if (Object.keys(launching).length) Qt.callLater(settleLaunches)
     Timer {
         id: launchTimer
-        interval: Animations.dockLaunchCheck
-        repeat: true
-        onTriggered: {
-            const now = Date.now()
-            const next = {}
-            for (const key of Object.keys(root.launching)) {
-                const state = root.launching[key]
-                const item = root.itemFor(key)
-                if (item && !Logic.launchSettled(item.count, state.before, state.since, now, Animations.dockLaunchLimit)) next[key] = state
-            }
-            if (Object.keys(next).length !== Object.keys(root.launching).length) root.launching = next
-            if (!Object.keys(next).length) stop()
-        }
+        onTriggered: root.settleLaunches()
     }
     // A middle click or "New window": the entry's own new-window action when
     // it has one (a browser), else the app started again.
@@ -610,8 +756,9 @@ Singleton {
         LauncherService.launchAction(entry, action)
         return true
     }
-    function closeWindows(key) {
-        const item = itemFor(key)
+    // Its windows - those on `name` when the docks show their own screen's.
+    function closeWindows(key, name) {
+        const item = itemFor(key, name)
         if (!item) return false
         for (const window of item.windows) closeWindow(window.address)
         return item.windows.length > 0
@@ -645,7 +792,7 @@ Singleton {
     // An app's menu, a panel of its own (shell/dock/DockMenu.qml), placed
     // beside the icon on the dock's screen.
     function openMenu(key, name, rect) {
-        const item = itemFor(key)
+        const item = itemFor(key, name)
         if (!item || !rect) return false
         const args = Object.assign({ key: key, onScreen: name, originX: rect.x, originY: rect.y,
                                      originWidth: rect.width, originHeight: rect.height },
@@ -662,7 +809,8 @@ Singleton {
             windows: windows.length, shown: screens.filter(screen => shownOn[screen.name] === true).length,
             covered: screens.filter(screen => covered(screen.name)).length, polling: polling,
             hotkey: hotkeyScreen.length > 0, keyboard: keyboardScreen.length > 0,
-            menuOpen: PanelService.active === "dockMenu", dragging: dragKey.length > 0
+            menuOpen: PanelService.active === "dockMenu", dragging: dragKey.length > 0,
+            perScreen: perScreen, keyOnItem: keyItemType.length > 0
         })
     }
     // The apps' places on the screens, for tests: by index, screen-local,

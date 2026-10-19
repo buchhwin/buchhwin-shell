@@ -120,6 +120,12 @@ ShellRoot {
         T.eq(second[2], { id: 3 }, "keep: a new entry is taken as it is")
         T.eq(Keyed.keep(null, [{ id: 1 }], "id"), [{ id: 1 }], "keep: nothing before")
         T.eq(Keyed.keep([{ id: 1 }], null, "id"), [], "keep: nothing now")
+        const again = Keyed.keepList(first, [{ id: 1, windows: [{ address: "0xa" }, { address: "0xb" }] }, { id: 2, windows: [] }],
+                                     "id", { windows: "address" })
+        T.ok(again === first, "keepList: an unchanged list is the previous list itself")
+        T.ok(Keyed.keepList(first, [{ id: 1, windows: [] }, { id: 2, windows: [] }], "id", { windows: "address" }) !== first,
+             "keepList: one entry changed, a new list")
+        T.eq(Keyed.keepList(null, [], "id"), [], "keepList: nothing before, nothing now")
 
         // And the model, handed kept lists. Without keep, taking "c" out
         // gave c's delegate d and d's e, and destroyed e's.

@@ -62,6 +62,19 @@ ShellRoot {
         T.eq(E.applyResolve(null).reason, "unavailable", "no answer at all")
         T.ok(E.applyResolve({ ok: false, message: "", data: { ok: false, reason: "notFound" } }).message.length > 0,
              "every refusal says something")
+        // A helper that could not work at all answers with an error and no
+        // reason (the Akonadi bindings missing on Arch): its words, not "could
+        // not be matched safely".
+        const broken = E.applyResolve({ ok: false, message: "", data: { ok: false,
+            error: "the Akonadi Python bindings are missing (openSUSE Leap and Arch do not package them)", detail: "No module named 'PySide6'" } })
+        T.eq([broken.ok, broken.reason], [false, "unsure"], "an error without a reason is still a refusal")
+        T.eq(broken.message, "The Akonadi Python bindings are missing (openSUSE Leap and Arch do not package them).",
+             "and says the helper's error, as a sentence")
+        T.eq(E.applyResolve({ ok: false, message: "", data: { ok: false } }).message, E.refuse("unsure").message,
+             "without an error either, the general refusal")
+        T.ok(E.refuse("noBindings").message.indexOf("Akonadi Python bindings") >= 0
+             && E.refuse("noBindings").message.indexOf("Merkuro") >= 0,
+             "the missing bindings say what is missing and where to edit instead")
 
         T.eq(E.previewMatch({ title: "Lunch break", start: at(10, 12), sampleLocation: "Cafeteria" }).location,
              "Cafeteria", "preview sample")

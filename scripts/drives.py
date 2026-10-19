@@ -4,30 +4,27 @@
 Only reads: mounting, unmounting, unlocking, locking and powering off go
 through `udisksctl` and `gio mount` from the shell. Block devices come from
 UDisks2 on the system bus, MTP phones from the gvfs volume monitor (GIO),
-which UDisks2 does not see. Every line on stdout is one JSON object:
+which UDisks2 does not see. `list` prints one JSON object on one line:
 
   {"kind": "drives", "mtp": BOOL,
    "drives": [{"id", "name", "bus", "size", "canPowerOff", "ejectable",
      "volumes": [{"id", "device", "label", "fsType", "size", "mountPoints",
        "readOnly", and for LUKS: "encrypted", "unlocked", "clearDevice"}]}],
    "phones": [{"id", "name", "uri", "mountPoint", "mounted"}]}
-  {"kind": "added" | "removed", "id": DRIVE_ID}
-  {"kind": "mounted" | "unmounted", "id": VOLUME_ID, "drive": DRIVE_ID}
-  {"kind": "phoneAdded" | "phoneRemoved" | "phoneMounted" | "phoneUnmounted",
-   "id": PHONE_ID}
-  {"kind": "error", "message": "..."}
 
-`monitor` prints the list at start and again (followed by events) whenever
-UDisks2 or the gvfs volume monitor adds, removes or changes an object. A read
-that fails prints the error and is tried again (RETRY_MS) until one succeeds,
-which prints the list once more.
+or, when UDisks2 cannot be read, {"kind": "error", "message": "..."} and
+exit status 1.
 Internal disks, loop devices, swap, optical media, system partitions and
 devices without a filesystem are left out; encrypted (LUKS) volumes stay in
 the list while they are locked. "mtp" is false when gvfs-mtp is missing, so
 the shell can say so instead of listing nothing.
 
+The shell runs `list` whenever `udisksctl monitor` or `gio mount -o` prints a
+line, and works out what came and went itself (DrivesLogic.settle). A
+`monitor` command used to stay resident for that, with PyGObject and
+dbus-python - some 20 MB for events that come a few times a week.
+
   drives.py list
-  drives.py monitor
 """
 
 import argparse
@@ -48,10 +45,6 @@ ENCRYPTED = UDISKS + ".Encrypted"
 HOTPLUG_BUSES = {"usb", "sdio", "ieee1394"}
 # Never offered even if a hint is wrong (e.g. a system on an external disk).
 SYSTEM_MOUNTS = {"/", "/boot", "/boot/efi", "/efi", "/home", "/usr", "/var", "/sysroot", "/etc", "/opt", "/srv"}
-DEBOUNCE_MS = 400
-# After a failed read of UDisks2 (udisksd restarting, a call that timed out
-# while a disk hung): the next tries, the last one repeating.
-RETRY_MS = (2000, 5000, 15000, 30000, 60000)
 # gvfs' MTP backend; without it phones cannot be listed or mounted at all.
 # Arch builds with libexecdir=/usr/lib, so its backend sits there directly.
 MTP_BACKENDS = ("/usr/libexec/gvfsd-mtp", "/usr/libexec/gvfs/gvfsd-mtp", "/usr/lib/gvfs/gvfsd-mtp",
@@ -237,29 +230,6 @@ def build_drives(objects):
     return result
 
 
-def diff(before, after):
-    """Events between two drive lists: added/removed drives, mounted/unmounted volumes."""
-    events = []
-    old = {item["id"]: item for item in before}
-    new = {item["id"]: item for item in after}
-    for drive_id in new:
-        if drive_id not in old:
-            events.append({"kind": "added", "id": drive_id})
-    for drive_id in old:
-        if drive_id not in new:
-            events.append({"kind": "removed", "id": drive_id})
-    for drive_id, drive in new.items():
-        previous = {item["id"]: item for item in old.get(drive_id, {"volumes": []})["volumes"]}
-        for volume in drive["volumes"]:
-            was = bool(previous.get(volume["id"], {}).get("mountPoints"))
-            now = bool(volume["mountPoints"])
-            if now and not was:
-                events.append({"kind": "mounted", "id": volume["id"], "drive": drive_id})
-            elif was and not now:
-                events.append({"kind": "unmounted", "id": volume["id"], "drive": drive_id})
-    return events
-
-
 # ---- MTP phones (gvfs, not visible to UDisks2) -------------------------------
 
 def mtp_available():
@@ -312,24 +282,6 @@ def build_phones(volumes, mounts):
         entry = phone_entry(mount.get("name"), uri, mount)
         phones.setdefault(entry["id"], entry)
     return sorted(phones.values(), key=lambda item: (item["name"].lower(), item["id"]))
-
-
-def diff_phones(before, after):
-    """Events between two phone lists."""
-    events = []
-    old = {item["id"]: item for item in before}
-    new = {item["id"]: item for item in after}
-    for phone_id in new:
-        if phone_id not in old:
-            events.append({"kind": "phoneAdded", "id": phone_id})
-    for phone_id in old:
-        if phone_id not in new:
-            events.append({"kind": "phoneRemoved", "id": phone_id})
-    for phone_id, phone in new.items():
-        if phone_id not in old or old[phone_id]["mounted"] == phone["mounted"]:
-            continue
-        events.append({"kind": "phoneMounted" if phone["mounted"] else "phoneUnmounted", "id": phone_id})
-    return events
 
 
 def volume_monitor():
@@ -403,37 +355,6 @@ def emit_state(state):
     emit(kind="drives", drives=state["drives"], phones=state["phones"], mtp=mtp_available())
 
 
-def settle(state, current, error):
-    """What one read of UDisks2 means, given the monitor's state: ("error",
-    []) when it failed, ("drives", events) when the shell has to hear the
-    list, (None, []) when nothing changed. Updates the state.
-
-    The shell shows the drives as unavailable from an error until it hears
-    the list again, and the list after a failed read is mostly the one from
-    before - which, unchanged, used to go unsaid, so "Drives are unavailable"
-    stayed until something was plugged in. `stale` marks a list the shell has
-    not heard: at start, and after every error. What is there at the first
-    read that succeeds was not plugged in just now: no events for it (they
-    would notify and open every drive the session starts with).
-    """
-    if error:
-        state["stale"] = True
-        state["retries"] = state.get("retries", 0) + 1
-        return "error", []
-    first = state.get("first", False)
-    events = [] if first else diff(state["drives"], current["drives"]) + diff_phones(state["phones"], current["phones"])
-    changed = bool(events) or current["drives"] != state["drives"] or current["phones"] != state["phones"]
-    say = changed or state.get("stale", False)
-    state.update(current)
-    state.update(stale=False, first=False, retries=0)
-    return ("drives" if say else None), events
-
-
-def retry_delay(retries):
-    """Milliseconds until the next try after this many failed reads in a row."""
-    return RETRY_MS[min(max(retries, 1), len(RETRY_MS)) - 1]
-
-
 def command_list():
     import dbus  # noqa: PLC0415
     state, error = snapshot(dbus.SystemBus(), volume_monitor())
@@ -444,77 +365,11 @@ def command_list():
     return 0
 
 
-def exit_with_parent():
-    """Ask the kernel to end the monitor when the shell dies without stopping it."""
-    try:
-        import ctypes  # noqa: PLC0415
-        import signal  # noqa: PLC0415
-        libc = ctypes.CDLL(None, use_errno=True)
-        libc.prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
-    except (OSError, AttributeError):
-        pass
-
-
-def command_monitor():
-    import dbus  # noqa: PLC0415
-    import dbus.mainloop.glib  # noqa: PLC0415
-    from gi.repository import GLib  # noqa: PLC0415
-
-    exit_with_parent()
-    dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
-    bus = dbus.SystemBus()
-    loop = GLib.MainLoop()
-    monitor = volume_monitor()
-    state = {"drives": [], "phones": [], "timer": 0, "stale": True, "first": True, "retries": 0}
-
-    def refresh():
-        state["timer"] = 0
-        current, error = snapshot(bus, monitor)
-        said, events = settle(state, current, error)
-        if said == "error":
-            emit(kind="error", message=error)
-            # A change signal reschedules sooner (schedule replaces this).
-            state["timer"] = GLib.timeout_add(retry_delay(state["retries"]), refresh)
-        elif said == "drives":
-            emit_state(state)
-            for event in events:
-                emit(**event)
-        return False
-
-    def schedule(*_args, **_kwargs):
-        if state["timer"]:
-            GLib.source_remove(state["timer"])
-        state["timer"] = GLib.timeout_add(DEBOUNCE_MS, refresh)
-
-    for name in ("InterfacesAdded", "InterfacesRemoved"):
-        bus.add_signal_receiver(schedule, signal_name=name, dbus_interface="org.freedesktop.DBus.ObjectManager",
-                                bus_name=UDISKS, path=UDISKS_PATH)
-    bus.add_signal_receiver(schedule, signal_name="PropertiesChanged", dbus_interface="org.freedesktop.DBus.Properties",
-                            bus_name=UDISKS, path_keyword="path")
-    bus.add_signal_receiver(schedule, signal_name="NameOwnerChanged", dbus_interface="org.freedesktop.DBus",
-                            arg0=UDISKS)
-    # gvfs reports phones; it lives on the session bus and has its own signals.
-    if monitor is not None:
-        for name in ("volume-added", "volume-removed", "volume-changed",
-                     "mount-added", "mount-removed", "mount-changed"):
-            monitor.connect(name, schedule)
-
-    # The first read: the list (or the error, then the tries after it).
-    refresh()
-
-    # SIGTERM from the shell ends the process with the default action.
-    try:
-        loop.run()
-    except KeyboardInterrupt:
-        pass
-    return 0
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["list", "monitor"])
-    args = parser.parse_args(argv)
-    return command_list() if args.command == "list" else command_monitor()
+    parser.add_argument("command", choices=["list"])
+    parser.parse_args(argv)
+    return command_list()
 
 
 if __name__ == "__main__":

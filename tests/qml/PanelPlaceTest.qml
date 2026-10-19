@@ -6,10 +6,10 @@ import "../../shell/components/PanelPlaceLogic.js" as P
 // What a panel and a notification popup keep clear of (PanelPlaceLogic,
 // ShellPanel's bottom/left/right offsets and the popup stack): the bar and the
 // dock beyond it. Round 12: the notification center ran down over the
-// taskbar (D1), bar-pill panels and popups stood where the dock is beyond a
-// bottom bar, the corner popups covered a right dock (ui-rest#4), and a key
+// taskbar, bar-pill panels and popups stood where the dock is beyond a
+// bottom bar, the corner popups covered a right dock, and a key
 // opened its panel under a desktop clock a screen away from the taskbar's
-// bell (D13 g). Pure logic: no service, no window.
+// bell. Pure logic: no service, no window.
 ShellRoot {
     Component.onCompleted: {
         // ---- the dock's reach -----------------------------------------------
@@ -99,6 +99,36 @@ ShellRoot {
         T.eq(P.withDockItem(clicked, bell, anchor), clicked, "a panel a click placed stays where the click put it")
         T.eq(P.withDockItem({}, null, anchor), {}, "no bell: as it was")
         T.eq(P.withDockItem({}, bell, {}), {}, "no anchor: as it was")
+
+        // ---- the surface ------------------------------------------------------
+        // Settings, the one panel that can be dragged, mapped the whole screen
+        // for its 980 x 680 card on every open; it needs it only for a drag.
+        T.eq(P.fullSurface(true, false, false), false, "a panel with a card, at rest: the card's surface, dragged or not")
+        T.eq(P.fullSurface(true, false, true), true, "dragged by its title: the screen, so it can go anywhere")
+        T.eq(P.fullSurface(true, true, false), true, "resized by its grip: the screen")
+        T.eq(P.fullSurface(false, false, false), true, "no card (the overview): the screen")
+        // Settings centred on 1920 x 1200 and moved by (100, -50), the pad 56.
+        const settings = { x: (1920 - 980) / 2 + 100, y: (1200 - 680) / 2 - 50, width: 980, height: 680 }
+        const surface = P.cardSurface(settings, null, 56, 1920, 1200, false)
+        T.eq(surface, { x: 514, y: 154, width: 1092, height: 792 }, "the moved card and its pad, where it was moved to")
+        T.ok(surface.width * surface.height < 0.4 * 1920 * 1200, "under two fifths of the screen's pixels")
+        T.eq(P.cardSurface({ x: 10, y: 1000, width: 300, height: 180 }, null, 56, 1920, 1200, false),
+             { x: 0, y: 944, width: 366, height: 256 }, "kept inside the screen")
+        T.eq(P.cardSurface({ x: 1500, y: 60, width: 400, height: 500 }, { x: 860, y: 0, width: 200, height: 34 }, 56, 1920, 1200, false),
+             { x: 804, y: 0, width: 1116, height: 616 }, "with what it grows out of")
+        T.eq(P.cardSurface({ x: 1500, y: 60, width: 400, height: 500 }, null, 56, 1920, 1200, true),
+             { x: 1444, y: 0, width: 476, height: 1200 }, "or the screen's whole height for a card that changes height")
+        T.eq(P.cardSurface({ x: 5.5, y: 7.25, width: 100.2, height: 50 }, null, 0, 1920, 1200, false),
+             { x: 5, y: 7, width: 101, height: 51 }, "whole pixels, outwards")
+
+        // ---- out of a pill at the edge ----------------------------------------
+        // The bar's last pill ends 6 px from the screen edge, a panel kept
+        // 16 px: their right edges did not line up.
+        T.eq(P.outerClear(16, 16, 6), 6, "out of a pill nearer the edge: as far out as the pill")
+        T.eq(P.outerClear(16, 16, 400), 16, "out of one further in: the screen margin, as before")
+        T.eq(P.outerClear(16, 16, -1), 16, "out of nothing: as before")
+        T.eq(P.outerClear(64, 16, 6), 64, "a dock on that side stays clear, whatever opened the panel")
+        T.eq(P.outerClear(16, 16, -0.5), 16, "a negative distance is no origin")
 
         T.finish("PanelPlaceTest")
     }

@@ -149,6 +149,34 @@ check(decide(b"\x89PNG same", b"\x89PNG same", None, False) == "skip", "the mirr
 check(bridge.ctypes.sizeof(bridge.XFixesSelectionNotifyEvent) <= bridge.ctypes.sizeof(bridge.XEvent), "event fits the union")
 check(bridge.ctypes.sizeof(bridge.XEvent) == 24 * bridge.ctypes.sizeof(bridge.ctypes.c_long), "XEvent is 24 longs")
 
+# The libraries load by soname, without find_library's ldconfig run; the
+# lookup is only the fallback, and nothing found is no library.
+loaded, looked_up = [], []
+
+
+def fake_load(name, available=("libX11.so.6", "/opt/lib/libXfixes.so.7")):
+    loaded.append(name)
+    if name not in available:
+        raise OSError(name)
+    return "lib:" + name
+
+
+def fake_find(name):
+    looked_up.append(name)
+    return {"Xfixes": "/opt/lib/libXfixes.so.7"}.get(name)
+
+
+check(bridge.load_library("X11", fake_load, fake_find) == "lib:libX11.so.6" and not looked_up,
+      "the soname loads without a lookup")
+check(bridge.load_library("Xfixes", fake_load, fake_find) == "lib:/opt/lib/libXfixes.so.7" and looked_up == ["Xfixes"],
+      "a soname that does not load falls back to the lookup")
+check(bridge.load_library("Xfixes", lambda name: fake_load(name, ()), lambda name: None) is None,
+      "nothing found is no library")
+check(bridge.load_library("Xfixes", lambda name: fake_load(name, ()), fake_find) is None,
+      "a looked-up path that does not load either is no library")
+check(bridge.load_library("X11") is not None or bridge.ctypes.util.find_library("X11") is None,
+      "libX11 loads by its soname wherever it is installed")
+
 if failures:
     print(f"TESTS FAILED x11-clipboard-bridge ({failures})")
     sys.exit(1)

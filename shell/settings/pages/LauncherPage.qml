@@ -1,3 +1,4 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
@@ -27,18 +28,35 @@ ColumnLayout {
         title: "Modes"
         description: "What the switch beside the search field offers, and in which order. Apps leads and does not move: it is the one with no prefix, the mode the launcher opens in."
 
+        // Keyed by mode id: Earlier and Later reorder LauncherService.modes,
+        // a new list, and a Repeater over it built every row again - the
+        // button the keyboard had pressed went with its row. A row moves with
+        // its mode now, and the focus with it.
         Repeater {
-            model: LauncherService.modes
+            model: ScriptModel { values: LauncherService.modes.map(mode => mode.id) }
             ListRow {
-                required property var modelData
-                readonly property string id: modelData.id
+                id: modeRow
+                required property string modelData
+                readonly property string modeId: modelData
+                readonly property var mode: LauncherService.modes.find(entry => entry.id === modelData)
+                    || ({ id: modelData, icon: "", label: "", prefix: "" })
+                // At an end now, the button that still moves it.
+                function focusStep(delta) {
+                    const wanted = delta < 0 ? earlierButton : laterButton
+                    const button = wanted.enabledState ? wanted : delta < 0 ? laterButton : earlierButton
+                    button.forceActiveFocus()
+                }
+                function step(delta, keepFocus) {
+                    SettingsService.set("launcher.modeOrder", Order.move(root.modeOrder, root.modeIds, modeRow.modeId, delta))
+                    if (keepFocus) Qt.callLater(() => modeRow.focusStep(delta))
+                }
                 interactive: false
                 Layout.fillWidth: true
                 compact: true
                 level: 1
-                icon: modelData.icon
-                title: modelData.label
-                subtitle: modelData.prefix.length ? "Type " + modelData.prefix + " to reach it"
+                icon: mode.icon
+                title: mode.label
+                subtitle: mode.prefix.length ? "Type " + mode.prefix + " to reach it"
                     : "No prefix - the mode it opens in"
                 // A `ListRow`'s trailing slot is a plain Item, so two children
                 // sit on top of each other. Anything with more than one thing
@@ -46,24 +64,25 @@ ColumnLayout {
                 RowLayout {
                     spacing: Metrics.spaceXxs
                     ShellButton {
+                        id: earlierButton
                         focusOnTab: true
                         icon: Icons.raise
                         variant: "ghost"
                         compact: true
                         toolTip: "Earlier in the switch"
-                        enabledState: Order.canMove(root.modeOrder, root.modeIds, id, -1)
-                        onClicked: SettingsService.set("launcher.modeOrder",
-                                                       Order.move(root.modeOrder, root.modeIds, id, -1))
+                        enabledState: Order.canMove(root.modeOrder, root.modeIds, modeRow.modeId, -1)
+                        // A click takes no focus, so the focus says the keyboard pressed it.
+                        onClicked: modeRow.step(-1, activeFocus)
                     }
                     ShellButton {
+                        id: laterButton
                         focusOnTab: true
                         icon: Icons.collapse
                         variant: "ghost"
                         compact: true
                         toolTip: "Later in the switch"
-                        enabledState: Order.canMove(root.modeOrder, root.modeIds, id, 1)
-                        onClicked: SettingsService.set("launcher.modeOrder",
-                                                       Order.move(root.modeOrder, root.modeIds, id, 1))
+                        enabledState: Order.canMove(root.modeOrder, root.modeIds, modeRow.modeId, 1)
+                        onClicked: modeRow.step(1, activeFocus)
                     }
                 }
             }
@@ -99,8 +118,10 @@ ColumnLayout {
         title: "Pinned apps"
         // The start menu's "Pinned" grid is this list too (LauncherService
         // .pinnedApps): "Pin to Start" there adds here, and an unpin here
-        // takes the app off Start as well, so the page says so.
-        description: "Shown in front of the search field while nothing is typed - the one thing on a search surface that does not compete with the results, because it answers the question you have not asked yet. The start menu's Pinned grid shows the same apps. The dock keeps pins of its own (Settings > Dock)."
+        // takes the app off Start as well, so the page says so. In front of
+        // the search field they are the one thing on a search surface that
+        // does not compete with the results.
+        description: "Shown in front of the search field while nothing is typed. The start menu's Pinned grid shows the same apps; the dock keeps pins of its own (Settings > Dock)."
 
         SettingRow {
             Layout.fillWidth: true
@@ -218,7 +239,10 @@ ColumnLayout {
             label: "Address"
             hint: "Put %s where the search term belongs"
             // Stored on Return or on leaving the field, and Escape never
-            // empties the setting (StoredTextField).
+            // empties the setting (StoredTextField). An address the launcher
+            // cannot search with is not stored: it stays in the field as a
+            // draft with its error under it, where before it replaced a
+            // working one and "?query" quietly offered nothing.
             StoredTextField {
                 id: urlField
                 Layout.fillWidth: true
@@ -226,7 +250,9 @@ ColumnLayout {
                 storedText: root.template
                 placeholder: "https://example.org/search?q=%s"
                 error: Web.customError(text).length > 0
-                onCommit: value => SettingsService.set("launcher.searchUrl", value)
+                onCommit: value => {
+                    if (!Web.customError(value).length) SettingsService.set("launcher.searchUrl", value)
+                }
             }
         }
 

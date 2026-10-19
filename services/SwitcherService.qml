@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import QtQuick
 import "switcher/SwitcherLogic.js" as Logic
+import "overview/OverviewLogic.js" as Overview
 
 // Alt+Tab window switcher state. Hyprland calls `next`/`previous` on Alt+Tab
 // and `confirm` when Alt is released (hypr/keybinds.conf); the overlay
@@ -106,6 +107,19 @@ Singleton {
         function onActiveChanged() { if (root.active && PanelService.active !== "switcher") root.close() }
     }
 
+    // The shell's answer for the Alt+Tab whose batch was refused, once the
+    // refused process has ended (its output can come before its exit).
+    Timer {
+        id: retry
+        interval: 10
+        repeat: true
+        onTriggered: {
+            if (loadProc.running) return
+            stop()
+            if (root.active && root.loading) loadProc.running = true
+        }
+    }
+
     Timer {
         id: focusTimer
         interval: root.focusDelay
@@ -115,14 +129,30 @@ Singleton {
         }
     }
 
+    // One `hyprctl --batch` for both answers rather than a shell and two
+    // hyprctl, at every Alt+Tab (OverviewLogic.parseBatch). A Hyprland whose
+    // batch answer is not two JSON documents gets the shell from then on, at
+    // once for this Alt+Tab too.
+    property bool batchRefused: false
     Process {
         id: loadProc
         stderr: ErrorLog { label: "SwitcherService.loadProc" }
-        command: ["sh", "-c", "printf '{\"clients\":'; hyprctl -j clients; printf ',\"active\":'; hyprctl -j activewindow; printf '}'"]
+        command: root.batchRefused
+            ? ["sh", "-c", "printf '{\"clients\":'; hyprctl -j clients; printf ',\"active\":'; hyprctl -j activewindow; printf '}'"]
+            : ["hyprctl", "-j", "--batch", "clients; activewindow"]
         stdout: StdioCollector {
             onStreamFinished: {
                 let data = null
-                try { data = JSON.parse(text) } catch (error) { data = null }
+                if (root.batchRefused) {
+                    try { data = JSON.parse(text) } catch (error) { data = null }
+                } else {
+                    data = Overview.parseBatch(text, ["clients", "active"])
+                    if (!data) {
+                        root.batchRefused = true
+                        if (root.active) retry.start()
+                        return
+                    }
+                }
                 if (!root.active) return
                 root.windows = data ? Logic.build(data.clients) : []
                 root.activeAddress = data && data.active && data.active.address ? String(data.active.address) : ""

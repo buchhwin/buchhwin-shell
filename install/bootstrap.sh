@@ -4,14 +4,17 @@
 # and decides the package manager and the list (install/packages/).
 #
 # The other two installers assume the packages the shell talks to are already
-# there; this one puts them there first and then calls them. It is the only
-# script here that reaches the network, and it is deliberately the loudest: a
-# dry run prints every command it would run, in order, before anything happens.
+# there; this one puts them there first and then calls them. It is the one
+# that reaches the network for packages, fonts and tools - on Leap it also runs
+# build-hyprland-leap.sh, which clones and downloads the pinned sources - and it
+# is deliberately the loudest: a dry run prints every command it would run, in
+# order, before anything happens.
 #
 #   install/bootstrap.sh                 dry run (default)
 #   install/bootstrap.sh --apply         do it
 #   install/bootstrap.sh --apply --minimal      only what the shell needs
-#   install/bootstrap.sh --apply --skip-fonts   leave fonts alone
+#   install/bootstrap.sh --apply --skip-fonts   leave fonts alone (no font
+#                                               packages, no Nerd Fonts)
 #   install/bootstrap.sh --apply --skip-apps    no browser, no file manager
 #   install/bootstrap.sh --list-packages        every package name, one per line
 #   install/bootstrap.sh --distro NAME ...      fedora | opensuse-leap | arch instead
@@ -46,7 +49,7 @@ while (( $# )); do
     --skip-apps) apps=false; shift ;;
     --list-packages) list_packages=true; shift ;;
     --distro) export BUCHHWIN_DISTRO=${2:?--distro needs a name}; shift 2 ;;
-    -h|--help) sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
   esac
 done
@@ -63,9 +66,12 @@ fi
 # shellcheck source=install/lib/distro.sh
 . "$project_dir/install/lib/distro.sh"
 distro=$(distro_detect) || exit 2
-# bootstrap_packages, repos, brave_repofile, core, packages, extras,
-# app_packages, fetched_binaries; aur_packages only on Arch
+distro_untried "$distro" && exit 2
+# bootstrap_packages, repos, brave_repofile, core, packages, font_packages,
+# extras, app_packages, fetched_binaries; aur_packages and arch_provided_by
+# only on Arch
 aur_packages=()
+font_packages=()
 # shellcheck disable=SC1090
 . "$project_dir/install/packages/$distro.sh"
 
@@ -86,18 +92,24 @@ app_defaults=(
 )
 
 # Nerd Fonts neither Fedora nor Leap packages (Arch does; its list installs
-# them, and the font step below then finds them). family|archive|faces|directory:
+# them, and the font step below then finds them).
+# family|archive|faces|directory|sha256:
 # - "FiraCode Nerd Font Propo" is what the shell asks for by name
 #   (theme/Typography.qml); without it every glyph in the interface is an
 #   empty box, so this is not an extra.
 # - "JetBrainsMono Nerd Font" is the terminal face (Settings > Terminal,
 #   kitty/kitty.conf, terminal/alacritty.toml).
 # Only the faces named are extracted: each archive holds a few hundred files.
-nerd_fonts_url="https://github.com/ryanoasis/nerd-fonts/releases/latest/download"
+# One release, pinned and checked like the fetched binaries: every program
+# parses these files, and "latest" changes under the list - a release that
+# renamed the faces would stop the run halfway. The sums are the ones GitHub
+# publishes for the release's assets.
+nerd_fonts_release="v3.5.1"
+nerd_fonts_url="https://github.com/ryanoasis/nerd-fonts/releases/download/$nerd_fonts_release"
 fonts_dir="${XDG_DATA_HOME:-$HOME/.local/share}/fonts"
 nerd_fonts=(
-  "FiraCode Nerd Font Propo|FiraCode.zip|*Propo*.ttf|FiraCode"
-  "JetBrainsMono Nerd Font|JetBrainsMono.zip|JetBrainsMonoNerdFont-*.ttf|JetBrainsMono"
+  "FiraCode Nerd Font Propo|FiraCode.zip|*Propo*.ttf|FiraCode|239395baf60c89b2eaf4862b6b09db0ef95605cd3e8eef51c00345822a81a665"
+  "JetBrainsMono Nerd Font|JetBrainsMono.zip|JetBrainsMonoNerdFont-*.ttf|JetBrainsMono|fab782a66f7d3019da64f6572db9fc5d3a4bcb19f9fa13e2d8a62e3693d6396e"
 )
 
 # Not a pipeline: `grep -q` exits at the first match, `fc-list` then dies of
@@ -111,15 +123,17 @@ font_present() {
 }
 
 to_install=("${core[@]}" "${packages[@]}")
+$fonts && to_install+=("${font_packages[@]}")
 $minimal || to_install+=("${extras[@]}")
 if $apps && ! $minimal; then to_install+=("${app_packages[@]}"); fi
 
 # The list, for whoever wants to check it against the repositories without
-# reading the script. Everything, regardless of --minimal and --skip-apps:
-# the question "does this name exist" is about the name, not about this run.
+# reading the script. Everything, regardless of --minimal, --skip-fonts and
+# --skip-apps: the question "does this name exist" is about the name, not
+# about this run.
 if $list_packages; then
   printf '%s\n' "${bootstrap_packages[@]}" "${core[@]}" "${packages[@]}" \
-    "${extras[@]}" "${app_packages[@]}"
+    "${font_packages[@]}" "${extras[@]}" "${app_packages[@]}"
   exit 0
 fi
 
@@ -207,6 +221,12 @@ fi
 pkg_install_safe "$distro" "${to_install[@]}"
 zypper_repo_args=()
 $minimal && printf '  (--minimal: recording, fingerprint, phone, calendar writing and the apps are left out)\n'
+$fonts || printf '  (--skip-fonts: the font packages are left out)\n'
+# Arch installs BlueZ without starting it: the adapter stays invisible until
+# the service is enabled, which is yours to do (Fedora and Leap enable it).
+if [[ $distro == arch ]] && [[ $(systemctl is-enabled bluetooth.service 2>/dev/null) != enabled ]]; then
+  printf '  Bluetooth needs its service: sudo systemctl enable --now bluetooth\n'
+fi
 
 if (( ${#aur_packages[@]} )) && $apps && ! $minimal; then
   say '3b. From the AUR'
@@ -235,7 +255,7 @@ fi
 
 say '4. The fonts and the tools the distribution does not package'
 for entry in "${nerd_fonts[@]}"; do
-  IFS='|' read -r font_name archive faces font_subdir <<<"$entry"
+  IFS='|' read -r font_name archive faces font_subdir font_sum <<<"$entry"
   font_dir="$fonts_dir/$font_subdir"
   if ! $fonts; then
     printf '  %s: skipped (--skip-fonts)\n' "$font_name"
@@ -246,14 +266,25 @@ for entry in "${nerd_fonts[@]}"; do
     trap 'rm -rf -- "$tmp"' EXIT
     printf '  + downloading %s/%s\n' "$nerd_fonts_url" "$archive"
     curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 -o "$tmp/$archive" "$nerd_fonts_url/$archive"
+    if [[ $(sha256sum "$tmp/$archive" | cut -d' ' -f1) != "$font_sum" ]]; then
+      printf '  %s of Nerd Fonts %s does not match its checksum; not installed\n' "$archive" "$nerd_fonts_release" >&2
+      exit 1
+    fi
     mkdir -p -- "$font_dir"
-    unzip -o -j "$tmp/$archive" "$faces" -d "$font_dir" >/dev/null
+    # The faces are not an extra (above), so a release without them stops
+    # here - saying which, rather than with unzip's bare status.
+    if ! unzip -o -j "$tmp/$archive" "$faces" -d "$font_dir" >/dev/null; then
+      printf '  %s of Nerd Fonts %s has no %s faces; "%s" was not installed\n' \
+        "$archive" "$nerd_fonts_release" "$faces" "$font_name" >&2
+      exit 1
+    fi
     fc-cache -f "$font_dir" >/dev/null
     font_present "$font_name" || { printf '  "%s" did not register; look in %s\n' "$font_name" "$font_dir" >&2; exit 1; }
     printf '  + installed "%s" into %s\n' "$font_name" "$font_dir"
     rm -rf -- "$tmp"
   else
-    printf '  "%s": download %s/%s\n' "$font_name" "$nerd_fonts_url" "$archive"
+    printf '  "%s": download %s/%s (Nerd Fonts %s, sha256 %s...)\n' \
+      "$font_name" "$nerd_fonts_url" "$archive" "$nerd_fonts_release" "${font_sum:0:12}"
     printf '  extract the %s faces into %s and run fc-cache -f\n' "$faces" "$font_dir"
   fi
 done
@@ -286,8 +317,20 @@ if [[ $distro == opensuse-leap ]]; then
   # build dependencies when it is not.
   hyprland_args=()
   $apply && hyprland_args=(--apply)
-  "$project_dir/install/build-hyprland-leap.sh" "${hyprland_args[@]}" \
-    | sed '/^Dry run\./d; /^Nothing was changed\./d; s/^/  /'
+  # A build that does not happen costs Hyprland's update, not the steps
+  # after it: the build refuses while a session runs from its prefix (a
+  # re-run from the buchhwin session after a pin moved), and the build that
+  # runs now stays in place. Steps 5-7 still run, as after step 3b.
+  build_status=0
+  { "$project_dir/install/build-hyprland-leap.sh" "${hyprland_args[@]}" \
+      | sed '/^Dry run\./d; /^Nothing was changed\./d; s/^/  /'; } || build_status=$?
+  if (( build_status )); then
+    printf '  Hyprland was not built (status %d, above); run %s --apply again from Plasma or a TTY\n' \
+      "$build_status" "$project_dir/install/build-hyprland-leap.sh"
+    if [[ ! -x ${BUCHHWIN_HYPRLAND_PREFIX:-$HOME/.local/opt/buchhwin-hyprland}/bin/Hyprland ]]; then
+      printf '  There is no build yet: the session does not start until there is one.\n'
+    fi
+  fi
 fi
 
 say '5. The shell itself, into your home directory'

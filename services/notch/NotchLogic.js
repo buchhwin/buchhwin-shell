@@ -1,15 +1,16 @@
 .pragma library
+.import "../appearance/TimeFormat.js" as TimeFormat
 
 // Pure helpers for the notch (desktop mode "notch", shell/notch): texts, the
-// rows of the hover overview, status icons and the outline of the shape.
+// catalogue the editor offers, status icons and the outline of the shape.
 
-function pad2(value) {
-    return (value < 10 ? "0" : "") + value
-}
-
-// 24-hour "HH:MM" like the clock widget.
-function timeText(date) {
-    return pad2(date.getHours()) + ":" + pad2(date.getMinutes())
+// The time the way the clock widget writes it: "18:52", or "6:52 PM" when
+// the clock is set to twelve hours (SettingsService.twelveHourClock, which
+// the caller passes). TimeFormat is the one place a time becomes text; this
+// was the copy it had missed, so the strip and the overview said "18:52"
+// beside a bar clock that said "6:52 PM".
+function timeText(date, twelve) {
+    return TimeFormat.time(date, twelve === true, ":")
 }
 
 // The event the overview shows: the timed event of today that has not ended
@@ -47,46 +48,39 @@ function upcomingEvents(events, now, count) {
     return timed.concat(allDay).slice(0, limit)
 }
 
-// Short time line for the event row.
-function eventWhen(event, now) {
+// Short time line for the event row. `twelve` as in `timeText`.
+function eventWhen(event, now, twelve) {
     if (!event) return ""
     if (event.allDay) return "All day"
     const start = event.start.getTime()
     const end = event.end instanceof Date ? event.end.getTime() : start
     const current = now.getTime()
-    if (start <= current && end > current) return "Now · until " + timeText(event.end)
+    if (start <= current && end > current) return "Now · until " + timeText(event.end, twelve)
     const minutes = Math.ceil((start - current) / 60000)
     if (minutes >= 0 && minutes < 60) return minutes <= 1 ? "In 1 min" : "In " + minutes + " min"
-    return end > start ? timeText(event.start) + " – " + timeText(event.end) : timeText(event.start)
+    return end > start ? timeText(event.start, twelve) + " – " + timeText(event.end, twelve) : timeText(event.start, twelve)
 }
 
-// Rows of the expanded notch, top to bottom.
-function rows(state) {
-    const result = ["header"]
-    if (state && state.event) result.push("event")
-    if (state && state.media) result.push("media")
-    result.push("status")
-    return result
-}
-
-// Status icons of the overview: battery (with percent), network, Bluetooth,
-// Do Not Disturb (only while on) and volume. `dim` marks something off.
+// Status icons of the overview: network, Bluetooth, Do Not Disturb (only
+// while on), volume and battery (with percent) - the order of the bars' and
+// the taskbar's status, the battery at the outer end where its percent is.
+// `dim` marks something off.
 // The battery is `charging` or `low` (PowerService.low, the level from
 // Settings > Power), never both: a battery on the charger is not in trouble,
 // whatever the number says.
 function statusItems(state) {
     const items = []
     const s = state || {}
-    if (s.battery && s.battery.present) {
-        const charging = s.battery.charging === true
-        items.push({ id: "battery", icon: s.battery.icon, text: Math.round(s.battery.percent) + "%", dim: false,
-                     charging: charging, low: !charging && s.battery.low === true })
-    }
     if (s.network) items.push({ id: "network", icon: s.network.icon, text: "", dim: !s.network.connected })
     if (s.bluetooth && s.bluetooth.available)
         items.push({ id: "bluetooth", icon: s.bluetooth.icon, text: "", dim: !s.bluetooth.connected })
     if (s.dnd) items.push({ id: "dnd", icon: "󰂛", text: "", dim: false })
     if (s.volume) items.push({ id: "volume", icon: s.volume.icon, text: "", dim: s.volume.muted === true })
+    if (s.battery && s.battery.present) {
+        const charging = s.battery.charging === true
+        items.push({ id: "battery", icon: s.battery.icon, text: Math.round(s.battery.percent) + "%", dim: false,
+                     charging: charging, low: !charging && s.battery.low === true })
+    }
     return items
 }
 
@@ -95,7 +89,8 @@ function statusItems(state) {
 // which read like a label someone forgot to fill in. Still one muted line
 // beside the block's glyph, so it is no louder than the name was; hiding the
 // cell instead would leave a hole in a grid the user arranged, and an empty
-// field that reads as broken. `facts`: `weather` (WeatherService.status) and
+// field that reads as broken - unless the item asks for exactly that
+// (`hidesEmpty`). `facts`: `weather` (WeatherService.status) and
 // `workspaceEmpty` (no window on the focused workspace). Anything else keeps
 // `fallback`, its name.
 function emptyText(type, facts, fallback) {
@@ -110,6 +105,89 @@ function emptyText(type, facts, fallback) {
     if (type === "media" || type === "nowPlaying") return "Nothing playing"
     if (type === "activeWindow") return f.workspaceEmpty === true ? "Empty workspace" : "No window"
     return String(fallback || type || "")
+}
+
+// Whether an overview cell is left out of the grid for now. Only an item
+// that says so (`options.hideEmpty`, which the built-in presets give their
+// music block - "Nothing playing" was the biggest thing on Island most of the
+// time - and Classic its weather as well) and only while its block has
+// nothing to draw (no song, no forecast): the grid then closes up, and the
+// cell comes back with the song. Never while the notch is arranged, where
+// every item has to be there to be taken hold of. The notch's own blocks
+// only: a widget's emptiness is known once it is loaded, in the very cell
+// this would take away.
+var HIDE_EMPTY_TYPES = ["weather", "media", "events"]
+
+function hidesEmpty(item, hasContent, arranging) {
+    if (arranging === true || hasContent === true || !item || !item.options) return false
+    return item.options.hideEmpty === true && HIDE_EMPTY_TYPES.indexOf(item.type) >= 0
+}
+
+// ---- what the editor offers -------------------------------------------------
+// The notch's own blocks: what it draws better than a widget can - the
+// weather beside the time, the music with its controls, the day's events and
+// the status row. The weather is a widget too (WidgetRegistry), and that is
+// what the strip loads for it; the other three exist only as blocks.
+var BLOCKS = [
+    { type: "weather", label: "Weather", icon: "\u{f0590}" },
+    { type: "media", label: "Media", icon: "\u{f075a}" },
+    { type: "events", label: "Events", icon: "\u{f00ed}" },
+    { type: "status", label: "Status", icon: "\u{f05a9}" }
+]
+
+// The blocks the strip cannot draw. It draws the time, the recording and the
+// timer itself and loads a widget file for everything else, and these have
+// none: put there, one was an empty spot that could not go back into the
+// overview either, because a type sits in one list only.
+var STRIP_REFUSES = ["media", "events", "status"]
+
+function stripTakes(type) {
+    return STRIP_REFUSES.indexOf(String(type)) < 0
+}
+
+// What a widget is called on the notch, where a block may already carry its
+// name: the calendar widget is "Events" everywhere else, and beside the
+// events block that was two buttons saying the same thing.
+var WIDGET_LABELS = { calendarSummary: "Calendar" }
+
+function widgetLabel(type, label) {
+    return Object.prototype.hasOwnProperty.call(WIDGET_LABELS, type) ? WIDGET_LABELS[type] : String(label || type || "")
+}
+
+// The whole catalogue: the blocks first, then every widget that is not one of
+// them already (the weather was offered twice). `widgets` is
+// WidgetRegistry.availableTypes(): `{ name, label, icon, category }`.
+function catalogue(blocks, widgets) {
+    const own = (Array.isArray(blocks) ? blocks : []).map(block =>
+        ({ type: block.type, label: block.label, icon: block.icon, category: "blocks" }))
+    const taken = own.map(block => block.type)
+    const rest = (Array.isArray(widgets) ? widgets : [])
+        .filter(widget => widget && taken.indexOf(widget.name) < 0)
+        .map(widget => ({ type: widget.name, label: widgetLabel(widget.name, widget.label),
+                          icon: widget.icon, category: widget.category }))
+    return own.concat(rest)
+}
+
+// What the editor's list offers for a zone: the catalogue less what is on the
+// notch already (a type sits in one list or the other), and for the strip
+// less what it cannot draw. `onNotch`: every type in either list.
+function offered(entries, onNotch, zone) {
+    const placed = Array.isArray(onNotch) ? onNotch : []
+    return (Array.isArray(entries) ? entries : []).filter(entry =>
+        placed.indexOf(entry.type) < 0 && (zone !== "collapsed" || stripTakes(entry.type)))
+}
+
+// The list in groups, in the order of `categories` ({ id, label }), the
+// blocks first under their own heading; anything in no known group comes
+// last rather than not at all. Groups left with nothing go.
+function catalogueGroups(entries, categories) {
+    const groups = [{ id: "blocks", label: "Blocks" }].concat(Array.isArray(categories) ? categories : [])
+    const ids = groups.map(group => group.id)
+    const list = Array.isArray(entries) ? entries : []
+    return groups.map(group => ({ id: group.id, label: group.label,
+                                  entries: list.filter(entry => entry.category === group.id) }))
+        .concat([{ id: "other", label: "Other", entries: list.filter(entry => ids.indexOf(entry.category) < 0) }])
+        .filter(group => group.entries.length > 0)
 }
 
 // Width of the collapsed notch: room for the strip the user arranged plus
@@ -163,6 +241,20 @@ function stripItems(items, recording, timer) {
     if (recording && !list.some(item => item && item.type === "recording"))
         return [{ id: "", type: "recording" }].concat(list)
     return list
+}
+
+// Whether a part of the strip is drawn. A widget with nothing to say
+// (`hasData` false: a privacy item while nothing listens, a player that is
+// not there) is left out, as the pill bar and the overview leave it out; a
+// placed recording or timer item only while one runs - before, the strip
+// showed "Microphone active" all day and a lone red dot. While the notch is
+// arranged every part is there, so it can be taken hold of and the drop
+// indices count the whole list.
+function stripShows(type, hasData, recording, timer, arranging) {
+    if (arranging === true) return true
+    if (type === "recording") return recording === true
+    if (type === "timer") return timer === true
+    return hasData !== false
 }
 
 // ---- beside a taskbar ----------------------------------------------------------
@@ -285,11 +377,6 @@ function pillRadius(height, collapsedRadius, expandedRadius, expanded) {
     return Math.max(0, Math.min(wanted, h / 2))
 }
 
-// Interpolated shape between collapsed (0) and expanded (1) sizes.
-function mix(from, to, progress) {
-    return from + (to - from) * progress
-}
-
 // ---- how the notch opens -----------------------------------------------------
 // hover: resting the pointer on it opens the overview, a click opens the
 //        dashboard (or the overview, with clickAction "expand")
@@ -334,7 +421,13 @@ function buttonAction(value) {
 // larger axis wins and 240 px (times 0.8) is one page. A mouse wheel has no
 // pixels, and Tide's quarter of its angle made a page seven notches; here a
 // notch is 0.35 of a page, so two of them turn it.
-var SWIPE = { threshold: 0.56, idleMs: 150, pagePixels: 240, notchPage: 0.35 }
+//
+// A page is not where the notch lives: `returnMs` after the pointer has left
+// it, the notch goes back to the strip, as an island does. A short touchpad
+// swipe on the way past the top edge turns a page, and it used to stay there
+// until scrolled back - the time and the workspaces gone, the calendar kept
+// awake for the date page.
+var SWIPE = { threshold: 0.56, idleMs: 150, pagePixels: 240, notchPage: 0.35, returnMs: 8000 }
 
 // One wheel event as a step along the pages: positive is to the right (and
 // down, for a plain mouse wheel, which only has the one axis).

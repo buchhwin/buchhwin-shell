@@ -4,8 +4,10 @@ set -euo pipefail
 # Start Kitty with this session's appearance and a dedicated Zsh profile, so
 # Fastfetch and history stay independent from other desktop sessions. The
 # palette follows the shell theme (dark, light or automatic).
-# One process for the path, not three: this is on the path of every terminal.
-self=$(readlink -f -- "${BASH_SOURCE[0]}")
+# The path as it was called, and no process for it unless this file itself
+# is a link: this is on the path of every terminal (as in launch-default.sh).
+self=${BASH_SOURCE[0]}
+[[ $self == /* && ! -L $self ]] || self=$(readlink -f -- "$self")
 project_dir=${self%/*/*}
 # `--unit NAME` first: the window runs as a transient user service of that
 # name, outside the caller's process tree (scripts/launch-app.sh) - for the

@@ -71,8 +71,16 @@ PanelWindow {
     // **The click beside a panel lands here** (2026-10-13). A panel's surface
     // used to be the whole screen and caught that click itself; now it is the
     // size of its card (ShellPanel, `compactSurface`), so this surface - full
-    // screen, below every panel and above the bar, the notch and every window
-    // - takes it while a panel is open, and nothing at all otherwise.
+    // screen, in the Top layer below every panel (they are Overlay) and above
+    // every window - takes it while a panel is open, and nothing at all
+    // otherwise. Not above the bar, the notch or the dock: they are Top
+    // surfaces too, and inside one layer the compositor stacks by creation.
+    // They are made once the layout or the settings have loaded, after this
+    // one, so they sit above it (`hyprctl layers`: scrim, notch, dock from the
+    // bottom up) - it never dims them, and a click on them goes to them; the
+    // panel's focus grab closes the panel then. Leaving the dock undimmed is
+    // decided; dimming the bar and the notch would mean making this surface
+    // again after theirs, a remap on every change.
     readonly property bool catching: PanelService.active.length > 0 && PanelService.outsideCloses && !forSwitcher
     mask: catching ? null : noInput
     Region { id: noInput }

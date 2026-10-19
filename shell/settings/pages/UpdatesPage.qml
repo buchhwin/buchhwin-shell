@@ -74,7 +74,9 @@ ColumnLayout {
                 : UpdatesService.result.packagesKnown || UpdatesService.result.flatpaksKnown ? Icons.check : Icons.refresh
             active: UpdatesService.total > 0
             title: UpdatesService.summary
-            subtitle: UpdatesService.checking ? "Checking …" : "Last checked: " + UpdatesService.checkedText
+            // No "Last checked: Never" under "Not checked yet".
+            subtitle: UpdatesService.checking ? "Checking …"
+                : UpdatesService.lastCheck ? "Last checked: " + UpdatesService.checkedText : ""
             ShellButton {
                 focusOnTab: true
                 icon: Icons.refresh
@@ -289,6 +291,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Automatic check"
+        scope: "updates"
         description: "Looks for updates in the background and installs nothing - unless the shell's own updates are handed to it below."
 
         SettingRow {

@@ -52,6 +52,26 @@ expected = [(2, True), (6, False)]
 if raw_texts(sample) != expected:
     failures.append(f"scanner: expected {expected}, got {raw_texts(sample)}")
 
+# A Controls Label is a Text too (AutoText by default), and a qualified
+# element is the same element; a component whose name ends in Label is not.
+others = '''Item {
+    Label { text: "a" }
+    QtQuick.Text { text: "b" }
+    T.Text {
+        textFormat: Text.PlainText
+    }
+    SectionLabel { text: "c" }
+    LockLabel { text: "d" }
+}
+'''
+expected_others = [(2, False), (3, False), (4, True)]
+if raw_texts(others) != expected_others:
+    failures.append(f"scanner (Label, qualified): expected {expected_others}, got {raw_texts(others)}")
+# The Controls are not imported in shell/ without a reason on the line.
+imports = "import QtQuick\nimport QtQuick.Controls\nimport QtQuick.Controls.Basic // plaintext: a Slider only\n"
+if checks.controls_imports(imports) != [2]:
+    failures.append(f"controls imports: expected [2], got {checks.controls_imports(imports)}")
+
 paths = []
 for area in AREAS:
     paths.extend(sorted((ROOT / area).rglob("*.qml")))

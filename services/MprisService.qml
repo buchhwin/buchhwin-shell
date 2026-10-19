@@ -41,10 +41,12 @@ Singleton {
     // Image bound to the url shows nothing and the record has no label);
     // curl is told --http1.1 and never sees the problem. One fetch per track
     // change, here, not one per Image. Covers older than 30 days are swept
-    // from the directory with the first fetch of a session. A cover is a
-    // picture, not a download: curl takes http(s) only, redirects included,
-    // stops past 20 MB (or at 15 s), and a fetch that fails leaves no part
-    // file behind for the sweep.
+    // from the directory with the first fetch of a session, and the cache is
+    // kept to its newest 200 covers and 100 MB. A cover is a picture, not a
+    // download: curl takes http(s) only, three redirects at most, stops past
+    // 20 MB (or at 15 s), and a fetch that fails leaves no part file behind
+    // for the sweep. The directory and its files are the user's alone
+    // (MediaLogic.coverCommand).
     readonly property string coverDir: Paths.cacheDir + "/covers"
     property bool coversSwept: false
 
@@ -73,14 +75,8 @@ Singleton {
         artCheck.pending = url
         if (kind === "remote") {
             const file = coverDir + "/" + Qt.md5(url) + ".img"
-            const sweep = coversSwept ? "" : 'find "$1" -type f -mtime +30 -delete 2>/dev/null; '
+            artCheck.command = Logic.coverCommand(coverDir, file, url, !coversSwept)
             coversSwept = true
-            artCheck.command = ["sh", "-c",
-                'mkdir -p -- "$1" && ' + sweep
-                + '{ test -s "$2" || { curl -fsSL --http1.1 --proto =http,https --proto-redir =http,https'
-                + ' --max-filesize 20M --max-time 15 -o "$2.part" -- "$3" && mv -f -- "$2.part" "$2"; }'
-                + ' || { rm -f -- "$2.part"; exit 1; }; }',
-                "sh", coverDir, file, url]
             artCheck.file = file
         } else {
             artCheck.file = ""

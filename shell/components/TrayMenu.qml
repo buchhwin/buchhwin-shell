@@ -2,6 +2,7 @@ import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
+import "TrayMenuLogic.js" as Logic
 
 // Application menu (DBusMenu) rendered with shell components, with submenus.
 ColumnLayout {
@@ -49,7 +50,7 @@ ColumnLayout {
                 visible: !entry.modelData.isSeparator
                 width: parent.width
                 compact: true
-                title: entry.modelData.text.replace(/_(?=\S)/g, "")
+                title: Logic.label(entry.modelData.text)
                 iconSource: entry.modelData.icon || ""
                 chevron: entry.modelData.hasChildren
                 opacity: entry.modelData.enabled ? 1 : Effects.disabledOpacity
@@ -60,7 +61,7 @@ ColumnLayout {
                 onClicked: {
                     if (!entry.modelData.enabled) return
                     if (entry.modelData.hasChildren) {
-                        root.stack = root.stack.concat([{ handle: entry.modelData, text: entry.modelData.text.replace(/_(?=\S)/g, "") }])
+                        root.stack = root.stack.concat([{ handle: entry.modelData, text: Logic.label(entry.modelData.text) }])
                     } else {
                         entry.modelData.triggered()
                         root.done()

@@ -61,6 +61,19 @@ links=(
   "$link_dir/systemd/buchhwin-shell-autostart.target:$config_home/systemd/user/buchhwin-shell-autostart.target"
   "$link_dir/session/xdg-desktop-portal/buchhwin-shell-portals.conf:$config_home/xdg-desktop-portal/buchhwin-shell-portals.conf"
 )
+# The XDG autostart entries the session keeps out (scripts/lib/autostart-skip.sh)
+# get a drop-in each (systemd/autostart-skip.conf): skipped while
+# XDG_CURRENT_DESKTOP names buchhwin-shell, run as before in Plasma. The login
+# then masks nothing, which made the user manager reload before the autostart
+# apps could start (session-init.sh masks only an entry without one).
+if [[ -r $link_dir/scripts/lib/autostart-skip.sh ]] && command -v systemd-escape >/dev/null 2>&1; then
+  # shellcheck source=../scripts/lib/autostart-skip.sh
+  source "$link_dir/scripts/lib/autostart-skip.sh"
+  while IFS= read -r unit; do
+    [[ $unit == app-?*@autostart.service ]] || continue
+    links+=("$link_dir/systemd/autostart-skip.conf:$config_home/systemd/user/$unit.d/buchhwin-shell.conf")
+  done < <(autostart_skip_units)
+fi
 
 fastfetch_source="$config_home/buchhwin-dwl/fastfetch.jsonc"
 fastfetch_target="$config_home/buchhwin-shell/fastfetch.jsonc"
@@ -114,7 +127,12 @@ for entry in "${links[@]}"; do
   printf 'Installed %s\n' "$target_path"
 done
 
-systemctl --user daemon-reload
+# Without a user manager to talk to (su or sudo -iu from another login, a
+# container) the links are all there is to do: systemd reads the targets at
+# the next login. Under set -e a failing reload ended the run here, before
+# layout.json and the Fastfetch configuration - and the bootstrap with it.
+systemctl --user daemon-reload 2>/dev/null \
+  || printf 'Note: no user manager reachable; the targets load at the next login.\n'
 
 # The completion only loads when zsh looks in the user's site-functions. Say so
 # instead of editing the user's .zshrc.

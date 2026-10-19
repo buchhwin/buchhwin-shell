@@ -91,7 +91,7 @@ with tempfile.TemporaryDirectory() as temp:
           "settings, layout and the session's default-app list are copied: %r" % copied)
     check((first / "settings.json").read_text(encoding="utf-8") == '{"appearance": {"accent": "#123456"}}\n',
           "with their content")
-    # security#8: settings.json holds the weather's place.
+    # settings.json holds the weather's place.
     check(mode(config / "settings.json") == 0o644, "the original keeps its own mode")
     check(mode(first) == 0o700, "a backup directory is the user's alone: %o" % mode(first))
     check(all(mode(first / name) == 0o600 for name in copied),

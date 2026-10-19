@@ -446,8 +446,13 @@ ShellPanel {
 
                 // ---- the face ---------------------------------------------------------
                 ColumnLayout {
+                    id: faceColumn
                     anchors.fill: parent
                     spacing: Metrics.panelGap
+                    // Home and All apps fade into each other. `face.view`, not
+                    // what is shown: typing into the search must not fade on
+                    // its first key.
+                    PageFade { target: faceColumn; key: face.view; live: root.openProgress === 1 }
 
                     // fastfetch, small: the logo, and beside it its title and
                     // rows. All apps and the results need the room: there it
@@ -676,7 +681,7 @@ ShellPanel {
                                                         anchors.centerIn: parent
                                                         glyph: Icons.settingsApp
                                                         size: parent.width * Metrics.dockGlyphFill
-                                                        color: Colors.accentText
+                                                        color: Colors.accentFillText
                                                     }
                                                 }
                                                 ShellText {
@@ -930,7 +935,7 @@ ShellPanel {
                             implicitWidth: Metrics.startMenuAvatar
                             implicitHeight: Metrics.startMenuAvatar
                             radius: width / 2
-                            color: Colors.accent
+                            color: Colors.accent // style: the avatar's disc, as on the lock screen
                             ShellText {
                                 anchors.centerIn: parent
                                 text: LockLogic.initial(root.displayName || root.user)

@@ -8,6 +8,7 @@ import "../../services/arrange/ArrangeLogic.js" as Arrange
 import "../../services/dashboard/DashboardLogic.js" as Dash
 import "../../services/arrange/FitLogic.js" as Fit
 import "../../services/appearance/TimeFormat.js" as TimeFormat
+import "../../services/appearance/DateFormat.js" as DateFormat
 
 // Time / weather / calendar dashboard (Super+K or click on the clock).
 // Weather comes from Open-Meteo, events from the KDE calendars (Akonadi).
@@ -47,11 +48,25 @@ ShellPanel {
     // the first open that binding moved the day every minute, and the hidden
     // events card built its list again each time.
     property date selectedDay: new Date()
-    readonly property bool selectedIsToday: selectedDay.toDateString() === clock.date.toDateString()
+    readonly property bool selectedIsToday: selectedDay.toDateString() === today.toDateString()
+    // The day, not the minute: the month grid reads it, and bound to the
+    // minute clock its 42 cells were worked out again every minute, behind a
+    // closed panel too (1-3 ms each time, 1440 times a day). Moved on when
+    // the day changes and on every open.
+    property date today: new Date()
+    function takeToday(now) {
+        const date = now || clock.date
+        if (date.toDateString() !== today.toDateString()) today = date
+    }
     // Dialogs opened from here (new event, event details) return to this day.
     readonly property var returnArgs: ({ day: SettingsService.locale.toString(selectedDay, "yyyy-MM-dd") })
 
-    SystemClock { id: clock; precision: SystemClock.Minutes }
+    // Only while the dashboard is shown: built with the shell like every
+    // panel, it woke once a minute all session behind a closed panel.
+    // Enabled again it reads the time at once (probed offscreen), but it may
+    // still be paused in the turn the panel opens in, so the open below asks
+    // the time itself.
+    SystemClock { id: clock; precision: SystemClock.Minutes; enabled: root.shown && WallClock.ticking; onDateChanged: root.takeToday() }
 
     // The month grid is one of the cards: it can be taken off the dashboard
     // altogether, so it is held by reference rather than by an id, and every
@@ -85,8 +100,13 @@ ShellPanel {
 
     onWantedChanged: {
         if (wanted) {
+            // The cards are built now, on the first open, and kept from then
+            // on (see `cardsWanted`); a month built here is there to reset.
+            cardsWanted = true
+            const now = new Date()
+            takeToday(now)
             if (monthGrid) monthGrid.reset()
-            selectedDay = clock.date
+            selectedDay = now
             const parts = String(PanelService.args.day || "").split("-").map(Number)
             if (parts.length === 3 && parts.every(part => part > 0))
                 showDay(new Date(parts[0], parts[1] - 1, parts[2]))
@@ -174,7 +194,7 @@ ShellPanel {
                     // still on the panel. Strings are equal by value, so the ids
                     // diff as they should, and a slot reads its card by its id.
                     Repeater {
-                        model: ScriptModel { values: LayoutService.dashboardItems.map(item => item.id) }
+                        model: ScriptModel { values: root.cardsWanted ? LayoutService.dashboardItems.map(item => item.id) : [] }
                         DashboardSlot {
                             required property string modelData
                             required property int index
@@ -227,7 +247,7 @@ ShellPanel {
                             variant: "ghost"
                             compact: true
                             confirm: true
-                            confirmText: "Reset"
+                            confirmText: "Reset?"
                             toolTip: "Back to the default cards"
                             onClicked: LayoutService.dashboardReset()
                         }
@@ -236,6 +256,13 @@ ShellPanel {
             }
         }
     }
+
+    // The cards wait for the first open: a session that never opens the
+    // dashboard held its clock, the hourly and daily forecast, the month's 42
+    // cells and the event list from the login on, some 6 MB. Built in the
+    // turn the panel is asked for, they are on its first frame, and they stay
+    // for the rest of the session, so every later open is as fast as before.
+    property bool cardsWanted: false
 
     // The slots' cards by id (the Repeater runs on the ids alone).
     readonly property var cardById: {
@@ -351,8 +378,8 @@ ShellPanel {
                 ShellText {
                     Layout.fillWidth: true
                     visible: !clockBody.tiny
-                    text: SettingsService.locale.toString(clock.date,
-                        clockBody.compact ? "ddd, MMM d" : "dddd, MMMM d")
+                    text: DateFormat.date(clock.date, SettingsService.locale,
+                        clockBody.compact ? "short" : "long")
                     role: clockBody.compact ? "small" : "headline"
                     font.weight: Typography.light
                 }
@@ -370,6 +397,7 @@ ShellPanel {
                 anchors.top: parent.top
                 height: Math.max(implicitHeight, parent.height)
                 fillsCell: true
+                rows: gridH
                 // The card has always been able to put the seven days beside
                 // the hourly strip instead of under it; nothing ever asked it
                 // to, so a card pulled two columns wide stayed a narrow stack
@@ -397,7 +425,7 @@ ShellPanel {
                 CalendarMonth {
                     id: grid
                     Layout.fillWidth: true
-                    today: clock.date
+                    today: root.today
                     selectable: true
                     eventDays: CalendarService.eventDays
                     onYearChanged: CalendarService.showMonth(year, month)
@@ -417,7 +445,24 @@ ShellPanel {
     Component {
         id: mediaCard
         Item {
+            id: mediaBody
             readonly property bool shown: true
+            // The player's position is read again only while someone counts
+            // as watching it (MprisService.trackers, a tick a second): the
+            // control center and the media popup count themselves, and the
+            // card's seek bar stood still here. While the dashboard is open,
+            // as the system card samples, and only with this card on it.
+            readonly property bool watching: root.shown
+            property bool tracked: false
+            onWatchingChanged: syncTracking()
+            Component.onCompleted: syncTracking()
+            Component.onDestruction: if (tracked) MprisService.trackers = Math.max(0, MprisService.trackers - 1)
+            function syncTracking() {
+                if (watching === tracked) return
+                tracked = watching
+                if (tracked) MprisService.trackers += 1
+                else MprisService.trackers = Math.max(0, MprisService.trackers - 1)
+            }
             MediaCard {
                 anchors.fill: parent
                 // The card centres its content in whatever height it is given
@@ -505,7 +550,7 @@ ShellPanel {
                     }
                     Item { Layout.fillWidth: true }
                     ShellText {
-                        text: SettingsService.locale.toString(root.selectedDay, "ddd, MMM d")
+                        text: DateFormat.date(root.selectedDay, SettingsService.locale, "short")
                         role: "small"
                         muted: true
                     }
@@ -513,7 +558,8 @@ ShellPanel {
                         icon: Icons.add
                         variant: "ghost"
                         compact: true
-                        toolTip: "New event"
+                        // Merkuro takes it while the shell cannot write (CalendarService.openEditor).
+                        toolTip: CalendarService.writesBlocked ? "New event in Merkuro" : "New event"
                         onClicked: CalendarService.openEditor(root.selectedDay, root.returnArgs)
                     }
                     ShellButton {

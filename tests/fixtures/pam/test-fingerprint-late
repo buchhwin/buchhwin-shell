@@ -1,0 +1,18 @@
+#%PAM-1.0
+# Nested lock screen tests only (BUCHHWIN_NESTED=1) and
+# tests/qml/LockScreenTest.qml: pam_fprintd as it really starts. The reader
+# announces itself only after a moment (fprintd claims the device first,
+# which took 0.6 s on a laptop; 1 s here), waits 4 s for a finger, reports a
+# timeout and leaves the password to the rest of the stack, which accepts
+# only test-password's password. The lock screen pairs it with test-password
+# for the password-only conversation: a password submitted before the reader
+# spoke unlocks at once only through that switch, and otherwise after the
+# wait.
+auth     optional  pam_exec.so quiet /usr/bin/sleep 1
+auth     optional  pam_echo.so Place your finger on the fingerprint reader
+auth     optional  pam_exec.so quiet /usr/bin/sleep 4
+auth     optional  pam_echo.so Verification timed out
+auth     [success=1 default=ignore]  pam_exec.so expose_authtok quiet /usr/bin/grep -qxzF lock-test-password
+auth     requisite                   pam_deny.so
+auth     required                    pam_permit.so
+account  required                    pam_permit.so

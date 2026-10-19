@@ -7,8 +7,10 @@ import "../../services/LayoutLogic.js" as L
 // What LayoutService.undo decides besides the config a step holds - pure, so
 // it runs without the service (and without Do Not Disturb, which would reach
 // the session's notification server): the profiles' stored states, the mode
-// left in use and Do Not Disturb after a switch is undone. And a preset's
-// description, which the sanitizer once cut short.
+// left in use and Do Not Disturb after a switch is undone, what a step of one
+// mode and a step of the whole layout bring back, and the appearance every
+// mode keeps through an undo. And a preset's description, which the sanitizer
+// once cut short.
 ShellRoot {
     id: root
     FileView { id: islandFile; path: Qt.resolvedUrl("../../config/notch-presets/island.json").toString().replace("file://", ""); blockLoading: true }
@@ -107,6 +109,59 @@ ShellRoot {
              "an ordinary step: only the carried keys - Settings > Dock since is not taken back")
         T.eq(L.undoSettings({ settings: { "dock.span": null } }, keys), {}, "nothing for a value that is not there")
         T.eq(L.undoSettings(null, keys), {}, "no step, nothing")
+
+        // Only a mode whose template turns it on can own it, so a switch
+        // between two others asks NotificationService nothing.
+        T.eq([L.turnsDndOn(gaming), L.turnsDndOn({ dnd: "off" }), L.turnsDndOn({ dnd: "" }), L.turnsDndOn({}),
+              L.turnsDndOn(undefined), L.turnsDndOn({ dnd: "1h" })],
+             [true, false, false, false, false, true], "which templates turn Do Not Disturb on")
+
+        // ---- what a step brings back ----------------------------------------
+        // A step of one mode holds that mode (and the one a switch went to,
+        // null when it was not there yet) and the global surfaces; it is laid
+        // over the config at hand, whose other modes, profiles, states,
+        // presets and markers stay.
+        const mode = (gaps, desktop) => ({ widgets: [], groups: [], screens: ["eDP-1"], desktopMode: desktop || "notch",
+                                           appearance: { gapsOut: gaps } })
+        const current = { activeProfile: "p", activeMode: "work", notch: { n: "now" }, dock: { d: "now" }, lock: { l: "now" },
+                          notchPresets: [{ id: "mine" }], adopted: ["m"],
+                          profiles: { p: { label: "P", state: { s: 1 }, modes: { minimal: mode(5), work: mode(13, "pills"), laptop: mode(8) } },
+                                      q: { label: "Q", modes: { minimal: mode(2) } } } }
+        const editStep = { config: { activeMode: "minimal", notch: { n: "then" }, dock: { d: "then" }, lock: { l: "then" } },
+                           modes: { profile: "p", list: { minimal: mode(3, "widgets"), docked: null } } }
+        const laid = L.undoTarget(editStep, current)
+        T.eq([laid.notch, laid.dock, laid.lock, laid.activeMode], [{ n: "then" }, { d: "then" }, { l: "then" }, "minimal"],
+             "a step of one mode brings back the global surfaces and the mode it was taken in")
+        T.eq(laid.profiles.p.modes.minimal.desktopMode, "widgets", "and the mode it holds")
+        T.ok(laid.profiles.p.modes.work === current.profiles.p.modes.work && laid.profiles.q === current.profiles.q
+             && laid.profiles.p.state === current.profiles.p.state && laid.notchPresets === current.notchPresets
+             && laid.adopted === current.adopted, "every other mode, profile, state, preset and marker is the config's")
+        T.eq("docked" in laid.profiles.p.modes, false, "a mode the step held as not there yet is not")
+        T.eq([current.profiles.p.modes.minimal.desktopMode, current.notch.n], ["notch", "now"], "and the config at hand is not changed")
+        const wholeStep = { config: { activeMode: "work", profiles: { p: { label: "P", modes: { minimal: mode(1) } } } },
+                            states: { p: { s: 2 } } }
+        const whole = L.undoTarget(wholeStep, current)
+        T.eq([Object.keys(whole.profiles.p.modes), whole.profiles.p.state, whole.notchPresets, whole.adopted],
+             [["minimal"], { s: 1 }, [{ id: "mine" }], ["m"]],
+             "a step of the profile level is the whole layout, with the states, presets and markers of the config at hand")
+
+        // ---- the appearance after an undo ------------------------------------
+        // A mode-scoped setting takes no step, so every mode keeps the
+        // appearance it has now - unless the step's own change replaced it.
+        const restoredConfig = { profiles: { p: { modes: { minimal: mode(5), work: mode(7), gaming: mode(1) } },
+                                             gone: { modes: { minimal: mode(4) } } } }
+        const nowConfig = { profiles: { p: { modes: { minimal: mode(13), work: mode(7), laptop: mode(9) } } } }
+        const carried = L.withCurrentAppearance(restoredConfig, nowConfig, null)
+        T.eq(carried.profiles.p.modes.minimal.appearance.gapsOut, 13, "a mode keeps the appearance it has now")
+        T.eq(carried.profiles.p.modes.minimal.desktopMode, "notch", "and the rest of the mode the step brought back")
+        T.ok(carried.profiles.p.modes.work === restoredConfig.profiles.p.modes.work, "an equal one is left as it is")
+        T.eq(carried.profiles.p.modes.gaming.appearance.gapsOut, 1, "a mode only in the step keeps the step's")
+        T.eq(carried.profiles.gone.modes.minimal.appearance.gapsOut, 4, "and so does a profile only in the step")
+        T.eq("laptop" in carried.profiles.p.modes, false, "a mode only in the config at hand is not brought in")
+        T.eq(restoredConfig.profiles.p.modes.minimal.appearance.gapsOut, 5, "the config it is handed is not changed")
+        T.eq(L.withCurrentAppearance(restoredConfig, nowConfig, { p: ["minimal"] }).profiles.p.modes.minimal.appearance.gapsOut, 5,
+             "a mode the step's change replaced (a Reset) gets the step's back")
+        T.ok(L.withCurrentAppearance(restoredConfig, restoredConfig, null) === restoredConfig, "nothing to carry, nothing new")
 
         // ---- a preset's description -----------------------------------------
         // Island's own text is 143 characters; the sanitizer cut it at 120.

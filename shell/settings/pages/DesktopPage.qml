@@ -29,7 +29,8 @@ ColumnLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Hints next to the clock"
-            hint: "Only when needed: screen sharing, upcoming event, microphone in use, unread notifications or Do Not Disturb, charging, battery below 20%"
+            // The battery's level is the one Settings > Power warns at.
+            hint: "Only when needed: screen sharing, upcoming event, microphone in use, unread notifications or Do Not Disturb, charging, battery at or below " + PowerService.lowBatteryLevel + "%"
             ShellToggle {
                 focusOnTab: true
                 checked: SettingsService.value("desktop.clockIndicators")
@@ -52,12 +53,33 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Clipboard"
-        description: "History with " + ShortcutService.keyHint("SUPER + V") + ". Entries marked as sensitive by password managers are not saved."
+        scope: "clipboard.history"
+        description: "History with " + ShortcutService.keyHint("SUPER + V", true) + ". Entries marked as sensitive by password managers are not saved. Passwords from programs that do not mark them are kept like any text."
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
             label: "Save history"
             ShellToggle { focusOnTab: true; checked: SettingsService.value("clipboard.history"); onToggled: value => SettingsService.set("clipboard.history", value) }
+        }
+        // Both off by default, which is how the history always behaved
+        // (ClipboardService: the wipe at logout, the age limit).
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Forget the history at logout"
+            hint: "Also after a crash or a power cut, at the next login."
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("clipboard.forgetAtLogout") === true; onToggled: value => SettingsService.set("clipboard.forgetAtLogout", value) }
+        }
+        SettingRow {
+            label: "Forget entries after"
+            ShellSelect {
+                focusOnTab: true
+                Layout.fillWidth: true
+                options: [{ value: "0", label: "Never" }, { value: "1", label: "1 hour" }, { value: "8", label: "8 hours" },
+                          { value: "24", label: "1 day" }, { value: "168", label: "1 week" }]
+                current: String(SettingsService.value("clipboard.maxAgeHours"))
+                onSelected: value => SettingsService.set("clipboard.maxAgeHours", parseInt(value))
+            }
         }
         RowLayout {
             spacing: Metrics.spaceSm
@@ -69,6 +91,7 @@ ColumnLayout {
                 variant: "ghost"
                 // Everything the clipboard remembers, at once and for good.
                 confirm: true
+                confirmText: "Clear history?"
                 onClicked: ClipboardService.wipe()
             }
         }
@@ -77,7 +100,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Screen recording"
-        description: ShortcutService.keyHint("SUPER + SHIFT + R") + " records a region, " + ShortcutService.keyHint("SUPER + CTRL + SHIFT + R")
+        description: ShortcutService.keyHint("SUPER + SHIFT + R", true) + " records a region, " + ShortcutService.keyHint("SUPER + CTRL + SHIFT + R", true)
             + " the screen. Press it again or click the red indicator to stop."
         PageActivity { onOpened: RecordingService.refreshBackends() }
         ShellText {
@@ -136,6 +159,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Removable drives"
+        scope: "drives.notify"
         description: "USB sticks, SD cards, external disks, encrypted volumes and MTP phones. Eject them in the control center before unplugging."
         SettingRow {
             Layout.fillWidth: true

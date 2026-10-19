@@ -251,7 +251,19 @@ ShellPanel {
                 elide: Text.ElideRight
             }
 
-            // The skin tone the picker applies wherever Unicode allows one.
+            // The skin tone the picker applies wherever Unicode allows one,
+            // shown on a waving hand in front of the select: "Default" on its
+            // own said nothing about what it was the default of.
+            Text {
+                Layout.alignment: Qt.AlignVCenter
+                text: Logic.toneSample(EmojiService.tone)
+                color: Colors.text
+                textFormat: Text.PlainText
+                font.family: Typography.family
+                font.pixelSize: Typography.emojiTabSize
+                renderType: Typography.renderType
+                Accessible.ignored: true
+            }
             ShellSelect {
                 focusOnTab: true
                 accessibleName: "Skin tone"

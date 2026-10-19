@@ -24,12 +24,19 @@ var MIN_ICON = 20
 // it. There is no event for a floating window moved or resized by hand: that
 // is what the slow poll is for (needsPoll). A focus change (activewindowv2)
 // moves no window, and re-reading every window after each Alt+Tab bought
-// nothing; a workspace moved to another monitor (moveworkspace) takes its
-// windows there.
+// nothing; nor does the focus going to another monitor (focusedmon), which
+// with the focus following the mouse is every crossing of the pointer at a
+// desk of three screens - each monitor keeps its workspace, and a workspace
+// that changes says so itself. A workspace moved to another monitor
+// (moveworkspace) takes its windows there.
 var COVER_EVENTS = ["openwindow", "closewindow", "movewindow", "movewindowv2", "changefloatingmode",
-    "fullscreen", "workspace", "workspacev2", "focusedmon", "focusedmonv2", "activespecial",
+    "fullscreen", "workspace", "workspacev2", "activespecial",
     "activespecialv2", "moveworkspace", "moveworkspacev2", "pin", "togglegroup", "moveintogroup",
     "moveoutofgroup", "monitoradded", "monitoraddedv2", "monitorremoved", "monitorremovedv2", "configreloaded"]
+// What the dock's running apps are: those of every screen on each dock, or
+// on each dock those with a window on its own screen (`dock.runningOn`). The
+// pins are on every dock either way.
+var RUNNING_ON = ["all", "screen"]
 
 function lower(text) { return String(text || "").toLowerCase() }
 
@@ -65,6 +72,7 @@ function optionValue(key, value) {
     case "position": return POSITIONS.indexOf(text) >= 0 ? text : null
     case "span": return SPANS.indexOf(text) >= 0 ? text : null
     case "startOpens": return START_OPENS.indexOf(text) >= 0 ? text : null
+    case "runningOn": return RUNNING_ON.indexOf(text) >= 0 ? text : null
     case "iconSize": return ICON_SIZES.indexOf(Number(text)) >= 0 && /^\d+$/.test(text) ? Number(text) : null
     case "margin": return MARGINS.indexOf(Number(text)) >= 0 && /^\d+$/.test(text) ? Number(text) : null
     // Output names (eDP-1, DP-8, HDMI-A-1), comma-separated; "" is every screen.
@@ -98,13 +106,41 @@ function entryMatches(entry, cls) {
 // (two desktop files for one browser attach to the one that is pinned), then
 // what the lookup finds, else the class itself.
 function resolve(cls, pins, lookup) {
-    const name = String(cls || "")
-    if (!name.length) return null
-    for (const pin of pins || [])
-        if (entryMatches(pin, name)) return { key: "app:" + pin.id, entry: pin }
-    const entry = typeof lookup === "function" ? lookup(name) : null
-    if (entry && entry.id) return { key: "app:" + entry.id, entry: entry }
-    return { key: "class:" + lower(name), entry: null }
+    return resolver(pins, lookup)(cls)
+}
+
+// resolve() for one list of pins, which remembers each class's answer: a
+// dock's windows name few classes, over and over, and each focus change or
+// window opened asked the lookup and matched every pin against every window
+// again. The service keeps one for as long as its pins are the same list -
+// a new list comes with every change of the pins and every scan of the
+// desktop entries, which is what the lookup reads. The pins' names are
+// lowered once here rather than once per window and pin; the match is
+// entryMatches'.
+function resolver(pins, lookup) {
+    const list = Array.prototype.slice.call(pins || []).filter(pin => pin && lower(pin.id).length > 0)
+        .map(pin => ({ entry: pin, id: lower(pin.id), wm: lower(pin.startupClass), last: lower(lastSegment(pin.id)) }))
+    const known = Object.create(null)
+    return function (cls) {
+        const name = String(cls || "")
+        if (!name.length) return null
+        if (known[name] !== undefined) return known[name]
+        const low = lower(name)
+        const tail = lower(lastSegment(name))
+        let found = null
+        for (const pin of list) {
+            if (low === pin.id || (pin.wm.length > 0 && low === pin.wm) || low === pin.last || pin.id === tail) {
+                found = { key: "app:" + pin.entry.id, entry: pin.entry }
+                break
+            }
+        }
+        if (!found) {
+            const entry = typeof lookup === "function" ? lookup(name) : null
+            found = entry && entry.id ? { key: "app:" + entry.id, entry: entry } : { key: "class:" + low, entry: null }
+        }
+        known[name] = found
+        return found
+    }
 }
 
 // The windows a dock shows: none of the shell's helpers (HiddenWindows.js)
@@ -120,9 +156,13 @@ function visibleWindows(windows) {
 // apps that have windows, in the order their first window appeared (`seq`),
 // so an app does not jump about when another one is focused or opened.
 // Each: { key, entryId, name, icons, pinned, pinIndex, windows, running,
-// active, urgent, count }. `windows` are ordered by `seq` as well.
+// urgent, count }. `windows` are ordered by `seq` as well. Which app is in
+// front is not in it (isActive): every focus change would build the apps
+// anew, and every dock lay its icons out again. `options.resolve`: a
+// resolver() kept between builds, else one for this build.
 function build(pins, windows, lookup, options) {
     const showRunning = !options || options.showRunning !== false
+    const find = options && typeof options.resolve === "function" ? options.resolve : resolver(pins, lookup)
     const items = []
     const byKey = {}
     Array.prototype.slice.call(pins || []).forEach((pin, index) => {
@@ -136,7 +176,7 @@ function build(pins, windows, lookup, options) {
     })
     const sorted = visibleWindows(windows).slice().sort((a, b) => (a.seq || 0) - (b.seq || 0))
     for (const window of sorted) {
-        const found = resolve(window.appClass, pins, lookup)
+        const found = find(window.appClass)
         let item = byKey[found.key]
         if (!item) {
             if (!showRunning) continue
@@ -148,16 +188,43 @@ function build(pins, windows, lookup, options) {
             byKey[item.key] = item
             items.push(item)
         }
-        item.windows.push({ address: window.address, workspace: window.workspace, monitor: window.monitor,
-                            seq: window.seq || 0, activated: window.activated === true, urgent: window.urgent === true })
+        item.windows.push({ address: window.address, workspace: window.workspace,
+                            workspaceName: String(window.workspaceName || ""), monitor: window.monitor,
+                            seq: window.seq || 0, urgent: window.urgent === true })
     }
     for (const item of items) {
         item.running = item.windows.length > 0
-        item.active = item.windows.some(window => window.activated)
         item.urgent = item.windows.some(window => window.urgent)
         item.count = item.windows.length
     }
     return items
+}
+
+// The windows a dock on `monitor` shows when its running apps are its own
+// screen's (RUNNING_ON "screen"): the pins stay, with the windows they have
+// there.
+function windowsOn(windows, monitor) {
+    return Array.prototype.slice.call(windows || []).filter(window => window && window.monitor === monitor)
+}
+
+// Whether an app is the one in front: one of its windows has the focus
+// (DockService.activeAddress, "" for none).
+function isActive(item, activeAddress) {
+    const address = String(activeAddress || "")
+    return !!item && address.length > 0 && Array.prototype.slice.call(item.windows || []).some(window => window && window.address === address)
+}
+
+// Whether a list KeyedLogic.keep handed back is the previous one entry for
+// entry, every object the very one it was. The list itself is then handed
+// out again: a binding that returns the same object notifies nobody, where
+// an equal new list re-ran every dock's layout - several times for each
+// workspace switch, and for every panel opened and closed.
+function sameObjects(previous, next) {
+    const a = previous || [], b = next || []
+    if (a.length !== b.length) return false
+    for (let index = 0; index < a.length; ++index)
+        if (a[index] !== b[index]) return false
+    return true
 }
 
 // The focused window's address while it is the one in front: on the focused
@@ -223,7 +290,8 @@ function menuRows(item, actions, pinnedFull, maxWindows, command) {
     const windows = item.windows || []
     const shown = Math.max(0, Math.min(windows.length, maxWindows === undefined ? windows.length : maxWindows))
     for (let index = 0; index < shown; ++index)
-        rows.push({ kind: "window", address: windows[index].address, workspace: windows[index].workspace })
+        rows.push({ kind: "window", address: windows[index].address, workspace: windows[index].workspace,
+                    workspaceName: String(windows[index].workspaceName || "") })
     if (windows.length > shown) rows.push({ kind: "more", count: windows.length - shown })
     // The shell's Settings and a default's placeholder: no entry of their
     // own to start a second time or to list actions of.
@@ -242,6 +310,20 @@ function menuRows(item, actions, pinnedFull, maxWindows, command) {
     }
     if (windows.length) rows.push({ kind: "close", count: windows.length })
     return rows
+}
+
+// Where a window is, for its row in the menu: "Workspace 3", a named
+// workspace by its name, a special one (Hyprland's scratchpads, which have
+// negative ids) by its name without "special:" - the unnamed one is
+// "Scratchpad" -, and nothing for a workspace not known.
+function workspaceLabel(id, name) {
+    const text = String(name || "")
+    if (text === "special" || text.indexOf("special:") === 0) {
+        const rest = text.slice("special:".length)
+        return rest.length && rest !== "special" ? "Scratchpad " + rest : "Scratchpad"
+    }
+    if (text.length && text !== String(id)) return "Workspace " + text
+    return Number(id) > 0 ? "Workspace " + Number(id) : ""
 }
 
 // ---- panels out of the dock -------------------------------------------------------
@@ -286,6 +368,18 @@ function onView(window, view) {
         || (String(view.special || "").length > 0 && window.workspaceName === view.special)
 }
 
+// A window's place (global, logical) from Hyprland's record: `at` and `size`,
+// which refreshToplevels() fills. Whether it has one at all, and the rect -
+// null for none or an empty one.
+function hasPlace(window) {
+    return !!window && !!window.at && !!window.size && window.at.length >= 2 && window.size.length >= 2
+}
+function windowRect(window) {
+    if (!hasPlace(window)) return null
+    const rect = { x: Number(window.at[0]), y: Number(window.at[1]), width: Number(window.size[0]), height: Number(window.size[1]) }
+    return validRect(rect) ? rect : null
+}
+
 // Intellihide: a window touches the dock's body (global coordinates, the dock
 // as shown, plus `slack`). A window without a geometry yet does not count -
 // unknown is not covered, as for fullscreen (FullscreenLogic).
@@ -293,21 +387,58 @@ function covered(body, windows, view, slack) {
     if (!validRect(body)) return false
     for (const window of windows || []) {
         if (!onView(window, view)) continue
-        const at = window.at, size = window.size
-        if (!at || !size || at.length < 2 || size.length < 2) continue
-        const rect = { x: Number(at[0]), y: Number(at[1]), width: Number(size[0]), height: Number(size[1]) }
-        if (validRect(rect) && overlaps(rect, body, slack)) return true
+        const rect = windowRect(window)
+        if (rect && overlaps(rect, body, slack)) return true
     }
     return false
 }
 
-// Floating windows move without telling anyone; while one is on a dock's
-// workspace the service asks again every so often.
-function needsPoll(windows, views) {
-    for (const view of views || [])
-        for (const window of windows || [])
-            if (window && window.floating === true && onView(window, view)) return true
+// Floating windows move without telling anyone, so while one could come over
+// a dock or leave it the service asks again every so often: the one with the
+// focus (a window moved by hand or by keys has it), one that touches the
+// dock already (to see it go) and one whose place is not known yet. Only on
+// a dock that is drawn - `bodies` holds a body per monitor, and none under a
+// fullscreen window, where a floating player or game would have been read
+// once a second for as long as it played -, and never for a floating window
+// elsewhere: a picture-in-picture pinned to every workspace, a dialog at the
+// top of the screen. `active`: the focused window's address; `slack` as for
+// covered().
+function needsPoll(windows, views, bodies, active, slack) {
+    const focused = String(active || "")
+    for (const view of views || []) {
+        const body = view ? (bodies || {})[view.monitor] : null
+        if (!validRect(body)) continue
+        for (const window of windows || []) {
+            if (!window || window.floating !== true || !onView(window, view)) continue
+            if (focused.length && window.address === focused) return true
+            if (!hasPlace(window)) return true
+            const rect = windowRect(window)
+            if (rect && overlaps(rect, body, slack)) return true
+        }
+    }
     return false
+}
+
+// The special workspace open on each monitor, from `hyprctl -j monitors`
+// (`specialWorkspace.name`, "" for none). Hyprland tells of one only as it
+// opens or closes (activespecial), so one that was open before the dock
+// listened - at the start, or opened while the dock was off - is read once
+// this way; Quickshell's own monitors carry no record of it.
+function specialsFrom(monitors) {
+    const result = {}
+    for (const monitor of Array.prototype.slice.call(monitors || []))
+        if (monitor && monitor.name)
+            result[String(monitor.name)] = String(monitor.specialWorkspace && monitor.specialWorkspace.name || "")
+    return result
+}
+// That read laid over what the events said: a monitor whose activespecial
+// came after the read was asked for (`fresh`: { name: true }) keeps the
+// event's word, which is newer.
+function seededSpecials(current, read, fresh) {
+    const next = Object.assign({}, current || {})
+    for (const name of Object.keys(read || {}))
+        if (!(fresh || {})[name]) next[name] = read[name]
+    return next
 }
 
 // Shown or not, for one dock. Fullscreen hides it whatever else; a drag, its
@@ -374,19 +505,71 @@ function keysAfterPanel(active, withMenu, escaped) {
     return { keep: !panel.length, withMenu: false }
 }
 
-// Where the keys can go on the dock: its apps (0 .. count - 1) and a start
-// button before them (-1) or after them (count), `start` "before", "after" or
-// "" for none.
-function keyRange(count, start) {
+// Where the keys can go on the dock: its apps (0 .. count - 1) and the items
+// beside them that open something - the start button, and on a taskbar its
+// status, notifications and clock -: the ones before the apps at -1, -2 ...
+// (-1 the nearest), the ones after them at count, count + 1 ... `before` and
+// `after` are how many there are of each.
+function keyRange(count, before, after) {
     const n = Math.max(0, Math.round(count || 0))
-    return { low: start === "before" ? -1 : 0, high: start === "after" ? n : Math.max(0, n - 1) }
+    const b = Math.max(0, Math.round(before || 0))
+    const a = Math.max(0, Math.round(after || 0))
+    if (n + a > 0) return { low: -b, high: n + a - 1 }
+    return { low: -b, high: b > 0 ? -1 : 0 }
 }
-function keyOnStart(index, count, start) {
-    return (start === "before" && index === -1) || (start === "after" && index === Math.max(0, Math.round(count || 0)))
+// What is at a place of the keys: { kind: "app", index }, { kind: "item",
+// type }, or null for nothing. `before` and `after` are the items' types,
+// each list in order along the dock (keySides).
+function keyStop(index, count, before, after) {
+    const n = Math.max(0, Math.round(count || 0))
+    const b = Array.prototype.slice.call(before || [])
+    const a = Array.prototype.slice.call(after || [])
+    const at = Math.round(Number(index) || 0)
+    if (at < 0) return at >= -b.length ? { kind: "item", type: b[b.length + at] } : null
+    if (at < n) return { kind: "app", index: at }
+    return at - n < a.length ? { kind: "item", type: a[at - n] } : null
+}
+// The items beside the apps that the keys reach, before and after them
+// along the dock. `items`: [{ type, rect }], where the dock's pills reported
+// them (LayoutService.dockItemRect - only a shown item has a place); `apps`:
+// the apps' place (null: no apps here, everything is before them); `opens`:
+// whether a click on a type opens something. The apps themselves are not
+// one of them.
+function keySides(items, apps, vertical, opens) {
+    const along = rect => vertical ? rect.y : rect.x
+    const list = Array.prototype.slice.call(items || [])
+        .filter(item => item && item.type !== "apps" && validRect(item.rect) && (typeof opens !== "function" || opens(item.type)))
+        .sort((a, b) => along(a.rect) - along(b.rect))
+    const split = validRect(apps) ? along(apps) : Infinity
+    return { before: list.filter(item => along(item.rect) < split).map(item => item.type),
+             after: list.filter(item => along(item.rect) >= split).map(item => item.type) }
+}
+// Every type of item on a dock layout (LayoutService.dockLayout), once each.
+function layoutTypes(layout) {
+    const types = []
+    for (const zone of ["left", "center", "right"])
+        for (const pill of (layout && layout[zone]) || [])
+            for (const item of (pill && pill.items) || [])
+                if (item && item.type && types.indexOf(item.type) < 0) types.push(item.type)
+    return types
 }
 
 // ---- geometry ------------------------------------------------------------------
 function vertical(edge) { return edge === "left" || edge === "right" }
+
+// The room an "always" dock reserves: its body and its margin on each side,
+// less the gap Hyprland puts between a window and a reserved area anyway -
+// its `gaps_out`, the mode's "Gap to screen edge" in Settings > Appearance,
+// not a fixed 12: with the laptop mode's 8 every window's bottom ran 4 px
+// under a taskbar. The windows then end the margin away from the body
+// whatever the gap; a gap wider than all of it leaves them further off,
+// as a zone cannot be less than nothing.
+function reserveZone(margin, across, gapsOut) {
+    const m = Math.max(0, Number(margin) || 0)
+    const a = Math.max(0, Number(across) || 0)
+    const g = Math.max(0, Number(gapsOut) || 0)
+    return Math.max(0, m * 2 + a - g)
+}
 
 // The icon size that fits: the setting, or smaller when `count` icons do not
 // fit along `room` (never below MIN_ICON).
@@ -525,6 +708,37 @@ function launchSettled(count, before, since, now, limit) {
     return count > before || now - since >= limit
 }
 
+// The same for a start the dock watches (DockService.markLaunching):
+// `state` as it was at the click { since, before (its window count), active
+// (it was in front) }, `item` as it is now { count, active }. Done at a
+// window more than it had and at the limit - and sooner where no new window
+// may ever come: a single-instance app started again (Spotify, Discord,
+// Steam) only raises its window, which brings it to the front, and an app
+// that had windows already (New window, a middle click) is given a share of
+// the limit (RELAUNCH_SHARE) - its icon breathed for the whole ten seconds.
+var RELAUNCH_SHARE = 0.25
+function launchDeadline(state, limit) {
+    const s = state || {}
+    return (Number(s.since) || 0) + (Number(s.before) > 0 ? limit * RELAUNCH_SHARE : limit)
+}
+function launchDone(state, item, now, limit) {
+    const s = state || {}
+    const it = item || {}
+    if (launchSettled(Number(it.count) || 0, Number(s.before) || 0, Number(s.since) || 0, now, limit)) return true
+    if (it.active === true && s.active !== true) return true
+    return now >= launchDeadline(s, limit)
+}
+// How long until the first of the starts in `states` ({ key: state }) is
+// due: the one timer the service keeps for them, -1 for none.
+function launchWait(states, now, limit) {
+    let wait = -1
+    for (const key of Object.keys(states || {})) {
+        const left = Math.max(0, launchDeadline(states[key], limit) - now)
+        if (wait < 0 || left < wait) wait = left
+    }
+    return wait
+}
+
 // The pin slot under a point along the dock: before the first pin whose
 // middle lies past it. `pins` are the pins' [start, size] along the dock,
 // without the dragged one.
@@ -551,8 +765,8 @@ function storedSlot(slot, shownPins, storedPins, dragged) {
 // What letting go of a dragged app does: a drop among the pins (`dropSlot`
 // >= 0, the pointer still near the dock), an unpin for a pinned app pulled
 // `reach` slots and more away from the dock, else nothing. `away` is how far
-// the pointer left the dock across it; a drag the system took away (a grab
-// elsewhere) ends with Infinity and does nothing.
+// the pointer left the dock across it; one not known (Infinity) does
+// nothing. A drag the system took away is cancelOutcome's.
 // Whether a press has become a drag: moved `along` the dock past the
 // threshold, or pulled `out` past the icon by it - straight up off a bottom
 // dock is how a pin is pulled off, and counted along alone that never began
@@ -579,6 +793,51 @@ function dragOutcome(item, away, slot, dropSlot, reach, room) {
     if (!item || !isFinite(Number(away))) return "none"
     if (dragAway(item, away, slot, reach, room)) return "unpin"
     return dropSlot >= 0 && Math.max(0, Number(away) || 0) < slot ? "drop" : "none"
+}
+// A drag the system took away. A pull off the dock ends that way too: the
+// surface is all the input the dock has, and the pointer leaving it is a
+// leave, at which Qt cancels the press - the pin stayed when it was pulled
+// further than the surface reaches, the natural, decisive way to pull it
+// off. So a cancel unpins when the pull had reached the unpin distance (the
+// label said "Unpin"), or was still going away past half of it: a quick
+// pull can leave the surface between two moves without ever reporting the
+// last stretch. `away` is the last distance reported, `rising` whether it
+// was growing then. Anything else does nothing (one undo step either way).
+function cancelOutcome(item, away, rising, slot, reach, room) {
+    const out = Number(away)
+    if (!item || item.pinned !== true || !isFinite(out)) return "none"
+    if (dragAway(item, out, slot, reach, room)) return "unpin"
+    return rising === true && out >= unpinDistance(slot, reach, room) / 2 ? "unpin" : "none"
+}
+
+// A drag whose app went meanwhile (its last window closed, its pin taken
+// away elsewhere, the dock gone): its icon - and with it the end of the drag -
+// is gone, which kept the dock shown for good with its whole surface taking
+// clicks meant for the windows below.
+function dragLost(key, items) {
+    const k = String(key || "")
+    return k.length > 0 && !Array.prototype.slice.call(items || []).some(item => item && item.key === k)
+}
+
+// ---- the names over the icons -------------------------------------------------------
+// The name as the pointer goes over the icons. `state`: { index, shown } now;
+// `index`: the icon entered or left, `entered` which. The next { index,
+// shown }, and what the two timers do: "show" (the delay starts, the name
+// shows when it ends), "hide" (a short grace starts, the name goes when it
+// ends), "stop" (both stop), "keep" (both as they are). Once a name is up the
+// next icon's shows at once: the pointer crosses the gap between two icons,
+// where no icon has it, within the grace. A leave of an icon the name has
+// already left (the next one's enter came first) changes nothing.
+function labelAfter(state, index, entered) {
+    const s = state || {}
+    const at = Math.round(Number(index))
+    const shown = s.shown === true
+    const current = s.index === undefined || s.index === null ? -1 : s.index
+    if (!entered) {
+        if (at !== current) return { index: current, shown: shown, timer: "keep" }
+        return { index: current, shown: shown, timer: shown ? "hide" : "stop" }
+    }
+    return shown ? { index: at, shown: true, timer: "stop" } : { index: at, shown: false, timer: "show" }
 }
 
 // ---- zones --------------------------------------------------------------------

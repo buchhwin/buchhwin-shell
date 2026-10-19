@@ -39,6 +39,9 @@ distro_detect() {
   case $ID in
     fedora) printf 'fedora\n' ;;
     opensuse-leap)
+      # Any 16.x: the running session's scripts (doctor, session-check) have
+      # to know a Leap that was upgraded past 16.0. The installers are
+      # stricter (distro_untried).
       if [[ ${VERSION_ID%%.*} == 16 ]]; then
         printf 'opensuse-leap\n'
       else
@@ -59,6 +62,22 @@ distro_known() {
   return 1
 }
 
+# distro_untried DISTRO: true, with the reason on stderr, when the installers
+# should not go ahead on this release without being told to. The lists, the
+# Quickshell repository and the Hyprland build were checked against Leap
+# 16.0, and a later 16.x has its own Qt; such a release gets in the way every
+# other system gets in, through BUCHHWIN_DISTRO (or --distro).
+distro_untried() {
+  [[ $1 == opensuse-leap && -z ${BUCHHWIN_DISTRO:-} ]] || return 1
+  local file=${BUCHHWIN_OS_RELEASE:-/etc/os-release} version
+  # shellcheck disable=SC1090
+  version=$(. "$file" 2>/dev/null; printf '%s' "${VERSION_ID:-}")
+  [[ $version == 16.0 ]] && return 1
+  printf 'openSUSE Leap %s was not tried yet, only Leap 16.0.\n' "${version:-?}" >&2
+  printf 'Set BUCHHWIN_DISTRO=opensuse-leap (or pass --distro opensuse-leap) to go ahead anyway.\n' >&2
+  return 0
+}
+
 # The commands below print what they would run when the caller's `run` is a
 # dry run; they never call the package manager themselves. `run` comes from
 # the caller (install/bootstrap.sh).
@@ -70,9 +89,11 @@ zypper_repo_args=()
 
 # The alias of Leap's own repo-oss on this machine: it is "repo-oss" on one
 # installation and "openSUSE:repo-oss" on the next, so it is read off the URL.
+# Any 16.x (or the $releasever form), so a release past 16.0 let in with
+# BUCHHWIN_DISTRO finds its own.
 leap_oss_alias() {
   LC_ALL=C zypper --non-interactive --no-refresh lr -u 2>/dev/null \
-    | awk -F'|' '$NF ~ /distribution\/leap\/16\.0\/repo\/oss\/?/ { gsub(/ /, "", $2); print $2; exit }' \
+    | awk -F'|' '$NF ~ /distribution\/leap\/(16\.[0-9]+|\$releasever)\/repo\/oss\/?/ { gsub(/ /, "", $2); print $2; exit }' \
     || true   # no zypper (a Fedora CI running the dry run): no alias, not an error
 }
 
@@ -114,14 +135,70 @@ pkg_install_preview() {
   esac
 }
 
+# Arch: listed packages asked for by what they provide instead of by their
+# own name, NAME|DEPENDENCY (install/packages/arch.sh fills it in).
+arch_provided_by=()
+
+# arch_needed PACKAGE...: the names no installed package satisfies yet, one
+# per line. --needed compares names only, so a quickshell-git from the AUR
+# did not count as quickshell: pacman then asked "Remove quickshell-git?",
+# and the default answer ended the bootstrap before the shell was installed.
+# `pacman -T` counts what installed packages provide. A name another
+# package satisfies is said on stderr and left alone. Without a pacman that
+# can answer (a dry run on another system), every name.
+arch_needed() {
+  local -A dependency_of=()
+  local entry name
+  for entry in "${arch_provided_by[@]}"; do dependency_of[${entry%%|*}]=${entry#*|}; done
+  local dependencies=()
+  for name in "$@"; do dependencies+=("${dependency_of[$name]:-$name}"); done
+  # No pacman at all exits 127 too, the status that means "some missing",
+  # but names none - which read as every name installed.
+  if ! command -v pacman >/dev/null 2>&1; then
+    printf '%s\n' "$@"
+    return 0
+  fi
+  local missing status=0
+  missing=$(LC_ALL=C pacman -T "${dependencies[@]}" 2>/dev/null) || status=$?
+  if (( status != 0 && status != 127 )); then
+    printf '%s\n' "$@"
+    return 0
+  fi
+  local dependency owner
+  for name in "$@"; do
+    dependency=${dependency_of[$name]:-$name}
+    if grep -qxF -- "$dependency" <<<"$missing"; then
+      printf '%s\n' "$name"
+      continue
+    fi
+    # Captured, then cut: `| head -n1` could SIGPIPE pacman (pitfall 15).
+    owner=$(LC_ALL=C pacman -Qq "$dependency" 2>/dev/null) || owner=""
+    owner=${owner%%$'\n'*}
+    if [[ -n $owner && $owner != "$name" ]]; then
+      printf '  %s: %s is installed and provides it; left alone\n' "$name" "$owner" >&2
+    fi
+  done
+}
+
 # pkg_install_safe DISTRO PACKAGE...: pkg_install, but on openSUSE only after
 # zypper's own dry run said it removes, downgrades and re-vendors nothing -
-# this runs next to a working desktop. On Arch only after pacman resolved
-# every name, downgrades nothing, and the system is not behind its own
-# package database. Exits on refusal; nothing is installed. Needs the
-# caller's `apply` (true/false) besides `run`.
+# this runs next to a working desktop. On Arch only the names nothing
+# installed satisfies yet (arch_needed), and only after pacman resolved
+# them, downgrades nothing, and the system is not behind its own package
+# database. Exits on refusal; nothing is installed. Needs the caller's
+# `apply` (true/false) besides `run`.
 pkg_install_safe() {
   local distro=$1; shift
+  if [[ $distro == arch ]]; then
+    local needed_list needed=()
+    needed_list=$(arch_needed "$@")
+    if [[ -z $needed_list ]]; then
+      printf '  every package on the list is installed already\n'
+      return 0
+    fi
+    mapfile -t needed <<<"$needed_list"
+    set -- "${needed[@]}"
+  fi
   if $apply && [[ $distro == arch ]]; then
     # Upgrades the local database already knows about: a new package built
     # against those newer libraries, installed beside the old ones, is the
@@ -171,6 +248,10 @@ pkg_install_safe() {
   pkg_install "$distro" "$@"
 }
 
+# The openSUSE aliases repo_add added in this run - or, in a dry run, would
+# add - for repos_refresh.
+repos_added=()
+
 # repo_add DISTRO SPEC: a Copr name on Fedora ("owner/project"), a
 # "alias|url|priority" triple on openSUSE. Arch needs no repository of its
 # own (everything is in extra, Brave comes from the AUR), so it has none.
@@ -186,20 +267,30 @@ repo_add() {
       elif [[ $url == *.repo ]]; then
         # A .repo file brings its own alias; it has to match the one above.
         run sudo zypper --non-interactive addrepo --refresh --priority "$priority" "$url"
+        repos_added+=("$alias")
       else
         run sudo zypper --non-interactive addrepo --refresh --priority "$priority" "$url" "$alias"
+        repos_added+=("$alias")
       fi ;;
   esac
 }
 
-# repos_refresh DISTRO: after repo_add. zypper asks once per new repository
-# whether to trust its key; --gpg-auto-import-keys answers yes, which is why
-# the dry run lists every repository first. Nothing on Arch on purpose: a
-# refresh without an upgrade (pacman -Sy) is a partial upgrade waiting to
-# happen; bootstrap.sh asks for sudo pacman -Syu before it instead.
+# repos_refresh DISTRO: after repo_add, for the repositories it added. zypper
+# asks once per new repository whether to trust its key;
+# --gpg-auto-import-keys answers yes, which is why the dry run lists every
+# repository first. Only those: the option holds for every repository a
+# refresh reads, and a changed key on one that was configured before (a
+# home: project, Packman) is a question for you, not one to answer here.
+# With nothing added nothing is refreshed; the install step reads the
+# repositories as zypper always does. Nothing on Arch on purpose: a refresh
+# without an upgrade (pacman -Sy) is a partial upgrade waiting to happen;
+# bootstrap.sh asks for sudo pacman -Syu before it instead.
 repos_refresh() {
   case $1 in
-    opensuse-leap) run sudo zypper --non-interactive --gpg-auto-import-keys refresh ;;
+    opensuse-leap)
+      if (( ${#repos_added[@]} )); then
+        run sudo zypper --non-interactive --gpg-auto-import-keys refresh "${repos_added[@]}"
+      fi ;;
   esac
 }
 
@@ -213,6 +304,36 @@ distro_install_hint() {
     opensuse-leap:*) printf 'sudo zypper install %s' "$package" ;;
     arch:brave-bin) printf 'paru -S brave-bin (from the AUR)' ;;
     arch:*) printf 'sudo pacman -S %s' "$package" ;;
+    # No known distribution (distro_family found none): the package alone.
+    :*) printf 'package %s' "$package" ;;
     *) printf 'sudo dnf install %s' "$package" ;;
   esac
+}
+
+# distro_family: the distribution whose package names and commands a runtime
+# check should name - BUCHHWIN_DISTRO, then ID, then the first known word of
+# ID_LIKE. An Arch derivative is arch here, openSUSE's family opensuse-leap.
+# Prints nothing and returns 1 when none is known, and the checks then name
+# only the package (scripts/doctor.sh, scripts/session-check.sh).
+# distro_detect stays strict for the installers.
+distro_family() {
+  if [[ -n ${BUCHHWIN_DISTRO:-} ]]; then
+    distro_known "$BUCHHWIN_DISTRO" || return 1
+    printf '%s\n' "$BUCHHWIN_DISTRO"
+    return 0
+  fi
+  local file=${BUCHHWIN_OS_RELEASE:-/etc/os-release} ID="" ID_LIKE="" word
+  [[ -r $file ]] || return 1
+  # In a subshell, as in distro_detect.
+  IFS='|' read -r ID ID_LIKE < <(
+    # shellcheck disable=SC1090
+    . "$file" 2>/dev/null
+    printf '%s|%s\n' "${ID:-}" "${ID_LIKE:-}")
+  for word in $ID $ID_LIKE; do
+    case $word in
+      fedora | arch) printf '%s\n' "$word"; return 0 ;;
+      opensuse-leap | opensuse-tumbleweed | opensuse | suse) printf 'opensuse-leap\n'; return 0 ;;
+    esac
+  done
+  return 1
 }

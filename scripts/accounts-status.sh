@@ -8,6 +8,7 @@ set -uo pipefail
 # running. Sections that services/accounts/AccountsLogic.js parses:
 #   @tools NAME…              account wizards found in PATH
 #   @server running|stopped
+#   @agents ID…               every agent instance, resources or not
 #   @type TYPE_ID             "key <busctl JSON>" lines (name, comment, icon,
 #   @instance INSTANCE_ID      caps, mime / type, name, status, message,
 #                              online, progress)
@@ -15,18 +16,46 @@ set -uo pipefail
 # filter, indexer and the other internal agents are skipped.
 # Account names appear in this output for the shell UI only; the service never
 # logs them and the IPC output carries counts, ids and states.
+#
+#   accounts-status.sh                  the whole snapshot
+#   accounts-status.sh --status ID…     @server, @agents and, for the given
+#                                       instances, only name, status, message,
+#                                       online and progress
+#
+# The second form is the page's poll every 10 s. A type's name, comment, icon,
+# MIME types and capabilities and an instance's type never change while the
+# instance exists, and they were most of the ~55 busctl calls of every poll;
+# the shell keeps them from the whole snapshot and reads that again when
+# @agents says an instance came or went.
 
 bus=(busctl --user --json=short --auto-start=no --timeout=3)
 service=org.freedesktop.Akonadi.Control
 manager=(/AgentManager org.freedesktop.Akonadi.AgentManager)
 
-tools=""
-command -v kcmshell6 >/dev/null 2>&1 && tools="$tools kaccounts"
-command -v systemsettings >/dev/null 2>&1 && tools="$tools systemsettings"
-command -v accountwizard >/dev/null 2>&1 && tools="$tools accountwizard"
-printf '@tools%s\n' "$tools"
+status_only=0
+wanted=()
+if [[ ${1:-} == --status ]]; then
+  status_only=1
+  shift
+  for id in "$@"; do
+    case $id in '' | *[!A-Za-z0-9_]*) continue ;; esac
+    wanted+=("$id")
+  done
+fi
 
-if ! pgrep -u "$(id -u)" -x akonadi_control >/dev/null 2>&1; then
+if (( ! status_only )); then
+  tools=""
+  command -v kcmshell6 >/dev/null 2>&1 && tools="$tools kaccounts"
+  command -v systemsettings >/dev/null 2>&1 && tools="$tools systemsettings"
+  command -v accountwizard >/dev/null 2>&1 && tools="$tools accountwizard"
+  printf '@tools%s\n' "$tools"
+fi
+
+# Whether Akonadi runs is asked of the bus (NameHasOwner starts nothing): the
+# name is what every call below needs, and pgrep read all of /proc for it.
+owner=$(busctl --user --auto-start=no --timeout=3 call org.freedesktop.DBus /org/freedesktop/DBus \
+  org.freedesktop.DBus NameHasOwner s "$service" 2>/dev/null)
+if [[ $owner != "b true" ]]; then
   printf '@server stopped\n'
   exit 0
 fi
@@ -46,12 +75,37 @@ unwrap() {
   printf '%s' "${text%%\"*}"
 }
 
+instance_status() {
+  printf '@instance %s\n' "$1"
+  printf 'name %s\n' "$(call agentInstanceName s "$1")"
+  printf 'status %s\n' "$(call agentInstanceStatus s "$1")"
+  printf 'message %s\n' "$(call agentInstanceStatusMessage s "$1")"
+  printf 'online %s\n' "$(call agentInstanceOnline s "$1")"
+  printf 'progress %s\n' "$(call agentInstanceProgress s "$1")"
+}
+
 instances=$(call agentInstances)
 case $instances in
   *'[['*) ids=${instances#*\[\[} ; ids=${ids%%\]\]*} ;;
   *) ids="" ;;
 esac
 ids=$(printf '%s' "$ids" | tr ',' '\n' | tr -d '"')
+
+agents=""
+while IFS= read -r id; do
+  case $id in '' | *[!A-Za-z0-9_]*) continue ;; esac
+  agents="$agents $id"
+done <<< "$ids"
+printf '@agents%s\n' "$agents"
+
+if (( status_only )); then
+  for id in "${wanted[@]}"; do
+    case " $agents " in
+      *" $id "*) instance_status "$id" ;;
+    esac
+  done
+  exit 0
+fi
 
 seen=""
 resources=""
@@ -82,13 +136,8 @@ while IFS= read -r id; do
 
   case " $resources " in
     *" $type "*)
-      printf '@instance %s\n' "$id"
+      instance_status "$id"
       printf 'type %s\n' "$type_json"
-      printf 'name %s\n' "$(call agentInstanceName s "$id")"
-      printf 'status %s\n' "$(call agentInstanceStatus s "$id")"
-      printf 'message %s\n' "$(call agentInstanceStatusMessage s "$id")"
-      printf 'online %s\n' "$(call agentInstanceOnline s "$id")"
-      printf 'progress %s\n' "$(call agentInstanceProgress s "$id")"
       ;;
   esac
 done <<< "$ids"

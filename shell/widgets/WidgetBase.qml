@@ -68,7 +68,7 @@ GridLayout {
     // teal itself is 1.08:1 on a light card, a level that is not there. On
     // the notch, the accent made for black. Every level widget draws in it
     // (the meter below, the volume, the system stats, the lit Wi-Fi bars;
-    // round 12, ui-rest#2 - only the battery did).
+    // only the battery did once).
     readonly property color levelFill: onDark ? Colors.notchAccent : Colors.accentFill
     readonly property color successFill: onDark ? Colors.positiveOnDark : Colors.positiveFill
     // The groove behind the meter. The theme's track is made to sit on a

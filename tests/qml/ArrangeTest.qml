@@ -197,6 +197,29 @@ ShellRoot {
         T.eq(A.gridDropIndex(three, "a", { x: 105, y: 95, grabX: 100, grabY: 40 }, box), 2,
              "a cell is judged by the corner the hand is holding")
 
+        // ---- gridDropTarget: where the drop rests ------------------------
+        // The notch's overview as it is in use (the clock across, the media
+        // two by two, four one-cell items; four columns, the notch's gap and
+        // step). The cell a marker is drawn in is the one the packing that won
+        // puts the dragged item in, inside the grid - a hairline after the
+        // list neighbour was drawn past its right edge for three drops in five.
+        const notchBox = { columns: 4, width: 688, gap: 12, unit: 36 }
+        const overview = [g("clock", 4, 1), g("activeWindow", 1, 1), g("media", 2, 2), g("notification", 1, 1),
+                          g("workspace", 1, 1), g("status", 1, 1)]
+        const overviewIds = overview.map(entry => entry.id)
+        for (let index = 0; index < overview.length; ++index) {
+            const order = A.previewOrder(overviewIds, "activeWindow", index).map(id => overview.find(entry => entry.id === id))
+            const resting = A.gridLayout(order, 4, 688, 12, 36).cells.find(cell => cell.id === "activeWindow")
+            const point = { x: resting.x + 5, y: resting.y + 5, grabX: 5, grabY: 5 }
+            const target = A.gridDropTarget(overview, "activeWindow", point, notchBox)
+            T.eq(target.cell ? [target.cell.x, target.cell.y, target.cell.width, target.cell.height] : null,
+                 [resting.x, resting.y, resting.width, resting.height],
+                 "carried to where order " + index + " rests it, the drop cell is that cell")
+            T.ok(target.cell !== null && target.cell.x + target.cell.width <= notchBox.width + 0.5, "inside the grid (" + index + ")")
+            T.eq(target.index, A.gridDropIndex(overview, "activeWindow", point, notchBox), "and its index is gridDropIndex's (" + index + ")")
+        }
+        T.eq(A.gridDropTarget(overview, "zz", { x: 0, y: 0 }, notchBox), { index: 0, cell: null }, "no cell for an id that is not there")
+
         // ---- previewOrder agrees with the model ---------------------------
         // This is the contract that makes the preview honest: what the user
         // sees while dragging has to be what the model does on release.

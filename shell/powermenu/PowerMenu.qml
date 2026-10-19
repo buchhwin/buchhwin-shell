@@ -60,6 +60,9 @@ ShellPanel {
             id: column
             width: parent.width
             spacing: Metrics.panelGap
+            // The menu and its question fade into each other while the card's
+            // height glides (ShellPanel).
+            PageFade { target: column; key: root.pendingAction; live: root.openProgress === 1 }
 
             // The key is for the menu; a confirmation is answered here.
             PanelHeader {
@@ -128,10 +131,13 @@ ShellPanel {
                 spacing: Metrics.spaceSm
                 Item { Layout.fillWidth: true }
                 ShellButton { focusOnTab: true; text: "Cancel"; onClicked: root.pendingAction = "" }
+                // Danger, like every other second click that destroys
+                // something in the shell (ShellButton's armed state): only
+                // what ends the session asks first, and it closes every app.
                 ShellButton {
                     focusOnTab: true
                     text: root.pending ? root.pending.label : ""
-                    variant: "accent"
+                    variant: "danger"
                     onClicked: root.run(root.pendingAction)
                 }
             }

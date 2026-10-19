@@ -65,7 +65,7 @@ ShellRoot {
              && cava.indexOf("gradient_color_8") >= 0, "cava config has the full gradient")
         T.eq(cava.split("\n").filter(line => line.indexOf("gradient_color_") === 0).length, 8, "eight gradient stops")
         T.ok(/gradient_color_4 = '#[0-9a-f]{6}'/.test(cava), "stops are hex colours")
-        // The login's logo check (V12): only an image logo has columns to fit.
+        // The login's logo check: only an image logo has columns to fit.
         // The buchhwin profile's Saturn is a text file and keeps no width.
         T.eq(L.logoNeedsFit('{"logo": {"type": "kitty-direct", "source": "/x.png", "width": 20}}', 30), true, "an image of another width is fitted")
         T.eq(L.logoNeedsFit('{"logo": {"source": "/x.png", "width": 30, "height": 15}}', 30), true, "a stretching height is fitted")

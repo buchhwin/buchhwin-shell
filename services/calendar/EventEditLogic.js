@@ -34,7 +34,11 @@ const messages = {
     ambiguous: "Several events match this one. Edit or delete it in Merkuro.",
     readOnly: "This calendar is read-only. Change the event where it comes from.",
     unsure: "This event could not be matched safely. Edit or delete it in Merkuro.",
-    unavailable: "The calendars could not be read."
+    unavailable: "The calendars could not be read.",
+    // calendar-helper.py writes through KDE's Akonadi Python bindings, which
+    // Fedora packages and openSUSE Leap and Arch do not (CalendarService
+    // asks once whether they import).
+    noBindings: "Editing events needs the Akonadi Python bindings, which this distribution does not package. Use Merkuro."
 }
 
 function refuse(reason) {
@@ -55,11 +59,20 @@ function resolveRequest(event) {
     }
 }
 
-// The helper's answer as the identity the panel works with.
+// The helper's answer as the identity the panel works with. A refusal with a
+// reason says it in the panel's words; one without a reason is a helper that
+// could not work at all (the bindings missing, Akonadi gone), and its own
+// error says why - "could not be matched safely" was the wrong reason.
 function applyResolve(answer) {
     if (!answer || !answer.data) return refuse("unavailable")
     const data = answer.data
-    if (!data.ok) return refuse(String(data.reason || "unsure"))
+    if (!data.ok) {
+        if (data.reason) return refuse(String(data.reason))
+        const failed = refuse("unsure")
+        const error = String(data.error || "").trim()
+        if (error.length) failed.message = error.charAt(0).toUpperCase() + error.slice(1) + (/[.!?]$/.test(error) ? "" : ".")
+        return failed
+    }
     if (data.writable === false) return refuse("readOnly")
     return {
         ok: true, reason: "", message: "",

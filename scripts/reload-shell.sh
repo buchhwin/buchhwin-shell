@@ -8,11 +8,12 @@ project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 installed_dir="$HOME/.local/share/buchhwin-shell"
 # The session's own shell is never a nested test's to touch. The environment
 # that makes this possible is the one docs/testing.md tells you to export - the
-# nested WAYLAND_DISPLAY, signature and XDG dirs - while BUCHHWIN_SHELL_PATH,
-# the only thing that otherwise keeps this script local, is not mentioned there
-# at all. Without this guard, running it from a development checkout inside a
-# nested session stops the shell on the user's own screen and, in the case of
-# reload, starts a replacement pointed at the nested display.
+# nested WAYLAND_DISPLAY, signature and XDG dirs - and BUCHHWIN_SHELL_PATH, the
+# only thing that otherwise keeps this script local, was missing from that
+# recipe for a long time. Without this guard, running it from a development
+# checkout inside a nested session stops the shell on the user's own screen
+# and starts a replacement pointed at the nested display. It is asked again
+# below, of the shell this copy will really act on.
 if [[ $(readlink -f "${BUCHHWIN_SHELL_PATH:-$installed_dir}") == "$(readlink -f "$installed_dir")" ]] \
    && nested_environment; then
   printf 'reload-shell: the environment points at a nested session; refusing to act on %s\n' "$installed_dir" >&2
@@ -24,14 +25,13 @@ fi
 # two different sessions mean no shell at all.
 if nested_mixed_environment; then
   printf 'reload-shell: HYPRLAND_INSTANCE_SIGNATURE and WAYLAND_DISPLAY belong to different sessions; refusing\n' >&2
-  printf 'reload-shell: for the nested session export both (and its XDG dirs) from scripts/nested-session.sh start\n' >&2
+  printf 'reload-shell: for the nested session export every line scripts/nested-session.sh start prints\n' >&2
   exit 1
 fi
 # No Hyprland session here - a reload or a deploy run from Plasma, or with a
 # signature of a Hyprland that has gone: there is no shell of this session to
 # restart, and start-shell.sh would refuse the new one anyway (it used to
-# start it on KWin's display, and end Plasma's kded6 first; round 12,
-# scripts#0). Said, and nothing is stopped. Before the redirect below, so an
+# start it on KWin's display, and end Plasma's kded6 first). Said, and nothing is stopped. Before the redirect below, so an
 # older session copy without the check is not reached either. Tests that run
 # stand-in shells outside any session say BUCHHWIN_START_WITHOUT_HYPRLAND=1.
 if [[ ${BUCHHWIN_START_WITHOUT_HYPRLAND:-0} != 1 ]] && ! hyprland_session >/dev/null; then
@@ -53,6 +53,33 @@ else
 fi
 # Absolute: the shell starts from the home directory below.
 [[ $config_dir == /* ]] || config_dir="$PWD/$config_dir"
+# The guard at the top asks about BUCHHWIN_SHELL_PATH, but the session's own
+# copy acts on itself whatever that says (the choice just above): run from
+# the stable worktree with the nested exports and BUCHHWIN_SHELL_PATH at a
+# checkout, it got past the guard, found no shell of its path on the nested
+# display and started a second installed shell in the nested compositor, on
+# the user's real configuration. So the shell that will really be acted on
+# is asked about too.
+if [[ $(readlink -f "$config_dir") == "$(readlink -f "$installed_dir")" ]] && nested_environment; then
+  printf 'reload-shell: the environment points at a nested session; refusing to act on %s\n' "$installed_dir" >&2
+  printf 'reload-shell: run the reload from the checkout the nested session runs\n' >&2
+  exit 1
+fi
+# A shell for the nested session is a nested shell: BUCHHWIN_NESTED=1 keeps it
+# off the host's notifications, Bluetooth agent, autostart and idle, which a
+# reload from the recipe's terminal used to hand it (pitfall 121). And only
+# with the sandbox's XDG dirs: with the caller's own it would run on the
+# user's real settings and layout, and its start would move the live shell's
+# log aside.
+if nested_environment; then
+  if ! nested_sandbox_dirs; then
+    printf 'reload-shell: the nested shell would run on XDG dirs outside its sandbox (%s); refusing\n' \
+      "${XDG_CONFIG_HOME:-$HOME/.config}" >&2
+    printf 'reload-shell: export every line scripts/nested-session.sh start prints, the XDG dirs too\n' >&2
+    exit 1
+  fi
+  export BUCHHWIN_NESTED=1
+fi
 # pgrep -f takes a regular expression; the path is a literal, so every
 # character that means something to an ERE is escaped first (a checkout in a
 # directory such as `worktrees/x+y` used to match the wrong thing, or nothing).
@@ -166,7 +193,33 @@ for name in $(compgen -e); do
     COPILOT_* | MCP_CONNECTION_NONBLOCKING | APPLICATION_INSIGHTS_NO_STATSBEAT | MXC_BIN_DIR \
       | NoDefaultCurrentDirectoryInExePath | NO_AT_BRIDGE)
       editor_only+=(-u "$name") ;;
+    # Hyprland's own (its token places what it starts) stay whatever their
+    # names look like.
+    HL_*) ;;
+    # Whatever else a caller keeps for itself: tokens, keys and passwords by
+    # their usual names, a cloud CLI's settings, an activated Python or Conda
+    # environment, a preloaded library. A list of known callers never ends -
+    # a GH_TOKEN exported for one push reached every application the shell
+    # started until the next login - so these go by their kind.
+    *_TOKEN | *_API_KEY | *SECRET* | *PASSWORD* | AWS_* | VIRTUAL_ENV | VIRTUAL_ENV_PROMPT | CONDA_* \
+      | PYTHONPATH | PYTHONHOME | NODE_OPTIONS | LD_PRELOAD)
+      caller_only+=(-u "$name") ;;
   esac
+done
+# An activated environment's bin directory leaves PATH with it, or a terminal
+# opened from the launcher would find that python, pip or node first.
+path_without() {   # path_without PATH DIR
+  local kept="" entry
+  local IFS=:
+  for entry in $1; do
+    [[ $entry == "$2" || $entry == "$2/" ]] && continue
+    kept+=${kept:+:}$entry
+  done
+  printf '%s' "$kept"
+}
+shell_path=$PATH
+for prefix in "${VIRTUAL_ENV:-}" "${CONDA_PREFIX:-}"; do
+  [[ -n $prefix ]] && shell_path=$(path_without "$shell_path" "$prefix/bin")
 done
 # Those go only when VS Code is the caller; a session may set one itself.
 if (( vscode )); then caller_only+=("${editor_only[@]}"); fi
@@ -189,6 +242,8 @@ if [[ -n ${ZDOTDIR:-} ]]; then
     caller_only+=(-u ZDOTDIR)
   fi
 fi
+# After every -u: env takes the first assignment as the end of its options.
+if [[ $shell_path != "$PATH" ]]; then caller_only+=("PATH=$shell_path"); fi
 start_shell() {
   if systemd-run --user --scope --quiet --collect true >/dev/null 2>&1; then
     ( cd -- "$HOME" 2>/dev/null || cd /

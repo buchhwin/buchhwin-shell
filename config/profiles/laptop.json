@@ -1,9 +1,9 @@
 {
-  "configVersion": 2,
+  "configVersion": 3,
   "name": "laptop",
   "label": "Laptop",
-  "description": "A slim bar along the top: workspaces, the time and the battery with its percent; tighter gaps",
-  "mode": "pills",
+  "description": "A slim bar along the top: workspaces, the time, the battery with its percent and unread notifications; tighter gaps",
+  "desktopMode": "pills",
   "bar": {
     "reserve": true,
     "fullscreen": "hide",
@@ -21,8 +21,8 @@
       { "id": "pill-2", "items": [{ "type": "clock", "display": "full", "options": {} }] }
     ],
     "right": [
-      { "id": "pill-3", "items": [{ "type": "volume", "display": "icon", "options": {} }, { "type": "network", "display": "icon", "options": {} }, { "type": "battery", "display": "full", "options": {} }] },
-      { "id": "pill-4", "items": [{ "type": "quickPanel", "display": "icon", "options": {} }] }
+      { "id": "pill-3", "items": [{ "type": "network", "display": "icon", "options": {} }, { "type": "volume", "display": "icon", "options": {} }, { "type": "battery", "display": "full", "options": {} }] },
+      { "id": "pill-4", "items": [{ "type": "notificationIndicator", "display": "icon", "options": {} }, { "type": "quickPanel", "display": "icon", "options": {} }] }
     ]
   },
   "effects": { "gapsIn": 4, "gapsOut": 8 },

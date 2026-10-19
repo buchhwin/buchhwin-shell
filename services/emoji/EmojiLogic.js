@@ -8,6 +8,12 @@ var MAX_RECENT = 48
 var TONES = ["", "\u{1F3FB}", "\u{1F3FC}", "\u{1F3FD}", "\u{1F3FE}", "\u{1F3FF}"]
 var TONE_LABELS = ["Default", "Light", "Medium light", "Medium", "Medium dark", "Dark"]
 
+// The picker's sample of a skin tone: a waving hand in it.
+var TONE_SAMPLE = "\u{1F44B}"
+function toneSample(tone) {
+    return withTone({ e: TONE_SAMPLE, m: 1 }, tone)
+}
+
 // A skin tone is written straight after the emoji, and only where Unicode says
 // one belongs: everything else is returned untouched.
 function withTone(entry, tone) {

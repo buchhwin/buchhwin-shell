@@ -8,7 +8,7 @@ ShellRoot {
     id: root
     FileView { id: forecast; path: Qt.resolvedUrl("../fixtures/openmeteo-forecast.json").toString().replace("file://", ""); blockLoading: true }
 
-    // ---- the cache is the user's alone (security#8) ---------------------------
+    // ---- the cache is the user's alone --------------------------------------
     // Its key is the place's coordinates. Run on a file in the runner's
     // sandboxed cache, never the real one, and without the service: the
     // command it runs, then an atomic write over the file the way the service
@@ -65,6 +65,8 @@ ShellRoot {
         T.ok(url.indexOf("latitude=52.52&longitude=13.4&") > 0, "forecast url uses rounded coordinates")
         T.ok(url.indexOf("temperature_unit=celsius") > 0, "celsius unit")
         T.ok(W.forecastUrl(1, 2, "fahrenheit").indexOf("temperature_unit=fahrenheit") > 0, "fahrenheit unit")
+        T.ok(W.forecastUrl(1, 2, "fahrenheit").indexOf("wind_speed_unit=mph") > 0, "miles per hour with fahrenheit")
+        T.ok(W.forecastUrl(1, 2, "celsius").indexOf("wind_speed_unit=kmh") > 0, "kilometres per hour with celsius")
         T.ok(W.forecastUrl(1, 2, "kelvin").indexOf("temperature_unit=celsius") > 0, "unknown unit falls back to celsius")
         T.ok(W.geocodeUrl(" Frankfurt am Main&x=1 ").indexOf("name=Frankfurt%20am%20Main%26x%3D1&") > 0, "geocode query is encoded and trimmed")
         T.ok(W.validCoordinates(52.52, 13.4), "valid coordinates")
@@ -135,7 +137,7 @@ ShellRoot {
               W.parseIpLocation({ city: "A", loc: "120,10" }), W.parseIpLocation({ loc: "10,10" }), W.parseIpLocation(null)],
              [null, null, null, null, null, null], "no place, broken or impossible answers are no answer")
         T.ok(W.IP_LOCATION_URL.indexOf("https://") === 0, "asked over HTTPS")
-        // Enter in the city search (ui-b#15): only results of the current query.
+        // Enter in the city search: only results of the current query.
         const found = [{ name: "Berlin" }, { name: "Bernau" }]
         T.eq(W.firstResultFor("Ber", "Ber", found), found[0], "the current query's first place")
         T.eq(W.firstResultFor(" Ber ", "Ber", found), found[0], "outer spaces are not a new query")

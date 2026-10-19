@@ -7,14 +7,16 @@ One capture, then a question-and-answer loop on stdin: each line is a pair of
 **global compositor coordinates** and the answer is the hex colour of that
 pixel, or an empty line when the point is on no monitor. One process rather
 than one per sample, because the overlay asks on every pointer move and
-re-reading a 1920x1200 PNG sixty times a second is not a thing to do.
+re-reading a 1920x1200 frame sixty times a second is not a thing to do.
 
 The frozen frames are what the overlay shows, so what is sampled and what is
 seen are the same pixels - a live screen and a sampled capture drift apart the
 moment anything under the pointer animates.
 
 Written to DIR (0700, caller's), never to the clipboard: copying is the
-shell's job, and it already knows how.
+shell's job, and it already knows how. The frames are screenshots of
+everything on screen - a password manager, a chat - so they go again when the
+picker ends: when stdin closes or the shell stops this process (SIGTERM).
 """
 
 import io
@@ -22,10 +24,22 @@ import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
 
 from PIL import Image
+
+# The frames as PPM, which is what grim sends: the overlay's Qt reads it with
+# its own handler, and writing it costs a few milliseconds. As PNG every frame
+# was compressed first, one monitor after the other, before the overlay could
+# open - 240 ms for 1920x1200 and about a second per 4K screen. Raw frames
+# are larger (7 MB at 1920x1200, 25 MB at 4K) but live in tmpfs only while
+# the picker is open.
+FRAME_SUFFIX = ".ppm"
+# What an earlier picker may have left of a monitor (one killed outright, or
+# one from before the frames were removed at the end).
+LEFTOVER_SUFFIXES = (".ppm", ".png")
 
 
 def monitors():
@@ -74,21 +88,82 @@ def pixel_at(monitor, image, gx, gy):
     return "#%02x%02x%02x" % (red, green, blue)
 
 
-def capture(directory):
+def grab(names):
+    """{name: PPM bytes or an error} for every monitor, all at once.
+
+    One grim per monitor, started together: one after the other, the overlay
+    waited for every screen's capture in turn."""
+    started = []
+    for name in names:
+        try:
+            started.append((name, subprocess.Popen(["grim", "-o", name, "-t", "ppm", "-"],
+                                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)))
+        except OSError as error:
+            started.append((name, error))
+    results = {}
+    for name, process in started:
+        if isinstance(process, OSError):
+            results[name] = process
+            continue
+        try:
+            out, err = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired as error:
+            process.kill()
+            process.communicate()
+            results[name] = error
+            continue
+        if process.returncode != 0:
+            results[name] = OSError("grim exited with %d: %s" % (process.returncode, err.decode(errors="replace").strip()))
+        else:
+            results[name] = out
+    return results
+
+
+def remove(paths):
+    for path in paths:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def sweep(directory, monitors_found):
+    """Frames an earlier picker left of these monitors in DIR - nothing else
+    there is touched, whatever DIR is."""
+    remove([directory / (safe_name(monitor["name"]) + suffix)
+            for monitor in monitors_found for suffix in LEFTOVER_SUFFIXES])
+
+
+def capture(directory, written=None):
+    """Freeze every monitor into DIR. `written` collects each file as soon as
+    it exists, so a stop halfway through can still remove them."""
     directory = pathlib.Path(directory)
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    written = [] if written is None else written
+    found = monitors()
+    sweep(directory, found)
+    raw_frames = grab([monitor["name"] for monitor in found])
     frames = []
-    for monitor in monitors():
+    for monitor in found:
         try:
-            raw = subprocess.run(["grim", "-o", monitor["name"], "-t", "ppm", "-"],
-                                 capture_output=True, timeout=5, check=True).stdout
-            image = Image.open(io.BytesIO(raw)).convert("RGB")
+            raw = raw_frames.get(monitor["name"])
+            if isinstance(raw, Exception):
+                raise raw
+            image = Image.open(io.BytesIO(raw))
+            # grim's PPM is RGB already; a convert() would copy it once more.
+            image = image.convert("RGB") if image.mode != "RGB" else image
+            image.load()
         except (subprocess.SubprocessError, OSError, ValueError) as error:
             print("color-picker: cannot capture %s: %s" % (monitor["name"], error), file=sys.stderr)
             continue
-        path = directory / (safe_name(monitor["name"]) + ".png")
-        image.save(path)
-        os.chmod(path, 0o600)
+        path = directory / (safe_name(monitor["name"]) + FRAME_SUFFIX)
+        # Created 0600, so the screenshot is never readable by others, not
+        # even for a moment.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        written.append(path)
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as file:
+            image.save(file, format="PPM")
         frames.append((monitor, image, path))
     return frames
 
@@ -117,16 +192,28 @@ def serve(frames):
         print(answer, flush=True)
 
 
+def terminate(_signum, _frame):
+    # The shell stops the helper with SIGTERM when the overlay closes, and
+    # Python's default for it ends the process on the spot - past every
+    # `finally`, frames and all. As SystemExit it runs the clean-up below.
+    sys.exit(0)
+
+
 def main(argv):
     if len(argv) != 3 or argv[1] != "capture":
         print(__doc__, file=sys.stderr)
         return 2
-    frames = capture(argv[2])
-    if not frames:
-        print("color-picker: nothing captured", file=sys.stderr)
-        return 1
-    serve(frames)
-    return 0
+    signal.signal(signal.SIGTERM, terminate)
+    written = []
+    try:
+        frames = capture(argv[2], written)
+        if not frames:
+            print("color-picker: nothing captured", file=sys.stderr)
+            return 1
+        serve(frames)
+        return 0
+    finally:
+        remove(written)
 
 
 if __name__ == "__main__":

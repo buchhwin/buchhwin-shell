@@ -60,6 +60,8 @@ ShellRoot {
         T.eq(E.withTone(plain, 3), plain.e, "an emoji without tones is untouched")
         T.eq(E.withTone(tonable, 99), tonable.e + "\u{1F3FF}", "a tone out of range is the last one")
         T.eq(E.withTone(null, 2), "", "nothing to tone")
+        T.eq(E.toneSample(0), "\u{1F44B}", "the tone sample: a waving hand as it comes")
+        T.eq(E.toneSample(5), "\u{1F44B}\u{1F3FF}", "and in the chosen tone")
         T.eq(E.withoutTone(tonable.e + "\u{1F3FD}"), tonable.e, "the tone comes back off")
         T.eq(E.withoutTone(plain.e), plain.e, "an emoji without one is unchanged")
 

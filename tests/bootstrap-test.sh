@@ -89,6 +89,12 @@ done
 
 fedora=$("$script" --distro fedora)
 leap=$("$script" --distro opensuse-leap)
+# The lists are captured, then searched (pitfall 15): bootstrap.sh writes one
+# in some sixty writes, `grep -qx` quits at its match, the next write gets
+# SIGPIPE, and pipefail turned a found hyprland into a failure under load -
+# and, behind the `!`, a hyprland in Leap's list into a pass.
+fedora_list=$("$script" --distro fedora --list-packages)
+leap_list=$("$script" --distro opensuse-leap --list-packages)
 check 'Fedora installs with dnf' '[[ $fedora == *"sudo dnf -y install"* && $fedora != *zypper* ]]'
 check 'Fedora enables the Hyprland Copr' '[[ $fedora == *"copr enable sachesi/hyprland"* ]]'
 check 'Leap installs with zypper' '[[ $leap == *"sudo zypper --non-interactive install --no-recommends"* && $leap != *"dnf "* ]]'
@@ -101,9 +107,9 @@ check 'Leap fetches cliphist with a checksum (or has it already)' \
   '[[ $leap == *"download cliphist"*"sha256"* || $leap == *"cliphist is already installed"* ]]'
 check 'Leap builds Hyprland, as a dry run in the dry run' \
   '[[ $leap == *"4b. Hyprland, built from source"*"Hyprland "*"v0.56.2"* && $leap != *"+ git clone"* ]]'
-check 'Leap does not install Hyprland as a package' '! "$script" --distro opensuse-leap --list-packages | grep -qx hyprland'
+check 'Leap does not install Hyprland as a package' '! grep -qx hyprland <<<"$leap_list"'
 check 'both Nerd Fonts are handled' '[[ $leap == *"FiraCode Nerd Font Propo"* && $leap == *"JetBrainsMono Nerd Font"* ]]'
-check 'Fedora installs Hyprland as a package' '"$script" --distro fedora --list-packages | grep -qx hyprland'
+check 'Fedora installs Hyprland as a package' 'grep -qx hyprland <<<"$fedora_list"'
 check 'Fedora does not build anything' '[[ $fedora != *"built from source"* ]]'
 
 arch=$("$script" --distro arch)
@@ -128,9 +134,6 @@ check 'Arch installs the MTP backend the drives list finds phones with' 'grep -q
 check 'Arch installs merkuro, which the calendar service cannot load without' 'grep -qx merkuro <<<"$arch_list"'
 check 'Arch installs rtkit, which PipeWire asks for realtime priority' 'grep -qx rtkit <<<"$arch_list"'
 
-# setpriv (Paths.bound) is in util-linux or util-linux-core depending on the
-# Fedora release; util-linux requires util-linux-core, so it covers both.
-fedora_list=$("$script" --distro fedora --list-packages)
 # org.kde.akonadi is akonadi-server's on Fedora, and no other package listed
 # requires it: --minimal once installed a desktop without a shell.
 fedora_minimal=$("$script" --distro fedora --minimal)
@@ -138,6 +141,8 @@ check 'Fedora --minimal installs akonadi-server, which ships the Akonadi QML mod
   '[[ $fedora_minimal == *" akonadi-server "* ]]'
 check 'Leap and Arch --minimal install merkuro (the Akonadi QML module on Leap, akonadi on Arch)' \
   '[[ $("$script" --distro opensuse-leap --minimal) == *" merkuro "* && $("$script" --distro arch --minimal) == *" merkuro "* ]]'
+# setpriv (Paths.bound) is in util-linux or util-linux-core depending on the
+# Fedora release; util-linux requires util-linux-core, so it covers both.
 check 'Fedora installs util-linux for setpriv, not util-linux-core alone' \
   'grep -qx util-linux <<<"$fedora_list" && ! grep -qx util-linux-core <<<"$fedora_list"'
 
@@ -284,6 +289,184 @@ printf '[Default Applications]\ninode/directory=kitty-open.desktop;\n' > "$xdg/c
 step7_out=$(step7 files:org.kde.dolphin.desktop) || true
 check "kitty's helper as a choice is replaced ($step7_out)" \
   '[[ $step7_out == *"+ files     org.kde.dolphin.desktop"* ]] && grep -qx "inode/directory=org.kde.dolphin.desktop;" "$session_list"'
+
+# ---- what a system without Plasma needs -----------------------------------
+# Each of these came only through Plasma's own packages: without them a fresh
+# install had no sound card (pipewire-audio's ALSA devices), no PulseAudio
+# clients, no WebP wallpapers, no Bluetooth daemon, no Notification portal,
+# no emoji, no user directories, no power profiles and no NetworkManager
+# secret agent.
+for package in pipewire-audio pipewire-pulse qt6-imageformats bluez xdg-desktop-portal-gtk \
+  noto-fonts-emoji xdg-user-dirs power-profiles-daemon network-manager-applet plasma-nm; do
+  check "Arch installs $package" 'grep -qx "$package" <<<"$arch_list"'
+done
+for package in qt6-qtimageformats bluez xdg-desktop-portal-gtk google-noto-color-emoji-fonts xdg-user-dirs \
+  network-manager-applet plasma-nm zsh-autosuggestions zsh-syntax-highlighting; do
+  check "Fedora installs $package" 'grep -qx "$package" <<<"$fedora_list"'
+done
+for package in qt6-imageformats bluez xdg-desktop-portal-gtk google-noto-coloremoji-fonts xdg-user-dirs \
+  NetworkManager-applet plasma6-nm; do
+  check "Leap installs $package" 'grep -qx "$package" <<<"$leap_list"'
+done
+# Not in Leap 16.0's repo-oss: the run would stop at a name zypper cannot find.
+check 'Leap does not ask for the zsh plugins repo-oss lacks' \
+  '! grep -qxE "zsh-(autosuggestions|syntax-highlighting)" <<<"$leap_list"'
+
+# ---- --skip-fonts ------------------------------------------------------------
+# "Leave fonts alone": the font packages too, not only the download - Arch's
+# two Nerd Fonts alone are some 230 MB. --list-packages still names them.
+arch_nofonts=$("$script" --distro arch --skip-fonts)
+check 'Arch --skip-fonts installs no font package' \
+  '[[ $arch_nofonts != *ttf-firacode-nerd* && $arch_nofonts != *inter-font* && $arch_nofonts == *"--skip-fonts: the font packages are left out"* ]]'
+check 'Arch installs the font packages without --skip-fonts' '[[ $arch == *ttf-firacode-nerd* ]]'
+check 'Fedora --skip-fonts installs no font package' '[[ $("$script" --distro fedora --skip-fonts) != *rsms-inter-fonts* ]]'
+check '--list-packages still names the font packages' \
+  'grep -qx ttf-firacode-nerd <<<"$arch_list" && grep -qx rsms-inter-fonts <<<"$fedora_list"'
+
+# ---- the Nerd Fonts, pinned ----------------------------------------------------
+# One release and a sha256 per archive, like the fetched binaries; never
+# "latest". A stand-in fc-list finds no font, so the dry run names the
+# downloads even on a machine that has both faces.
+fontless_bin=$(mktemp -d)
+trap 'rm -rf -- "$os_release" "$stub_bin" "$pacman_bin" "$xdg" "$fontless_bin"' EXIT
+printf '#!/bin/sh\nexit 0\n' > "$fontless_bin/fc-list"
+chmod +x "$fontless_bin/fc-list"
+leap_fonts=$(PATH="$fontless_bin:$PATH" "$script" --distro opensuse-leap)
+check 'the dry run downloads the Nerd Fonts from a pinned release' \
+  '[[ $leap_fonts == *"nerd-fonts/releases/download/v"*"/FiraCode.zip (Nerd Fonts v"*", sha256 "* && $leap_fonts != *"releases/latest"* ]]'
+font_entries=$(sed -n '/^nerd_fonts=(/,/^)/p' "$script" | grep -oP '^\s*"\K[^"]+')
+check 'there are two Nerd Fonts entries' '[[ $(grep -c . <<<"$font_entries") -eq 2 ]]'
+while IFS='|' read -r _ archive _ _ sum; do
+  check "$archive carries a sha256" '[[ $sum =~ ^[0-9a-f]{64}$ ]]'
+done <<<"$font_entries"
+
+# ---- Leap: which repositories get their keys trusted ----------------------------
+# --gpg-auto-import-keys holds for every repository a refresh reads, so it is
+# given only with the ones this run adds. A stand-in zypper that knows every
+# alias stands for a machine where all of them are configured already.
+check 'Leap trusts the keys of the repositories it adds, by name' \
+  '[[ $leap == *"--gpg-auto-import-keys refresh quickshell-leap16 brave-browser"* ]]'
+configured_bin=$(mktemp -d)
+trap 'rm -rf -- "$os_release" "$stub_bin" "$pacman_bin" "$xdg" "$fontless_bin" "$configured_bin"' EXIT
+cat > "$configured_bin/zypper" <<'Z'
+#!/bin/sh
+case "$*" in
+  "--non-interactive lr "*) exit 0 ;;
+  *) exit 1 ;;
+esac
+Z
+chmod +x "$configured_bin/zypper"
+leap_configured=$(PATH="$configured_bin:$PATH" "$script" --distro opensuse-leap)
+check 'Leap with every repository configured auto-imports no key' \
+  '[[ $leap_configured == *"quickshell-leap16: already configured"* && $leap_configured != *gpg-auto-import-keys* ]]'
+
+# ---- Leap 16.x after 16.0 ----------------------------------------------------------
+# The lists were checked against 16.0: the installers refuse a later release
+# unless BUCHHWIN_DISTRO lets it in, and then it finds its own repo-oss. The
+# session's scripts (doctor, session-check) still know it for what it is.
+check 'a later Leap 16.x is still Leap to the session scripts' '[[ $(detect "ID=opensuse-leap
+VERSION_ID=16.1") == opensuse-leap ]]'
+untried() {   # untried VERSION [BUCHHWIN_DISTRO]: distro_untried for that release
+  printf 'ID=opensuse-leap\nVERSION_ID=%s\n' "$1" > "$os_release/os-release"
+  (unset BUCHHWIN_DISTRO; [[ -n ${2:-} ]] && export BUCHHWIN_DISTRO=$2
+   BUCHHWIN_OS_RELEASE="$os_release/os-release"; . "$lib"; distro_untried opensuse-leap) 2>&1
+}
+leap161_reason=$(untried 16.1) && leap161=0 || leap161=$?
+check "the installers refuse Leap 16.1 and say the way in ($leap161: $leap161_reason)" \
+  '[[ $leap161 -eq 0 && $leap161_reason == *"BUCHHWIN_DISTRO=opensuse-leap"* ]]'
+check 'BUCHHWIN_DISTRO lets Leap 16.1 in' '! untried 16.1 opensuse-leap >/dev/null'
+check 'Leap 16.0 needs nothing' '! untried 16.0 >/dev/null'
+leap161_bin=$(mktemp -d)
+trap 'rm -rf -- "$os_release" "$stub_bin" "$pacman_bin" "$xdg" "$fontless_bin" "$configured_bin" "$leap161_bin"' EXIT
+cat > "$leap161_bin/zypper" <<'Z'
+#!/bin/sh
+case "$*" in
+  *" lr -u"*) printf '# | Alias | Name | Enabled | GPG Check | Refresh | URI\n'
+              printf '1 | openSUSE:repo-oss | Main | Yes | (r ) Yes | Yes | http://download.opensuse.org/distribution/leap/16.1/repo/oss/\n' ;;
+  *) exit 1 ;;
+esac
+Z
+chmod +x "$leap161_bin/zypper"
+check 'repo-oss of a later 16.x is found by its URL' \
+  '[[ $(PATH="$leap161_bin:$PATH"; . "$lib"; leap_oss_alias) == openSUSE:repo-oss ]]'
+check 'the Quickshell repository follows the release zypper runs' \
+  '[[ $leap == *"/danklinux/\$releasever/ quickshell-leap16"* ]]'
+
+# ---- Arch: what installed packages provide already ---------------------------------
+# pacman -S --needed compares names only: a quickshell-git from the AUR made
+# pacman ask "Remove quickshell-git?", and the default answer ended the run.
+# Only the names `pacman -T` reports unsatisfied are installed; the stand-in
+# answers -T from STUB_MISSING and -Qq from STUB_OWNER (DEPENDENCY=OWNER).
+provides_bin=$(mktemp -d)
+trap 'rm -rf -- "$os_release" "$stub_bin" "$pacman_bin" "$xdg" "$fontless_bin" "$configured_bin" "$leap161_bin" "$provides_bin"' EXIT
+cat > "$provides_bin/pacman" <<'P'
+#!/bin/sh
+printf '%s\n' "$*" >>"$PACMAN_CALLS"
+case "$1" in
+  -T) shift; status=0
+      for dependency; do
+        case " $STUB_MISSING " in *" $dependency "*) printf '%s\n' "$dependency"; status=127 ;; esac
+      done
+      exit "$status" ;;
+  -Qq) for pair in $STUB_OWNER; do [ "${pair%%=*}" = "$2" ] && { printf '%s\n' "${pair#*=}"; exit 0; }; done
+       printf '%s\n' "$2" ;;
+  -Qu) exit 1 ;;
+  -S) exit 0 ;;
+  *) exit 99 ;;
+esac
+P
+chmod +x "$provides_bin/pacman"
+provided() {   # provided MISSING OWNERS PACKAGE...: pkg_install_safe arch, --apply
+  (
+    export PATH="$provides_bin:$PATH" PACMAN_CALLS="$provides_bin/calls" STUB_MISSING=$1 STUB_OWNER=$2
+    shift 2
+    apply=true
+    run() { printf 'RUN %s\n' "$*"; }
+    . "$lib"
+    . "$project_dir/install/packages/arch.sh"
+    pkg_install_safe arch "$@"
+  ) 2>&1
+}
+out=$(provided "kitty" "quickshell=quickshell-git" quickshell kitty) && provided_status=0 || provided_status=$?
+check "Arch installs only what nothing installed provides (status $provided_status: $out)" \
+  '[[ $provided_status -eq 0 && $out == *"RUN sudo pacman -S --needed kitty"* && $out != *"--needed quickshell"* ]]'
+check 'and says which installed package stands in' '[[ $out == *"quickshell: quickshell-git is installed and provides it; left alone"* ]]'
+out=$(provided "" "pulse-native-provider=pulseaudio" pipewire-pulse) && provided_status=0 || provided_status=$?
+check "PipeWire's PulseAudio server is left out where PulseAudio runs (status $provided_status: $out)" \
+  '[[ $provided_status -eq 0 && $out != *RUN* && $out == *"pipewire-pulse: pulseaudio is installed"* ]]'
+check 'it is asked for by what it provides' 'grep -qx -- "-T pulse-native-provider" "$provides_bin/calls"'
+out=$(provided "pulse-native-provider" "" pipewire-pulse) && provided_status=0 || provided_status=$?
+check "and installed where nothing provides a PulseAudio server (status $provided_status: $out)" \
+  '[[ $out == *"RUN sudo pacman -S --needed pipewire-pulse"* ]]'
+out=$(provided "" "" kitty quickshell) && provided_status=0 || provided_status=$?
+check "a list that is all installed installs nothing (status $provided_status: $out)" \
+  '[[ $provided_status -eq 0 && $out != *RUN* && $out == *"every package on the list is installed already"* ]]'
+# A dry run where there is no pacman to ask (a preview on another system):
+# a missing command exits 127 as well, the status of "some are missing", but
+# names none, and the whole list read as installed already.
+nopacman_bin="$provides_bin/nopacman"
+mkdir -p "$nopacman_bin"
+ln -s "$(command -v grep)" "$nopacman_bin/grep"
+out=$( (apply=false; run() { printf 'RUN %s\n' "$*"; }; . "$lib"; PATH="$nopacman_bin"; pkg_install_safe arch kitty quickshell) 2>&1 ) || true
+check "without a pacman to ask, the dry run names the whole list ($out)" \
+  '[[ $out == *"RUN sudo pacman -S --needed kitty quickshell"* ]]'
+
+# ---- Leap: a Hyprland build that does not happen ---------------------------------
+# The build refuses while a session runs from its prefix (a re-run from the
+# buchhwin session after a pin moved); steps 5-7 still run. A copy of the
+# installers with a build script that always refuses.
+refusing=$(mktemp -d)
+trap 'rm -rf -- "$os_release" "$stub_bin" "$pacman_bin" "$xdg" "$fontless_bin" "$configured_bin" "$leap161_bin" "$provides_bin" "$refusing"' EXIT
+mkdir -p "$refusing/install"
+cp -r "$project_dir/install/lib" "$project_dir/install/packages" "$refusing/install/"
+cp "$script" "$refusing/install/bootstrap.sh"
+printf '#!/bin/sh\necho "  A session runs from the prefix; build from Plasma or a TTY." >&2\nexit 1\n' \
+  > "$refusing/install/build-hyprland-leap.sh"
+chmod +x "$refusing/install/build-hyprland-leap.sh"
+refused_status=0
+refused=$("$refusing/install/bootstrap.sh" --distro opensuse-leap 2>&1) || refused_status=$?
+check "a refused Hyprland build does not end the run (status $refused_status)" \
+  '[[ $refused_status -eq 0 && $refused == *"Hyprland was not built (status 1"*"5. The shell itself"*"6. The session entry"*"7. Default applications"* ]]'
 
 if (( failures )); then
   printf 'TESTS FAILED bootstrap (%d failed)\n' "$failures"

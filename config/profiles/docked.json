@@ -1,9 +1,9 @@
 {
-  "configVersion": 2,
+  "configVersion": 3,
   "name": "docked",
-  "label": "Docked",
+  "label": "Desk",
   "description": "A fuller bar for big screens: the date and the weather beside the time; widgets with Super+Alt+D",
-  "mode": "pills",
+  "desktopMode": "pills",
   "bar": {
     "reserve": true,
     "fullscreen": "hide",
@@ -24,21 +24,21 @@
     "right": [
       { "id": "pill-4", "items": [{ "type": "weather", "display": "full", "options": {} }] },
       { "id": "pill-5", "items": [{ "type": "nowPlaying", "display": "icon", "options": {} }] },
-      { "id": "pill-6", "items": [{ "type": "volume", "display": "icon", "options": {} }, { "type": "network", "display": "icon", "options": {} }, { "type": "battery", "display": "full", "options": {} }] },
+      { "id": "pill-6", "items": [{ "type": "network", "display": "icon", "options": {} }, { "type": "volume", "display": "icon", "options": {} }, { "type": "battery", "display": "full", "options": {} }] },
       { "id": "pill-7", "items": [{ "type": "notificationIndicator", "display": "icon", "options": {} }, { "type": "quickPanel", "display": "icon", "options": {} }] }
     ]
   },
   "widgets": [
     { "key": "workspace", "type": "workspace", "screen": "*", "anchorX": "left", "x": 0.015, "y": 0.02, "style": "capsule" },
     { "key": "window", "type": "activeWindow", "screen": "*", "anchorX": "center", "x": 0.5, "y": 0.02, "style": "minimal" },
-    { "key": "volume", "type": "volume", "screen": "*" },
     { "key": "network", "type": "network", "screen": "*" },
+    { "key": "volume", "type": "volume", "screen": "*" },
     { "key": "battery", "type": "battery", "screen": "*" },
     { "key": "notifications", "type": "notificationIndicator", "screen": "*" },
     { "key": "control", "type": "quickPanel", "screen": "*" },
     { "key": "clock", "type": "clock", "screen": "*", "anchorX": "right", "x": 0.985, "y": 0.08, "size": "medium", "style": "minimal" }
   ],
   "groups": [
-    { "members": ["volume", "network", "battery", "notifications", "control"], "anchorX": "right", "x": 0.985, "y": 0.02, "style": "capsule" }
+    { "members": ["network", "volume", "battery", "notifications", "control"], "anchorX": "right", "x": 0.985, "y": 0.02, "style": "capsule" }
   ]
 }

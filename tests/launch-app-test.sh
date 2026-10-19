@@ -24,7 +24,8 @@ stub systemctl "case \"\$*\" in *show-environment*) cat \"$sandbox/session-env\"
 # The shell's own settings and its record of them (scripts/lib/app-env.sh)
 # come from whoever runs this test - a terminal or an editor the shell
 # started has them - and would change what every launch below runs with.
-unset MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME
+unset MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION \
+  QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME
 # The user manager is there when its socket is (launch-app.sh): one in the
 # sandbox's runtime directory, so the result does not depend on whether the
 # machine running this has a user manager (CI's container has none).
@@ -41,7 +42,9 @@ stub brave-browser
 stub google-chrome-stable
 stub chromium-browser
 stub notify-send
-owned='printf "NAME PID PROCESS\norg.freedesktop.secrets 42 ksecretd\n"'
+# ksecretd holds its own name; the bus driver says so (NameHasOwner), as
+# scripts/wallet-unlock.sh asks it.
+owned='case "$*" in *" NameHasOwner s org.kde.ksecretd") echo "b true" ;; *" NameHasOwner s "*) echo "b false" ;; *) printf "NAME PID PROCESS\norg.kde.ksecretd 42 ksecretd\n" ;; esac'
 wallet_open() { stub busctl "case \"\$*\" in *get-property*) echo 'b false' ;; *) $owned ;; esac"; }
 wallet_open
 stub xdg-mime 'case "$*" in "query default x-scheme-handler/mailto") echo org.kde.kmail2.desktop ;; "query filetype "*) echo text/plain ;; "query default text/plain") echo org.kde.kate.desktop ;; *) echo "" ;; esac'
@@ -102,11 +105,11 @@ check '[[ $out == plain && ! -s $calls ]]' "without systemd-run the command simp
 # the session had (not in the record) stays, and nothing outside the shell's
 # own names is ever unset.
 appenv() { tr '\0' '\n' < /proc/self/environ; }
-shell_env=(QS_ICON_THEME=breeze-dark MALLOC_ARENA_MAX=2 mesa_glthread=false GALLIUM_THREAD=0
-           BUCHHWIN_APP_ENV_UNSET="MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME PATH"
+shell_env=(QS_ICON_THEME=breeze-dark MALLOC_ARENA_MAX=2 mesa_glthread=false GALLIUM_THREAD=0 MALLOC_CONF=narenas:2 QT_WAYLAND_DISABLE_WINDOWDECORATION=1 QSG_DISTANCEFIELD_ANTIALIASING=gray BUCHHWIN_ICON_THEME_AUTO=1
+           BUCHHWIN_APP_ENV_UNSET="MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO PATH"
            BUCHHWIN_APP_QPA_THEME=kde)
 out=$(env -u QT_QPA_PLATFORMTHEME "${shell_env[@]}" "$project_dir/scripts/launch-app.sh" org.kde.dolphin env)
-check '! grep -qE "^(MALLOC_ARENA_MAX|mesa_glthread|GALLIUM_THREAD|QS_ICON_THEME)=" <<<"$out"' \
+check '! grep -qE "^(MALLOC_ARENA_MAX|MALLOC_CONF|mesa_glthread|GALLIUM_THREAD|QT_WAYLAND_DISABLE_WINDOWDECORATION|QSG_DISTANCEFIELD_ANTIALIASING|QS_ICON_THEME|BUCHHWIN_ICON_THEME_AUTO)=" <<<"$out"' \
   "the shell's own settings do not reach the application ($(grep -E "^(MALLOC|mesa|GALLIUM|QS_)" <<<"$out" | tr '\n' ' '))"
 check 'grep -qx "QT_QPA_PLATFORMTHEME=kde" <<<"$out"' "the session's platform theme is back"
 check '! grep -q "^BUCHHWIN_APP_" <<<"$out"' "and the record goes with them"
@@ -153,6 +156,15 @@ check '[[ $run_line == *"--setenv=LANG=en_US.UTF-8 "* && $run_line == *"--setenv
 check '[[ $run_line == *"--setenv=QT_QPA_PLATFORMTHEME=kde "* && $run_line != *MALLOC_ARENA_MAX* && $run_line != *QS_ICON_THEME* ]]' \
   "the session's platform theme, none of the shell's settings"
 check '[[ $run_line == *" -- printf ran %s unit" ]]' "and the command after --"
+# A nested session's unit is still the sandbox's: nested-session.sh stop
+# finds its processes by BUCHHWIN_NESTED, the sandbox's XDG_CONFIG_HOME and
+# the compositor's BUCHHWIN_NESTED_MODE.
+: > "$calls"
+env -u QT_QPA_PLATFORMTHEME "${shell_env[@]}" BUCHHWIN_NESTED=1 BUCHHWIN_NESTED_MODE=1920x1200 XDG_CONFIG_HOME=/n/config \
+  "$project_dir/scripts/launch-app.sh" --unit buchhwin-upgrade kitty true
+run_line=$(grep "^systemd-run" "$calls" | head -1)
+check '[[ $run_line == *"--setenv=BUCHHWIN_NESTED=1 "* && $run_line == *"--setenv=BUCHHWIN_NESTED_MODE=1920x1200 "* && $run_line == *"--setenv=XDG_CONFIG_HOME=/n/config "* ]]' \
+  "a nested session's unit keeps the marks its stop finds it by ($run_line)"
 # launch-kitty.sh hands --unit on, with its own configuration intact.
 stub kitty
 : > "$calls"
@@ -198,7 +210,7 @@ status=0; "$project_dir/scripts/launch-brave.sh" --new-window || status=$?
 check '[[ $status -eq 0 ]] && grep -qE "unit=app-buchhwin-com\.brave\.Browser-[0-9]+\.scope -- brave-browser --password-store=kwallet6 --new-window$" "$calls"' \
   "Brave starts with --password-store=kwallet6, the key Plasma's Brave uses ($(grep systemd-run "$calls" | head -1))"
 check 'grep -q "^brave-browser --password-store=kwallet6 --new-window$" "$calls"' "and the arguments reach Brave"
-check 'grep -q -- "--auto-start=no .*get-property org.freedesktop.secrets" "$calls" && ! grep -q Unlock "$calls"' \
+check 'grep -q -- "--auto-start=no .*get-property org.kde.ksecretd" "$calls" && ! grep -q Unlock "$calls"' \
   "the wallet is read first, and an open one is not asked anything"
 # Shut, and the service offers no prompt: no Brave, and a notification why.
 stub busctl "case \"\$*\" in *get-property*) echo 'b true' ;; *Unlock*) printf 'ao 0 o \"/\"\n' ;; *) $owned ;; esac"
@@ -223,7 +235,7 @@ wallet_open
 rm -f "$bin/brave-browser"
 stub brave
 if ! command -v brave-browser >/dev/null 2>&1; then
-  stub busctl "case \"\$*\" in *get-property*) echo 'b false' ;; *) printf 'NAME PID PROCESS\norg.freedesktop.secrets 41 gnome-keyring-d\norg.kde.ksecretd 42 ksecretd\n' ;; esac"
+  stub busctl "case \"\$*\" in *get-property*) echo 'b false' ;; *) $owned ;; esac"
   : > "$calls"
   status=0; "$project_dir/scripts/launch-brave.sh" --new-window || status=$?
   check '[[ $status -eq 0 ]] && grep -qE "unit=app-buchhwin-com\.brave\.Browser-[0-9]+\.scope -- brave --password-store=kwallet6 --new-window$" "$calls"' \
@@ -312,16 +324,87 @@ check '! grep -q systemd-run "$calls" && grep -q "^real-xdg-open $sandbox/does-n
 : > "$calls"
 xdg-open
 check '! grep -q systemd-run "$calls" && grep -q "^real-xdg-open $" "$calls"' "no argument: handed on untouched"
+# A web app's entry handles a scheme (Outlook's PWA is the mailto: handler
+# here): its program is Brave itself, so the link goes through Brave's
+# launcher with the entry's arguments - Plasma's store, the wallet check -
+# not through the system xdg-open, which runs the entry's Exec as written.
+apps="$sandbox/data/applications"
+mkdir -p "$apps"
+printf '%s\n' '[Desktop Entry]' 'Name=Mail' 'Exec=/opt/brave-bin/brave --profile-directory=Default --app-id=abcdef %U' \
+  'MimeType=x-scheme-handler/mailto' '' '[Desktop Action compose]' 'Exec=/opt/brave-bin/brave --not-this-one' > "$apps/brave-abcdef-Default.desktop"
+stub xdg-mime 'case "$*" in "query default x-scheme-handler/mailto") echo "$STUB_MAILTO" ;; "query filetype "*.html) echo text/html ;; "query filetype "*) echo text/plain ;; "query default text/html") echo brave-browser.desktop ;; "query default text/plain") echo org.kde.kate.desktop ;; *) echo "" ;; esac'
+: > "$calls"
+XDG_DATA_HOME="$sandbox/data" STUB_MAILTO=brave-abcdef-Default.desktop xdg-open mailto:someone@example.org
+check 'grep -q "^brave-browser --password-store=kwallet6 --profile-directory=Default --app-id=abcdef mailto:someone@example.org$" "$calls" && ! grep -q real-xdg-open "$calls"' \
+  "a web app handling mailto: goes through launch-brave.sh with the entry's arguments ($(grep -E "^(brave|systemd-run)" "$calls" | head -2 | tr '\n' ' '))"
+check 'grep -qE "unit=app-buchhwin-com\.brave\.Browser-[0-9]+\.scope -- " "$calls"' "in Brave's scope"
+# Found in the system's applications too, after the user's.
+mkdir -p "$sandbox/sysdata/applications"
+mv "$apps/brave-abcdef-Default.desktop" "$sandbox/sysdata/applications/"
+: > "$calls"
+XDG_DATA_HOME="$sandbox/data" XDG_DATA_DIRS="$sandbox/nowhere:$sandbox/sysdata" STUB_MAILTO=brave-abcdef-Default.desktop \
+  xdg-open mailto:someone@example.org
+check 'grep -q "^brave-browser --password-store=kwallet6 --profile-directory=Default --app-id=abcdef mailto:someone@example.org$" "$calls"' \
+  "an entry in XDG_DATA_DIRS is read the same way"
+mv "$sandbox/sysdata/applications/brave-abcdef-Default.desktop" "$apps/"
+# Every program services/launcher/LaunchLogic.js knows as a browser takes
+# the launcher it names there: the two lists are one. Quoted arguments and
+# %% come through as the specification says; the field codes go.
+launcher_unit() {
+  case $1 in
+    launch-brave.sh) printf 'com\\.brave\\.Browser' ;;
+    launch-chrome.sh) printf 'com\\.google\\.Chrome' ;;
+    launch-chromium-browser.sh) printf 'chromium(\\\\x2dbrowser)?' ;;
+    *) printf 'unknown-launcher' ;;
+  esac
+}
+browser_table=$(sed -n '/^const BROWSER_PROGRAMS = {/,/^}/s/^ *"\([^"]*\)": *"\([^"]*\)",\{0,1\}$/\1 \2/p' "$project_dir/services/launcher/LaunchLogic.js")
+check '[[ $(grep -c . <<<"$browser_table") -ge 7 ]]' "LaunchLogic's browser programs are read ($(grep -c . <<<"$browser_table"))"
+while read -r program launcher; do
+  [[ -n $program ]] || continue
+  printf '%s\n' '[Desktop Entry]' "Exec=/opt/x/$program --app-id=a%%b \"--name=Web \\\"App\\\"\" %u" > "$apps/web-$program.desktop"
+  : > "$calls"
+  XDG_DATA_HOME="$sandbox/data" STUB_MAILTO="web-$program.desktop" xdg-open mailto:x@example.org
+  unit=$(launcher_unit "$launcher")
+  check 'grep -qE "unit=app-buchhwin-$unit-[0-9]+\.scope -- [^ ]+ --password-store=kwallet6 --app-id=a%b --name=Web \"App\" mailto:x@example.org$" "$calls"' \
+    "a web app of $program goes through $launcher ($(grep systemd-run "$calls" | head -1))"
+done <<<"$browser_table"
+# Another program, or a browser's other build, is the entry's own business.
+printf '%s\n' '[Desktop Entry]' 'Exec=/opt/x/brave-browser-beta --app-id=abcdef %U' > "$apps/beta-app.desktop"
+: > "$calls"
+XDG_DATA_HOME="$sandbox/data" STUB_MAILTO=beta-app.desktop xdg-open mailto:x@example.org
+check 'grep -qE "unit=app-buchhwin-beta\\\\x2dapp-[0-9]+\.scope -- " "$calls" && ! grep -q -- "--password-store" "$calls"' \
+  "a beta build's web app keeps its own entry ($(grep systemd-run "$calls" | head -1))"
+# A local page as a file:// URL is a file: its type's handler, Brave here,
+# through Brave's launcher, with the URL as it was given. Before, it asked
+# for a file: scheme handler, found none, and the system xdg-open started
+# the browser past its launcher.
+printf '<p>x</p>\n' > "$sandbox/my page.html"
+: > "$calls"
+xdg-open "file://$sandbox/my%20page.html#top"
+check 'grep -q "^brave-browser --password-store=kwallet6 file://$sandbox/my%20page.html#top$" "$calls" && ! grep -q real-xdg-open "$calls"' \
+  "a file:// URL of a page goes through launch-brave.sh ($(grep -E "^(brave|real)" "$calls" | head -1))"
+: > "$calls"
+xdg-open "file://localhost$sandbox/my%20page.html?x=1"
+check 'grep -q "^brave-browser --password-store=kwallet6 file://localhost$sandbox/my%20page.html?x=1$" "$calls"' \
+  "with localhost and a query too"
+: > "$calls"
+xdg-open "file://$sandbox/no%20such%20page.html"
+check '! grep -q systemd-run "$calls" && grep -q "^real-xdg-open file://$sandbox/no%20such%20page.html$" "$calls"' \
+  "a file:// URL of nothing is handed on untouched"
+stub xdg-mime 'case "$*" in "query default x-scheme-handler/mailto") echo org.kde.kmail2.desktop ;; "query filetype "*) echo text/plain ;; "query default text/plain") echo org.kde.kate.desktop ;; *) echo "" ;; esac'
 # Without a known handler the system xdg-open starts one from here, so the
 # shell's own settings are undone first (scripts/lib/app-env.sh), as
 # launch-app.sh does for the rest.
 cp "$sys/xdg-open" "$sandbox/xdg-open.kept"
 printf '#!/bin/sh\nenv > "%s"\n' "$sandbox/xdg-environ" > "$sys/xdg-open"
 env QS_ICON_THEME=breeze-dark MALLOC_ARENA_MAX=2 mesa_glthread=false GALLIUM_THREAD=0 \
-  BUCHHWIN_APP_ENV_UNSET="MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME" BUCHHWIN_APP_QPA_THEME=kde \
+  MALLOC_CONF=narenas:2 QT_WAYLAND_DISABLE_WINDOWDECORATION=1 QSG_DISTANCEFIELD_ANTIALIASING=gray BUCHHWIN_ICON_THEME_AUTO=1 \
+  BUCHHWIN_APP_ENV_UNSET="MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO" \
+  BUCHHWIN_APP_QPA_THEME=kde \
   xdg-open "$sandbox/does-not-exist"
-check 'grep -qx "QT_QPA_PLATFORMTHEME=kde" "$sandbox/xdg-environ" && ! grep -qE "^(MALLOC_ARENA_MAX|mesa_glthread|GALLIUM_THREAD|QS_ICON_THEME|BUCHHWIN_APP_ENV_UNSET)=" "$sandbox/xdg-environ"' \
-  "no handler known: the system xdg-open gets the session's environment ($(grep -E "^(MALLOC|mesa|GALLIUM|QS_|QT_QPA)" "$sandbox/xdg-environ" | tr '\n' ' '))"
+check 'grep -qx "QT_QPA_PLATFORMTHEME=kde" "$sandbox/xdg-environ" && ! grep -qE "^(MALLOC_ARENA_MAX|MALLOC_CONF|mesa_glthread|GALLIUM_THREAD|QT_WAYLAND_DISABLE_WINDOWDECORATION|QSG_DISTANCEFIELD_ANTIALIASING|QS_ICON_THEME|BUCHHWIN_ICON_THEME_AUTO|BUCHHWIN_APP_ENV_UNSET)=" "$sandbox/xdg-environ"' \
+  "no handler known: the system xdg-open gets the session's environment ($(grep -E "^(MALLOC|mesa|GALLIUM|QT_WAYLAND|QSG_|QS_|BUCHHWIN_ICON|QT_QPA)" "$sandbox/xdg-environ" | tr '\n' ' '))"
 mv "$sandbox/xdg-open.kept" "$sys/xdg-open"
 
 # ---- scripts/launch-alacritty.sh -------------------------------------------------

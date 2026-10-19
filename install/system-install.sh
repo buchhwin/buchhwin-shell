@@ -20,8 +20,8 @@ project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 #   (install/logind-lid.sh status works without root)
 # Optional, system-wide Bluetooth policy (install/bluetooth-autoenable.sh), on
 # its own: BlueZ stops powering the adapter on at every boot.
-#   --bluetooth-manual        writes /etc/bluetooth/main.conf.d/50-buchhwin-autoenable.conf
-#   --bluetooth-auto          removes it, and BlueZ decides again
+#   --bluetooth-manual        sets AutoEnable=false in /etc/bluetooth/main.conf
+#   --bluetooth-auto          takes it out again, and BlueZ decides
 #   (install/bluetooth-autoenable.sh status works without root)
 sddm_action=""
 lid_action=""

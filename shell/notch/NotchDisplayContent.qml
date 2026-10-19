@@ -39,7 +39,9 @@ Item {
             glyph: display.content && display.content.icon ? display.content.icon : ""
             visible: glyph.length > 0
             size: Metrics.iconSm
-            color: Colors.notchText
+            // A critical notification in the warning ink, as its card's border
+            // is; the notch is black in either theme (warningOnDark).
+            color: display.content && display.content.critical ? Colors.warningOnDark : Colors.notchText
         }
 
         // An app icon, for a notification that brought one.
@@ -109,7 +111,7 @@ Item {
                 role: "small"
                 // The figure beside a ring is the reading, so it is set firmly.
                 font.weight: display.ringed ? Typography.semibold : Typography.regular
-                color: Colors.notchText
+                color: display.content && display.content.critical ? Colors.warningOnDark : Colors.notchText
                 elide: Text.ElideRight
             }
             ShellText {

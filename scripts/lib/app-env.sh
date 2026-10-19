@@ -1,9 +1,11 @@
 # shellcheck shell=bash
 # The shell's own environment, and the one an application started from it
 # gets. start-shell.sh runs quickshell with settings that are for the shell
-# alone: two malloc arenas, Mesa's glthread and Gallium's threaded context
-# off, the icon theme handed over in QS_ICON_THEME, and no KDE platform theme
-# (see start-shell.sh for the measurements). Every process the shell starts
+# alone: two malloc arenas (glibc's and jemalloc's), Mesa's glthread and
+# Gallium's threaded context off, no client-side window decorations, greyscale
+# text antialiasing, the icon theme handed over in QS_ICON_THEME (and whether
+# it was chosen for it), and no KDE platform theme (see start-shell.sh for the
+# measurements). Every process the shell starts
 # inherits that environment - and an application should not: a browser, an
 # editor or a remote-desktop client opened from the launcher ran with two
 # arenas and without Mesa's threads, and Qt applications without the Plasma look
@@ -25,7 +27,8 @@
 # manager's (session-init.sh imports them there): a setting the manager does
 # not have is that shell's, and the platform theme comes back from there.
 # Source this file.
-app_env_shell_names=(MALLOC_ARENA_MAX mesa_glthread GALLIUM_THREAD QS_ICON_THEME)
+app_env_shell_names=(MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION
+  QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO)
 
 app_env_restore() {
   local name known line session

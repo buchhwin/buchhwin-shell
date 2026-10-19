@@ -13,8 +13,9 @@ What goes in: the profile's five modes (layouts and the appearance each mode
 owns), its notch, the notch presets and its lock screen's layout, and every
 setting except what belongs to this machine or this person rather than to the
 look (DROP: at least ProfileLogic.GLOBAL_SETTINGS - where the weather is,
-hidden calendars, histories, onboarding, the screens and the keyboard layout,
-power and the fingerprint reader).
+hidden calendars, histories, onboarding, the screens, the keyboard layout and
+the pointer, power and the fingerprint reader, the clipboard history, what the
+login starts, updates, drives and how Alacritty windows start).
 The profile in use is exported as it is set now; another one with the state it
 keeps in layout.json (LayoutService, `state`), and one that has none yet is
 refused rather than exported with the settings of the profile in use. Folder
@@ -23,9 +24,13 @@ expands. A picture chosen by name (the wallpaper, the login screen's) is
 written empty: its file name is this machine's - the shipped profiles carried
 ~/Pictures/Desktop/wallpaper_hyprland.webp, a file no other machine has (nor,
 by then, this one) - and an empty one gives way to the folder's first image.
+A custom search address is written empty too (it can be an intranet's), and
+the accent is written as it is set, never as "taken from the wallpaper": on
+another machine that would be the colour of whatever image comes first there.
 
 The result is checked before it is written: a value that looks like a
-coordinate, an e-mail address or a path under /home stops the export, so the
+coordinate, an e-mail address, a path under /home or a Citrix app's id (it
+carries the employer's farm and server names) stops the export, so the
 repository's private-data rule (testing.md, pitfall 17) holds by construction.
 """
 import argparse
@@ -50,8 +55,12 @@ DROP = {
     "wallpaper.recentFolders",
     "calendar.hiddenCalendars", "calendar.newEventCalendar",
     "display", "input.kbLayout", "input.kbVariant",
+    "input.sensitivity", "input.accelProfile", "input.mouseNaturalScroll",
+    "input.touchpadNaturalScroll", "input.touchpadScrollFactor", "input.tapToClick",
+    "input.disableWhileTyping",
     "desktop.settingsMoveX", "desktop.settingsMoveY",
-    "power", "lock.fingerprint", "dock.screens",
+    "power", "lock.fingerprint", "dock.screens", "notch.screens",
+    "clipboard", "autostart", "updates", "drives", "terminal.alacrittyDaemon",
     # A shipped profile has the dock off (the default dock and dock.* at
     # their defaults, ProfileLogic.completeLeaves): the dock is switched on
     # by whoever wants it, in the profile they want it in.
@@ -61,6 +70,15 @@ DROP = {
 PATHS = {"wallpaper.folder", "wallpaper.slideshowFolder", "recording.folder"}
 # Pictures chosen by name: shipped empty (see above), wherever they are.
 FILES = {"wallpaper.path", "login.wallpaper"}
+# A search address of the user's own: an intranet's, or one with a token in
+# it (IpcLogic.PRIVATE_SETTINGS keeps it to itself too). Shipped empty, and
+# the custom engine it belongs to with it: an empty custom one searches
+# nothing, so the profile takes the default engine instead.
+PERSONAL = {"launcher.searchUrl"}
+# A Citrix Workspace app's desktop id names the farm and the server it is
+# published from ("Citrix_subscribed_XenApp 7.x.RDS-<name> $S..."), which is
+# the employer's, not a look. It can sit among the launcher's pins.
+CITRIX = re.compile(r"Citrix_")
 # The appearance a mode owns travels with the modes (ProfileLogic.MODE_SCOPED).
 MODE_SCOPED = {"blurStrength", "panelOpacity", "animationMode", "animationSpeed", "windowRadius",
                "shellRadius", "borderEnabled", "borderSize", "gapsIn", "gapsOut"}
@@ -120,10 +138,16 @@ def settings_of(raw, home):
         group, _, leaf = path.partition(".")
         if group == "appearance" and leaf in MODE_SCOPED:
             continue
-        if path in FILES:
+        if path == "launcher.searchEngine" and value == "custom":
+            continue
+        if path in FILES or path in PERSONAL:
             value = ""
         elif path in PATHS:
             value = contract_home(value, home)
+        elif path == "appearance.accentFromWallpaper":
+            # The accent set now is the one the wallpaper gave; it travels as
+            # it is (appearance.accent), and the wallpaper it came from stays.
+            value = False
         kept[path] = value
     return unflatten(kept)
 
@@ -176,6 +200,8 @@ def private_findings(text, home):
         found.append("a path under " + home)
     if re.search(r"/home/[A-Za-z0-9_.-]+", text):
         found.append("a /home/<user> path")
+    if CITRIX.search(text):
+        found.append("a Citrix app id")
     return found
 
 

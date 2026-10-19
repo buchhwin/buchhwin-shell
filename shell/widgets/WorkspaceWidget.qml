@@ -34,6 +34,9 @@ Grid {
     readonly property bool onNotch: Qt.colorEqual(root.textColor, Colors.notchText)
     property color fillColor: onNotch ? Colors.notchButton : Colors.surface2
     property color fillHoverColor: onNotch ? Colors.notchHover : Colors.surface2Hover
+    // The current workspace in the level fill, as WidgetBase.levelFill: the
+    // raw accent was 1.3:1 for the teal on a light bar.
+    readonly property color levelFill: onNotch ? Colors.notchAccent : Colors.accentFill
     // The session's mode, unless this instance names its own: the island
     // preset shows a fixed row of dots whatever the bar does.
     readonly property string mode: root.instance && root.instance.options && root.instance.options.mode
@@ -58,21 +61,24 @@ Grid {
         // showing no active pip at all.
         HyprlandService.activeWorkspaceOn(instance ? instance.screen : ""),
         HyprlandService.offsetFor(instance ? instance.screen : ""),
-        HyprlandService.focusedWorkspace !== null ? HyprlandService.focusedWorkspace.id : -1)
+        HyprlandService.focusedWorkspace !== null ? HyprlandService.focusedWorkspace.id : -1,
+        // With the blocks on, a gone screen's empty workspaces (held open
+        // after an undock) are not drawn here (Logic.idleStray).
+        HyprlandService.perMonitor)
     // The session's style, unless this instance names its own (a notch preset
     // drawing dots while the bar keeps numbers).
     readonly property string style: root.instance && root.instance.options && root.instance.options.style
         ? root.instance.options.style : SettingsService.value("workspaces.style")
     property bool vertical: false
     // One row rather than a column count nothing reaches, which adds a
-    // gap to the width (PillBar's zones, round 12 D6).
+    // gap to the width (as PillBar's zones).
     rows: vertical ? -1 : 1
     columns: vertical ? 1 : -1
     spacing: Metrics.spaceXs * scaleFactor
 
     property var lastList: ({ list: [] })
     function keptList(next) {
-        const list = Keyed.keep(lastList.list, next, "id")
+        const list = Keyed.keepList(lastList.list, next, "id")
         lastList.list = list
         return list
     }
@@ -126,7 +132,7 @@ Grid {
                 // the pointer it takes the full ink - the capsule's hover
                 // tint (15 % white) made a dot vanish exactly where it was
                 // pointed at.
-                color: slot.current ? Colors.accent
+                color: slot.current ? root.levelFill
                     : slot.labelled ? (pipMouse.containsMouse ? root.fillHoverColor : root.fillColor)
                     : pipMouse.containsMouse ? root.textColor : root.mutedTextColor
                 opacity: slot.current || slot.modelData.occupied ? 1 : Effects.mutedOpacity
@@ -147,7 +153,7 @@ Grid {
                     // The number of *this monitor's* set, or a name the user
                     // chose. `id` is the compositor's and can be 23.
                     text: slot.modelData.label
-                    color: slot.current ? Colors.accentText : slot.modelData.occupied ? root.textColor : root.mutedTextColor
+                    color: slot.current ? Colors.labelOn(root.levelFill) : slot.modelData.occupied ? root.textColor : root.mutedTextColor
                     font.family: Typography.family
                     font.pixelSize: Typography.smallSize * root.scaleFactor
                     textFormat: Text.PlainText

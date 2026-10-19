@@ -2,6 +2,7 @@ import QtQuick
 import qs.shell.widgets
 import qs.theme
 import qs.services
+import "../components/WheelLogic.js" as Wheel
 WidgetBase {
     id: root
     icon: AudioService.volumeIcon(AudioService.volume, AudioService.muted)
@@ -16,13 +17,20 @@ WidgetBase {
     // Which device it is going to, which is the question a percentage raises.
     detail: AudioService.sink ? AudioService.label(AudioService.sink) : ""
 
-    // Scrolling over the widget changes the volume. An event that turned
-    // nothing is no step: Qt ends a touchpad swipe with one (ScrollEnd, no
-    // delta), and reading it as "down" would take 5 % off after the swipe.
+    // Scrolling over the widget changes the volume, 5 % a step - and a step
+    // is a distance, not an event (WheelLogic.js): a notch of a wheel, or
+    // 40 px of a two-finger swipe. One step per event made each of a swipe's
+    // 12 to 41 updates a step, from 30 % to 100 % in the shortest one.
+    // An event that turned nothing is no step: Qt ends a touchpad swipe with
+    // one (ScrollEnd, no delta), and reading it as "down" would take 5 % off
+    // after the swipe.
     WheelHandler {
+        // What the events so far left short of a step.
+        property var carry: null
         onWheel: event => {
-            if (event.angleDelta.y !== 0)
-                AudioService.setVolume(AudioService.sink, AudioService.volume + (event.angleDelta.y > 0 ? 0.05 : -0.05))
+            carry = Wheel.step(carry, event.phase, event.angleDelta.y, event.pixelDelta.y)
+            if (carry.steps !== 0)
+                AudioService.setVolume(AudioService.sink, AudioService.volume + carry.steps * 0.05)
         }
     }
 }

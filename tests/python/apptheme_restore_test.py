@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Unit test for scripts/apptheme-restore.py with synthetic state files (stub tools only)."""
 
+import fcntl
 import importlib.util
 import inspect
 import io
@@ -308,8 +309,9 @@ with tempfile.TemporaryDirectory() as scratch:
         env = module.command_environment()
         check(env["XDG_CONFIG_DIRS"] == f"{config}/kdedefaults:/etc/xdg", "commands see Plasma's kdedefaults")
 
-        # Real run with stubs: kwriteconfig6 edits the sandbox file, the palette
-        # notification fails (no bus) without failing the restore.
+        # Real run with stubs inside Plasma (the autostart run): kwriteconfig6
+        # edits the sandbox file, the palette notification fails (no bus)
+        # without failing the restore.
         stubs = scratch / "stubs"
         stubs.mkdir()
         log = scratch / "calls.log"
@@ -327,7 +329,9 @@ with tempfile.TemporaryDirectory() as scratch:
         state_file.write_text(json.dumps(backup_state))
         previous_path = os.environ.get("PATH", "")
         previous_nested = os.environ.pop("BUCHHWIN_NESTED", None)
+        previous_desktop = os.environ.get("XDG_CURRENT_DESKTOP")
         os.environ["PATH"] = str(stubs)
+        os.environ["XDG_CURRENT_DESKTOP"] = "KDE"
         # No nested session's files can reach here, whatever the caller's shell exported.
         os.environ["BUCHHWIN_NESTED_DIR"] = str(pathlib.Path(scratch) / "absent")
         try:
@@ -349,6 +353,80 @@ with tempfile.TemporaryDirectory() as scratch:
         restored = (config / "kdeglobals").read_text()
         check("BrowserApplication=brave-browser.desktop" in restored and "Sort by=Name" in restored, "other settings untouched")
         check(json.loads(state_file.read_text()) == module.forgotten(backup_state), "backup state forgotten")
+
+        # The same logout in the shell's own session: kdeglobals in one pass,
+        # no kwriteconfig6 at all, the palette notification once, through a
+        # link to the file it names, with its mode kept and no lock left.
+        real_globals = scratch / "dotfiles" / "kdeglobals"
+        real_globals.parent.mkdir()
+        real_globals.write_text(ACCENTED)
+        real_globals.chmod(0o640)
+        (config / "kdeglobals").unlink()
+        (config / "kdeglobals").symlink_to(real_globals)
+        state_file.write_text(json.dumps(backup_state))
+        log.write_text("")
+        os.environ["PATH"] = str(stubs)
+        os.environ["XDG_CURRENT_DESKTOP"] = "buchhwin-shell:Hyprland"
+        try:
+            with redirect_stderr(io.StringIO()) as errors:
+                status = module.main(["--state", str(state_file)])
+        finally:
+            os.environ["PATH"] = previous_path
+            if previous_nested is not None:
+                os.environ["BUCHHWIN_NESTED"] = previous_nested
+        calls = log.read_text().splitlines()
+        check(status == 0, f"one-pass restore succeeded: {errors.getvalue()}")
+        check(not any(call.startswith("kwriteconfig6") for call in calls), f"no kwriteconfig6 outside Plasma: {calls}")
+        check(len([call for call in calls if call.startswith("dbus-send")]) == 1, "the palette notification once")
+        check(calls[-1] == "gsettings set org.gnome.desktop.interface gtk-theme adw-gtk3-dark", "GNOME key after the colours")
+        check((config / "kdeglobals").is_symlink() and module.parse_kdeglobals(real_globals.read_text()) == BACKUP,
+              "the linked file holds the backup's colours, the link stays")
+        check(real_globals.stat().st_mode & 0o777 == 0o640, "and keeps its mode")
+        check(not pathlib.Path(str(real_globals) + ".lock").exists(), "KConfig's lock is not left behind")
+        check(sorted(item.name for item in real_globals.parent.iterdir()) == ["kdeglobals"], "no temporary files beside it")
+        check(json.loads(state_file.read_text()) == module.forgotten(backup_state), "one-pass state forgotten")
+
+        # A lock someone holds (a KDE program writing kdeglobals): no one pass,
+        # kwriteconfig6 waits for the lock as KConfig does.
+        real_globals.write_text(ACCENTED)
+        lock = pathlib.Path(str(real_globals) + ".lock")
+        lock.write_text("4242\nkwin\nhost\n")
+        check(module.restore_kde_one_pass(BACKUP, config / "kdeglobals") is False, "a held lock: not here")
+        check(real_globals.read_text() == ACCENTED and lock.read_text() == "4242\nkwin\nhost\n",
+              "and nothing touched, the lock left to its owner")
+        lock.unlink()
+        check(module.restore_kde_one_pass(BACKUP, config / "missing") is False, "no file: not here either")
+
+        # While it writes, the lock is one a KDE program waits for: QLockFile
+        # removes a lock as stale when its program is not the executable under
+        # its pid, unless the file is flocked (kwriteconfig6 took over a lock
+        # named "apptheme-restore" at once).
+        held = {}
+        write_kept = module.write_kept
+
+        def watching(target, text):
+            held["lines"] = pathlib.Path(str(target) + ".lock").read_text().splitlines()
+            with open(str(target) + ".lock") as probe:
+                try:
+                    fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    held["flocked"] = False
+                except BlockingIOError:
+                    held["flocked"] = True
+            write_kept(target, text)
+
+        real_globals.write_text(ACCENTED)
+        module.write_kept = watching
+        try:
+            check(module.restore_kde_one_pass(BACKUP, config / "kdeglobals") is True, "the one pass with the lock watched")
+        finally:
+            module.write_kept = write_kept
+        check(held.get("lines", [])[:2] == [str(os.getpid()), os.path.basename(os.readlink("/proc/self/exe"))],
+              f"the lock names this process and its executable: {held.get('lines')}")
+        check(held.get("flocked") is True, "and is flocked while kdeglobals is written")
+        check(not lock.exists(), "and gone afterwards")
+        os.environ.pop("XDG_CURRENT_DESKTOP", None)
+        if previous_desktop is not None:
+            os.environ["XDG_CURRENT_DESKTOP"] = previous_desktop
     finally:
         for name, value in (("XDG_CONFIG_HOME", previous_config), ("XDG_CONFIG_DIRS", previous_dirs)):
             if value is None:
@@ -356,7 +434,54 @@ with tempfile.TemporaryDirectory() as scratch:
             else:
                 os.environ[name] = value
 
-# ---- GTK files (round 12) ------------------------------------------------------
+# ---- kdeglobals in one pass ---------------------------------------------------
+# The result is what kwriteconfig6 makes of kde_restore_commands (the
+# KConfig-like model above), entry for entry - and every other line stays
+# byte for byte, comments included, where KConfig writes the file anew.
+def kwrite_model(text, backup):
+    with tempfile.TemporaryDirectory() as scratch:
+        path = pathlib.Path(scratch) / "kdeglobals"
+        path.write_text(text)
+        for argv in module.kde_restore_commands(backup, module.parse_kdeglobals(text)):
+            apply_kwrite(path, argv[1:])
+        return path.read_text()
+
+
+def entries(text):
+    return {(tuple(group), key): value for group, key, value in module.parse_kdeglobals(text)}
+
+
+COMMENTED = "# Written by Plasma\n" + ACCENTED.replace("[KFileDialog Settings]\n", "[KFileDialog Settings]\n# kept\n") \
+    .replace("[Colors:Button]\n", "[Colors:Button]\n# the buttons\n")
+one_pass = module.one_pass_text(COMMENTED, BACKUP)
+check(one_pass is not None and entries(one_pass) == entries(kwrite_model(COMMENTED, BACKUP)) == {
+    (tuple(group), key): value for group, key, value in BACKUP}, "one pass: the same entries as kwriteconfig6 would leave")
+untouched = [line for line in COMMENTED.splitlines() if not any(line.startswith(prefix) for prefix in (
+    "DecorationFocus=", "AccentColor=", "ColorScheme=", "activeBlend="))]
+check([line for line in one_pass.splitlines() if line in untouched] == untouched,
+      "every other line - comments, other groups, the immutable one, escaped values - stays, in order")
+check("DecorationFocus=61,174,233" in one_pass and "AccentColor" not in one_pass and "activeBlend" not in one_pass,
+      "a changed entry is set back, added ones are gone")
+SPARSE = "[Colors:Button]\nDecorationFocus=1,2,3\n"
+check(module.one_pass_text(SPARSE, BACKUP) is not None
+      and entries(module.one_pass_text(SPARSE, BACKUP)) == entries(kwrite_model(SPARSE, BACKUP)),
+      "missing entries and missing groups are added")
+missing = module.one_pass_text("[Colors:Button]\nDecorationFocus=1,2,3\n\n[Other]\nx=y\n", BACKUP)
+check(missing.index("ForegroundNormal=252,252,252") < missing.index("[Other]"),
+      "a missing entry goes into its own group, not to the end")
+check(module.one_pass_text(PLASMA_KDEGLOBALS, BACKUP) == PLASMA_KDEGLOBALS, "the backup in place: the file as it is")
+check(module.one_pass_text("[General]\nName=x", []) == "[General]\nName=x\n", "a file without its last newline gets one")
+for shape, text in (("a group twice", "[Colors:Button]\nDecorationFocus=1\n[Colors:Button]\nForegroundNormal=2\n"),
+                    ("a localized colour key", "[Colors:Button]\nDecorationFocus[de]=1\n"),
+                    ("a flagged colour key", "[Colors:Button]\nDecorationFocus[$e]=1\n"),
+                    ("a key twice", "[Colors:Button]\nDecorationFocus=1\nDecorationFocus=2\n"),
+                    ("an immutable group the backup writes to", "[Colors:Button][$i]\nDecorationFocus=1\n"),
+                    ("a broken header", "[Colors:Button\nDecorationFocus=1\n")):
+    check(module.one_pass_text(text, BACKUP) is None, f"left to kwriteconfig6: {shape}")
+check(module.one_pass_here() is ("KDE" not in os.environ.get("XDG_CURRENT_DESKTOP", "").split(":")),
+      "one pass outside Plasma only")
+
+# ---- GTK files ------------------------------------------------------------------
 # GTK 3 reads its dark variant from settings.ini and the Breeze theme draws with
 # gtk.css's colors.css; while the shell follows a light theme both have to say
 # light, and the logout gives back exactly what was there.

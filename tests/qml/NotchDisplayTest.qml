@@ -61,11 +61,6 @@ ShellRoot {
         T.eq(Display.current({ media: { stamp: 4, content: { title: "x" } } }).content.title, "x",
              "the winner brings its content with it")
 
-        // ---- what a page says -------------------------------------------------
-        T.eq(Display.enabledKinds({ osd: true, notification: false, media: true }), ["osd", "media"],
-             "which switches are on, in the order they are listed")
-        T.eq(Display.enabledKinds(null), [], "and none when nothing is")
-
         T.finish("NotchDisplayTest")
     }
 }

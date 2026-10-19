@@ -236,18 +236,39 @@ def wait_forever():
     return 0
 
 
+# The libraries by their sonames first: ctypes.util.find_library runs
+# ldconfig (and gcc where that finds nothing) to look a name up, at every
+# start of the shell, for two libraries whose sonames have not changed in
+# decades. The lookup stays as the fallback for a system that names them
+# otherwise.
+SONAMES = {"X11": "libX11.so.6", "Xfixes": "libXfixes.so.3"}
+
+
+def load_library(name, load=ctypes.CDLL, find=ctypes.util.find_library):
+    """The library for `name` ("X11", "Xfixes"), or None when there is none."""
+    try:
+        return load(SONAMES[name])
+    except OSError:
+        pass
+    path = find(name)
+    if not path:
+        return None
+    try:
+        return load(path)
+    except OSError:
+        return None
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--display", default=os.environ.get("DISPLAY", ""))
     args = parser.parse_args(argv)
     if not args.display or not shutil.which("xclip") or not shutil.which("wl-copy") or not shutil.which("wl-paste"):
         return wait_forever()
-    x11 = ctypes.util.find_library("X11")
-    xfixes = ctypes.util.find_library("Xfixes")
-    if not x11 or not xfixes:
+    libx11 = load_library("X11")
+    libxfixes = load_library("Xfixes")
+    if libx11 is None or libxfixes is None:
         return wait_forever()
-    libx11 = ctypes.CDLL(x11)
-    libxfixes = ctypes.CDLL(xfixes)
     libx11.XOpenDisplay.restype = ctypes.c_void_p
     libx11.XOpenDisplay.argtypes = [ctypes.c_char_p]
     libx11.XDefaultRootWindow.restype = ctypes.c_ulong

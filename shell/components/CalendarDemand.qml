@@ -3,8 +3,8 @@ import qs.services
 
 // Says that something on screen needs the calendar while `active`: the
 // backend (Akonadi) starts on the first such need and stops a while after
-// the last one (CalendarService.trackers). The clock's event hint needs it
-// always and keeps it running by itself.
+// the last one (CalendarService.trackers). The clock widget's event hint is
+// one of them (ClockWidget's own demand).
 QtObject {
     id: demand
     property bool active: true

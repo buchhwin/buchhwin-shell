@@ -526,8 +526,8 @@
       "quickWidth": 0,
       "quickHeight": 0,
       "dashboardWidth": 889,
-      "dashboardHeight": 557,
-      "launcherWidth": 520,
+      "dashboardHeight": 0,
+      "launcherWidth": 0,
       "launcherHeight": 422
     },
     "notch": {
@@ -594,10 +594,6 @@
       "pinned": "",
       "showPinned": false
     },
-    "autostart": {
-      "apps": "",
-      "system": true
-    },
     "lock": {
       "showAvatar": true,
       "showMedia": false,
@@ -639,18 +635,10 @@
       "previewGit": true,
       "personalShell": false
     },
-    "clipboard": {
-      "history": true,
-      "maxItems": 200
-    },
     "recording": {
       "audio": "off",
       "fps": 30,
       "folder": "~/Videos/Recordings"
-    },
-    "drives": {
-      "notify": true,
-      "autoOpen": false
     },
     "weather": {
       "enabled": true,
@@ -659,14 +647,7 @@
     },
     "input": {
       "repeatRate": 25,
-      "repeatDelay": 600,
-      "sensitivity": 0,
-      "accelProfile": "adaptive",
-      "mouseNaturalScroll": false,
-      "touchpadNaturalScroll": true,
-      "touchpadScrollFactor": 1,
-      "tapToClick": true,
-      "disableWhileTyping": true
+      "repeatDelay": 600
     },
     "gestures": {
       "enabled": true,
@@ -693,11 +674,6 @@
       "eventHint": true,
       "hintMinutes": 15,
       "eventColor": "accent"
-    },
-    "updates": {
-      "checkHours": 24,
-      "notify": true,
-      "shellAuto": false
     }
   },
   "defaultApps": {

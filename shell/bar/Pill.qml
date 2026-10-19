@@ -186,7 +186,7 @@ Rectangle {
     // matches them right (services/model/KeyedLogic.js).
     property var lastItems: ({ list: [] })
     function keptItems(next) {
-        const list = Keyed.keep(lastItems.list, next, "itemKey")
+        const list = Keyed.keepList(lastItems.list, next, "itemKey")
         lastItems.list = list
         return list
     }
@@ -262,14 +262,26 @@ Rectangle {
     visible: hasContent
     Behavior on color { ColorAnimation { duration: Animations.hover; easing.type: Animations.easing } }
     // A spring rather than a duration: a pill whose text changes again
-    // half-way (a clock, a title) is redirected from where it is instead of
+    // half-way (a clock) is redirected from where it is instead of
     // restarting a fixed-length glide from there.
+    //
+    // Not for every pill. One that holds the window title or the workspaces
+    // changes length with every retitle and every pip that comes or goes
+    // (with numbered pips, every switch), and each spring redrew the whole
+    // bar for ~22 frames, during the compositor's workspace slide too - the
+    // cost the pips themselves gave their spring up for (WorkspaceWidget,
+    // testing.md pitfall 40). And on the dock the apps' pill is the length
+    // the dock's body and its centring follow: the icons are placed at once,
+    // so a springing pill let a new or magnified icon stand outside the
+    // body, and the whole row slid back while the body caught up.
+    readonly property bool snapsLength: (surface === "dock" && holdsApps)
+        || pill.items.some(item => item.type === "activeWindow" || item.type === "workspace")
     Behavior on implicitWidth {
-        enabled: Animations.motionEnabled && !root.vertical
+        enabled: Animations.motionEnabled && !root.vertical && !root.snapsLength
         SpringMotion {}
     }
     Behavior on implicitHeight {
-        enabled: Animations.motionEnabled && root.vertical
+        enabled: Animations.motionEnabled && root.vertical && !root.snapsLength
         SpringMotion {}
     }
 

@@ -31,32 +31,79 @@ ColumnLayout {
     // height - the spacer at the end when no card can - or the column spread
     // it between its blocks and the conditions slid down the cell.
     property bool fillsCell: false
+    // How many grid rows the dashboard's cell is tall, 0 outside a grid.
+    property int rows: 0
     readonly property var current: WeatherService.current
     readonly property string status: WeatherService.status
+    // Open-Meteo is asked for miles per hour with Fahrenheit (WeatherLogic's
+    // forecastUrl), so the label follows the same setting.
+    readonly property string windUnit: WeatherService.unit === "fahrenheit" ? "mph" : "km/h"
 
-    // The one empty state, not a card that draws one by hand.
-    CardSection {
+    // An empty state in a cell the size of a panel - the Default dashboard's
+    // weather is 4 rows, 440 px - is a panel's: the column, in the middle of
+    // the card. The row beside the icon is for the small cells and the
+    // popup; at the top of a tall card it left ~380 px of nothing under it.
+    readonly property bool centred: fillsCell && rows > 3
+    // Asked from this card, so a failure is this card's to show.
+    property bool locating: false
+
+    // The one empty state, not a card that draws one by hand. A plain card
+    // rather than a CardSection, whose content is stacked from the top: the
+    // column form sits in the middle of whatever height the cell gives it.
+    ShellCard {
+        id: emptyCard
         Layout.fillWidth: true
         Layout.fillHeight: root.fillsCell
         visible: root.current === null
+        implicitHeight: emptyState.implicitHeight + Metrics.spaceLg * 2
 
         EmptyState {
-            Layout.fillWidth: true
-            row: true
+            id: emptyState
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: Metrics.spaceLg
+            y: root.centred ? Math.max(Metrics.spaceLg, Math.round((emptyCard.height - implicitHeight) / 2))
+                : Metrics.spaceLg
+            row: !root.centred
             icon: root.status === "error" ? "󰖪" : "󰖐"
             // The state is the title, as in every other empty state; the card's
             // name is not news. The description is only where there is more to
-            // say than the button under it already does.
+            // say than the buttons under it already do.
             title: root.status === "disabled" ? "Weather is turned off"
                 : root.status === "noLocation" ? "No location set"
                 : root.status === "error" ? "Weather is unavailable"
                 : "Loading weather …"
             description: root.status === "disabled" ? "Settings > Weather"
                 : root.status === "error" ? "Retrying the next time you open this"
-                : ""
+                : root.status !== "noLocation" ? ""
+                : LocationService.detecting ? "Asking ipinfo.io …"
+                : root.locating && LocationService.detectError.length ? LocationService.detectError
+                : "Find it from this connection (asks ipinfo.io) or choose a city"
 
+            // The welcome tour's two ways to a place: from the connection
+            // (ipinfo.io sees this computer's address, so it is a button and
+            // never automatic), or a city chosen in Settings.
             ShellButton {
-                visible: root.status === "noLocation" || root.status === "disabled"
+                visible: root.status === "noLocation"
+                icon: Icons.location
+                text: "Find my place"
+                toolTip: "Asks ipinfo.io once, which sees this computer's IP address"
+                compact: true
+                enabledState: !LocationService.detecting
+                onClicked: {
+                    root.locating = true
+                    LocationService.detectByIp()
+                }
+            }
+            ShellButton {
+                visible: root.status === "noLocation"
+                text: "Choose a city …"
+                variant: "ghost"
+                compact: true
+                onClicked: PanelService.open("settings", { page: "weather" })
+            }
+            ShellButton {
+                visible: root.status === "disabled"
                 icon: Icons.location
                 text: "Set location"
                 compact: true
@@ -135,7 +182,7 @@ ColumnLayout {
                         model: root.current ? [
                             { label: "Feels like", value: WeatherService.formatTemperature(root.current.feelsLike) },
                             { label: "Rain", value: root.current.precipitation === null ? "–" : root.current.precipitation + "%" },
-                            { label: "Wind", value: root.current.wind === null ? "–" : Math.round(root.current.wind) + " km/h" },
+                            { label: "Wind", value: root.current.wind === null ? "–" : Math.round(root.current.wind) + " " + root.windUnit },
                             { label: "Humidity", value: root.current.humidity === null ? "–" : root.current.humidity + "%" },
                             { label: "UV index", value: root.current.uv === null ? "–" : String(Math.round(root.current.uv)) }
                         ] : []

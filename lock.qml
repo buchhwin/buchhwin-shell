@@ -8,5 +8,11 @@ import qs.shell.lock
 // would drop the session lock surfaces.
 ShellRoot {
     Component.onCompleted: Quickshell.watchFiles = false
-    LockScreen {}
+    LockScreen { id: lockScreen }
+    // Nested screenshots: the face in normal windows instead of the session
+    // lock (LockScreen.preview).
+    LazyLoader {
+        active: lockScreen.preview
+        LockPreviewWindows { lockState: lockScreen }
+    }
 }

@@ -12,6 +12,15 @@ ColumnLayout {
     spacing: Metrics.spaceSm
     property var menuItem: null
 
+    // Escape's steps on this page (ControlCenter.escapeHandler): out of a
+    // submenu, then out of the menu, before the page itself goes back.
+    function stepBack() {
+        if (root.menuItem === null) return false
+        if (trayMenu.stack.length) trayMenu.stack = trayMenu.stack.slice(0, -1)
+        else root.menuItem = null
+        return true
+    }
+
     EmptyState {
         Layout.fillWidth: true
         Layout.margins: Metrics.spaceSm
@@ -91,6 +100,7 @@ ColumnLayout {
     }
 
     TrayMenu {
+        id: trayMenu
         Layout.fillWidth: true
         visible: root.menuItem !== null
         handle: root.menuItem ? root.menuItem.menu : null

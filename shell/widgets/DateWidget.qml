@@ -2,6 +2,7 @@ import Quickshell
 import QtQuick
 import qs.theme
 import qs.services
+import "../../services/appearance/DateFormat.js" as DateFormat
 
 Item {
     id: root
@@ -28,12 +29,12 @@ Item {
     implicitWidth: vertical ? stack.implicitWidth : label.implicitWidth
     implicitHeight: vertical ? stack.implicitHeight : label.implicitHeight
 
-    SystemClock { id: clock; precision: SystemClock.Minutes }
+    SystemClock { id: clock; precision: SystemClock.Minutes; enabled: WallClock.ticking }
 
     Text {
         id: label
         visible: !root.vertical
-        text: SettingsService.locale.toString(clock.date, (root.sizeClass === "small" || root.sizeClass === "icon") ? "ddd, MMM d" : "dddd, MMMM d")
+        text: DateFormat.date(clock.date, SettingsService.locale, (root.sizeClass === "small" || root.sizeClass === "icon") ? "short" : "long")
         color: root.textColor
         font.family: Typography.family
         font.pixelSize: (root.sizeClass === "large" ? Typography.headlineSize

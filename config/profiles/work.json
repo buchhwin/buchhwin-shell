@@ -1,9 +1,9 @@
 {
-  "configVersion": 2,
+  "configVersion": 3,
   "name": "work",
   "label": "Work",
   "description": "A bar: workspaces and the active window, the time, media, status and the control center",
-  "mode": "pills",
+  "desktopMode": "pills",
   "bar": {
     "reserve": true,
     "fullscreen": "hide",
@@ -23,7 +23,7 @@
     ],
     "right": [
       { "id": "pill-4", "items": [{ "type": "nowPlaying", "display": "icon", "options": {} }] },
-      { "id": "pill-5", "items": [{ "type": "volume", "display": "icon", "options": {} }, { "type": "network", "display": "icon", "options": {} }, { "type": "battery", "display": "full", "options": {} }] },
+      { "id": "pill-5", "items": [{ "type": "network", "display": "icon", "options": {} }, { "type": "volume", "display": "icon", "options": {} }, { "type": "battery", "display": "full", "options": {} }] },
       { "id": "pill-6", "items": [{ "type": "notificationIndicator", "display": "icon", "options": {} }, { "type": "quickPanel", "display": "icon", "options": {} }] }
     ]
   },

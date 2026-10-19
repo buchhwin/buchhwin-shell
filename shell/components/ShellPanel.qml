@@ -51,7 +51,7 @@ PanelWindow {
     // It is never more than the card may be, though: out of the dock the card
     // was capped at the room above the dock while a list sized by this figure
     // took the room below the bar, and its last rows were cut off with no
-    // way to scroll to them (round 12, ui-rest#4). Out of the dock it is the
+    // way to scroll to them. Out of the dock it is the
     // card's own bound - the card starts where that room starts.
     readonly property real roomBelowTop: dockAnchored ? maxCardHeight
         : Math.max(0, Math.min(screenH - topOffset - bottomOffset, maxCardHeight))
@@ -134,7 +134,7 @@ PanelWindow {
     // screen while it is shown. Panels are Overlay surfaces that ignore every
     // reserved zone, so the taskbar's zone kept nothing off it - the
     // notification center ran down over the taskbar and hid the bell that
-    // opens it (round 12, D1). Read only while the dock is on, so a panel
+    // opens it. Read only while the dock is on, so a panel
     // never starts the dock's service (pitfall 101). The whole edge, not
     // only where the dock's body runs (the popups ask that): where the card
     // stands along the edge follows its width, and the resizable panels'
@@ -156,15 +156,25 @@ PanelWindow {
         Place.dockReach(dockState, "left"), Metrics.spaceSm, Metrics.screenMargin)
     readonly property real rightOffset: Place.edgeClear(barAtRight ? barInset : -1,
         Place.dockReach(dockState, "right"), Metrics.spaceSm, Metrics.screenMargin)
+    // Out of a pill near a side edge the card may stand as far out as the
+    // pill does, so the two outer edges line up (PanelPlaceLogic.outerClear).
+    readonly property real outerLeft: Place.outerClear(leftOffset, Metrics.screenMargin, originWidth > 0 ? originX : -1)
+    readonly property real outerRight: Place.outerClear(rightOffset, Metrics.screenMargin,
+        originWidth > 0 ? screenW - originX - originWidth : -1)
     // Panels opened from a pill are centred below it (screen x in PanelService.args).
     // The arguments are kept while closing: PanelService clears them at once,
     // which would move the card to its default place during the animation.
     property var openArgs: ({})
-    function argNumber(name) { return openArgs && typeof openArgs[name] === "number" ? openArgs[name] : -1 }
+    // A NaN or an infinity is no number here either: the IPC client hands
+    // "nan" and "inf" on as numbers, and a NaN origin kept the morph at NaN
+    // for the whole open.
+    function argNumber(name) {
+        return openArgs && typeof openArgs[name] === "number" && isFinite(openArgs[name]) ? openArgs[name] : -1
+    }
     // Opened by a key or over IPC, a panel whose widget the dock always shows
     // comes out of that widget, as a click on it would: Super+N above the
     // taskbar's bell, Super+O above its status group, not under a desktop
-    // clock a screen away from them (round 12, D13 g). Only while the dock is
+    // clock a screen away from them. Only while the dock is
     // always there (a hidden one would open the panel out of nothing) and
     // only when nothing else placed the panel. The widgets per panel are
     // PanelPlaceLogic.DOCK_ITEMS; a panel may name its own. The anchor is the
@@ -279,6 +289,9 @@ PanelWindow {
         if (!target) return
         if (typeof target.focusInput === "function") target.focusInput(Qt.TabFocusReason)
         else target.forceActiveFocus(Qt.TabFocusReason)
+        // The walk finds controls a list has scrolled out of sight too; the
+        // list follows the focus to it, the ring's width of air around it.
+        Nav.reveal(target, Metrics.focusRingGap + Metrics.focusRingWidth + Metrics.spaceXs)
     }
     default property alias content: body.data
     readonly property alias card: card
@@ -286,6 +299,10 @@ PanelWindow {
     // a bare `progress` is the Loader's own loading progress, a number, and
     // `progress.value` was undefined (smoke test, 14.10.).
     readonly property real openProgress: progress.value
+    // Open and done opening: what changes now is a page, not the morph
+    // (card.shownHeight).
+    readonly property bool glidesHeight: Animations.motionEnabled && shown && showCard && !sizing
+        && progress.armed && progress.target === 1 && progress.value === 1
     readonly property real cardTargetWidth: card.targetWidth
     // The height the card was granted, for content that sizes itself to it
     // (the control center's and the dashboard's lists). Worked out from the
@@ -335,11 +352,14 @@ PanelWindow {
     readonly property real screenW: screen ? screen.width : 0
     readonly property real screenH: screen ? screen.height : 0
     // `false` keeps the whole screen, as before (the overview, which draws
-    // the screen itself, and a panel the user drags around by its title).
-    property bool compactSurface: showCard && !movable
+    // the screen itself). A panel the user drags around by its title is
+    // compact too, until it is dragged (`dragged`, PanelPlaceLogic).
+    property bool compactSurface: showCard
     // The surface goes full-screen while the card itself is being resized by
-    // its grip, so it can grow under the hand. Only margins and size change,
-    // which a mapped layer surface takes; its anchors (top and left) never do.
+    // its grip, so it can grow under the hand, and once the card has been
+    // dragged by its title, so it can go anywhere - for as long as the panel
+    // stays open. Only margins and size change, which a mapped layer surface
+    // takes; its anchors (top and left) never do.
     //
     // Not for arranging. The arrange mode and its drags stay inside the card
     // (the grip sits in its corner, the tiles move within the grid, and the
@@ -347,7 +367,12 @@ PanelWindow {
     // resized the mapped surface - 752 -> 1920 -> 752 -> 1920 px measured
     // nested on 15.10. - and the card jumped by its own offset for a frame
     // each time the arranging started or ended (pitfall 57).
-    readonly property bool fullSurface: !compactSurface || sizing
+    readonly property bool fullSurface: Place.fullSurface(compactSurface, sizing, dragged)
+    // The title strip moved the card past the drag threshold since the panel
+    // opened (`mover`). A press and a double click alone leave it compact.
+    // Let go once the surface is gone (`shown` false), so the next open is
+    // compact again without resizing a mapped surface.
+    property bool dragged: false
     // A panel whose card changes height while it stays open - the control
     // center going from its overview to a detail page - keeps a surface as
     // tall as the screen and only as wide as the card. Resizing the mapped
@@ -377,7 +402,10 @@ PanelWindow {
             heldRect = Qt.rect(x0, y0, x1 - x0, y1 - y0)
     }
     onCompactRectChanged: holdRect()
-    onShownChanged: holdRect()
+    onShownChanged: {
+        if (!shown) dragged = false
+        holdRect()
+    }
     onScreenChanged: heldRect = compactRect
     // A panel built while it is already the active one (a lazy loader that
     // went off, came back and was opened within one turn) opens now: the
@@ -391,18 +419,10 @@ PanelWindow {
     // Origin and target together, so the morph is never cut off.
     readonly property rect compactRect: {
         if (screenW <= 0) return Qt.rect(0, 0, screenW, screenH)
-        let x0 = card.placedX, y0 = card.placedY
-        let x1 = card.placedX + card.targetWidth, y1 = card.placedY + card.targetHeight
-        if (hasOrigin) {
-            x0 = Math.min(x0, fromX); y0 = Math.min(y0, fromY)
-            x1 = Math.max(x1, fromX + fromWidth); y1 = Math.max(y1, fromY + fromHeight)
-        }
-        x0 = Math.max(0, Math.floor(x0 - surfacePad))
-        y0 = Math.max(0, Math.floor(y0 - surfacePad))
-        x1 = Math.min(screenW, Math.ceil(x1 + surfacePad))
-        y1 = Math.min(screenH, Math.ceil(y1 + surfacePad))
-        if (stableSurfaceHeight) { y0 = 0; y1 = screenH }
-        return Qt.rect(x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0))
+        const r = Place.cardSurface({ x: card.placedX, y: card.placedY, width: card.targetWidth, height: card.targetHeight },
+            hasOrigin ? { x: fromX, y: fromY, width: fromWidth, height: fromHeight } : null,
+            surfacePad, screenW, screenH, stableSurfaceHeight)
+        return Qt.rect(r.x, r.y, r.width, r.height)
     }
 
     screen: PanelService.screen
@@ -430,7 +450,8 @@ PanelWindow {
     // grabs, it asks for keyboard focus on demand; the grab hands it the keys
     // itself, at once and without a click (probed too: keys arrived with an
     // application window focused before). A panel that stays open on an
-    // outside click (Settings) keeps the exclusive focus and no grab.
+    // outside click (`dismissOnOutsideClick: false`) keeps the exclusive focus
+    // and no grab.
     readonly property bool grabsOutside: wanted && shown && PanelService.outsideCloses
     WlrLayershell.keyboardFocus: !wanted ? WlrKeyboardFocus.None
         : grabsOutside ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive
@@ -602,10 +623,13 @@ PanelWindow {
         // Created while the panel is shown, not for each of the ~28 panels at
         // start: the caster, the effect and its blur chain are a few hundred
         // objects per panel that a closed panel never draws. Synchronous, so
-        // the first frame of an open has its shadow as before.
+        // the first frame of an open has its shadow as before. Not at all for
+        // a panel that casts none (the overview draws no card): the effect
+        // was hidden there, but its caster's texture and blur chain were
+        // still made on every open.
         Loader {
             anchors.fill: parent
-            active: window.shown
+            active: window.shown && window.showCard && window.shadow
             sourceComponent: Item {
                 Rectangle {
                     id: shadowCaster
@@ -694,7 +718,7 @@ PanelWindow {
                     ? (window.barAtRight ? Math.max(window.leftOffset, window.screenW - window.rightOffset - targetWidth)
                                          : window.leftOffset)
                 : window.anchorX >= 0 && window.placement !== "right"
-                    ? Math.max(window.leftOffset, Math.min(window.screenW - targetWidth - window.rightOffset, window.anchorX - targetWidth / 2))
+                    ? Math.max(window.outerLeft, Math.min(window.screenW - targetWidth - window.outerRight, window.anchorX - targetWidth / 2))
                 : window.placement === "top-center" ? (window.screenW - targetWidth) / 2
                 : window.screenW - targetWidth - window.rightOffset
             // A panel opened with no anchor sits under the bar when the bar is at
@@ -742,10 +766,36 @@ PanelWindow {
                 ? Math.max(window.topOffset,
                            Math.min(window.screenH - targetHeight - window.bottomOffset, targetY + window.moveY))
                 : targetY
+            // The height the card shows once it is open: the target, glided
+            // to. A page change inside an open panel (the control center's
+            // overview to its network page, the session menu's question, the
+            // tour's next step) used to snap the card from one height to the
+            // other in a frame while opening and closing glide. Only in Full
+            // motion, after the open morph and not under the grip, which
+            // follows the hand. The surface does not move for it: while the
+            // panel is open it only grows, at once, to the target (`heldRect`),
+            // which covers the way from the old place to the new one.
+            property real shownHeight: targetHeight
+            Behavior on shownHeight {
+                enabled: window.glidesHeight
+                SpringMotion { kind: "standard" }
+            }
+            // And its top, on the same spring: a card that stands on a bottom
+            // bar or the dock, or sits in the middle of the screen, takes a
+            // new place with a new height, and with only the height gliding
+            // its top jumped there at once while its bottom slid over the bar
+            // and back. Two equal springs that start together keep the edge
+            // it stands on where it is. Not while the title drags it, which
+            // follows the hand.
+            property real shownY: placedY
+            Behavior on shownY {
+                enabled: window.glidesHeight && !mover.pressed
+                SpringMotion { kind: "standard" }
+            }
             width: growing
-            height: grow(window.fromHeight, targetHeight)
+            height: grow(window.fromHeight, shownHeight)
             x: grow(window.fromX + window.fromWidth / 2, placedX + targetWidth / 2) - growing / 2
-            y: grow(window.fromY, placedY)
+            y: grow(window.fromY, shownY)
             radius: Metrics.radiusPanel
             // Escape from inside the panel: the card is an ancestor of the content,
             // so a key the content did not take arrives here.
@@ -810,6 +860,13 @@ PanelWindow {
                 onPressed: mouse => { fromX = mouse.x; fromY = mouse.y }
                 onPositionChanged: mouse => {
                     if (!pressed) return
+                    // The surface takes the screen for the drag, once it is
+                    // one: a click on the title (or the double click that
+                    // puts the card back) leaves the compact surface alone.
+                    if (!window.dragged) {
+                        if (Math.abs(mouse.x - fromX) + Math.abs(mouse.y - fromY) < Metrics.dragThreshold) return
+                        window.dragged = true
+                    }
                     window.moveX = card.placedX - card.targetX + (mouse.x - fromX)
                     window.moveY = card.placedY - card.targetY + (mouse.y - fromY)
                 }
@@ -920,7 +977,7 @@ PanelWindow {
                 radius: width / 2
                 // Accent and opaque, like the handle on every tile: at 11.5 % white
                 // it vanished on a light panel.
-                color: grip.pulling || grip.containsMouse ? Colors.accentHover : Colors.accent
+                color: grip.pulling || grip.containsMouse ? Colors.accentHover : Colors.accent // style: an editor handle, ringed by its 3:1 line
                 border.width: Metrics.borderWidth
                 border.color: Colors.accentLine
 

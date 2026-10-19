@@ -13,8 +13,11 @@ bootstrap_packages=()
 # (install/build-hyprland-leap.sh, step 4 of bootstrap.sh): the community
 # repository that packaged it for Leap is broken, its Hyprland needing
 # libraries it no longer ships and its libraries a newer libinput than Leap's.
+# $releasever is zypper's, not the shell's: zypper puts the running release
+# in (16.0), so the repository follows a system upgraded to the next one -
+# Quickshell is built against that release's Qt and must not outlive it.
 repos=(
-  "quickshell-leap16|https://download.opensuse.org/repositories/home:/AvengeMedia:/danklinux/16.0/|120"
+  "quickshell-leap16|https://download.opensuse.org/repositories/home:/AvengeMedia:/danklinux/\$releasever/|120"
 )
 brave_repofile="https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo"
 
@@ -22,7 +25,9 @@ brave_repofile="https://brave-browser-rpm-release.s3.brave.com/brave-browser.rep
 core=(quickshell)
 
 packages=(
-  # terminal and prompt
+  # terminal and prompt. Not zsh-autosuggestions and zsh-syntax-highlighting,
+  # which zsh/.zshrc sources where they are: Leap 16.0's repo-oss has
+  # neither, only the shells: OBS project does.
   kitty zsh starship fastfetch
   # the backends the shell drives
   brightnessctl wireplumber pipewire-tools playerctl NetworkManager
@@ -31,6 +36,16 @@ packages=(
   # bridge (scripts/x11-clipboard-bridge.py); in Leap 16.0's repo-oss
   xclip
   swaylock swayidle kdialog udisks2 wireguard-tools
+  # the Bluetooth daemon
+  bluez
+  # nm-applet is the session's only NetworkManager secret agent - without it
+  # no VPN or saved-secret password is asked for - and plasma6-nm the dialog
+  # an enterprise (802.1X) network is set up in (kcm_networkmanagement)
+  NetworkManager-applet plasma6-nm
+  # WebP wallpapers (the picker offers them; Qt reads them through this),
+  # the Notification portal the session's portals.conf names (gtk), and the
+  # user directories the wallpaper folder and the start menu's places use
+  qt6-imageformats xdg-desktop-portal-gtk xdg-user-dirs
   # setpriv: the shell's long-running helpers die with it (--pdeathsig)
   util-linux
   # the helper scripts in scripts/ are Python
@@ -42,10 +57,13 @@ packages=(
   # kdepim-addons ships. Without either the service fails to load and takes
   # the shell with it, so neither is an extra here.
   merkuro kdepim-addons
-  # interface and monospace faces; the icon font is fetched below
-  inter-variable-fonts jetbrains-mono-fonts
+  # what the font step itself needs: fc-cache/fc-list and an unpacker
   fontconfig unzip
 )
+
+# Interface and monospace faces and the emoji the picker draws; the icon
+# font is fetched (bootstrap.sh, step 4). --skip-fonts leaves these out.
+font_packages=(inter-variable-fonts jetbrains-mono-fonts google-noto-coloremoji-fonts)
 
 # Not here, compared with Fedora: hyprland-guiutils (not packaged for Leap;
 # install/build-hyprland-leap.sh builds it with Hyprland), cmatrix (not

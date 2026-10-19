@@ -60,7 +60,7 @@ ShellRoot {
         T.eq(F.progress(done), 1, "full progress")
         T.eq(F.enrollLine(done, "Enroll result: enroll-failed"), done, "finished state is final")
 
-        // Settings steps aside while polkit may be asking (ui-b#2): before
+        // Settings steps aside while polkit may be asking: before
         // the tool speaks, after it announced the finger, and once the reader
         // answered or the run ended - a retry counts, a denial ends it.
         const fresh = F.enrollStart("right-index-finger", 8, "press")

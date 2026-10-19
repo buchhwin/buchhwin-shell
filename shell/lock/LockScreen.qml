@@ -18,10 +18,21 @@ import "../../services/LayoutLogic.js" as LayoutLogic
 Scope {
     id: root
 
-    readonly property bool nested: Quickshell.env("BUCHHWIN_NESTED") === "1"
+    // What the environment asks for. Properties rather than constants, so
+    // that tests/qml/LockScreenTest.qml can drive this screen with the PAM
+    // fixtures offscreen; lock.qml sets none of them.
+    property bool nested: Quickshell.env("BUCHHWIN_NESTED") === "1"
+    property string dir: Quickshell.env("BUCHHWIN_LOCK_DIR") || ""
+    property string requestedService: Quickshell.env("BUCHHWIN_LOCK_PAM_SERVICE") || ""
+    property string lidHook: Quickshell.env("BUCHHWIN_LOCK_LID_CLOSED") || ""
+    property bool previewWanted: Quickshell.env("BUCHHWIN_LOCK_PREVIEW") === "1"
+    // false: no session lock, for the test - a test locks nothing.
+    property bool surfaces: true
+    // The fixtures, the lid override and the preview need a nested session
+    // the lock directory confirms (LockLogic.testHooksAllowed).
+    readonly property bool testHooks: Logic.testHooksAllowed(nested, dir)
     // Nested test sessions can render the face in normal windows (screenshots).
-    readonly property bool preview: nested && Quickshell.env("BUCHHWIN_LOCK_PREVIEW") === "1"
-    readonly property string dir: Quickshell.env("BUCHHWIN_LOCK_DIR") || ""
+    readonly property bool preview: testHooks && previewWanted
     readonly property string user: Quickshell.env("USER") || Quickshell.env("LOGNAME") || ""
 
     readonly property bool showAvatar: SettingsService.value("lock.showAvatar")
@@ -48,8 +59,19 @@ Scope {
     function readLayout(text) {
         if (!text || !text.trim().length) return
         try {
-            const config = LayoutLogic.sanitize(JSON.parse(text))
-            lockItems = LayoutLogic.lockItems(config.lock)
+            // Only the lock section, which sits at the top level of the file:
+            // sanitizing all of it - every profile, mode and stored state -
+            // to take that one part cost a few milliseconds per read, for the
+            // same items (both give the default to a file without one).
+            const parsed = JSON.parse(text)
+            const items = LayoutLogic.lockItems(LayoutLogic.sanitizeLock(parsed && typeof parsed === "object" ? parsed.lock : null))
+            // The shell writes the file while the screen is locked (a mode
+            // switch on docking), mostly without touching this section, and
+            // a new array rebuilt every block on every screen, the rolling
+            // clock included: a Repeater over a plain array starts over on
+            // each assignment (testing.md pitfall 75).
+            if (JSON.stringify(items) === JSON.stringify(lockItems)) return
+            lockItems = items
         } catch (error) {
             console.warn("buchhwin-shell: lock layout unreadable:", error)
         }
@@ -89,7 +111,7 @@ Scope {
     property int fingerprintMisses: 0
     property bool passwordOnly: false
     property bool passwordServiceInstalled: false
-    readonly property string mainService: Logic.pamService(nested, Quickshell.env("BUCHHWIN_LOCK_PAM_SERVICE") || "")
+    readonly property string mainService: Logic.pamService(testHooks, requestedService)
     readonly property string passwordService: Logic.passwordService(mainService, passwordServiceInstalled)
     // The /etc/pam.d/buchhwin-lock-password check has finished (test services need none).
     property bool passwordServiceChecked: mainService !== "buchhwin-lock"
@@ -98,7 +120,7 @@ Scope {
     // may use the reader. "auto" asks UPower whether the lid is closed (docked,
     // the sensor is out of reach); then the conversation is password-only.
     readonly property string fingerprintMode: SettingsService.value("lock.fingerprint")
-    readonly property var lidOverride: Logic.lidOverride(nested, Quickshell.env("BUCHHWIN_LOCK_LID_CLOSED") || "")
+    readonly property var lidOverride: Logic.lidOverride(testHooks, lidHook)
     property bool lidClosed: false
     property bool lidChecked: false
     // The last start decision; false hides the fingerprint retry.
@@ -219,6 +241,18 @@ Scope {
         }
     }
 
+    // The reader announced itself after the password was submitted (see
+    // LockLogic.passwordInstead): leave it and check the password alone, as
+    // submit() does during the reader's wait. Called a turn after the message,
+    // outside PamContext's own signal; abort() is synchronous and emits
+    // neither completed nor error.
+    function passwordNow() {
+        if (!pam.active || !fingerprintStage || !submitPending || unlocking) return
+        pam.abort()
+        clearStatus()
+        startPam(true)
+    }
+
     // Clicking the fingerprint after a timeout starts the reader again.
     function retryFingerprint() {
         if (busy || unlocking || fingerprintStage || passwordOnly) return
@@ -227,7 +261,23 @@ Scope {
         startPam(false)
     }
 
-    function keyActivity() { if (!keyboardProc.running) keyboardProc.running = true }
+    // Caps Lock and the layout after a key: asked at once, then at most every
+    // 300 ms while keys keep coming, and once more after the last of them.
+    // Every key started its own `hyprctl -j devices` before (~10 ms each).
+    // Which key it was is not looked at: a layout switch is whatever xkb
+    // option the user chose.
+    property bool keysUnchecked: false
+    function keyActivity() {
+        if (keyboardPause.running || keyboardProc.running) {
+            keysUnchecked = true
+            keyboardPause.start()
+            return
+        }
+        keysUnchecked = false
+        keyboardProc.running = true
+        keyboardPause.start()
+    }
+    Timer { id: keyboardPause; interval: 300; onTriggered: if (root.keysUnchecked) root.keyActivity() }
 
     function power(action) {
         if (["suspend", "reboot", "poweroff"].indexOf(action) >= 0)
@@ -269,6 +319,8 @@ Scope {
                 if (event === "mismatch") root.fingerprintMisses += 1
                 root.status = Logic.fingerprintText(event, message)
                 root.statusIsError = event === "mismatch"
+                if (Logic.passwordInstead(root.fingerprintStage, root.submitPending, root.mainService, root.passwordService))
+                    Qt.callLater(root.passwordNow)
             } else if (message.length) {
                 root.status = message
                 root.statusIsError = messageIsError
@@ -330,7 +382,7 @@ Scope {
 
     WlSessionLock {
         id: lock
-        locked: !root.preview
+        locked: root.surfaces && !root.preview
         onSecureChanged: if (secure) marker.setText("1\n")
 
         WlSessionLockSurface {
@@ -344,25 +396,8 @@ Scope {
         }
     }
 
-    Variants {
-        model: root.preview ? Quickshell.screens : []
-        PanelWindow {
-            id: previewWindow
-            required property var modelData
-            screen: modelData
-            anchors { top: true; bottom: true; left: true; right: true }
-            exclusionMode: ExclusionMode.Ignore
-            color: Colors.lockBase
-            WlrLayershell.namespace: "buchhwin-lock-preview"
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
-            LockFace {
-                anchors.fill: parent
-                lockState: root
-                screenName: previewWindow.modelData.name
-            }
-        }
-    }
+    // The preview's windows (LockPreviewWindows.qml) are lock.qml's to make:
+    // a file that names PanelWindow does not load offscreen at all.
 
     FileView {
         id: marker
@@ -379,8 +414,29 @@ Scope {
         stdout: StdioCollector { onStreamFinished: root.displayName = Logic.displayName(text, root.user) }
     }
 
+    // The helper is asked only for a logo that can be a picture
+    // (LockLogic.logoMayBePicture). The file as fastfetch-image.py writes it
+    // is plain JSON; one with comments in it cannot be read here and is
+    // asked about as before.
+    property bool logoMayBePicture: false
+    FileView {
+        path: Paths.configDir + "/fastfetch.jsonc"
+        printErrors: false
+        onLoaded: {
+            let logo = null
+            try {
+                const config = JSON.parse(text())
+                logo = config && typeof config === "object" ? config.logo : null
+            } catch (error) {
+                root.logoMayBePicture = true
+                return
+            }
+            root.logoMayBePicture = Logic.logoMayBePicture(logo)
+        }
+    }
+
     Process {
-        running: root.showAvatar
+        running: root.showAvatar && root.logoMayBePicture
         command: ["python3", Paths.script("fastfetch-image.py"), "get"]
         stdout: StdioCollector {
             onStreamFinished: {

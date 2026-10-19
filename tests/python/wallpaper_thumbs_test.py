@@ -53,9 +53,35 @@ with tempfile.TemporaryDirectory(prefix="wallpaper-thumbs-test.") as scratch:
     missing = pictures / "gone.png"
 
     paths = [str(p) for p in (png, jpeg, small, broken, folder, apple, missing)]
-    first = module.thumbnails(str(cache), WIDTH, paths)
+    sizes = {}
+    first = module.thumbnails(str(cache), WIDTH, paths, sizes=sizes)
     check(sorted(first) == sorted([str(png), str(jpeg), str(small)]),
           "only the three images get thumbnails: %s" % sorted(first))
+    # The pictures' own sizes, for the desktop's decode: the JPEG's before
+    # its draft, which shrinks the size it reports.
+    check(sizes == {str(png): [1200, 750], str(jpeg): [600, 1000], str(small): [100, 60]},
+          "each picture's own size comes with its thumbnail: %r" % sizes)
+    stored = json.loads((cache / module.SIZES_NAME).read_text())
+    check(sorted(stored.values()) == sorted([[1200, 750], [600, 1000], [100, 60]])
+          and all(module.THUMB_NAME.fullmatch(name) for name in stored),
+          "and is kept in the cache by thumbnail name: %r" % stored)
+
+    # The next run reads them from there, without Pillow; one lost from the
+    # file is read from the picture's header again.
+    real_image_size = module.image_size
+    module.image_size = lambda path: None
+    again = {}
+    module.thumbnails(str(cache), WIDTH, paths, sizes=again)
+    check(again == sizes, "a run over the same folder has the sizes without opening a picture: %r" % again)
+    module.image_size = real_image_size
+    (cache / module.SIZES_NAME).unlink()
+    header = {}
+    module.thumbnails(str(cache), WIDTH, [str(png)], sizes=header)
+    check(header == {str(png): [1200, 750]}, "a thumbnail without a kept size has it read from the picture: %r" % header)
+    check(module.image_size(str(broken)) is None and module.image_size(str(missing)) is None,
+          "a broken or missing picture has no size")
+    module.thumbnails(str(cache), WIDTH, paths, sizes={})
+    check(len(json.loads((cache / module.SIZES_NAME).read_text())) == 3, "the file is whole again after a full run")
 
     for source, size in ((png, (1200, 750)), (jpeg, (600, 1000))):
         thumb = first.get(str(source), "")
@@ -107,8 +133,14 @@ with tempfile.TemporaryDirectory(prefix="wallpaper-thumbs-test.") as scratch:
     os.utime(foreign, (old, old))
     recent = cache / ("1" * 40 + ".jpg")
     recent.write_bytes(b"x")
-    module.thumbnails(str(cache), WIDTH, [str(png)])
+    sized = json.loads((cache / module.SIZES_NAME).read_text())
+    sized[stale.name] = [10, 10]
+    (cache / module.SIZES_NAME).write_text(json.dumps(sized))
+    module.thumbnails(str(cache), WIDTH, [str(png)], sizes={})
     check(not stale.exists(), "a thumbnail untouched for %d days is swept" % module.KEEP_DAYS)
+    check(stale.name not in json.loads((cache / module.SIZES_NAME).read_text()),
+          "and its size goes with it")
+    check((cache / module.SIZES_NAME).exists(), "the sizes file itself is never swept")
     check(not temporary.exists(), "a stale temporary file is swept")
     check(foreign.exists(), "a file that is not a thumbnail is never swept")
     check(recent.exists(), "a recent thumbnail stays")
@@ -129,6 +161,8 @@ with tempfile.TemporaryDirectory(prefix="wallpaper-thumbs-test.") as scratch:
         answer = {}
     check(sorted(answer.get("thumbs", {})) == sorted([str(png), str(dashed)]),
           "the CLI maps exactly the images it managed: %r" % result.stdout)
+    check(answer.get("sizes") == {str(png): [1200, 750], str(dashed): [400, 250]},
+          "and prints their sizes: %r" % result.stdout)
     check(not (base / "xdg-cache").exists(), "the CLI writes nowhere but --cache")
     bad = subprocess.run([sys.executable, "-I", str(SCRIPT), "--cache", str(cache), "--width", "0"],
                          capture_output=True, text=True, timeout=60, env=env)
@@ -138,6 +172,10 @@ with tempfile.TemporaryDirectory(prefix="wallpaper-thumbs-test.") as scratch:
     blocked = base / "file-not-dir"
     blocked.write_text("")
     check(module.thumbnails(str(blocked / "cache"), WIDTH, [str(png)]) == {}, "an unusable cache gives no thumbnails")
+    (cache / module.SIZES_NAME).write_text("{broken")
+    check(module.read_sizes(str(cache)) == {}, "a broken sizes file is no sizes")
+    (cache / module.SIZES_NAME).write_text(json.dumps({"x": [1, 2], "0" * 40 + ".jpg": [1, True], "1" * 40 + ".jpg": [3, 4]}))
+    check(module.read_sizes(str(cache)) == {"1" * 40 + ".jpg": [3, 4]}, "and only thumbnail names with two sizes are read")
 
 check(module.scaled_size((6000, 3750), 520) == (520, 325), "6000x3750 at 520 is 520x325")
 check(module.scaled_size((1000, 2000), 520) == (520, 1040), "a portrait image is bounded by the width, as Qt does")

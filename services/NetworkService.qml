@@ -6,6 +6,7 @@ import QtQuick
 import "network/WireguardLogic.js" as WireguardLogic
 import "network/ScanLogic.js" as ScanLogic
 import "network/SignalLogic.js" as Signal
+import "network/VpnLogic.js" as VpnLogic
 
 // Wi-Fi through Quickshell.Networking (NetworkManager). VPN connections and
 // addresses come from nmcli, refreshed only when `nmcli monitor` reports a
@@ -51,9 +52,33 @@ Singleton {
         }
     }
     // Connected, but not to the internet: the glyph takes a "!", the line
-    // says why (SignalLogic.note).
-    readonly property bool limited: connected && Signal.limited(connectivity)
-    readonly property string note: connected ? Signal.note(connectivity) : ""
+    // says why (SignalLogic.note) - once it has held for a few seconds
+    // (SignalLogic.limitedShown): right after a reconnect NetworkManager's
+    // check has not reached the internet yet, and the "!" flashed.
+    readonly property bool limitedNow: connected && Signal.limited(connectivity)
+    property real limitedSince: -1
+    property bool limited: false
+    readonly property string note: limited ? Signal.note(connectivity) : ""
+    function settleLimited() {
+        const now = Date.now()
+        // A clock set back counts from now.
+        if (limitedSince > now) limitedSince = now
+        limited = Signal.limitedShown(limitedNow, limitedSince, now)
+        // Until it shows, asked again for what is left (Signal.limitedWait).
+        const wait = Signal.limitedWait(limitedNow, limitedSince, now)
+        if (wait > 0) {
+            limitedTimer.interval = wait
+            limitedTimer.restart()
+        } else {
+            limitedTimer.stop()
+        }
+    }
+    function updateLimited() {
+        limitedSince = limitedNow ? Date.now() : -1
+        settleLimited()
+    }
+    onLimitedNowChanged: updateLimited()
+    Timer { id: limitedTimer; interval: Signal.LIMITED_SETTLE_MS; onTriggered: root.settleLimited() }
 
     readonly property string summary: (!wifiUsable && !wiredConnected ? "Off"
         : current ? current.name : wiredConnected ? "Wired" : "Not connected")
@@ -89,6 +114,9 @@ Singleton {
     property string helperError: ""
     property string pendingSsid: ""
     property string pendingSecret: ""
+    // Whether network-helper.py's hotspot connection is up, from nmcli's list
+    // (ScanLogic.parseConnections) - set at once by a start or stop here,
+    // and corrected by the refresh that follows it.
     property bool hotspotActive: false
 
     function isOpen(network) { return network !== null && network.security === WifiSecurityType.Open }
@@ -181,45 +209,31 @@ Singleton {
         onExited: stdinEnabled = true
     }
 
-    Process {
-        id: hotspotStatusProc
-        stderr: ErrorLog { label: "NetworkService.hotspotStatusProc" }
-        command: [Paths.script("network-helper.py"), "hotspot-status"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try { root.hotspotActive = JSON.parse(text).active === true } catch (error) { root.hotspotActive = false }
-            }
-        }
-    }
-
     function setWifiEnabled(enabled) { Networking.wifiEnabled = enabled }
     // Every network view - the popup, the control-center page, the settings
     // page - turns scanning on when it comes into view and off when it goes,
     // so this is also where the service learns that someone is looking.
-    // Those views are the only readers of `hotspotActive`, and reading it
-    // means running a python helper; with nobody looking it is left to the
-    // next open (read at once then) rather than run on every NetworkManager
-    // event of an idle session. A hotspot this shell started is the
-    // exception: it can go down on its own, so it keeps being read.
+    // Those views are the only readers of `address`, and reading it is an
+    // nmcli run of its own; with nobody looking it is left to the next open
+    // (read at once then) rather than run on every NetworkManager event of an
+    // idle session.
     property bool viewOpen: false
-    // The connection network-helper.py starts and asks about (HOTSPOT_ID).
-    // Its showing up active in nmcli's list is when a view-less read is due:
-    // a hotspot up before this shell, or started outside it.
+    // The connection network-helper.py starts (HOTSPOT_ID); its being active
+    // in nmcli's list is `hotspotActive`.
     readonly property string hotspotName: "buchhwin-hotspot"
-    property bool hotspotListed: false
     // How many views are open (ScanLogic.scanViewers): the scan and
     // `viewOpen` stay on until the last one has gone.
     property int scanViewers: 0
     function setScanning(enabled) {
+        const before = scanViewers
         scanViewers = ScanLogic.scanViewers(scanViewers, enabled)
         const on = scanViewers > 0
         viewOpen = on
         if (wifiDevice) wifiDevice.scannerEnabled = on
-        if (enabled) refreshHotspot()
+        if (enabled && before === 0) readAddress(addressDevice)
     }
     // An adapter that appears (or comes back) while a view is open scans too.
     onWifiDeviceChanged: if (wifiDevice && scanViewers > 0) wifiDevice.scannerEnabled = true
-    function refreshHotspot() { if (!hotspotStatusProc.running) hotspotStatusProc.running = true }
     function connectNetwork(network) { if (network) network.connect() }
     function disconnectNetwork(network) { if (network) network.disconnect() }
     function forget(network) { if (network) network.forget() }
@@ -232,8 +246,82 @@ Singleton {
         PanelService.close()
     }
 
+    // ---- VPN switches (VpnLogic) ---------------------------------------------
+    // One nmcli per switch, watched: the row shows where it is going while
+    // nmcli works ("Connecting …"), and a tunnel that does not come up says
+    // why in a notification instead of nothing.
+    property var vpnPending: ({})        // { uuid: { up, seq } }
+    property int vpnSeq: 0
+    property string vpnError: ""
+    property string lastVpnUuid: ""
+    readonly property string vpnPendingText: VpnLogic.pendingText(vpnPending)
+    // The tunnel the quick tile brings up: the one used last, else the first.
+    readonly property string preferredVpnUuid: VpnLogic.preferred(vpns, lastVpnUuid)
+
+    function connectionByUuid(uuid) { return connections.find(item => item.uuid === uuid) || null }
+    function vpnChecked(item) { return VpnLogic.checked(item, vpnPending) }
+    function vpnStatus(item) { return VpnLogic.status(item, vpnPending) }
+
     function setVpn(uuid, up) {
-        Quickshell.execDetached(["nmcli", "connection", up ? "up" : "down", "uuid", uuid])
+        if (!uuid || !uuid.length) return
+        const entry = vpnPending[uuid]
+        if (entry && entry.up === (up === true)) return
+        vpnSeq += 1
+        vpnPending = VpnLogic.begin(vpnPending, uuid, up === true, vpnSeq)
+        vpnError = ""
+        if (up) lastVpnUuid = uuid
+        const item = connectionByUuid(uuid)
+        const run = vpnSwitch.createObject(root, {
+            uuid: uuid, up: up === true, seq: vpnSeq, name: item ? item.name : "",
+            // The exit status on the first line, then what nmcli said: one
+            // stream, so the answer and its status never arrive apart.
+            command: ["sh", "-c", 'out=$(nmcli connection "$1" uuid "$2" 2>&1); code=$?; printf "%s\n%s\n" "$code" "$out"',
+                      "sh", up ? "up" : "down", uuid]
+        })
+        run.running = true
+    }
+
+    function vpnFinished(run, text) {
+        const step = VpnLogic.finish(vpnPending, run.uuid, run.seq)
+        const answer = step.current ? VpnLogic.result(text) : null
+        // Done: the list says so before the refresh below has read it again.
+        if (answer && answer.ok) connections = VpnLogic.settled(connections, run.uuid, run.up)
+        vpnPending = step.pending
+        if (answer) {
+            if (!answer.ok) {
+                const title = "VPN “" + (run.name || "tunnel") + "” did not " + (run.up ? "connect" : "disconnect")
+                vpnError = title + ": " + answer.message
+                if (AppearanceService.realSession)
+                    Quickshell.execDetached(["notify-send", "--app-name=Network", "--icon=network-vpn", "--", title, answer.message])
+                else
+                    console.info("buchhwin-shell: network: notification (nested, not sent):", title, "—", answer.message)
+            }
+        }
+        refresh()
+    }
+
+    Component {
+        id: vpnSwitch
+        Process {
+            id: switchRun
+            property string uuid: ""
+            property bool up: false
+            property int seq: 0
+            property string name: ""
+            property bool answered: false
+            stderr: ErrorLog { label: "NetworkService.vpnSwitch" }
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    root.vpnFinished(switchRun, text)
+                    switchRun.answered = true
+                    switchRun.release()
+                }
+            }
+            // Gone once it has both answered and exited, in whichever order
+            // the two arrive.
+            function release() { if (answered && !running) destroy() }
+            onRunningChanged: release()
+        }
     }
 
     // ---- WireGuard tunnels (scripts/wireguard-helper.py) --------------------
@@ -322,7 +410,12 @@ Singleton {
         stdout: StdioCollector {
             onStreamFinished: {
                 const path = text.trim()
-                if (!path.length) return
+                // Cancel (or no kdialog): back to where the import started,
+                // as an answer does - not the bare desktop.
+                if (!path.length) {
+                    PanelService.open("settings", { page: "network" })
+                    return
+                }
                 const name = WireguardLogic.nameFromPath(path)
                 root.wgState = "importing"
                 root.wgPending = ""
@@ -370,30 +463,23 @@ Singleton {
         onExited: stdinEnabled = true
     }
 
-    // nmcli -t escapes ':' inside values as '\:'.
-    function splitTerse(line) {
-        const fields = []
-        let currentField = ""
-        for (let i = 0; i < line.length; ++i) {
-            const ch = line[i]
-            if (ch === "\\" && i + 1 < line.length) { currentField += line[++i]; continue }
-            if (ch === ":") { fields.push(currentField); currentField = ""; continue }
-            currentField += ch
-        }
-        fields.push(currentField)
-        return fields
-    }
+    // nmcli -t escapes ':' inside values as '\:' (ScanLogic.splitTerse).
+    function splitTerse(line) { return ScanLogic.splitTerse(line) }
 
     // A change reported while nmcli runs gets one more run after it, or the
     // list could keep the state from before that change.
     property bool refreshQueued: false
+    // Whether nmcli monitor has reported anything since the last read (or
+    // the monitor is down): a view that opens can skip its own read when it
+    // has not (`refreshIfStale`).
+    property bool changedSinceRead: true
     function refresh() {
+        changedSinceRead = false
         if (connectionsProc.running) refreshQueued = true
         else connectionsProc.running = true
-        // Not at start any more: a hotspot started before this shell, or
-        // outside it, is read once the connection list shows it (below), and
-        // on almost every login there is none to read.
-        if (viewOpen || hotspotActive) refreshHotspot()
+    }
+    function refreshIfStale() {
+        if (changedSinceRead || !monitorProc.running) refresh()
     }
 
     Process {
@@ -402,26 +488,17 @@ Singleton {
         command: ["nmcli", "-t", "-f", "NAME,UUID,TYPE,DEVICE,ACTIVE", "connection", "show"]
         stdout: StdioCollector {
             onStreamFinished: {
-                const result = []
-                let wired = false
-                let device = ""
-                for (const line of text.split("\n")) {
-                    if (!line.length) continue
-                    const [name, uuid, type, dev, active] = root.splitTerse(line)
-                    const shortType = type.replace("802-11-wireless", "wifi").replace("802-3-ethernet", "ethernet")
-                    const isActive = active === "yes"
-                    result.push({ name: name, uuid: uuid, type: shortType, device: dev, active: isActive })
-                    if (isActive && shortType === "ethernet") wired = true
-                    if (isActive && (shortType === "wifi" || shortType === "ethernet") && !device.length) device = dev
-                }
+                const parsed = ScanLogic.parseConnections(text, root.hotspotName)
                 // Only a list that changed is handed on: a new array every
                 // run rebuilt everything bound to the VPNs for nothing.
-                if (JSON.stringify(result) !== JSON.stringify(root.connections)) root.connections = result
-                const listed = result.some(item => item.active && item.name === root.hotspotName)
-                if (listed && !root.hotspotListed) root.refreshHotspot()
-                root.hotspotListed = listed
-                root.wiredConnected = wired
-                root.readAddress(device)
+                if (JSON.stringify(parsed.connections) !== JSON.stringify(root.connections))
+                    root.connections = parsed.connections
+                root.hotspotActive = parsed.hotspot
+                root.wiredConnected = parsed.wired
+                // The address only for a view that shows it; the device is
+                // kept for the next one that opens (setScanning).
+                if (root.viewOpen) root.readAddress(parsed.device)
+                else root.addressDevice = parsed.device
             }
         }
         onExited: {
@@ -467,8 +544,22 @@ Singleton {
         stderr: ErrorLog { label: "NetworkService.monitorProc" }
         running: true
         command: Paths.bound(["nmcli", "monitor"])
-        stdout: SplitParser { onRead: debounce.restart() }
-        onRunningChanged: if (!running) restartTimer.start()
+        // Its first line is the state at its start (ScanLogic.monitorNews).
+        property bool first: true
+        stdout: SplitParser {
+            onRead: data => {
+                const news = ScanLogic.monitorNews(data, monitorProc.first)
+                monitorProc.first = false
+                if (!news) return
+                root.changedSinceRead = true
+                debounce.restart()
+            }
+        }
+        onRunningChanged: {
+            if (running) { first = true; return }
+            root.changedSinceRead = true
+            restartTimer.start()
+        }
     }
     Timer {
         id: restartTimer
@@ -483,5 +574,8 @@ Singleton {
     // whole reconnect into one nmcli run, where 400 ms ran it three or four
     // times for the same state.
     Timer { id: debounce; interval: 1500; onTriggered: root.refresh() }
-    Component.onCompleted: refresh()
+    Component.onCompleted: {
+        refresh()
+        updateLimited()
+    }
 }

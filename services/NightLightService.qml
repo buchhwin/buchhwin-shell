@@ -27,13 +27,10 @@ Singleton {
     // Quick toggle: off <-> the last used automatic mode or manual.
     function toggle() {
         if (mode === "off") SettingsService.set("nightLight.mode", SettingsService.value("nightLight.lastMode"))
-        else {
-            SettingsService.set("nightLight.lastMode", mode)
-            SettingsService.set("nightLight.mode", "off")
-        }
+        else SettingsService.setAll({ "nightLight.lastMode": mode, "nightLight.mode": "off" })
     }
 
-    SystemClock { id: clock; precision: SystemClock.Minutes }
+    SystemClock { id: clock; precision: SystemClock.Minutes; enabled: WallClock.ticking }
 
     // Restart when the command changes (mode, temperature, location). `active`
     // may not be re-evaluated yet inside this handler, so the timer decides.
