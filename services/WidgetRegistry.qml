@@ -14,6 +14,10 @@ import qs.theme
 // the dock is enough: a second Apps drew every app twice, and two start
 // buttons shared one place to open the menu from) and `pillSized: false` (it
 // sizes itself, so the editor offers no item size for it).
+//
+// An empty `action` is a widget that takes its own clicks: the recording
+// chip, the tray's icons (each its own app) and the command widgets (their
+// click command).
 Singleton {
     readonly property var categories: [
         { id: "time", label: "Time" },
@@ -83,6 +87,13 @@ Singleton {
         "recording": { label: "Screen recording", icon: "󰑊", category: "system", file: "RecordingWidget.qml",
                        sizes: ["small"], action: "", available: true,
                        defaults: { anchorX: "right", x: 0.78, y: 0.02, style: "capsule" } },
+        // The running countdown - a timer or a Focus session - and the time
+        // left; hidden while none runs, a click stops it (TimerService). The
+        // notch's strip draws its own chip for this type, and the pill bar
+        // shows it on its own while one runs, as it does the recording.
+        "timer": { pillDisplay: "full", label: "Timer", icon: "󰔛", category: "time", file: "TimerWidget.qml",
+                   sizes: ["small", "medium", "large"], action: "", available: true,
+                   defaults: { anchorX: "right", x: 0.985, y: 0.2, style: "capsule" } },
         "nowPlaying": { pillDisplay: "icon", pillDisplays: ["icon", "full", "expanded"], label: "Playback", icon: "󰎆", category: "media", file: "NowPlayingWidget.qml",
                         sizes: ["small", "medium"], action: "mediaPopup", available: true,
                         defaults: { anchorX: "left", x: 0.015, y: 0.9, style: "card" } },
@@ -115,7 +126,31 @@ Singleton {
         "updates": { label: "Updates", icon: "󰚰", category: "optional", file: "UpdatesWidget.qml",
                      sizes: ["small", "medium", "large"], action: "settings", actionArgs: { page: "updates" },
                      available: true,
-                     defaults: { anchorX: "left", x: 0.29, y: 0.95, style: "capsule" } }
+                     defaults: { anchorX: "left", x: 0.29, y: 0.95, style: "capsule" } },
+        // The background apps' icons (the control center's page of that name),
+        // a dot on the ones asking for attention; each icon takes its own
+        // clicks, its menu opening out of it (TrayService). One look only:
+        // the icons are what it is.
+        "tray": { pillDisplay: "full", pillDisplays: ["full"], label: "Background apps", icon: "󰍜", category: "system",
+                  file: "TrayWidget.qml", sizes: ["small"], action: "", available: true,
+                  defaults: { anchorX: "right", x: 0.74, y: 0.02, style: "capsule" } },
+        // How hot the CPU is, with the GPU and the fan at large; a click
+        // opens the system popup with every sensor (SystemStatsService).
+        "temperature": { label: "Temperature", icon: "\u{f050f}", category: "optional", file: "TemperatureWidget.qml",
+                         sizes: ["small", "medium", "large"], action: "systemPopup", available: true,
+                         defaults: { anchorX: "left", x: 0.36, y: 0.95, style: "capsule" } },
+        // A command of the user's, its first line shown (CommandLogic): three
+        // of them, set up in Settings > Widgets, because the layout keeps no
+        // options of a placed widget that the editor could change.
+        "command1": { label: "Command 1", icon: "\u{f018d}", category: "optional", file: "CommandWidget.qml",
+                      sizes: ["small", "medium", "large"], action: "", available: true, options: { slot: "one" },
+                      defaults: { anchorX: "left", x: 0.43, y: 0.95, style: "capsule" } },
+        "command2": { label: "Command 2", icon: "\u{f018d}", category: "optional", file: "CommandWidget.qml",
+                      sizes: ["small", "medium", "large"], action: "", available: true, options: { slot: "two" },
+                      defaults: { anchorX: "left", x: 0.5, y: 0.95, style: "capsule" } },
+        "command3": { label: "Command 3", icon: "\u{f018d}", category: "optional", file: "CommandWidget.qml",
+                      sizes: ["small", "medium", "large"], action: "", available: true, options: { slot: "three" },
+                      defaults: { anchorX: "left", x: 0.57, y: 0.95, style: "capsule" } }
     })
 
     function type(name) {

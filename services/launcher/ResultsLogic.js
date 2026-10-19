@@ -13,12 +13,17 @@
 // opened a browser tab on https://readme.md. A bare host now comes after the
 // best app, so the app is what Enter starts; with a scheme, a port or a path
 // it is still first. With no app to match, it leads either way.
-function appsMode(lead, address, addressLeads, apps, commands) {
+//
+// `extras` are the few rows of the other sources a query reaches - open
+// windows, VS Code's folders, recent files, each already cut to its handful:
+// after the commands and before the rest of the apps, so the best app stays
+// what Enter starts and the long tail of apps does not bury them.
+function appsMode(lead, address, addressLeads, apps, commands, extras) {
     const head = (lead || []).slice()
     if (address && addressLeads) head.push(address)
     const list = apps || []
     return head.concat(list.slice(0, 1), address && !addressLeads ? [address] : [],
-                       commands || [], list.slice(1))
+                       commands || [], extras || [], list.slice(1))
 }
 
 // What a row is, not where it stands: an app by its id, anything else by the

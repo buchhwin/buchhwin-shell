@@ -385,7 +385,7 @@ ShellRoot {
         T.eq(D.panelAnchor("bottom", null, 6), {}, "no place: nothing to anchor to")
         T.eq(D.panelAnchor("bottom", { x: 0, y: 0, width: 0, height: 40 }, 6), {}, "nor an empty one")
         T.eq(D.panelAnchor("bottom", button, -3).anchorBottom, 1032, "no negative gap")
-        // D2: the gap off the dock's body, not off the item inside it - the
+        // The gap off the dock's body, not off the item inside it - the
         // start menu stood flush on the taskbar.
         const taskbar = { x: 0, y: 1149, width: 1920, height: 51 }
         const start = { x: 8, y: 1157, width: 60, height: 35 }
@@ -446,6 +446,14 @@ ShellRoot {
              "off an icon before its name showed: no name")
         T.eq(D.labelAfter({ index: 0, shown: false }, 1, true), { index: 1, shown: false, timer: "show" },
              "onto another before any showed: the delay again")
+        T.eq(D.labelInRow({ index: 2, shown: true }, 2), { index: -1, shown: false, timer: "stop" },
+             "the last icon gone from under the pointer: its name goes with it")
+        T.eq(D.labelInRow({ index: 2, shown: false }, 2), { index: -1, shown: false, timer: "stop" },
+             "and so does a name still waiting to show")
+        T.eq([D.labelInRow({ index: 1, shown: true }, 2), D.labelInRow({ index: -1, shown: false }, 0),
+              D.labelInRow({ index: 0, shown: true }, 3)], [null, null, null],
+             "an icon still in the row keeps its name, and no name has nothing to take down")
+        T.eq(D.labelInRow({ index: 0, shown: true }, 0), { index: -1, shown: false, timer: "stop" }, "an emptied row takes it down too")
 
         // ---- started, not open yet -----------------------------------------------------
         const firstStart = { since: 1000, before: 0, active: false }

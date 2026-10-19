@@ -360,7 +360,7 @@ jobs:
             cd "'"$GITHUB_WORKSPACE"'"
             export XDG_RUNTIME_DIR=/tmp/xdg-ci LANG=C.UTF-8
             install/install.sh --apply
-            BUCHHWIN_DOCTOR_STRICT=1 BUCHHWIN_DOCTOR_ALLOW="brave-browser" scripts/doctor.sh
+            BUCHHWIN_DOCTOR_STRICT=1 BUCHHWIN_DOCTOR_ALLOW="brave-browser qalc tesseract" scripts/doctor.sh
           '
 
       - name: shellcheck (not blocking until the first triage)

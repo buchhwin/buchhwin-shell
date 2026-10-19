@@ -130,6 +130,7 @@ ColumnLayout {
         case "bluetooth": return bluetoothTile
         case "vpn": return vpnTile
         case "dnd": return dndTile
+        case "stayAwake": return stayAwakeTile
         case "microphone": return microphoneTile
         case "fingerprint": return fingerprintTile
         case "brightness": return brightnessTile
@@ -139,6 +140,8 @@ ColumnLayout {
         case "drives": return drivesTile
         case "phone": return phoneTile
         case "shortcuts": return shortcutsTile
+        case "zoom": return zoomTile
+        case "colorFilter": return colorFilterTile
         }
         // Not one of the panel's own tiles: a desktop widget it accepts.
         return WidgetRegistry.isAvailable(type) ? widgetTile : null
@@ -296,6 +299,39 @@ ColumnLayout {
         }
     }
 
+    // The screen zoom (Super and + / - / 0): on at 2× and off again; the
+    // keys step it finer (ScreenEffectsService).
+    Component {
+        id: zoomTile
+        QuickTile {
+            shape: fitClass
+            readonly property bool shown: true
+            icon: ScreenEffectsService.zoomed ? "󰍋" : "󰍊"
+            title: "Zoom"
+            subtitle: ScreenEffectsService.zoomLabel
+            checked: ScreenEffectsService.zoomed
+            onToggled: value => ScreenEffectsService.setZoom(value ? 2 : 1)
+        }
+    }
+
+    // The color filter chosen in Settings > Appearance, on and off; the
+    // chevron goes there (ScreenEffectsService).
+    Component {
+        id: colorFilterTile
+        QuickTile {
+            shape: fitClass
+            readonly property bool shown: true
+            icon: "󰌁"
+            title: "Color filter"
+            subtitle: ScreenEffectsService.filterOn ? ScreenEffectsService.filterLabel : "Off"
+            checked: ScreenEffectsService.filterOn
+            showChevron: true
+            leavesPanel: true
+            onToggled: value => ScreenEffectsService.setFilterOn(value)
+            onDetailsRequested: PanelService.open("settings", { page: "appearance" })
+        }
+    }
+
     Component {
         id: dndTile
         QuickTile {
@@ -308,6 +344,25 @@ ColumnLayout {
             showChevron: true
             onToggled: value => NotificationService.setDnd(value ? "manual" : "off")
             onDetailsRequested: root.openPage("dnd")
+        }
+    }
+
+    // Stay awake (IdleService): the switch starts the hold the last choice
+    // ended with (an hour until one was made), the chevron goes to the Power
+    // page and its list of the other ways. A chip beside Power, Dark mode,
+    // Displays and Focus did not fit: five need 744 px of the 608 the row has.
+    Component {
+        id: stayAwakeTile
+        QuickTile {
+            shape: fitClass
+            readonly property bool shown: true
+            icon: IdleService.stayAwakeIcon
+            title: "Stay awake"
+            subtitle: IdleService.stayAwakeSubtitle
+            checked: IdleService.stayAwake
+            showChevron: true
+            onToggled: value => { if (value !== IdleService.stayAwake) IdleService.toggleStayAwake() }
+            onDetailsRequested: root.openPage("power")
         }
     }
 
@@ -483,7 +538,7 @@ ColumnLayout {
                     ShellText {
                         Layout.fillWidth: true
                         horizontalAlignment: Text.AlignRight
-                        text: PowerService.stateLabel
+                        text: PowerService.stateShort
                             + (PowerService.remainingLabel.length ? " · " + PowerService.remainingLabel : "")
                         role: "small"; muted: true; elide: Text.ElideRight
                         visible: !compact
@@ -767,7 +822,8 @@ ColumnLayout {
                     compact: chipRow.tight
                     icon: Icons.focus
                     title: "Focus"
-                    subtitle: AdaptiveService.focusActive ? "On" : "Off"
+                    // "→ 14:25" during a Focus session (FocusLogic.focusLabel).
+                    subtitle: AdaptiveService.focusLabel
                     active: AdaptiveService.focusActive
                     onClicked: AdaptiveService.setFocus(!AdaptiveService.focusActive)
                 }

@@ -11,9 +11,9 @@ var FAMILIES = ["fedora", "opensuse", "arch"]
 // Package names for the install hints the interface shows. Only what a hint
 // names; the installer keeps the full lists (install/packages/).
 var PACKAGES = {
-    fedora: { "wf-recorder": "wf-recorder", "hyprland-guiutils": "hyprland-guiutils" },
+    fedora: { "wf-recorder": "wf-recorder", "ollama": "ollama", "hyprland-guiutils": "hyprland-guiutils" },
     opensuse: { "wf-recorder": "wf-recorder" },
-    arch: { "wf-recorder": "wf-recorder", "hyprland-guiutils": "hyprland-guiutils" }
+    arch: { "wf-recorder": "wf-recorder", "ollama": "ollama", "hyprland-guiutils": "hyprland-guiutils", "qalc": "libqalculate" }
 }
 
 // KEY=value lines; values may be quoted. Unknown keys are kept, comments and

@@ -11,10 +11,14 @@ import "../components/PanelPlaceLogic.js" as Place
 
 // Up to three popups directly below the clock on the focused monitor - or out
 // of the notch, when there is one: a notification belongs to the notch, and
-// that is what a notch is for.
+// that is what a notch is for. With a fullscreen window on the focused
+// monitor and another one free, on that one instead
+// (NotificationService.popupScreenName).
 PanelWindow {
     id: window
-    readonly property var targetScreen: PanelService.focusedScreen()
+    readonly property var targetScreen: NotificationService.popupScreenName.length
+        ? (Quickshell.screens.find(item => item.name === NotificationService.popupScreenName) || PanelService.focusedScreen())
+        : PanelService.focusedScreen()
     readonly property var clockRect: LayoutService.clockRect(targetScreen ? targetScreen.name : "")
     readonly property bool clockOnRight: clockRect !== null && targetScreen !== null && clockRect.x > targetScreen.width / 2
     readonly property real barBottom: LayoutService.barBottom(targetScreen ? targetScreen.name : "")
@@ -115,7 +119,14 @@ PanelWindow {
             && NotchService.takesDisplay("notification", screenName)
         NotchService.setDisplay("notification", screenName,
             shown ? Logic.notchContent(notification, name => Quickshell.iconPath(name, true),
-                                       NotificationService.isCritical(notification)) : null)
+                                       NotificationService.isCritical(notification),
+                                       NotificationService.concealed) : null)
+    }
+    // A share that starts or ends while the notch shows one: its words go or
+    // come back with it.
+    Connections {
+        target: NotificationService
+        function onConcealedChanged() { window.publish() }
     }
 
     screen: targetScreen
@@ -136,11 +147,28 @@ PanelWindow {
     implicitHeight: Math.max(1, column.implicitHeight)
     WlrLayershell.namespace: "buchhwin-notification-popup"
     WlrLayershell.layer: WlrLayer.Overlay
+    // The keyboard only while a popup has a reply field (KDE Connect's
+    // messages) and the pointer is over the popups, or while a reply is
+    // typed. Hyprland gives a layer that takes the keys on demand the focus
+    // the moment it maps, and again whenever the pointer moves over it: a
+    // stack that came up asking for the keys took them from the window
+    // being typed in. Asked for once the pointer is here, they come with
+    // its next move, and go back to that window when it leaves.
+    readonly property bool hasReplies: NotificationService.popups.some(item => item && item.hasInlineReply === true)
+        && !NotificationService.concealed
+    // The card whose reply field has the keys, or null.
+    property var replyCard: null
+    readonly property bool takesReplies: hasReplies && (stackHover.hovered || replyCard !== null)
+    WlrLayershell.keyboardFocus: takesReplies ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
     ColumnLayout {
         id: column
         width: parent.width
         spacing: Metrics.spaceSm
+
+        // On the cards' parent: an ancestor keeps the hover while the pointer
+        // is over a card's own handlers and buttons (pitfall 100).
+        HoverHandler { id: stackHover }
 
         Repeater {
             // A ScriptModel, not the array itself: a Repeater on a plain array
@@ -156,6 +184,11 @@ PanelWindow {
                 notification: modelData
                 popup: true
                 onClosed: NotificationService.hidePopup(modelData)
+                onReplyingChanged: {
+                    if (replying) window.replyCard = card
+                    else if (window.replyCard === card) window.replyCard = null
+                }
+                Component.onDestruction: if (window.replyCard === card) window.replyCard = null
                 opacity: 0
                 Component.onCompleted: opacity = 1
                 Behavior on opacity { NumberAnimation { duration: Animations.popupOpen; easing.type: Animations.easingEnter } }
@@ -184,7 +217,8 @@ PanelWindow {
                     readonly property int timeout: card.modelData.expireTimeout > 0
                         ? card.modelData.expireTimeout : SettingsService.value("notifications.popupTimeoutMs")
                     interval: timeout
-                    running: !card.critical && !card.hovered && NotificationService.heldPopup !== card.modelData
+                    running: !card.critical && !card.hovered && !card.replying
+                        && NotificationService.heldPopup !== card.modelData
                     onTriggered: NotificationService.hidePopup(card.modelData)
                 }
                 // Replaced in place while it is up (a new message in the same

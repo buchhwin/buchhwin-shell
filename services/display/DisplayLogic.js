@@ -67,6 +67,22 @@ function parseModeString(text) {
     return match ? { width: Number(match[1]), height: Number(match[2]), refresh: round2(match[3]) } : null
 }
 
+// The monitor another one shows a copy of, by name, or "". `hyprctl -j
+// monitors all` says `mirrorOf: "none"` for a monitor of its own, and for a
+// mirror Hyprland 0.56 gives the source's id (as a string) - older builds
+// gave its name, so both are read. A mirror is not in `hyprctl monitors`
+// without `all`, and Hyprland moves its workspaces to another screen and
+// puts it at its source's position (Monitor.cpp, setMirror).
+function mirrorSource(item, list) {
+    const of = item ? item.mirrorOf : undefined
+    if (of === undefined || of === null) return ""
+    const text = String(of)
+    if (!text.length || text === "none") return ""
+    const byName = list.find(other => other && other.name === text)
+    const byId = byName || (/^\d+$/.test(text) ? list.find(other => other && other.id !== undefined && String(other.id) === text) : null)
+    return byId && byId.name !== item.name ? String(byId.name) : ""
+}
+
 // Normalised monitors; the current mode is always part of `modes`.
 function parseMonitors(json) {
     const list = typeof json === "string" ? JSON.parse(json) : json
@@ -94,6 +110,9 @@ function parseMonitors(json) {
             vrr: item.vrr === true ? 1 : Number(item.vrr) === 2 ? 2 : 0,
             disabled: item.disabled === true,
             focused: item.focused === true,
+            // The monitor this one mirrors, or "": it shows that screen's
+            // picture and has no place in the layout of its own (`shown`).
+            mirror: mirrorSource(item, list),
             modes: modes
         }
     }).sort((a, b) => a.x - b.x || a.y - b.y || a.name.localeCompare(b.name))
@@ -147,6 +166,12 @@ function x11Scale(monitors) {
 
 function ruleFor(monitor) {
     if (monitor.disabled) return monitor.name + ",disable"
+    // A mirror stands where its source stands, whatever it is told, so its
+    // position is no part of what it is: compared with it, a mirror read
+    // back would always look changed.
+    if (isMirror(monitor))
+        return monitor.name + "," + monitor.width + "x" + monitor.height + "@" + round2(monitor.refresh).toFixed(2)
+            + ",mirror," + monitor.mirror + "," + round2(monitor.scale) + ",transform," + monitor.transform + ",vrr," + monitor.vrr
     return monitor.name + "," + monitor.width + "x" + monitor.height + "@" + round2(monitor.refresh).toFixed(2)
         + "," + Math.round(monitor.x) + "x" + Math.round(monitor.y) + "," + round2(monitor.scale)
         + ",transform," + monitor.transform + ",vrr," + monitor.vrr
@@ -158,6 +183,51 @@ function update(monitors, name, patch) {
 
 function enabledCount(monitors) {
     return monitors.filter(monitor => !monitor.disabled).length
+}
+
+// A monitor that mirrors another (Settings > Displays' "Mirror", the display
+// switcher's "Duplicate").
+function isMirror(monitor) {
+    return !!monitor && typeof monitor.mirror === "string" && monitor.mirror.length > 0
+}
+
+// A monitor with a place of its own in the layout: on, and not a mirror. A
+// mirror is drawn at its source's position (Hyprland puts it there), so for
+// every rule about places - nothing overlaps, the layout starts at 0,0, the
+// edges snap - it is not there, as a monitor that is off is not.
+function shown(monitor) {
+    return !!monitor && !monitor.disabled && !isMirror(monitor)
+}
+
+function shownCount(monitors) {
+    return monitors.filter(shown).length
+}
+
+// The monitors `name` can mirror on Settings > Displays: on, with a place of
+// their own (a mirror of a mirror is refused by Hyprland), and not itself.
+function mirrorChoices(monitors, name) {
+    return (Array.isArray(monitors) ? monitors : []).filter(monitor => monitor.name !== name && shown(monitor))
+        .map(monitor => monitor.name)
+}
+
+// The layout with every mirror that cannot be one cleared: its source is
+// gone, off, a mirror itself or the monitor itself - Hyprland would show it
+// as a screen of its own then anyway, at whatever place the rule names. It
+// goes at the end of the layout where its own place is taken (placeAfter),
+// as a monitor coming back does, so it neither covers a neighbour nor takes
+// the first block of workspaces. The same list when nothing changed.
+function settleMirrors(monitors) {
+    const list = Array.isArray(monitors) ? monitors : []
+    const broken = list.filter(monitor => isMirror(monitor) && !monitor.disabled
+                               && !list.some(other => other.name === monitor.mirror && other.name !== monitor.name && shown(other)))
+    if (!broken.length) return list
+    let result = list.map(monitor => broken.indexOf(monitor) >= 0 ? Object.assign({}, monitor, { mirror: "" }) : monitor)
+    for (const monitor of broken) {
+        if (!overlapping(result)) break
+        const place = placeAfter(result, monitor.name)
+        result = update(result, monitor.name, place)
+    }
+    return result
 }
 
 function changed(before, after) {
@@ -194,13 +264,14 @@ function refreshedDraft(previous, live, draft) {
     return { draft: next, dropped: false }
 }
 
-// Shift enabled monitors so the layout starts at 0,0.
+// Shift enabled monitors so the layout starts at 0,0. A mirror keeps the
+// place it had, which is its own for when it stops being one.
 function normalize(monitors) {
-    const enabled = monitors.filter(monitor => !monitor.disabled)
+    const enabled = monitors.filter(shown)
     if (!enabled.length) return monitors
     const minX = Math.min.apply(null, enabled.map(monitor => monitor.x))
     const minY = Math.min.apply(null, enabled.map(monitor => monitor.y))
-    return monitors.map(monitor => monitor.disabled ? monitor : Object.assign({}, monitor, { x: monitor.x - minX, y: monitor.y - minY }))
+    return monitors.map(monitor => !shown(monitor) ? monitor : Object.assign({}, monitor, { x: monitor.x - minX, y: monitor.y - minY }))
 }
 
 // Snap a dragged monitor (logical position) to the edges of the others:
@@ -211,7 +282,7 @@ function snap(monitors, name, x, y, threshold) {
     const size = logicalSize(target)
     let bestX = x, bestY = y, dx = threshold + 1, dy = threshold + 1
     for (const other of monitors) {
-        if (other.name === name || other.disabled) continue
+        if (other.name === name || !shown(other)) continue
         const o = logicalSize(other)
         const xs = [other.x + o.width, other.x - size.width, other.x, other.x + o.width - size.width]
         const ys = [other.y + o.height, other.y - size.height, other.y, other.y + o.height - size.height]
@@ -237,7 +308,7 @@ function placeApart(monitors, name, x, y) {
     for (let pass = 0; pass < 8; ++pass) {
         let moved = false
         for (const other of monitors) {
-            if (other.name === name || other.disabled) continue
+            if (other.name === name || !shown(other)) continue
             const o = logicalSize(other)
             const overlapX = Math.min(px + size.width, other.x + o.width) - Math.max(px, other.x)
             const overlapY = Math.min(py + size.height, other.y + o.height) - Math.max(py, other.y)
@@ -266,7 +337,7 @@ function placeApart(monitors, name, x, y) {
 // screens on the desk out of their places nor come first in their order.
 function spread(monitors, last) {
     const result = monitors.slice()
-    const order = result.map((monitor, index) => index).filter(index => !result[index].disabled)
+    const order = result.map((monitor, index) => index).filter(index => shown(result[index]))
         .sort((a, b) => (result[a].name === last) - (result[b].name === last)
                         || result[a].x - result[b].x || result[a].y - result[b].y)
     const placed = []
@@ -290,7 +361,7 @@ function spread(monitors, last) {
 // screens keep their numbers and their workspaces.
 function placeAfter(monitors, name) {
     const target = monitors.find(monitor => monitor.name === name)
-    const others = monitors.filter(monitor => monitor.name !== name && !monitor.disabled)
+    const others = monitors.filter(monitor => monitor.name !== name && shown(monitor))
     if (!others.length) return target ? { x: Math.round(target.x), y: Math.round(target.y) } : { x: 0, y: 0 }
     return {
         x: Math.max.apply(null, others.map(monitor => monitor.x + logicalSize(monitor).width)),
@@ -326,7 +397,7 @@ function nudge(monitors, name, dx, dy, step, threshold) {
 // wrong screen - which is why the page refuses to apply such a layout and
 // every move goes through placeApart.
 function overlapping(monitors) {
-    const enabled = monitors.filter(monitor => !monitor.disabled)
+    const enabled = monitors.filter(shown)
     for (let i = 0; i < enabled.length; ++i) {
         for (let j = i + 1; j < enabled.length; ++j) {
             const a = enabled[i], b = enabled[j]
@@ -429,12 +500,23 @@ function lidPending(target, live, internalName) {
 // no saved file and an open lid. A missing monitors.json alone is no reason
 // to skip it - logged in at the dock with the lid shut, the panel still has
 // to go off.
-function savedTarget(monitors, saved, internalName, lidClosed, lidKnown) {
-    if (!monitors || !monitors.length || (!saved && !lidClosed)) return null
+//
+// `options` (optional): `project`, a function that lays the display
+// switcher's choice over the base (ProjectionLogic.target) - the lid's
+// adjustment comes after it, as it comes after the file -, and `force`, a
+// plan even without a file and with the lid open (a choice to lay over the
+// monitors, or one to take back). A mirror whose source the lid took is a
+// screen of its own again (settleMirrors): Hyprland stops mirroring a
+// monitor that goes off.
+function savedTarget(monitors, saved, internalName, lidClosed, lidKnown, options) {
+    const extra = options || {}
+    const project = typeof extra.project === "function" ? extra.project : null
+    if (!monitors || !monitors.length || (!saved && !lidClosed && !project && extra.force !== true)) return null
     const base = saved ? applySaved(monitors, saved, internalName) : monitors
-    const adjusted = lidAdjusted(base, internalName, lidClosed)
+    const projected = project ? (project(base) || base) : base
+    const adjusted = lidAdjusted(projected, internalName, lidClosed)
     const pending = !lidKnown && !lidClosed ? lidPending(adjusted, monitors, internalName) : adjusted
-    return { base: base, target: pending, held: pending !== adjusted }
+    return { base: base, target: settleMirrors(pending), held: pending !== adjusted }
 }
 
 // Whether `name` is the laptop panel. DisplayService passes the name it
@@ -471,6 +553,12 @@ function suggestedMode(screenNames, internalName) {
 
 // Persistence: saved settings per monitor, keyed by the connector name it was
 // last kept on.
+//
+// A mirror keeps its own place (where it goes when it stops mirroring) and
+// names its source twice: by connector and by description, so a projector
+// kept as a copy of the laptop panel finds the panel by what it is, as
+// `matchKey` finds an entry. Only a mirror carries the two keys: every other
+// entry is written as it always was.
 function toSaved(monitors) {
     const result = { version: 1, monitors: {} }
     for (const monitor of monitors) {
@@ -480,8 +568,27 @@ function toSaved(monitors) {
             x: monitor.x, y: monitor.y, scale: monitor.scale, transform: monitor.transform,
             vrr: monitor.vrr, disabled: monitor.disabled
         }
+        if (isMirror(monitor)) {
+            const source = monitors.find(other => other.name === monitor.mirror)
+            result.monitors[monitor.name].mirror = monitor.mirror
+            result.monitors[monitor.name].mirrorDescription = source ? String(source.description || "") : ""
+        }
     }
     return result
+}
+
+// The monitor a saved mirror entry names, among the connected ones: by the
+// description where the file has one (a dock hands out connector names in
+// the order it finds its screens), by the connector name otherwise; never
+// the monitor itself. "" when it is not there.
+function savedMirrorSource(entry, monitor, monitors) {
+    if (!entry || typeof entry.mirror !== "string" || !entry.mirror.length) return ""
+    const list = Array.isArray(monitors) ? monitors : []
+    const description = typeof entry.mirrorDescription === "string" ? entry.mirrorDescription : ""
+    const found = (description.length ? list.find(other => other.name !== monitor.name && String(other.description || "") === description) : null)
+        || list.find(other => other.name !== monitor.name && other.name === entry.mirror
+                     && (!description.length || !String(other.description || "").length))
+    return found ? found.name : ""
 }
 
 function hasEntry(entries, key) {
@@ -542,7 +649,7 @@ function withEntry(monitor, entry, internalName) {
         transform: [0, 1, 2, 3].indexOf(entry.transform) >= 0 ? entry.transform : 0,
         vrr: [0, 1, 2].indexOf(entry.vrr) >= 0 ? entry.vrr : 0,
         disabled: entry.disabled === true && (!isPanel(monitor.name, internalName) || entry.lidOpen === true)
-    })
+    }, isMirror(monitor) || isMirror(entry) ? { mirror: "" } : {})
 }
 
 // What Keep writes. Merged into the file rather than replacing it: entries
@@ -611,7 +718,9 @@ function repairSaved(saved, monitors, internalName) {
             entry.disabled = false
             changed = true
         }
-        if (monitor.disabled) continue
+        // A mirror stands at its source's place (Hyprland moves it there):
+        // that is not a position to write back over its own.
+        if (!shown(monitor) || isMirror(entry)) continue
         if (Number(entry.x) === monitor.x && Number(entry.y) === monitor.y) continue
         entry.x = monitor.x
         entry.y = monitor.y
@@ -625,16 +734,24 @@ function repairSaved(saved, monitors, internalName) {
 function applySaved(monitors, saved, internalName) {
     if (!saved || saved.version !== 1 || !saved.monitors) return monitors
     let back
+    let mirrored = false
     const next = monitors.map(monitor => {
         const key = matchKey(saved.monitors, monitor, monitors)
         if (key === null) return monitor
-        const result = withEntry(monitor, saved.monitors[key], internalName)
-        if (saved.monitors[key].disabled === true && !result.disabled) back = monitor.name
+        const entry = saved.monitors[key]
+        let result = withEntry(monitor, entry, internalName)
+        if (entry.disabled === true && !result.disabled) back = monitor.name
+        const source = savedMirrorSource(entry, monitor, monitors)
+        if (source.length) { result = Object.assign(result, { mirror: source }); mirrored = true }
         return result
     })
     // Spread, because the positions in the file may have been computed from
     // widths that were wrong (effectiveScale), and because a mode or scale
     // changed by hand in the file changes a size under its neighbours. A
-    // panel whose saved "off" was not taken goes last (see `spread`).
-    return enabledCount(next) > 0 ? spread(next, back) : monitors
+    // panel whose saved "off" was not taken goes last (see `spread`). A
+    // mirror whose source is off or is a mirror itself is a screen of its
+    // own again (settleMirrors).
+    if (enabledCount(next) <= 0) return monitors
+    const placed = spread(next, back)
+    return mirrored ? settleMirrors(placed) : placed
 }

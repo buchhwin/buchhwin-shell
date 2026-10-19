@@ -3,8 +3,11 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import qs.shell.network
 
-// VPN pill/widget: every VPN connection with its switch.
+// VPN pill/widget: every VPN connection with its switch, and the network
+// drives that need one (NetworkShares: from mountinfo alone, never touched
+// while no VPN is up).
 PopupPanel {
     id: root
     panelId: "vpnPopup"
@@ -34,6 +37,8 @@ PopupPanel {
                 title: "No VPN connections set up yet"
             }
         }
+
+        NetworkShares { Layout.fillWidth: true }
 
         ShellButton {
             focusOnTab: true

@@ -48,8 +48,44 @@ ColumnLayout {
             labelFills: true
             label: "Mute automatically while a game is focused"
             // HyprlandService.gameActive: a Steam game or gamescope in front.
-            hint: "A Steam game or gamescope in front. The Gaming mode turns Do Not Disturb on by itself."
+            hint: "A Steam game or gamescope in front. The Gaming mode turns Do Not Disturb on by itself; Profiles sets that for each mode."
             ShellToggle { focusOnTab: true; checked: SettingsService.value("notifications.suppressGames"); onToggled: value => SettingsService.set("notifications.suppressGames", value) }
+        }
+        // NotificationService.screenShares: a share through the portal
+        // (QuietLogic), not Hyprland's screencast event.
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Mute automatically while sharing the screen"
+            hint: "A screen, window or region shared in a call or with OBS. An urgent one still shows its title, without the text."
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("notifications.suppressSharing"); onToggled: value => SettingsService.set("notifications.suppressSharing", value) }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            label: "Not muted in fullscreen"
+            hint: "Window classes whose fullscreen window lets notifications through, separated by commas. Wfica is the Citrix desktop."
+            StoredTextField {
+                focusOnTab: true
+                Layout.fillWidth: true
+                placeholder: "Wfica"
+                storedText: SettingsService.value("notifications.fullscreenExceptions")
+                onCommit: value => SettingsService.set("notifications.fullscreenExceptions",
+                                                       value.split(/[,\s]+/).filter(part => part.length).join(", "))
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Pop up on another screen instead"
+            hint: "With a fullscreen window on one screen, notifications pop up on a screen without one rather than waiting."
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("notifications.fullscreenElsewhere"); onToggled: value => SettingsService.set("notifications.fullscreenElsewhere", value) }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Summary when Do Not Disturb ends"
+            hint: "And when the automatic muting ends: one notice says how many came meanwhile, with Show."
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("notifications.missedSummary"); onToggled: value => SettingsService.set("notifications.missedSummary", value) }
         }
     }
 
@@ -68,6 +104,42 @@ ColumnLayout {
                 onSelected: value => SettingsService.set("notifications.popupTimeoutMs", parseInt(value))
             }
         }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Play a sound"
+            hint: "A short sound for a notification that pops up, never in Do Not Disturb or while muted. Off per app below."
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("notifications.sounds"); onToggled: value => SettingsService.set("notifications.sounds", value) }
+        }
+    }
+
+    // Off by default: the words of every notification on disk
+    // (NotificationService.keepsHistory, SavedLogic).
+    SettingsSection {
+        Layout.fillWidth: true
+        title: "History"
+        scope: "notifications.keepHistory"
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Keep notifications across restarts"
+            hint: "The newest 50, without pictures or buttons, in a file only you can read. They show under Earlier. Turning it off deletes the file."
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("notifications.keepHistory"); onToggled: value => SettingsService.set("notifications.keepHistory", value) }
+        }
+    }
+
+    // The user's own countdowns (TimerService): their end is shown through
+    // every Do Not Disturb, and heard with this on.
+    SettingsSection {
+        Layout.fillWidth: true
+        title: "Timers"
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Ring when a timer runs out"
+            hint: "The alarm clock sound, in Do Not Disturb too: you started the timer. A Focus session rings the same way at its end."
+            ShellToggle { focusOnTab: true; checked: SettingsService.value("timer.sound"); onToggled: value => SettingsService.set("timer.sound", value) }
+        }
     }
 
     // Per app: the rule the notification centre's bell toggles (Normal,
@@ -77,7 +149,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Apps"
-        description: "Muted apps never pop up. Always urgent ones pop up through everything but a Do Not Disturb you turned on yourself"
+        description: "Muted apps never pop up. Always urgent ones pop up through everything but a Do Not Disturb you turned on yourself, Never muted ones through that too. Teams and Outlook are apps of their own, not the browser's"
         EmptyState {
             Layout.fillWidth: true
             row: true
@@ -97,11 +169,23 @@ ColumnLayout {
                     || ({ key: modelData, name: modelData, rule: "default" })
                 Layout.fillWidth: true
                 label: row.name
+                // The app's sound, while sounds are on (NotificationService.appSound).
+                ShellButton {
+                    readonly property bool sounding: NotificationService.appSound(appRow.modelData)
+                    visible: SettingsService.value("notifications.sounds") === true
+                    focusOnTab: true
+                    compact: true
+                    icon: sounding ? "\u{f057e}" : "\u{f0581}"
+                    variant: sounding ? "ghost" : "surface"
+                    toolTip: sounding ? "Sound on · click to turn it off for this app" : "Sound off · click to turn it on"
+                    onClicked: NotificationService.setAppSound(appRow.modelData, !sounding)
+                }
                 SegmentedControl {
                     focusOnTab: true
                     Layout.fillWidth: true
                     current: appRow.row.rule
-                    options: [{ value: "default", label: "Normal" }, { value: "mute", label: "Muted" }, { value: "critical", label: "Always urgent" }]
+                    options: [{ value: "default", label: "Normal" }, { value: "mute", label: "Muted" },
+                              { value: "critical", label: "Always urgent" }, { value: "always", label: "Never muted" }]
                     onSelected: value => NotificationService.setAppRule(appRow.modelData, value)
                 }
             }

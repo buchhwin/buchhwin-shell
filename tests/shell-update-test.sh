@@ -170,7 +170,7 @@ EOF
 chmod +x "$work/bin/pacman"
 sed -i 's/^packages=($/packages=(\n  testpkg-new testpkg-installed/' "$other/install/packages/arch.sh"
 echo "# test" >> "$other/session/buchhwin-shell-session-wrapper"
-echo "# test" >> "$other/session/pam/buchhwin-lock"
+echo "# test" >> "$other/session/pam/buchhwin-lock.arch"
 gitc -C "$other" commit --quiet -am "feat: a package and system files"
 gitc -C "$other" push --quiet origin HEAD:main
 : > "$work/calls.log"
@@ -180,8 +180,16 @@ check 'grep -q "^pacman -T testpkg-new testpkg-installed$" "$work/calls.log"' "o
 check 'grep -qx "1 new package (testpkg-new): install/bootstrap.sh --apply" "$work/calls.log"' \
   "the notification names the missing one and the command ($(grep -A3 "^notify-send" "$work/calls.log" | tr '\n' '|'))"
 check 'grep -qx "The session entry changed: sudo install/system-install.sh" "$work/calls.log"' "and the changed session entry"
-check 'grep -q "^The lock screen.s PAM files changed" "$work/calls.log"' "and the changed PAM files"
+check 'grep -q "^The lock screen.s PAM files changed" "$work/calls.log"' "and the changed PAM files (Arch's own)"
 check 'grep -qx "1 new package (testpkg-new): install/bootstrap.sh --apply" <<<"$out"' "and the run says it too"
+# another distribution's PAM files are not this system's
+echo "# test" >> "$other/session/pam/buchhwin-lock.suse"
+echo "# test" >> "$other/session/pam/buchhwin-lock-password"
+gitc -C "$other" commit --quiet -am "feat: Leap's and Fedora's PAM files"
+gitc -C "$other" push --quiet origin HEAD:main
+: > "$work/calls.log"
+out=$(BUCHHWIN_DISTRO=arch update apply 2>&1)
+check '! grep -q "PAM files changed" "$work/calls.log"' "on Arch, Leap's and Fedora's PAM files are not named ($(grep -A2 "^notify-send" "$work/calls.log" | tr '\n' '|'))"
 # an update that changes none of it says nothing more
 echo "// more" >> "$other/shell.qml"; gitc -C "$other" commit --quiet -am "feat: only the shell"
 gitc -C "$other" push --quiet origin HEAD:main

@@ -28,7 +28,8 @@ ShellRoot {
     Component.onCompleted: {
         // ---- settings get ------------------------------------------------------------
         T.eq(["weather.locationName", "weather.lat", "weather.lon", "colorPicker.history", "wallpaper.recentFolders",
-              "calendar.hiddenCalendars", "wallpaper.path", "wallpaper.folder", "recording.folder", "launcher.searchUrl"]
+              "calendar.hiddenCalendars", "wallpaper.path", "wallpaper.lightPath", "wallpaper.darkPath", "wallpaper.folder",
+              "recording.folder", "launcher.searchUrl"]
              .filter(path => !I.privateSetting(path)), [], "the place, the histories, the calendars, the paths")
         T.ok(I.privateSetting("weather") && I.privateSetting("calendar") && I.privateSetting("wallpaper"),
              "a group that holds one: its whole object would carry it")

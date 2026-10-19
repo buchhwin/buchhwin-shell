@@ -15,6 +15,8 @@ var catalogue = [
     { type: "bluetooth", label: "Bluetooth", icon: "󰂯", w: 1, h: 2 },
     { type: "vpn", label: "VPN", icon: "󰖂", w: 1, h: 2 },
     { type: "dnd", label: "Do Not Disturb", icon: "󰂚", w: 1, h: 2 },
+    // Offered in the picker, in nobody's layout until added.
+    { type: "stayAwake", label: "Stay awake", icon: "󰅶", w: 1, h: 2 },
     { type: "microphone", label: "Microphone", icon: "󰍬", w: 1, h: 2 },
     { type: "fingerprint", label: "Fingerprint", icon: "󰈷", w: 2, h: 2 },
     { type: "brightness", label: "Brightness", icon: "󰃟", w: 1, h: 3, minH: 2 },
@@ -23,7 +25,11 @@ var catalogue = [
     { type: "audio", label: "Audio", icon: "󰕾", w: 1, h: 5, minH: 2 },
     { type: "drives", label: "Drives", icon: "󰋊", w: 2, h: 2, minW: 2 },
     { type: "phone", label: "Phone", icon: "󰄜", w: 2, h: 2, minW: 2 },
-    { type: "shortcuts", label: "Shortcuts", icon: "󰘳", w: 2, h: 2, minW: 2 }
+    { type: "shortcuts", label: "Shortcuts", icon: "󰘳", w: 2, h: 2, minW: 2 },
+    // The screen zoom and the color filter (ScreenEffectsService): offered
+    // in the picker, on no panel until someone adds them.
+    { type: "zoom", label: "Zoom", icon: "󰍋", w: 1, h: 2 },
+    { type: "colorFilter", label: "Color filter", icon: "󰌁", w: 1, h: 2 }
 ]
 
 function entry(type) {

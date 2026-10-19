@@ -11,6 +11,10 @@ import "overview/OverviewLogic.js" as Overview
 // itself. Every call is safe to repeat: a confirm without an open switcher
 // only remembers the time, because a quick Alt+Tab may deliver the release
 // before the press (separate `quickshell ipc` processes).
+//
+// Minimized windows (services/MinimizeService.qml) are listed after the rest
+// (SwitcherLogic.build), and choosing one brings it back to its workspace:
+// focused where it is, Hyprland would open its special workspace instead.
 Singleton {
     id: root
 
@@ -78,7 +82,9 @@ Singleton {
         }
         const target = selectedWindow
         close()
-        if (target && target.address !== activeAddress) {
+        if (target && target.minimized === true) {
+            MinimizeService.restore(target.address, true, focusDelay)
+        } else if (target && target.address !== activeAddress) {
             pendingFocus = target.address
             focusTimer.restart()
         }
@@ -98,7 +104,9 @@ Singleton {
     function describe() {
         return JSON.stringify({ active: active, loading: loading, count: windows.length, selected: selected,
                                 address: selectedWindow ? selectedWindow.address : "",
-                                appClass: selectedWindow ? selectedWindow.appClass : "" })
+                                appClass: selectedWindow ? selectedWindow.appClass : "",
+                                minimized: windows.filter(window => window.minimized === true).length,
+                                selectedMinimized: selectedWindow ? selectedWindow.minimized === true : false })
     }
 
     // Another panel replaced the switcher (e.g. a hotkey while Alt is held).

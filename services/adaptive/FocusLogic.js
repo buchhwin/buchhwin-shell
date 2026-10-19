@@ -1,4 +1,5 @@
 .pragma library
+.import "../appearance/TimeFormat.js" as TimeFormat
 
 // Focus mode and Do Not Disturb (AdaptiveService). Focus owns the Do Not
 // Disturb it turns on, the way a mode owns its own (LayoutLogic.dndOnModeChange,
@@ -41,4 +42,38 @@ function dndOnFocus(entering, by, active, mode, effects) {
 // clears for a manual one).
 function focusRestored(by, active) {
     return active === true && by === OWNER
+}
+
+// ---- a Focus session ------------------------------------------------------------
+// Focus for a while (AdaptiveService.focusFor: the launcher's "Focus: 25
+// minutes", `buchhwin focus start 25m`): Focus with a countdown of its own,
+// TimerService's "focus" run, whose end ends Focus and rings. Focus mode and
+// the timer stood side by side; together they are the focus session people
+// use, and Focus owning its Do Not Disturb makes the end clean.
+
+// What the control center's chip says: "Off", "On", or the end of the
+// session ("→ 14:25", the time as the clock shows it - `twelve`,
+// TimeFormat). The arrow, not "Until": the chip is one of four in a row, and
+// "Until 22:…" cut off the time, the one thing it is there to say.
+function focusLabel(active, endsAt, twelve) {
+    if (active !== true) return "Off"
+    const end = Number(endsAt)
+    return end > 0 ? "\u2192 " + TimeFormat.time(new Date(end), twelve === true, ":") : "On"
+}
+
+// What a restart does with Focus: "off" when its Do Not Disturb is not
+// there (`focusRestored`), "restore" when it is, and "end" when it is but
+// the session ran out while the shell was away (`sessionEnded`, the overdue
+// countdown TimerService rang at its start): Focus comes back only to end,
+// so its Do Not Disturb goes the way an end on time takes it.
+function restartStep(by, active, sessionEnded) {
+    if (!focusRestored(by, active)) return "off"
+    return sessionEnded === true ? "end" : "restore"
+}
+
+// A session's countdown that outlived its Focus - Focus did not come back
+// after the restart, because the user had changed its Do Not Disturb - goes:
+// it would ring for a session that is not there. "keep" or "drop".
+function sessionAfterRestart(focusActive, hasRun) {
+    return hasRun === true && focusActive !== true ? "drop" : "keep"
 }

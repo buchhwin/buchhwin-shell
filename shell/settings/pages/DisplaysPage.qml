@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../../services/display/DisplayLogic.js" as Display
 
 // Monitor arrangement and per-monitor modes. Changes form a draft; "Apply"
 // applies it and asks to keep it, otherwise it reverts after 15 seconds.
@@ -12,7 +13,12 @@ ColumnLayout {
     spacing: Metrics.pageGap
 
     readonly property var monitors: DisplayService.draft
-    readonly property var enabledMonitors: monitors.filter(monitor => !monitor.disabled)
+    // The monitors with a place on the canvas: on, and not a mirror - a
+    // mirror stands where its source stands and has no rectangle of its own.
+    readonly property var enabledMonitors: monitors.filter(monitor => !monitor.disabled && !(monitor.mirror && monitor.mirror.length))
+    // An external screen is connected: what the brightness section is for.
+    readonly property bool hasExternal: DisplayService.monitors.some(monitor => !Display.isPanel(monitor.name, DisplayService.internalName)
+                                                                     && !Display.isInternal(monitor.name))
 
     // One monitor's settings at a time. Three screens meant three stacked
     // copies of resolution, refresh rate, scale and rotation, and the page was
@@ -31,8 +37,15 @@ ColumnLayout {
     property string dragging: ""
     property var frozen: null          // layout box frozen while dragging
 
-    // Monitors may have come or gone since the page was last on screen.
-    PageActivity { onOpened: DisplayService.refresh() }
+    // Monitors may have come or gone since the page was last on screen. And
+    // the external screens are asked for their brightness (DDC/CI) once,
+    // here: the sliders below are what it is for.
+    PageActivity {
+        onOpened: {
+            DisplayService.refresh()
+            BrightnessService.ddcDemand()
+        }
+    }
 
     function box() {
         if (frozen) return frozen
@@ -196,16 +209,41 @@ ColumnLayout {
             current: root.chosen
             options: root.monitors.map((monitor, index) => ({
                 value: monitor.name,
-                label: (index + 1) + " · " + monitor.name + (monitor.disabled ? " (off)" : "")
+                label: (index + 1) + " · " + monitor.name + (monitor.disabled ? " (off)"
+                    : monitor.mirror && monitor.mirror.length ? " (mirror)" : "")
             }))
             onSelected: value => root.selected = value
+        }
+    }
+
+    // The display switcher's four choices (Super+Shift+P, the projector
+    // key), here for whoever looks for them in Settings: applied at once and
+    // for as long as the same displays are connected - not a draft, so not
+    // while the page holds changes that are not applied yet.
+    SettingsSection {
+        Layout.fillWidth: true
+        visible: root.monitors.length > 1
+        title: "Display switcher"
+        // The key as it is now: Settings > Shortcuts can move it.
+        description: "For a projector or a meeting room's screen: until a display is plugged in or out. "
+            + ShortcutService.keyHint("SUPER + SHIFT + P", true) + " or the projector key."
+
+        SegmentedControl {
+            focusOnTab: true
+            Layout.fillWidth: true
+            compact: true
+            enabledState: !DisplayService.confirming && !DisplayService.dirty
+            current: DisplayService.currentProjection
+            options: DisplayService.projectionChoices.filter(item => item.enabled)
+                .map(item => ({ value: item.value, label: item.label, icon: item.glyph }))
+            onSelected: value => DisplayService.setProjection(value)
         }
     }
 
     // What a section reads in the frame between a monitor going and its
     // section going with it.
     readonly property var noMonitor: ({ name: "", description: "", make: "", model: "", width: 0, height: 0, refresh: 0,
-                                        scale: 1, transform: 0, vrr: 0, x: 0, y: 0, disabled: true, focused: false, modes: [] })
+                                        scale: 1, transform: 0, vrr: 0, x: 0, y: 0, disabled: true, focused: false, mirror: "", modes: [] })
 
     Repeater {
         // A count, like the canvas above and for the same reason: the draft
@@ -217,6 +255,9 @@ ColumnLayout {
             id: monitorSection
             required property int index
             readonly property var monitor: root.monitors[index] || root.noMonitor
+            readonly property bool isMirror: !!monitor.mirror && monitor.mirror.length > 0
+            readonly property var mirrorSources: DisplayService.mirrorChoices(monitor.name)
+            readonly property string ddcStatus: BrightnessService.ddcStatus(monitor.name)
             // One at a time. An invisible item is left out of the layout, so
             // the others cost nothing but their own bindings.
             visible: monitor.name.length > 0 && monitor.name === root.chosen
@@ -231,8 +272,65 @@ ColumnLayout {
                 ShellToggle {
                     focusOnTab: true
                     checked: !monitorSection.monitor.disabled
-                    enabledState: !DisplayService.confirming && (monitorSection.monitor.disabled || root.enabledMonitors.length > 1)
+                    // The last screen with a place of its own stays on; a
+                    // mirror can always go.
+                    enabledState: !DisplayService.confirming && (monitorSection.monitor.disabled || monitorSection.isMirror
+                                                                || root.enabledMonitors.length > 1)
                     onToggled: value => DisplayService.setEnabled(monitorSection.monitor.name, value)
+                }
+            }
+
+            // The same picture as another screen (Hyprland's `mirror`): a
+            // projector showing the laptop's screen. Part of the draft like
+            // everything here, and kept with Keep - the switcher's Duplicate
+            // above is the one for the moment.
+            SettingRow {
+                Layout.fillWidth: true
+                visible: !monitorSection.monitor.disabled && (monitorSection.isMirror || monitorSection.mirrorSources.length > 0)
+                label: "Mirror"
+                hint: "Show the same picture as another display"
+                ShellSelect {
+                    focusOnTab: true
+                    Layout.fillWidth: true
+                    enabledState: !DisplayService.confirming
+                    current: monitorSection.monitor.mirror || ""
+                    options: [{ value: "", label: "Off" }].concat(monitorSection.mirrorSources
+                        .concat(monitorSection.isMirror && monitorSection.mirrorSources.indexOf(monitorSection.monitor.mirror) < 0
+                                ? [monitorSection.monitor.mirror] : [])
+                        .map(name => ({ value: name, label: "Same as " + DisplayService.displayNumber(name) + " · " + name })))
+                    onSelected: value => DisplayService.setMirror(monitorSection.monitor.name, value)
+                }
+            }
+
+            // The screen's own brightness over DDC/CI, for an external screen
+            // that answered (BrightnessService). Written as it moves, the
+            // newest value first; never part of the draft.
+            SettingRow {
+                Layout.fillWidth: true
+                visible: monitorSection.ddcStatus.length > 0 && monitorSection.ddcStatus !== "off"
+                label: "Brightness"
+                hint: monitorSection.ddcStatus === "checking" ? "Asking the display…"
+                    : monitorSection.ddcStatus === "none" ? "This display does not take its brightness over DDC/CI"
+                    : monitorSection.ddcStatus === "missing" ? "Needs ddcutil, which is not installed"
+                    : ""
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: monitorSection.ddcStatus === "ready"
+                    spacing: Metrics.spaceMd
+                    ShellSlider {
+                        Layout.fillWidth: true
+                        focusOnTab: true
+                        accessibleName: "Brightness of " + monitorSection.monitor.name
+                        value: BrightnessService.ddcLevel(monitorSection.monitor.name)
+                        onMoved: value => BrightnessService.setDdc(monitorSection.monitor.name, value)
+                    }
+                    ShellText {
+                        Layout.minimumWidth: Metrics.iconXl
+                        horizontalAlignment: Text.AlignRight
+                        text: Math.round(BrightnessService.ddcLevel(monitorSection.monitor.name) * 100) + "%"
+                        role: "small"; muted: true
+                        font.features: { "tnum": 1 }
+                    }
                 }
             }
 
@@ -294,6 +392,8 @@ ColumnLayout {
                     }
                 }
                 SettingRow {
+                    // A mirror stands where its source stands.
+                    visible: !monitorSection.isMirror
                     label: "Position"
                     ShellText { text: monitorSection.monitor.x + ", " + monitorSection.monitor.y; muted: true }
                 }
@@ -412,6 +512,28 @@ ColumnLayout {
                 options: [{ value: "0", label: "Auto" }, { value: "1.25", label: "125%" }, { value: "1.5", label: "150%" },
                           { value: "1.75", label: "175%" }, { value: "2", label: "200%" }]
                 onSelected: value => SettingsService.set("display.x11Scale", Number(value))
+            }
+        }
+    }
+
+    // The external screens' own brightness (DDC/CI, BrightnessService): on
+    // its own section because it is about the machine, not a monitor, and
+    // shown only while an external screen is there to ask.
+    SettingsSection {
+        Layout.fillWidth: true
+        visible: root.hasExternal
+        title: "External displays"
+        scope: "display.ddc"
+
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Brightness of external displays"
+            hint: "Over DDC/CI, with ddcutil: a slider for each display that answers, and the brightness keys act on the display with the focus. Asked once when a display is plugged in, never polled."
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("display.ddc") !== false
+                onToggled: value => SettingsService.set("display.ddc", value)
             }
         }
     }

@@ -349,6 +349,33 @@ function homes(order, placed, actives) {
     return views(order, placed, actives, [])
 }
 
+// ---- The neighbouring workspace (Super+Page Up/Down, Super+wheel) ---------
+//
+// Where a step goes from `activeId` on one monitor: `pips` are that
+// monitor's `entries` - what its row shows in the session's mode, so a step
+// lands on the pip beside the lit one, the way the eye already went -
+// `direction` is +1 for the next and -1 for the previous one, and `base`
+// is where the monitor's block starts (`offsetFor`). Past the last pip there
+// is one new workspace, and only from one that has windows: GNOME's one
+// empty workspace at the end, never a march into nothing with a wheel that
+// keeps turning, and never out of the monitor's own block, which would land
+// on another screen's numbers. No wrap at either end, as on Windows and
+// GNOME. 0 for nowhere to go.
+function step(pips, activeId, direction, base) {
+    const dir = Number(direction)
+    const active = Math.round(Number(activeId))
+    if (!isFinite(dir) || dir === 0 || !isFinite(active) || active < 1) return 0
+    const list = (Array.isArray(pips) ? pips : []).filter(item => item && typeof item.id === "number" && item.id > 0)
+    const ids = list.map(item => item.id).sort((a, b) => a - b)
+    const beyond = dir > 0 ? ids.filter(id => id > active) : ids.filter(id => id < active).reverse()
+    if (beyond.length) return beyond[0]
+    const current = list.find(item => item.id === active)
+    if (!current || current.occupied !== true) return 0
+    const start = Math.max(0, Math.round(Number(base)) || 0)
+    const next = active + (dir > 0 ? 1 : -1)
+    return next > start && next <= start + perMonitorBlock ? next : 0
+}
+
 // The ids the per-monitor rules were sent for: every block up to the
 // highest one sent since the last config reload (HyprlandService.ruledUpTo).
 // The highest, not the current monitors': a monitor unplugged since keeps

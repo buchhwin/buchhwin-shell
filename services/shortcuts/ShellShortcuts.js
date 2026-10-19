@@ -19,8 +19,13 @@ var ACTIONS = [
     "colorPicker pick", "switcher next", "switcher previous", "switcher confirm",
     "clipboard toggle", "emoji toggle", "recording toggle region", "recording toggle screen",
     "kbdBacklight up", "kbdBacklight down", "kbdBacklight toggle", "brightness up", "brightness down",
-    "audio up", "audio down", "audio mute", "audio micMute",
-    "dock toggle", "startMenu toggle", "startMenu key"
+    "audio up", "audio down", "audio mute", "audio micMute", "audio talk", "osd capsLock",
+    "dock toggle", "startMenu toggle", "startMenu key", "displays toggleSwitcher", "displays key",
+    "sessionApps startWork",
+    "workspaces next", "workspaces previous", "workspaces moveNext", "workspaces movePrevious",
+    "workspaces scroll down", "workspaces scroll up",
+    "zoom increase", "zoom decrease", "zoom reset", "colorFilter toggle",
+    "window keepOnTop", "window minimize", "window restore", "dropdown toggle", "assistant toggle"
 ].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "workspaces switchTo " + n))
  .concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "workspaces move " + n))
 
@@ -29,8 +34,9 @@ var ACTIONS = [
 // can move. The start menu's: `startMenu key` acts only while the dock has a
 // start button (the taskbar) and opens what a click on it opens - its
 // built-in key is Super+Space; `startMenu toggle` is IPC's, which opens the
-// menu even without a dock and is not offered.
-var BINDABLE = ["startMenu key"]
+// menu even without a dock and is not offered. The assistant's has no key of
+// its own: it is there for whoever wants one.
+var BINDABLE = ["startMenu key", "assistant toggle"]
 
 // The touchpad swipes that open a panel (Settings > Input): in a Lua session
 // a swipe's action sends `buchhwin:gestures.run.<name>` (GestureLogic.shortcut)
@@ -41,7 +47,18 @@ var GESTURES = Gestures.actions.filter(action => Gestures.shellAction(action.val
 
 // The shortcuts that act when the key is let go (`release = true` in the
 // bind): Hyprland sends "released" for them, and "pressed" for the rest.
-var ON_RELEASE = ["switcher confirm"]
+var ON_RELEASE = ["switcher confirm", "osd capsLock"]
+
+// The shortcuts that act on both edges of their key - push to talk, on
+// while held: the press and the release each run the action, with `true` or
+// `false` after its arguments (`audio talk(down: bool)`, shell.qml's
+// runShortcut). Should Hyprland not report a release (Super let go before
+// the key), the next press ends the hold (MicLogic.talkStep).
+var HOLD = ["audio talk"]
+
+function holds(name) {
+    return HOLD.map(nameOf).indexOf(String(name)) >= 0
+}
 
 // "launcher toggle" <-> "launcher.toggle": the protocol's id has no spaces.
 function nameOf(action) {
@@ -66,6 +83,7 @@ function onRelease(name) {
 // one of the two events: it acts on whichever arrives.
 function runsOn(name, pressed) {
     if (GESTURES.map(nameOf).indexOf(String(name)) >= 0) return true
+    if (holds(name)) return true
     return onRelease(name) !== pressed
 }
 

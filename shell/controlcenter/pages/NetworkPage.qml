@@ -5,6 +5,7 @@ import qs.theme
 import qs.services
 import qs.shell.components
 import qs.shell.popups
+import qs.shell.network
 
 ColumnLayout {
     id: root
@@ -55,6 +56,10 @@ ColumnLayout {
             }
         }
     }
+
+    // A network that asks to sign in first: the click to its page
+    // (NetworkService.openPortal), as in the network popup.
+    PortalCard { Layout.fillWidth: true }
 
     // The title inside the card and the popup's list height, as on the
     // Bluetooth page and in the network popup.

@@ -39,3 +39,11 @@ function installCommand(scriptPath, wallpaper) {
 function removeCommand(scriptPath) {
     return "sudo " + shellWord(scriptPath) + " --sddm-theme-remove"
 }
+
+// A command as the page shows it: a break allowed after each "/" inside a
+// path (a zero-width space), so the installer's absolute path wraps at a
+// folder: without one in the ~85 characters, the monospace line broke in the
+// middle of a name. Shown only: what is copied is the command itself.
+function shown(command) {
+    return String(command === undefined || command === null ? "" : command).replace(/(\S)\/(?=[^\s\/])/g, "$1/\u200B")
+}

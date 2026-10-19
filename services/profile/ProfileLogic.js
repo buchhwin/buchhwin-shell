@@ -89,17 +89,20 @@ function nextProfile(current, list) {
     return nextIn(current, list)
 }
 
-// Whether automatic switching should be on once this mode is chosen.
-function autoAfter(mode) {
-    return AUTOMATIC.indexOf(String(mode || "")) >= 0
+// Whether automatic switching should be on once this mode is chosen: it is
+// one of the modes the switching itself picks - `automatic`
+// (AutoModeLogic.owned, the user's targets), the shipped two when left out.
+function autoAfter(mode, automatic) {
+    const owned = Array.isArray(automatic) && automatic.length ? automatic : AUTOMATIC
+    return owned.indexOf(String(mode || "")) >= 0
 }
 
 // Everything the mode key does, from what it can see. `null` when there is
 // nothing to cycle through, so the caller can leave the OSD alone.
-function cycleMode(current, list, wasAuto) {
+function cycleMode(current, list, wasAuto, automatic) {
     const mode = nextMode(current, list)
     if (!mode.length) return null
-    const auto = autoAfter(mode)
+    const auto = autoAfter(mode, automatic)
     return { mode: mode, auto: auto, autoChanged: auto !== Boolean(wasAuto) }
 }
 
@@ -207,7 +210,7 @@ function uniqueName(text, taken) {
 //   turned it off because they copy passwords must not have a profile switch
 //   turn the recorders on again;
 // - what the login starts (autostart: this machine's apps, its XDG entries),
-//   how the machine looks for updates and what a new drive does;
+//   how the machine looks for updates and what drives and a full disk say;
 // - whether new Alacritty windows come from one running Alacritty: a way of
 //   running the terminal, not a look of it;
 // - which screens show the dock and the notch, like the displays.
@@ -222,7 +225,9 @@ var GLOBAL_SETTINGS = ["configVersion", "notch.headerAdopted", "desktop.quickSiz
                        "input.disableWhileTyping",
                        "desktop.settingsMoveX", "desktop.settingsMoveY",
                        "power", "lock.fingerprint", "dock.screens", "notch.screens",
-                       "clipboard", "autostart", "updates", "drives", "terminal.alacrittyDaemon"]
+                       "clipboard", "autostart", "updates", "drives", "terminal.alacrittyDaemon",
+                       "notifications.keepHistory", "desktop.worldClocks", "commandWidgets",
+                       "assistant", "sharePicker"]
 
 function isGlobalSetting(path) {
     const text = String(path || "")

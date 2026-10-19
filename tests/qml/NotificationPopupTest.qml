@@ -231,6 +231,7 @@ ShellRoot {
         T.eq(N.dndLabel("off", 0, "", eleven, false), "Off", "off")
         T.eq(N.dndLabel("manual", 0, "", eleven, false), "Until turned off", "the user's own")
         T.eq(N.dndLabel("manual", 0, "gaming", eleven, false), "Until you leave Gaming", "a mode's")
+        T.eq(N.dndLabel("manual", 0, "focus", eleven, false), "Until Focus ends", "Focus's, which ends rather than is left")
         T.eq(N.dndLabel("tomorrow", at(20, 6, 0), "", eleven, false), "Until 06:00 (tomorrow)", "until tomorrow, set the evening before")
         T.eq(N.dndLabel("tomorrow", at(20, 6, 0), "", at(20, 0, 30), false), "Until 06:00",
              "after midnight the same end is today's")

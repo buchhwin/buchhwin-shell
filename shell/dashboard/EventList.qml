@@ -107,6 +107,17 @@ ColumnLayout {
             Accessible.onPressAction: eventRow.activate()
             FocusRing { active: eventRow.activeFocus; controlRadius: eventRow.radius }
 
+            // Under the row's content, so the Join button in it takes its own
+            // clicks; the texts and the glyph take none and the row still
+            // opens on them.
+            MouseArea {
+                id: rowMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: eventRow.activate()
+            }
+
             RowLayout {
                 id: rowLayout
                 anchors.left: parent.left
@@ -133,20 +144,19 @@ ColumnLayout {
                     }
                     ShellText { Layout.fillWidth: true; text: eventRow.modelData.title }
                 }
+                // An online meeting's way in (MeetingJoinButton shows itself
+                // only for an event with a meeting link, until it ends).
+                MeetingJoinButton {
+                    focusOnTab: eventRow.focusOnTab
+                    event: eventRow.modelData
+                    now: clock.date
+                }
                 ShellIcon {
                     glyph: Icons.forward
                     size: Metrics.iconSm
                     color: Colors.subtleText
                     opacity: rowMouse.containsMouse || eventRow.activeFocus ? 1 : 0
                 }
-            }
-
-            MouseArea {
-                id: rowMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: eventRow.activate()
             }
         }
     }

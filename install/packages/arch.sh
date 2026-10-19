@@ -24,6 +24,8 @@ packages=(
   # the ALSA devices WirePlumber finds the sound cards through - without it a
   # system that never had Plasma has an empty volume panel
   brightnessctl wireplumber pipewire pipewire-audio playerctl networkmanager
+  # the alarm clock a timer rings with, and the notification sounds (pw-play)
+  sound-theme-freedesktop
   # PulseAudio clients (Brave, VLC) through PipeWire. Asked for as what it
   # provides (arch_provided_by below), so a system that runs PulseAudio
   # itself keeps it: the two conflict, and pacman would offer to remove it.

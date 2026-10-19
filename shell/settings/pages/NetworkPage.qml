@@ -58,6 +58,17 @@ ColumnLayout {
             text: NetworkService.helperError
             role: "small"; color: Colors.warning; wrapMode: Text.Wrap
         }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Sign-in notice"
+            hint: "A notification when a network asks you to sign in first, as hotel, train and guest Wi-Fi do. The network popup has the button either way."
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("network.portalNotify") !== false
+                onToggled: value => SettingsService.set("network.portalNotify", value)
+            }
+        }
         EmptyState {
             Layout.fillWidth: true
             visible: NetworkService.searching

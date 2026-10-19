@@ -40,9 +40,15 @@ var AUTOSTART_NAME = "buchhwin-shell-apptheme-restore.desktop"
 var GTK_DIRS = ["gtk-3.0", "gtk-4.0"]
 var GTK_HELPER = "apptheme-restore.py"
 
-// "auto" is dark from 19:00 to 07:00 (same rule as theme/Colors.qml).
-function effectiveDark(theme, hours) {
-    return theme === "dark" || (theme === "auto" && (hours >= 19 || hours < 7))
+// "auto" is dark from 19:00 to 07:00, or from sunset to sunrise when
+// Settings > Appearance says so and the sun is known at the weather place:
+// `sunNight` is SunService's answer then (a boolean), and anything else -
+// the clock choice, no place yet - leaves the hours to decide. The one rule
+// for theme/Colors.qml and the apps (AppThemeService).
+function effectiveDark(theme, hours, sunNight) {
+    if (theme === "dark") return true
+    if (theme !== "auto") return false
+    return typeof sunNight === "boolean" ? sunNight : hours >= 19 || hours < 7
 }
 
 function isHex(value) { return /^#[0-9a-fA-F]{6}$/.test(String(value)) }

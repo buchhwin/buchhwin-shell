@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import "power/DimLogic.js" as DimLogic
+import "power/StayAwakeLogic.js" as StayAwakeLogic
 import "lock/LockLogic.js" as LockLogic
 import "display/DisplayLogic.js" as DisplayLogic
 
@@ -22,8 +23,113 @@ Singleton {
     readonly property int suspendMinutes: PowerService.current("suspendMinutes")
     readonly property bool lockBeforeSleep: SettingsService.value("power.lockBeforeSleep")
     readonly property string lidAction: PowerService.current("lidAction")
-    property bool stayAwake: false
     property bool screenOff: false
+
+    // ---- Stay awake --------------------------------------------------------
+    // Screen off, lock and sleep paused (Settings > Power, the battery popup,
+    // the control center's tile and Power page, the launcher, IPC).
+    // `stayAwake` stays the switch every caller knows: set to true it holds
+    // until turned off, as it always did. holdAwake() starts a hold that ends
+    // by itself - after an hour, or when the charger is unplugged
+    // (StayAwakeLogic) - and a shell restart ends any. A hold left on was no
+    // lock and no sleep with nothing to say so, so the clock's hints and the
+    // notch's status show it while it runs.
+    property bool stayAwake: false
+    // "off", "1h", "unplug" or "manual"; `stayAwakeUntil` is the hour's end
+    // (ms since the epoch), `stayAwakeNow` the last time the timer looked.
+    property string stayAwakeMode: "off"
+    property double stayAwakeUntil: 0
+    property double stayAwakeNow: 0
+    // The coffee cup, the glyph the launcher's "Stay awake" already had.
+    readonly property string stayAwakeIcon: "󰅶"
+    // What a quick switch starts: the way the last hold chosen from a list
+    // ended (power.stayAwakeLimit), an hour until there is one.
+    readonly property string stayAwakeLimit: StayAwakeLogic.normalLimit(SettingsService.value("power.stayAwakeLimit"))
+    readonly property string stayAwakeSubtitle: StayAwakeLogic.subtitle(stayAwakeMode, stayAwakeUntil, stayAwakeNow)
+
+    function stayAwakeContext(now) {
+        return { now: now, hasBattery: PowerService.hasBattery, onBattery: PowerService.onBattery }
+    }
+    // Whether a choice can be made now ("until unplugged" needs a charger in).
+    function stayAwakeOffered(mode) {
+        return StayAwakeLogic.offered(mode, stayAwakeContext(Date.now()))
+    }
+
+    // Starts or ends a hold; false for a mode that cannot start now.
+    function holdAwake(mode) {
+        if (lockProcess) return false
+        const now = Date.now()
+        const hold = StayAwakeLogic.start(mode, stayAwakeContext(now))
+        if (!hold) return false
+        stayAwakeMode = hold.mode
+        stayAwakeUntil = hold.until
+        stayAwakeNow = now
+        stayAwake = hold.mode !== "off"
+        armStayAwake()
+        return true
+    }
+    // A hold chosen from a list (the control center, Settings): the next
+    // quick switch ends the same way.
+    function chooseStayAwake(mode) {
+        if (!holdAwake(mode)) return false
+        if (mode !== "off" && SettingsService.defaultOf("power.stayAwakeLimit") !== undefined)
+            SettingsService.set("power.stayAwakeLimit", mode)
+        return true
+    }
+    // A quick switch (the battery popup, the control center's tile): off,
+    // or on the way the last choice ended.
+    function toggleStayAwake() {
+        return holdAwake(stayAwake ? "off" : StayAwakeLogic.quickMode(stayAwakeLimit, stayAwakeContext(Date.now())))
+    }
+
+    // Whoever sets `stayAwake` itself gets what the switch always meant.
+    onStayAwakeChanged: {
+        if (stayAwake && stayAwakeMode === "off") {
+            stayAwakeMode = "manual"
+            stayAwakeUntil = 0
+        } else if (!stayAwake && stayAwakeMode !== "off") {
+            stayAwakeMode = "off"
+            stayAwakeUntil = 0
+        }
+        armStayAwake()
+    }
+
+    // One timer, and only while an hour runs: it wakes at each whole minute
+    // left ("12 min left") and at the end. The end is the wall clock's, and a
+    // resume asks again at once (WallClock.jumped).
+    function armStayAwake() {
+        if (stayAwakeMode !== "1h") {
+            stayAwakeTimer.stop()
+            return
+        }
+        const now = Date.now()
+        stayAwakeNow = now
+        if (StayAwakeLogic.ended({ mode: stayAwakeMode, until: stayAwakeUntil }, stayAwakeContext(now))) {
+            holdAwake("off")
+            return
+        }
+        stayAwakeTimer.interval = StayAwakeLogic.nextCheck(stayAwakeUntil, now)
+        stayAwakeTimer.restart()
+    }
+    Timer {
+        id: stayAwakeTimer
+        onTriggered: root.armStayAwake()
+    }
+    Connections {
+        target: WallClock
+        enabled: root.stayAwakeMode === "1h"
+        function onJumped() { root.armStayAwake() }
+    }
+    // "Until the charger is unplugged": read only while that hold runs. It
+    // ends a moment after the unplug, not inside the change: ending it
+    // changes the mode this very binding reads, which was a binding loop and
+    // left the value standing (testing.md, pitfall 138).
+    readonly property bool stayAwakeUnplugged: stayAwakeMode === "unplug"
+        && StayAwakeLogic.ended({ mode: "unplug" }, stayAwakeContext(0))
+    onStayAwakeUnpluggedChanged: if (stayAwakeUnplugged) Qt.callLater(root.endUnpluggedHold)
+    function endUnpluggedHold() {
+        if (stayAwakeUnplugged) holdAwake("off")
+    }
 
     // The lock screen's process (lock.qml) is never the session: everything
     // below is the shell's, and a second copy there disabled the laptop panel

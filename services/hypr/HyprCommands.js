@@ -57,6 +57,11 @@ function options(map) {
     return { legacy: legacy, legacyEmpty: legacyEmpty, lua: "hl.config(" + render(tree) + ")" }
 }
 
+// A monitor of its own, on. The Lua dialect's hl.monitor keeps what an
+// earlier call for the same output said and the new one leaves out - a
+// monitor switched off stayed off, and a mirror stayed a mirror, under a
+// rule that names a mode and a place (Hyprland 0.56, probed nested) - so
+// both are said every time. The legacy keyword replaces the whole rule.
 function monitor(entry) {
     const name = checkWord(entry.name)
     if (entry.disabled) return { legacy: "keyword monitor " + name + ",disable", legacyEmpty: [], lua: "hl.monitor({ output = " + luaString(name) + ", disabled = true })" }
@@ -67,7 +72,8 @@ function monitor(entry) {
         legacyEmpty: [],
         legacy: "keyword monitor " + name + "," + mode + "," + position + "," + scale + ",transform," + Number(entry.transform) + ",vrr," + Number(entry.vrr),
         lua: "hl.monitor({ output = " + luaString(name) + ", mode = " + luaString(mode) + ", position = " + luaString(position)
-            + ", scale = " + scale + ", transform = " + Number(entry.transform) + ", vrr = " + Number(entry.vrr) + " })"
+            + ", scale = " + scale + ", transform = " + Number(entry.transform) + ", vrr = " + Number(entry.vrr)
+            + ", disabled = false, mirror = \"\" })"
     }
 }
 
@@ -293,6 +299,72 @@ function moveWindowSilent(id, windowAddress) {
         legacy: "movetoworkspacesilent " + number + ",address:" + target,
         lua: "hl.dsp.window.move({ workspace = " + number + ", window = \"address:" + target + "\", follow = false })"
     }
+}
+
+// The active window to a workspace, the view going with it: what
+// Super+Shift+Page Down means by "take the window along" (the Super+Shift+N
+// keys stay where they are; moveActiveSilent).
+function moveActive(id) {
+    const number = Math.round(Number(id))
+    return { legacy: "movetoworkspace " + number, lua: "hl.dsp.window.move({ workspace = " + number + " })" }
+}
+
+// Floating and pinned are toggled, never set: the shell reads the state from
+// `hyprctl -j clients` first and only asks for a change it wants, and a
+// toggle is the one form both dialects are known to take (Super+C's own
+// `togglefloating`, and Hyprland's example config `float({ action =
+// "toggle" })`).
+function toggleFloating(windowAddress) {
+    const target = address(windowAddress)
+    return { legacy: "togglefloating address:" + target,
+             lua: "hl.dsp.window.float({ action = \"toggle\", window = \"address:" + target + "\" })" }
+}
+
+// Shown on every workspace of its monitor, above the tiled windows. Hyprland
+// pins floating windows only (`toggleFloating` first).
+function togglePin(windowAddress) {
+    const target = address(windowAddress)
+    return { legacy: "pin address:" + target,
+             lua: "hl.dsp.window.pin({ action = \"toggle\", window = \"address:" + target + "\" })" }
+}
+
+function pixels(value) {
+    const number = Math.round(Number(value))
+    if (!isFinite(number)) throw new Error("invalid size")
+    return number
+}
+
+// A floating window to an exact size and place, in the global layout's
+// logical pixels (the space `hyprctl monitors` and Quickshell's screens use).
+function resizeExact(windowAddress, width, height) {
+    const target = address(windowAddress)
+    const w = pixels(width), h = pixels(height)
+    if (w < 1 || h < 1) throw new Error("invalid size")
+    return { legacy: "resizewindowpixel exact " + w + " " + h + ",address:" + target,
+             lua: "hl.dsp.window.resize({ x = " + w + ", y = " + h + ", relative = false, window = \"address:" + target + "\" })" }
+}
+
+function moveExact(windowAddress, x, y) {
+    const target = address(windowAddress)
+    const left = pixels(x), top = pixels(y)
+    return { legacy: "movewindowpixel exact " + left + " " + top + ",address:" + target,
+             lua: "hl.dsp.window.move({ x = " + left + ", y = " + top + ", relative = false, window = \"address:" + target + "\" })" }
+}
+
+// A special workspace shown over the focused monitor, or put away again (the
+// drop-down terminal's).
+function toggleSpecial(name) {
+    const word = String(name || "")
+    if (!/^[A-Za-z0-9_-]+$/.test(word)) throw new Error("invalid special workspace: " + word)
+    return { legacy: "togglespecialworkspace " + word, lua: "hl.dsp.workspace.toggle_special(" + luaString(word) + ")" }
+}
+
+// Into a submap of binds, or back to the normal ones with "reset" (the
+// keyboard passthrough).
+function submap(name) {
+    const word = String(name || "")
+    if (!/^[A-Za-z0-9_-]+$/.test(word)) throw new Error("invalid submap: " + word)
+    return { legacy: "submap " + word, lua: "hl.dsp.submap(" + luaString(word) + ")" }
 }
 
 function closeWindow(windowAddress) {

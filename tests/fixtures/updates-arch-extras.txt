@@ -1,0 +1,12 @@
+@news 0
+2026-10-02 example-package >= 2.0-1 update requires manual intervention
+    The example-package package moved its configuration to /etc/example.d. Move your changes over before upgrading.
+    
+    Run the upgrade as usual afterwards.
+2026-09-14 Sample news without a body
+
+@pacnew 0
+/etc/pacman.conf.pacnew
+/etc/locale.gen.pacnew
+
+@end 0

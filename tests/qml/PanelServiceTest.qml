@@ -56,7 +56,9 @@ ShellRoot {
         PairingDialog: "shell/bluetooth/PairingDialog.qml", UnlockDialog: "shell/drives/UnlockDialog.qml",
         ClipboardPanel: "shell/clipboard/ClipboardPanel.qml", WallpaperPicker: "shell/wallpaper/WallpaperPicker.qml",
         SettingsPanel: "shell/settings/SettingsPanel.qml", WelcomePanel: "shell/welcome/WelcomePanel.qml",
-        DockMenu: "shell/dock/DockMenu.qml", StartMenu: "shell/startmenu/StartMenu.qml"
+        DockMenu: "shell/dock/DockMenu.qml", StartMenu: "shell/startmenu/StartMenu.qml",
+        AssistantPanel: "shell/assistant/AssistantPanel.qml", SharePickerPanel: "shell/sharepicker/SharePickerPanel.qml",
+        TrayMenuPopup: "shell/popups/TrayMenuPopup.qml", DisplaySwitcher: "shell/displays/DisplaySwitcher.qml"
     })
     function shellLoaders() {
         const text = read("shell.qml")

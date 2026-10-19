@@ -69,6 +69,10 @@ ShellRoot {
                              bluetooth: { available: false }, dnd: false, volume: { icon: "V", muted: false } }).map(item => item.id),
              ["network", "volume"], "desktop without battery or Bluetooth")
         T.eq(N.statusItems(undefined), [], "no state")
+        T.eq(N.statusItems({ dnd: true, stayAwake: { on: true, icon: "C" }, volume: { icon: "V", muted: false } })
+                 .map(item => item.id + ":" + item.icon), ["dnd:󰂛", "stayAwake:C", "volume:V"],
+             "stay awake after Do Not Disturb, while it holds")
+        T.eq(N.statusItems({ stayAwake: { on: false, icon: "C" } }), [], "and not when it does not")
         const battery = extra => N.statusItems({ battery: Object.assign({ present: true, percent: 12, icon: "B" }, extra) })[0]
         T.eq([battery({ low: true }).low, battery({ low: true }).charging], [true, false], "a low battery")
         T.eq([battery({ low: true, charging: true }).low, battery({ low: true, charging: true }).charging], [false, true],

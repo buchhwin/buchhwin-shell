@@ -70,7 +70,9 @@ Singleton {
     // never open in a session - the dock's menu, the start menu, the tour
     // after the first start, Settings, the dialogs (Wi-Fi password, pairing,
     // drive unlock, event editor), the power menu, the shortcut sheet, the
-    // emoji and wallpaper pickers, the clipboard and notification histories.
+    // emoji and wallpaper pickers, the clipboard and notification histories,
+    // the display switcher. And the assistant and the share picker, which may
+    // never open at all.
     // Each ShellPanel says when it is there.
     //
     // Opening one that is not there asks for it (`demanded`, which its loader
@@ -81,7 +83,8 @@ Singleton {
     // and then nothing opens.
     readonly property var lazyPanels: ["dockMenu", "startMenu", "welcome", "settings", "eventEditor",
                                        "wifiPassword", "pairing", "driveUnlock", "powerMenu", "shortcutSheet",
-                                       "emoji", "wallpaperPicker", "clipboard", "notifications"]
+                                       "emoji", "wallpaperPicker", "clipboard", "notifications", "assistant", "sharePicker", "trayMenu",
+                                       "displaySwitcher"]
     // How many of each panel there are: counted, not flagged, because a
     // loader switched off and on again builds the new one before the old one
     // is gone (it is deleted at the end of the turn), and the old one's

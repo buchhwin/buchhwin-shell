@@ -140,7 +140,7 @@ export PATH="$SB/bin:$PATH" XDG_STATE_HOME="$SB/state" XDG_CONFIG_HOME="$SB/conf
 # test - a terminal or an editor the shell started has them - and would be
 # taken for the session's. So does a nested session's flag.
 unset MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION \
-  QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME \
+  QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO QS_DISABLE_CRASH_HANDLER BUCHHWIN_APP_ENV_UNSET BUCHHWIN_APP_QPA_THEME \
   BUCHHWIN_NESTED BUCHHWIN_NESTED_DIR BUCHHWIN_NESTED_MODE BUCHHWIN_NESTED_SCALE XDG_CACHE_HOME
 : > "$SESSION_ENV"
 echo 0 > "$LINGER"; : > "$PKILLS"
@@ -349,7 +349,7 @@ envcase() {
 has() { grep -qx -- "$2" "$SB/$1.env"; }
 lacks() { ! grep -q -- "^$2=" "$SB/$1.env"; }
 # Everything the shell sets for itself, in the order of the record.
-own_names="MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO"
+own_names="MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO QS_DISABLE_CRASH_HANDLER"
 own_pattern="^(MALLOC|mesa|GALLIUM|QT_WAYLAND_DISABLE|QSG_|QS_|BUCHHWIN_ICON)"
 envcase -u QT_QPA_PLATFORMTHEME QT_QPA_PLATFORMTHEME=kde
 check 'has shell MALLOC_ARENA_MAX=2 && has shell mesa_glthread=false && has shell GALLIUM_THREAD=0 && lacks shell QT_QPA_PLATFORMTHEME' \
@@ -358,6 +358,9 @@ check 'has shell MALLOC_ARENA_MAX=2 && has shell mesa_glthread=false && has shel
 # decorations for windows that never have any, greyscale text.
 check 'has shell MALLOC_CONF=narenas:2,background_thread:true,dirty_decay_ms:1000 && has shell QT_WAYLAND_DISABLE_WINDOWDECORATION=1 && has shell QSG_DISTANCEFIELD_ANTIALIASING=gray' \
   "and with jemalloc's arenas, no decorations and greyscale text ($(grep -E "^(MALLOC_CONF|QT_WAYLAND|QSG_)" "$SB/shell.env" | tr '\n' ' '))"
+# Quickshell's own crash handler off, or a crash never reaches the restart
+# and its count: Quickshell restarts the shell itself, or exits cleanly.
+check 'has shell QS_DISABLE_CRASH_HANDLER=1' "and without Quickshell's crash handler"
 check 'has shell "BUCHHWIN_APP_ENV_UNSET=$own_names" && has shell BUCHHWIN_APP_QPA_THEME=kde' \
   "and records what it changed ($(grep ^BUCHHWIN_APP "$SB/shell.env" | tr '\n' ' '))"
 check '! grep -qE "$own_pattern" "$SB/app.env"' \

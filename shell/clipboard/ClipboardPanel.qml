@@ -4,9 +4,12 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../services/clipboard/PinLogic.js" as Pin
 
 // Super+V: clipboard history. Type to filter, arrows to move, Enter copies
-// the entry back to the clipboard, Delete removes it.
+// the entry back to the clipboard, Delete removes it. Pinned entries come
+// first: Ctrl+P (or a right click) pins the selected entry and unpins a
+// pinned one, and neither "Clear" nor the history's limit touches them.
 ShellPanel {
     id: root
     keyForward: search
@@ -15,15 +18,40 @@ ShellPanel {
     cardWidth: Metrics.launcherWidth
     scrimColor: Colors.scrim
     property int currentIndex: 0
+    // The pins, then the history. Without pins (most of the time) and
+    // without a query this is the service's own list, as it always was.
     readonly property var filtered: {
         const query = search.text.trim().toLowerCase()
-        return query.length ? ClipboardService.entries.filter(entry => entry.text.toLowerCase().includes(query)) : ClipboardService.entries
+        const history = query.length ? ClipboardService.entries.filter(entry => entry.text.toLowerCase().includes(query)) : ClipboardService.entries
+        const pins = Pin.matching(ClipboardService.pinRows, query)
+        return pins.length ? pins.concat(history) : history
     }
 
     function activate(entry) {
         if (!entry) return
-        ClipboardService.copy(entry)
+        if (ClipboardService.isPinned(entry)) ClipboardService.copyPin(entry)
+        else ClipboardService.copy(entry)
         PanelService.close("clipboard")
+    }
+
+    function forget(entry) {
+        if (!entry) return
+        if (ClipboardService.isPinned(entry)) ClipboardService.unpin(entry)
+        else ClipboardService.remove(entry)
+    }
+
+    // A pin refused because the list is full says so on the row for a
+    // moment, as the launcher's refused pins do.
+    property string refusedId: ""
+    Timer { id: refusedTimer; interval: Metrics.osdTimeout; onTriggered: root.refusedId = "" }
+    Connections {
+        target: ClipboardService
+        function onPinRefused() { refusedTimer.restart() }
+    }
+    function togglePin(entry) {
+        if (!entry) return
+        root.refusedId = ClipboardService.isPinned(entry) || !ClipboardService.pinsFull ? "" : entry.id
+        ClipboardService.togglePin(entry)
     }
 
     onWantedChanged: {
@@ -31,6 +59,7 @@ ShellPanel {
             search.text = ""
             currentIndex = 0
             ClipboardService.refresh()
+            ClipboardService.loadPins()
         }
     }
     onFilteredChanged: currentIndex = Math.min(currentIndex, Math.max(0, filtered.length - 1))
@@ -49,17 +78,24 @@ ShellPanel {
                 onAccepted: root.activate(root.filtered[root.currentIndex])
                 Keys.onUpPressed: root.currentIndex = Math.max(0, root.currentIndex - 1)
                 Keys.onDownPressed: root.currentIndex = Math.min(root.filtered.length - 1, root.currentIndex + 1)
-                onDeleteOnEmpty: {
-                    const entry = root.filtered[root.currentIndex]
-                    if (entry) ClipboardService.remove(entry)
+                onDeleteOnEmpty: root.forget(root.filtered[root.currentIndex])
+                onKeyPressed: event => {
+                    if (event.key === Qt.Key_P && (event.modifiers & Qt.ControlModifier)) {
+                        event.accepted = true
+                        root.togglePin(root.filtered[root.currentIndex])
+                    } else {
+                        event.accepted = false
+                    }
                 }
             }
             ShellButton {
                 icon: Icons.remove; text: "Clear"; variant: "ghost"
                 enabledState: ClipboardService.entries.length > 0
                 // The whole history and its thumbnails, for good: it asks
-                // twice, as "Clear history" in Settings does.
-                confirm: true; confirmText: "Clear all?"
+                // twice, as "Clear history" in Settings does. The pins stay,
+                // which is what they are for, and the question says so.
+                toolTip: ClipboardService.pins.length ? "Pinned entries stay" : ""
+                confirm: true; confirmText: "Clear history?"
                 onClicked: ClipboardService.wipe()
             }
         }
@@ -87,6 +123,12 @@ ShellPanel {
                     required property var modelData
                     required property int index
                     readonly property bool selected: index === root.currentIndex
+                    readonly property bool pinned: ClipboardService.isPinned(modelData)
+                    // The last pin, with history under it: a line between
+                    // the two lists, or a pinned entry and its copy in the
+                    // history read as one list with a duplicate.
+                    readonly property bool lastPin: pinned && index + 1 < root.filtered.length
+                        && !ClipboardService.isPinned(root.filtered[index + 1])
                     width: list.width
                     implicitHeight: modelData.image ? Metrics.coverSize + Metrics.spaceSm * 2 : Metrics.rowHeight
                     // The same shape and the same card-aware hover as ListRow, which
@@ -100,7 +142,12 @@ ShellPanel {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.activate(row.modelData)
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        // Right-click pins, as it pins an app in the launcher.
+                        onClicked: mouse => {
+                            if (mouse.button === Qt.RightButton) root.togglePin(row.modelData)
+                            else root.activate(row.modelData)
+                        }
                     }
 
                     RowLayout {
@@ -112,7 +159,7 @@ ShellPanel {
                         ShellIcon {
                             visible: !row.modelData.image
                             Layout.preferredWidth: Metrics.iconLg
-                            glyph: "󰦨"
+                            glyph: row.pinned ? Icons.pin : "󰦨"
                             size: Metrics.iconMd
                             // On the selected row's tint: the inks measured on
                             // it (accentForeground and mutedText are measured
@@ -144,16 +191,42 @@ ShellPanel {
                             muted: row.modelData.image
                             color: !muted ? Colors.text : row.selected ? Colors.mutedOnSoft : Colors.mutedText
                         }
+                        // A pinned picture has no glyph to say so; the mark
+                        // goes beside its text instead.
+                        ShellIcon {
+                            visible: row.pinned && row.modelData.image
+                            glyph: Icons.pin
+                            size: Metrics.iconSm
+                            color: row.selected ? Colors.accentOnSoft : Colors.mutedText
+                        }
+                        ShellText {
+                            visible: root.refusedId.length > 0 && root.refusedId === row.modelData.id && !row.pinned
+                            text: "At most " + ClipboardService.pinLimit + " pinned"
+                            role: "small"
+                            color: row.selected ? Colors.mutedOnSoft : Colors.mutedText
+                        }
                         // Deleted for good - `cliphist delete` and the
                         // thumbnail - so the trash can (Icons.remove), not the
                         // dismiss cross. One click, as every row's own remove
                         // in the shell takes and as Del on the selected row
                         // does; only "Clear" above, the whole history, asks.
+                        // A pinned row unpins instead: its copy goes, the
+                        // history keeps what it has.
                         ShellButton {
-                            toolTip: "Remove from history"
-                            icon: Icons.remove; variant: "ghost"; compact: true
-                            onClicked: ClipboardService.remove(row.modelData)
+                            toolTip: row.pinned ? "Unpin" : "Remove from history"
+                            icon: row.pinned ? Icons.unpin : Icons.remove; variant: "ghost"; compact: true
+                            onClicked: root.forget(row.modelData)
                         }
+                    }
+                    Rectangle {
+                        visible: row.lastPin
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.leftMargin: Metrics.spaceMd
+                        anchors.rightMargin: Metrics.spaceMd
+                        height: Metrics.borderWidth
+                        color: Colors.border
                     }
                 }
             }
@@ -163,7 +236,9 @@ ShellPanel {
         // would fill it; the panel says what is the matter instead and leads
         // to the switch (Settings > Desktop extras). Two states rather than
         // one with a hidden button: a hidden action still takes its row.
-        readonly property bool historyOff: root.filtered.length === 0 && !ClipboardService.loading
+        // Pins are kept with the history off too, and the notice goes under
+        // them rather than away.
+        readonly property bool historyOff: ClipboardService.entries.length === 0 && !ClipboardService.loading
             && !search.text.length && !ClipboardService.enabled
         EmptyState {
             Layout.fillWidth: true
@@ -182,13 +257,13 @@ ShellPanel {
                 icon: Icons.settings
                 text: "Clipboard settings"
                 compact: true
-                onClicked: PanelService.open("settings", { page: "desktop" })
+                onClicked: PanelService.open("settings", { page: "desktop", section: "Clipboard" })
             }
         }
 
         ShellText {
             Layout.fillWidth: true
-            text: "Enter copies · Del deletes · Esc closes"
+            text: "Enter copies · Ctrl+P pins · Del deletes · Esc closes"
             role: "caption"
             horizontalAlignment: Text.AlignHCenter
         }

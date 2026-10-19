@@ -35,7 +35,15 @@ var catalogue = [
     // three meters with nothing to read them by is not a readout - hence the
     // minimums.
     { type: "media", label: "Playing", icon: "󰎆", w: 1, h: 3, minH: 2 },
-    { type: "system", label: "System", icon: "󰻠", w: 1, h: 3, minH: 2 }
+    { type: "system", label: "System", icon: "󰻠", w: 1, h: 3, minH: 2 },
+    // Two more to add, neither on a dashboard by default: a few places and
+    // their time (shell/dashboard/WorldClockCard.qml), and one plain text
+    // file of notes (NotesCard.qml). Three rows hold a heading and three
+    // places, or the editor's search and two of its finds; two rows hold a
+    // heading, a place and how many more there are. A note below two rows is
+    // a heading without room to type.
+    { type: "worldClock", label: "World clock", icon: "\u{f01e7}", w: 1, h: 3, minH: 2 },
+    { type: "notes", label: "Notes", icon: "\u{f082e}", w: 1, h: 3, minH: 2 }
 ]
 
 function entry(type) {

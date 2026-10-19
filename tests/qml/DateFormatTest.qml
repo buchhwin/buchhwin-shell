@@ -53,6 +53,55 @@ ShellRoot {
         T.eq(F.date(day, Qt.locale("en_GB"), "year"), "Monday, 19 October 2026", "en_GB with the year")
         T.eq(F.date(null, Qt.locale("en_US"), "long"), "", "no date, no words")
 
+        // ---- the order Settings chooses -------------------------------------------
+        // "locale" and an order this file does not know are the locale's own.
+        T.eq(F.pattern("dddd, MMMM d, yyyy", "long", "locale"), "dddd, MMMM d", "locale: en_US as it is")
+        T.eq(F.pattern("dddd, MMMM d, yyyy", "long", "sideways"), "dddd, MMMM d", "an unknown order is the locale's")
+        T.eq(F.pattern("dddd, MMMM d, yyyy", "long", "dayMonth"), "dddd, d MMMM", "day first on en_US")
+        T.eq(F.pattern("dddd, d MMMM yyyy", "long", "monthDay"), "dddd, MMMM d", "month first on en_GB")
+        T.eq(F.pattern("dddd, d. MMMM yyyy", "long", "dayMonth"), "dddd, d. MMMM",
+             "de_DE asked for its own order keeps its full stop")
+        T.eq(F.pattern("dddd, d MMMM yyyy", "long", "dayMonth"), "dddd, d MMMM", "en_GB asked for its own order")
+        T.eq(F.pattern("dddd, MMMM d, yyyy", "short", "dayMonth"), "ddd, d MMM", "short, day first")
+        T.eq(F.pattern("dddd, d MMMM yyyy", "day", "monthDay"), "MMMM d", "without the weekday, month first")
+        T.eq(F.pattern("dddd, MMMM d, yyyy", "year", "dayMonth"), "dddd, d MMMM yyyy", "with the year, day first")
+        T.eq(F.pattern("dddd, d MMMM yyyy", "year", "monthDay"), "dddd, MMMM d, yyyy", "with the year, month first")
+        T.eq(F.pattern("dddd, d MMMM yyyy", "year", "dayMonth"), "dddd, d MMMM yyyy", "with the year in its own order")
+        T.eq(F.pattern("yyyy年M月d日dddd", "long", "dayMonth"), "dddd, d MMMM", "ja_JP the other way round")
+        T.eq(F.pattern("", "long", "dayMonth"), "dddd, d MMMM", "no pattern, day first")
+        T.eq([F.wantsDayFirst("dayMonth", "dddd, MMMM d, yyyy"), F.wantsDayFirst("monthDay", "dddd, d MMMM yyyy"),
+              F.wantsDayFirst("locale", "dddd, d MMMM yyyy"), F.wantsDayFirst(undefined, "dddd, MMMM d, yyyy")],
+             [true, false, true, false], "which comes first, asked")
+        T.eq(F.ORDERS, ["locale", "dayMonth", "monthDay"], "the three choices")
+
+        // ---- numbers ----------------------------------------------------------------
+        T.eq(F.numericPattern("dd/MM/yyyy", true), "d/M", "en_GB's short date without the year")
+        T.eq(F.numericPattern("M/d/yy", false), "M/d", "en_US's")
+        T.eq(F.numericPattern("dd.MM.yy", true), "d.M.", "de_DE's, with the full stop after the month")
+        T.eq(F.numericPattern("M/d/yy", true), "d.M.", "day first where the locale writes month first")
+        T.eq(F.numericPattern("dd/MM/yyyy", false), "M/d", "and month first where it writes day first")
+        T.eq(F.numericPattern("yyyy/MM/dd", false), "M/d", "ja_JP: a year in front")
+        T.eq(F.numericPattern("", true), "d.M.", "no short pattern")
+        T.eq(F.pattern("dddd, d MMMM yyyy", "numeric", "locale", "dd/MM/yyyy"), "d/M", "the numeric form")
+        T.eq(F.pattern("dddd, d MMMM yyyy", "short", "locale", "dd/MM/yyyy", true), "ddd d/M", "the short form in numbers")
+        T.eq(F.pattern("dddd, d MMMM yyyy", "short", "locale", "dd/MM/yyyy", false), "ddd, d MMM", "and in words")
+        T.eq(F.pattern("dddd, d MMMM yyyy", "long", "locale", "dd/MM/yyyy", true), "dddd, d MMMM",
+             "numbers change only the short form")
+
+        // ---- the real locales, asked for an order ------------------------------------
+        T.eq(F.date(day, Qt.locale("en_GB"), "long", "monthDay"), "Monday, October 19", "en_GB month first")
+        T.eq(F.date(day, Qt.locale("en_US"), "long", "dayMonth"), "Monday, 19 October", "en_US day first")
+        T.eq(F.date(day, Qt.locale("de_DE"), "long", "monthDay"), "Montag, Oktober 19", "de_DE month first, German words")
+        T.eq(F.date(day, Qt.locale("en_US"), "year", "dayMonth"), "Monday, 19 October 2026", "en_US day first with the year")
+        T.eq(F.date(day, Qt.locale("en_GB"), "long", "locale"), "Monday, 19 October", "en_GB as the language says")
+        T.eq(F.date(day, Qt.locale("en_GB"), "numeric"), "19/10", "en_GB in numbers")
+        T.eq(F.date(day, Qt.locale("en_US"), "numeric"), "10/19", "en_US in numbers")
+        T.eq(F.date(day, Qt.locale("de_DE"), "numeric"), "19.10.", "de_DE in numbers")
+        T.eq(F.date(new Date(2026, 9, 9), Qt.locale("en_US"), "numeric", "dayMonth"), "9.10.", "one digit where one is enough")
+        T.eq(F.date(day, Qt.locale("en_GB"), "short", "locale", true), "Mon 19/10", "en_GB short in numbers")
+        T.eq(F.date(day, Qt.locale("en_US"), "short", "dayMonth", true), "Mon 19.10.", "en_US short, day first, in numbers")
+        T.eq(F.date(day, Qt.locale("en_GB"), "short", "locale", false), "Mon, 19 Oct", "short in words as before")
+
         T.finish("DateFormatTest")
     }
 }

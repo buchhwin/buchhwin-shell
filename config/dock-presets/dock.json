@@ -10,7 +10,8 @@
     "iconSize": 48,
     "margin": 8,
     "showRunning": true,
-    "magnification": false
+    "magnification": false,
+    "activeClick": "cycle"
   },
   "layout": {
     "left": [],

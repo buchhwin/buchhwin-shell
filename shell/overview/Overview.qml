@@ -18,6 +18,11 @@ import "SelectionLogic.js" as Selection
 // close it; click a workspace to switch to it, drag a window onto another
 // workspace to move it there.
 //
+// Minimized windows (services/MinimizeService.qml) are on special workspaces
+// no card shows: they have a row of their own under the cards - a click or
+// Enter brings one back to its workspace, a drag onto a card brings it back
+// there, and a window dragged onto that row is minimized.
+//
 // A ShellPanel without its chrome (`showCard: false`): the overview fills the
 // screen and draws its own dark backdrop, but focus, Escape, the scrim, the
 // click outside and the open and close transition are the panel system's, not
@@ -46,7 +51,12 @@ ShellPanel {
     // workspace cards (SelectionLogic.stops). `selected` is an index into
     // them and `selectedKey` the stop it is on, so the selection stays on a
     // window or a card while the list changes around it.
-    readonly property var stops: Selection.stops(groups, search.text)
+    readonly property var stops: Selection.stops(groups, search.text, minimized)
+    // The minimized windows (OverviewLogic.minimizedWindows), keyed by address.
+    property var minimized: []
+    // A window's thumbnail is being dragged: the minimized row is there to
+    // take it even while it is empty.
+    property bool draggingWindow: false
     property int selected: 0
     property string selectedKey: ""
     // Until a key moves the selection, it is on the first window: Enter
@@ -111,16 +121,25 @@ ShellPanel {
         selectedKey = stops.length ? stops[selected].key : ""
         navigated = true
     }
-    // Enter: a window is focused, a workspace (or the new one) switched to.
+    // Enter: a window is focused, a workspace (or the new one) switched to, a
+    // minimized window brought back.
     function activate(stop) {
         if (!stop) return
         if (stop.kind === "window") focusWindow(stop.window)
+        else if (stop.kind === "minimized") restoreWindow(stop.window)
         else afterClose(HyprCompat.commands.workspace(stop.workspace))
+    }
+    // Back to its workspace now, to the front once the overview has let the
+    // keyboard go (MinimizeService.restore's delay).
+    function restoreWindow(entry) {
+        if (!entry) return
+        MinimizeService.restore(entry.address, true, Animations.overviewDispatchDelay)
+        PanelService.close("overview")
     }
     // Delete: a window is closed, a workspace card does what its × does.
     function remove(stop) {
         if (!stop) return
-        if (stop.kind === "window") dispatch(HyprCompat.commands.closeWindow(stop.window.address))
+        if (stop.kind === "window" || stop.kind === "minimized") dispatch(HyprCompat.commands.closeWindow(stop.window.address))
         else if (stop.kind === "card" && stop.closable && HyprlandService.keepsEmpty) closeCard(stop.entry)
     }
     // The ×, by click or by Delete. A workspace with windows only asks the
@@ -151,6 +170,8 @@ ShellPanel {
 
     onWantedChanged: {
         armedWorkspace = -1
+        // A thumbnail closed in the middle of a drag never says it ended.
+        draggingWindow = false
         if (!wanted) return
         search.text = ""
         navigated = false
@@ -212,9 +233,13 @@ ShellPanel {
                     if (JSON.stringify(monitors) !== JSON.stringify(window.monitors)) window.monitors = monitors
                     if (JSON.stringify(workspaces) !== JSON.stringify(window.workspaces))
                         window.workspaces = Keyed.keep(window.workspaces, workspaces, "id", { windows: "address" })
+                    const minimized = Logic.minimizedWindows(data.clients)
+                    if (JSON.stringify(minimized) !== JSON.stringify(window.minimized))
+                        window.minimized = Keyed.keep(window.minimized, minimized, "address")
                 } catch (error) {
                     window.monitors = []
                     window.workspaces = []
+                    window.minimized = []
                 }
             }
         }
@@ -658,7 +683,10 @@ ShellPanel {
                                                 x = Qt.binding(() => homeX + Metrics.spaceXxs)
                                                 y = Qt.binding(() => homeY + Metrics.spaceXxs)
                                             }
-                                            onDraggingChanged: if (!dragging) Qt.callLater(rehome)
+                                            onDraggingChanged: {
+                                                window.draggingWindow = dragging
+                                                if (!dragging) Qt.callLater(rehome)
+                                            }
                                             Timer {
                                                 interval: Animations.overviewSentTimeout
                                                 running: thumb.sent
@@ -749,6 +777,159 @@ ShellPanel {
                                     }
                                 }
                             }
+                            }
+                        }
+                    }
+                }
+
+                // The minimized windows, under every monitor's row: a chip
+                // each, the one used last first. A click (or Enter on it)
+                // brings it back to its workspace, a middle click closes it, a
+                // drag onto a card brings it back there (the card's DropArea
+                // moves it). A window dragged onto this row is minimized - the
+                // row is there for that while a window is dragged, even empty.
+                ColumnLayout {
+                    id: minimizedRow
+                    width: cards.width
+                    visible: window.minimized.length > 0 || window.draggingWindow
+                    spacing: Metrics.spaceSm
+
+                    ShellText {
+                        text: "Minimized"
+                        role: "label"
+                        color: Colors.scrimMutedText
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Math.max(Metrics.rowHeight, minimizedFlow.implicitHeight) + Metrics.spaceSm * 2
+                        radius: Metrics.radiusCard
+                        color: minimizedDrop.containsDrag ? Colors.accentSoft : "transparent"
+                        border.width: minimizedDrop.containsDrag ? Metrics.focusBorderWidth : Metrics.borderWidth
+                        border.color: minimizedDrop.containsDrag ? window.scrimAccent : Colors.panelBorder
+
+                        DropArea {
+                            id: minimizedDrop
+                            anchors.fill: parent
+                            keys: ["buchhwin-window"]
+                            onDropped: drag => {
+                                if (drag.source.minimized !== true && MinimizeService.minimize(drag.source.address)) {
+                                    drag.source.sent = true
+                                    refreshTimer.restart()
+                                }
+                                drag.acceptProposedAction()
+                            }
+                        }
+
+                        ShellText {
+                            anchors.centerIn: parent
+                            visible: window.minimized.length === 0
+                            text: "Drop a window here to minimize it"
+                            role: "small"
+                            color: Colors.scrimMutedText
+                        }
+
+                        Flow {
+                            id: minimizedFlow
+                            x: Metrics.spaceSm
+                            y: Metrics.spaceSm
+                            width: parent.width - Metrics.spaceSm * 2
+                            spacing: Metrics.spaceSm
+
+                            Repeater {
+                                model: ScriptModel { values: window.shown ? window.minimized : []; objectProp: "address" }
+
+                                Rectangle {
+                                    id: chip
+                                    required property var modelData
+                                    // What a card's DropArea reads off a dragged window.
+                                    readonly property string address: modelData.address
+                                    readonly property int workspaceId: -1
+                                    readonly property bool minimized: true
+                                    property bool sent: false
+                                    readonly property bool dragging: chipMouse.drag.active
+                                    readonly property bool isSelected: !!window.selectedStop && window.selectedStop.kind === "minimized"
+                                        && window.selectedStop.key === "m:" + modelData.address
+                                    readonly property var entry: DesktopEntries.heuristicLookup(modelData.appClass)
+                                    visible: Logic.matches(modelData, search.text) && !sent
+                                    width: Metrics.overviewCardMinWidth
+                                    height: Metrics.rowHeight
+                                    z: dragging ? 10 : 0
+                                    radius: Metrics.radiusInner
+                                    color: Colors.panelFor("overview")
+                                    border.width: isSelected || chipHover.hovered ? Metrics.focusBorderWidth : Metrics.borderWidth
+                                    border.color: isSelected ? Colors.scrimText : chipHover.hovered ? Colors.borderStrong : Colors.panelBorder
+                                    Drag.active: chipMouse.drag.active
+                                    Drag.keys: ["buchhwin-window"]
+                                    Drag.source: chip
+                                    Drag.hotSpot.x: width / 2
+                                    Drag.hotSpot.y: height / 2
+                                    // Above the cards while dragged, as a thumbnail is.
+                                    states: State {
+                                        when: chip.dragging
+                                        ParentChange { target: chip; parent: dragLayer }
+                                    }
+                                    Timer {
+                                        interval: Animations.overviewSentTimeout
+                                        running: chip.sent
+                                        onTriggered: chip.sent = false
+                                    }
+
+                                    HoverHandler { id: chipHover }
+
+                                    Image {
+                                        id: chipIcon
+                                        x: Metrics.spaceSm
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: Metrics.iconLg
+                                        height: Metrics.iconLg
+                                        source: LauncherService.iconSource([chip.entry ? chip.entry.icon : "", chip.modelData.appClass])
+                                        sourceSize.width: Metrics.iconLg * 2
+                                        sourceSize.height: Metrics.iconLg * 2
+                                        fillMode: Image.PreserveAspectFit
+                                        asynchronous: true
+                                    }
+                                    // On the chip's panel fill, so the panel's
+                                    // inks: the scrim's white would vanish on
+                                    // a light panel.
+                                    Column {
+                                        anchors.left: chipIcon.right
+                                        anchors.right: parent.right
+                                        anchors.leftMargin: Metrics.spaceSm
+                                        anchors.rightMargin: Metrics.spaceSm
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        ShellText {
+                                            width: parent.width
+                                            text: chip.modelData.title || (chip.entry ? chip.entry.name : "") || chip.modelData.appClass || "Window"
+                                            role: "small"
+                                            elide: Text.ElideRight
+                                        }
+                                        ShellText {
+                                            width: parent.width
+                                            visible: text.length > 0
+                                            text: chip.modelData.label
+                                            role: "caption"
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: chipMouse
+                                        anchors.fill: parent
+                                        acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+                                        cursorShape: Qt.PointingHandCursor
+                                        drag.target: chip
+                                        drag.threshold: Metrics.dragThreshold
+                                        onReleased: if (drag.active) chip.Drag.drop()
+                                        onClicked: event => {
+                                            if (event.button === Qt.MiddleButton) window.dispatch(HyprCompat.commands.closeWindow(chip.address))
+                                            else window.restoreWindow(chip.modelData)
+                                        }
+                                    }
+
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: "Restore " + (chip.modelData.title || "window")
+                                }
                             }
                         }
                     }

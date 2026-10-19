@@ -24,6 +24,8 @@ ShellRoot {
              ["dnf", "zypper", "pacman", ""], "package tool")
         T.eq(D.installCommand("arch", "wf-recorder"), "sudo pacman -S wf-recorder", "Arch install command")
         T.eq(D.installCommand("arch", "hyprland-guiutils"), "sudo pacman -S hyprland-guiutils", "Arch packages Hyprland's dialogs")
+        T.eq([D.installCommand("arch", "ollama"), D.installCommand("fedora", "ollama"), D.installCommand("opensuse", "ollama")],
+             ["sudo pacman -S ollama", "sudo dnf install ollama", ""], "Ollama for the assistant, where it is packaged")
         T.eq(D.installCommand("fedora", "wf-recorder"), "sudo dnf install wf-recorder", "Fedora install command")
         T.eq(D.installCommand("opensuse", "wf-recorder"), "sudo zypper install wf-recorder", "openSUSE install command")
         T.eq(D.installCommand("opensuse", "hyprland-guiutils"), "", "no package, no command")

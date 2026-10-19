@@ -7,6 +7,7 @@ holds the reading of them to account, in the shapes that used to be misread
 not read at all (the Lua's `hl.bind` calls, and its workspace loop).
 """
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "lib"))
@@ -33,6 +34,8 @@ check(checks.ipc_action("bindel = , XF86MonBrightnessUp, exec, brightnessctl set
 check(checks.conf_bind("bindm = SUPER, mouse:272, movewindow")[0] == "m", "the flags are read")
 check(checks.conf_bind("bindd = SUPER, D, Launcher, exec, x")[3] == "exec", "the dispatcher of a described bind")
 check(checks.conf_bind("layerrule = blur on, match:namespace ^(x)$") is None, "a line that is not a bind")
+check(checks.global_action_of("buchhwin:audio.talk") == "audio talk", "a conf bind on the shell's global shortcut names its action")
+check(checks.global_action_of("otherapp:thing") is None, "another program's global shortcut is no shell action")
 
 # ---- the Lua dialect -------------------------------------------------------
 LUA = '''
@@ -106,6 +109,69 @@ volume_lua = [(("key", "", "XF86AUDIORAISEVOLUME"), ("", "XF86AUDIORAISEVOLUME")
 check(checks.bind_drift(volume_conf, volume_lua) == [], "a volume key the conf runs as wpctl and the Lua sends to the shell is no drift")
 other_lua = [(("key", "", "XF86AUDIORAISEVOLUME"), ("", "XF86AUDIORAISEVOLUME"), "launcher toggle", "hyprland.lua:1")]
 check(len(checks.bind_drift(volume_conf, other_lua)) == 1, "any other shell action against a plain command still is")
+
+# ---- submaps -----------------------------------------------------------------
+# A bind inside a submap is a key of that submap, in both dialects: the
+# keyboard passthrough's way out is the key that leads into it, and no
+# duplicate of it.
+SUBMAP_LUA = '''
+hl.bind(keyFor("SUPER + Escape"), hl.dsp.submap("passthrough"), { description = "In" })
+hl.define_submap("passthrough", function()
+    hl.bind(keyFor("SUPER + Escape"), hl.dsp.submap("reset"), { description = "Out" })
+end)
+hl.bind(keyFor("SUPER + F"), hl.dsp.window.fullscreen(), { description = "After" })
+'''
+SUBMAPPED = [("key", "SUPER", "ESCAPE"), ("key", "SUPER", "ESCAPE", "passthrough"), ("key", "SUPER", "F")]
+submapped = checks.lua_binds(SUBMAP_LUA)
+check([namespace for namespace, _, _, _ in submapped] == SUBMAPPED,
+      f"a Lua bind in a submap is that submap's, the one after it the normal map's: {submapped}")
+check(checks._bind_problems(submapped)[0] == [], "the same key in and out of a submap is no duplicate")
+with tempfile.TemporaryDirectory() as folder:
+    (Path(folder) / "hypr").mkdir()
+    (Path(folder) / "hypr" / "keybinds.conf").write_text(
+        "bind = SUPER, Escape, submap, passthrough\nsubmap = passthrough\nbind = SUPER, Escape, submap, reset\n"
+        "submap = reset\nbind = SUPER, F, fullscreen, 0\n")
+    root, checks.ROOT = checks.ROOT, Path(folder)
+    try:
+        conf_submapped = checks.conf_binds()
+    finally:
+        checks.ROOT = root
+check([namespace for namespace, _, _, _ in conf_submapped] == SUBMAPPED,
+      f"and a conf bind between `submap = NAME` and `submap = reset`: {conf_submapped}")
+check(checks.bind_drift(conf_submapped, submapped) == [], "the two dialects' submaps agree")
+
+# ---- the shell's side of a Lua key ------------------------------------------
+# A Lua key reaches the shell as a global shortcut, which shell.qml answers
+# through `shortcutTargets`: an IpcHandler left out of it is a key that only
+# logs "unknown shortcut", though `ipc call` (the conf dialect) works.
+TARGETS_QML = """ShellRoot {
+    IpcHandler {
+        id: alphaIpc
+        target: "alpha"
+        function go(): void {}
+    }
+    IpcHandler {
+        id: betaIpc
+        target: "beta"
+        function go(): void {}
+    }
+    readonly property var shortcutTargets: ({
+        alpha: alphaIpc
+    })
+}
+"""
+with tempfile.TemporaryDirectory() as folder:
+    (Path(folder) / "services" / "shortcuts").mkdir(parents=True)
+    (Path(folder) / "services" / "shortcuts" / "ShellShortcuts.js").write_text('var ACTIONS = [\n    "alpha go", "beta go"\n]\n\n')
+    (Path(folder) / "shell.qml").write_text(TARGETS_QML)
+    root, checks.ROOT = checks.ROOT, Path(folder)
+    try:
+        unreached = checks.shortcut_problems('hl.bind(keyFor("SUPER + A"), shell("alpha go"), {})\n'
+                                             'hl.bind(keyFor("SUPER + B"), shellOr("beta go", x), {})\n')
+    finally:
+        checks.ROOT = root
+check(len(unreached) == 1 and '"beta"' in unreached[0] and "shortcutTargets" in unreached[0],
+      f"a handler missing from shortcutTargets is named, the one in it is not: {unreached}")
 
 # ---- the real files ---------------------------------------------------------
 real_conf = checks.conf_binds()

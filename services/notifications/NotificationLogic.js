@@ -1,10 +1,24 @@
 .pragma library
 .import "../appearance/TimeFormat.js" as TimeFormat
+.import "SourceLogic.js" as Source
 
-// The key a per-app rule is stored under, and the one `group` uses. Unit tested.
+// The key a per-app rule is stored under, and the one `group` uses: the
+// app's name, and for a browser the site after it ("brave:teams",
+// "brave:github.com" - SourceLogic.site), so that Teams and Outlook are two
+// apps and not one "Brave". Unit tested.
 function appKey(notification) {
     const name = String((notification && notification.appName) || "").trim()
-    return name.length ? name.toLowerCase() : "__system"
+    const base = name.length ? name.toLowerCase() : "__system"
+    const site = Source.site(notification)
+    return site.length ? base + ":" + site : base
+}
+
+// The rules an app can have besides "default": "mute" never pops up,
+// "critical" is as urgent as a sender can make it, "always" pops up through
+// everything - the user's own Do Not Disturb too (a Teams call).
+var RULES = ["mute", "critical", "always"]
+function isRule(rule) {
+    return RULES.indexOf(rule) >= 0
 }
 
 // An app icon as Qt can load it. The specification lets a sender name it as
@@ -46,16 +60,21 @@ function picture(notification, iconPath) {
 // that may not have caught up. `critical` comes from the caller, which knows
 // the urgency enum; the notch draws such a one in the warning ink. Unit
 // tested.
-function notchContent(notification, iconPath, critical) {
+//
+// `concealed` while the screen is shared (NotificationService.concealed): a
+// popup that gets through then says what it is and from whom, never what it
+// says, and draws the app's icon rather than the sender's picture.
+function notchContent(notification, iconPath, critical, concealed) {
     const it = notification || {}
-    const shown = picture(it, iconPath)
+    const hidden = concealed === true
+    const shown = hidden ? iconSource(it.appIcon, iconPath) : picture(it, iconPath)
     const urgent = critical === true
     return {
         kind: "notification",
         icon: shown ? "" : urgent ? "\u{f0026}" : "󰂚", // Icons.warning
         iconSource: shown,
         title: it.summary || it.appName || "Notification",
-        subtitle: it.body || "",
+        subtitle: hidden ? "" : it.body || "",
         critical: urgent
     }
 }
@@ -70,14 +89,17 @@ function notchPick(popups) {
     return list.length ? list[list.length - 1] : null
 }
 
-// Whether a notification matches a query: app name, summary or body. Unit
-// tested.
+// Whether a notification matches a query: app name, summary or body, and a
+// browser's site by its web app's name or its host ("teams" finds Teams'
+// messages, which Brave sent). Unit tested.
 function matches(notification, query) {
     const text = String(query || "").trim().toLowerCase()
     if (!text) return true
     const haystack = [(notification && notification.appName) || "",
                       (notification && notification.summary) || "",
-                      (notification && notification.body) || ""].join(" ").toLowerCase()
+                      (notification && notification.body) || "",
+                      Source.label(notification, ""),
+                      Source.originHost(Source.hint(notification, Source.ORIGIN_HINT))].join(" ").toLowerCase()
     return haystack.indexOf(text) >= 0
 }
 
@@ -87,11 +109,12 @@ function search(history, query) {
 }
 
 // The rule for one app: "default", "mute" (never pops up, still lands in the
-// history) or "critical" (always pops up, even while Do Not Disturb runs).
-// Unit tested.
+// history), "critical" (pops up through a timed or a mode's Do Not Disturb
+// and through the automatic muting) or "always" (through the user's own Do
+// Not Disturb too). Unit tested.
 function ruleFor(rules, notification) {
     const rule = (rules || {})[appKey(notification)]
-    return rule === "mute" || rule === "critical" ? rule : "default"
+    return isRule(rule) ? rule : "default"
 }
 
 // The rule the bell over an app's group goes to on a click: Normal and Muted,
@@ -106,43 +129,51 @@ function nextAppRule(rule) {
 // Every app Settings > Notifications lists for its rule: the ones with a rule
 // stored - also when nothing of theirs is in the history, where the centre's
 // bell was the only way to see or undo it - and the ones in the history.
-// Sorted by name; `name` is the app's own spelling when the history has it,
-// else the key with a capital. Unit tested.
-function ruleRows(rules, history) {
+// Sorted by name; `name` is the app's own spelling when the history has it
+// (a browser's site: what `describe` names it, the installed web app's own
+// name, else SourceLogic.label), else the key read as a name
+// (SourceLogic.nameForKey: the key with a capital, a web app by its name).
+// Unit tested.
+function ruleRows(rules, history, describe) {
     const stored = rules || {}
     const names = {}
     for (const notification of history || []) {
         if (!notification) continue
         const key = appKey(notification)
         if (names[key] === undefined) {
-            const name = String(notification.appName || "").trim()
+            const described = typeof describe === "function" ? describe(notification) : null
+            const name = described && described.name ? String(described.name).trim() : Source.label(notification, "")
             names[key] = name.length ? name : "System"
         }
     }
     for (const key in stored) {
-        if (names[key] !== undefined || (stored[key] !== "mute" && stored[key] !== "critical")) continue
-        names[key] = key === "__system" ? "System" : key.charAt(0).toUpperCase() + key.slice(1)
+        if (names[key] !== undefined || !isRule(stored[key])) continue
+        names[key] = Source.nameForKey(key)
     }
     return Object.keys(names)
         .map(key => ({ key: key, name: names[key],
-                       rule: stored[key] === "mute" || stored[key] === "critical" ? stored[key] : "default" }))
+                       rule: isRule(stored[key]) ? stored[key] : "default" }))
         .sort((a, b) => a.name.toLowerCase() < b.name.toLowerCase() ? -1 : a.name.toLowerCase() > b.name.toLowerCase() ? 1
                         : a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
 }
 
 // Groups notifications by app for the notification center. Input is the
 // history in arrival order; groups come newest first, each with its
-// notifications newest first. Unit tested.
-function group(history) {
+// notifications newest first. `describe` (optional) names a group and gives
+// its icon ({ name, icon }, NotificationService.describe): a browser's site
+// as its installed web app. Unit tested.
+function group(history, describe) {
     const groups = []
     const byKey = {}
     const list = (history || []).slice().reverse()
     for (const notification of list) {
         if (!notification) continue
-        const name = String(notification.appName || "").trim()
         const key = appKey(notification)
         if (!byKey[key]) {
-            byKey[key] = { key: key, name: name.length ? name : "System", icon: String(notification.appIcon || ""), items: [] }
+            const described = typeof describe === "function" ? describe(notification) : null
+            const name = described && described.name ? String(described.name).trim() : Source.label(notification, "")
+            const icon = described && described.icon ? String(described.icon) : String(notification.appIcon || "")
+            byKey[key] = { key: key, name: name.length ? name : "System", icon: icon, items: [] }
             groups.push(byKey[key])
         }
         byKey[key].items.push(notification)
@@ -177,11 +208,14 @@ function visibleItems(groupEntry, expanded) {
 // runs on a timer, or while it is on because something turned it on for
 // itself (it has an owner: a mode) - gaming's own silenced "Battery very
 // low" and "Timer done", which the user never asked for. Only the user's own
-// manual one silences everything. Unit tested.
+// manual one silences everything - but an app the user set to "always".
+// Unit tested.
 function shouldPopup(state, critical, rule) {
-    // A per-app rule decides before anything else: "mute" never pops up, and
-    // "critical" makes the app's notifications as urgent as the sender can.
+    // A per-app rule decides before anything else: "mute" never pops up,
+    // "always" always does, and "critical" makes the app's notifications as
+    // urgent as the sender can.
     if (rule === "mute") return false
+    if (rule === "always") return true
     const urgent = !!critical || rule === "critical"
     if (!state) return true
     if (!state.suppressed) return true
@@ -248,10 +282,12 @@ function overflow(history, limit, keep, imageLimit) {
 }
 
 // Popups that are still in the server's list. Dismissed notifications leave
-// the history and must leave the queue with it. Unit tested.
+// the history and must leave the queue with it. The shell's own notices
+// (`internal`: what came while it was quiet) are in no server's list and go
+// when they are closed. Unit tested.
 function livePopups(popups, live) {
     const values = live || []
-    return (popups || []).filter(item => values.indexOf(item) >= 0)
+    return (popups || []).filter(item => (item && item.internal === true) || values.indexOf(item) >= 0)
 }
 
 // Whether two queues hold the same notifications in the same order. By
@@ -369,7 +405,12 @@ function tomorrowEnd(now, hour) {
 // time as the clock shows it (`twelve`, TimeFormat). Unit tested.
 function dndLabel(mode, until, by, now, twelve) {
     if (!dndActive(mode, until, now)) return "Off"
-    if (mode === "manual") return dndOwner(mode, by).length ? "Until you leave " + dndOwnerTitle(by) : "Until turned off"
+    if (mode === "manual") {
+        // Focus is no mode one leaves: it ends (AdaptiveService, FocusLogic).
+        const owner = dndOwner(mode, by)
+        if (owner === "focus") return "Until Focus ends"
+        return owner.length ? "Until you leave " + dndOwnerTitle(by) : "Until turned off"
+    }
     const end = new Date(Number(until))
     const current = new Date(Number(now))
     const later = end.getFullYear() !== current.getFullYear() || end.getMonth() !== current.getMonth()

@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Services.Mpris
 import QtQuick
 import "media/MediaLogic.js" as Logic
+import "media/VisualizerLogic.js" as Visualizer
 
 // Media players. The position only refreshes while some UI tracks it.
 Singleton {
@@ -178,5 +179,37 @@ Singleton {
         repeat: true
         running: root.trackers > 0 && root.playing
         onTriggered: if (root.active) root.active.positionChanged()
+    }
+
+    // ---- the visualizer (VisualizerLogic) -----------------------------------
+    // cava runs while the media popup shows the bars (it counts itself with
+    // the switch on) and something plays; a pause or the popup closing ends
+    // it. One frame per line, `visualizerBars` heights from 0 to 1.
+    property int visualizerTrackers: 0
+    // cava is not installed: noted once, so a popup does not try it on every
+    // open; the next shell start looks again.
+    property bool visualizerMissing: false
+    property var visualizerBars: []
+    readonly property bool visualizerRunning: visualizerProc.running
+    readonly property bool visualizerWanted: Visualizer.wanted(visualizerTrackers, playing, visualizerMissing)
+    // Named after the cache, so a nested session's configuration is its own.
+    readonly property string visualizerConfig: Paths.runtimeDir + "/visualizer-" + Qt.md5(Paths.cacheDir).slice(0, 8) + ".conf"
+    onVisualizerWantedChanged: if (!visualizerWanted) visualizerBars = []
+    // For `widgets visualizer` over IPC.
+    function visualizerStatus() {
+        return { trackers: visualizerTrackers, wanted: visualizerWanted, running: visualizerRunning,
+                 missing: visualizerMissing, bars: visualizerBars.length,
+                 peak: visualizerBars.reduce((top, value) => Math.max(top, value), 0) }
+    }
+
+    Process {
+        id: visualizerProc
+        running: root.visualizerWanted
+        command: Paths.bound(Visualizer.command(root.visualizerConfig, Visualizer.config(Visualizer.BARS, Visualizer.FRAMERATE)))
+        stdout: SplitParser { onRead: data => root.visualizerBars = Visualizer.parseFrame(data, Visualizer.BARS) }
+        onExited: code => {
+            if (code === 127) root.visualizerMissing = true
+            root.visualizerBars = []
+        }
     }
 }

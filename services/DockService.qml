@@ -5,6 +5,9 @@ import Quickshell.Io
 import QtQuick
 import qs.theme
 import "dock/DockLogic.js" as Logic
+import "dock/MinimizeLogic.js" as Minimize
+import "dock/BadgeLogic.js" as Badges
+import "dock/PreviewLogic.js" as Preview
 import "model/KeyedLogic.js" as Keyed
 import "overview/OverviewLogic.js" as Overview
 
@@ -24,6 +27,14 @@ import "overview/OverviewLogic.js" as Overview
 // could come over a drawn dock or leave it (DockLogic.needsPoll). Off,
 // always or edge-only: no reads at all.
 //
+// Minimized windows (services/MinimizeService.qml) stay on the dock with
+// their app, a hollow dot each; a click or the menu brings one back, and the
+// Taskbar preset's click on the app in front minimizes it (`activeClick`). A
+// Citrix session belongs to the subscribed desktop its title names
+// (DockLogic.citrixEntryFor). Off until Settings > Dock turns them on: unread
+// counts on the icons, previews of an app's windows under the pointer
+// (shell/dock/DockPreview.qml) and the wheel for an app's volume.
+//
 // The lock face never reaches this (testing.md pitfall 86): nothing under
 // shell/lock/ or theme/ may name it.
 Singleton {
@@ -41,6 +52,15 @@ Singleton {
     // Each dock's running apps are its own screen's (DockLogic.RUNNING_ON),
     // or those of every screen.
     readonly property bool perScreen: SettingsService.value("dock.runningOn") === "screen"
+    // A click on the app in front: its next window, or minimize it (the
+    // Taskbar preset's; DockLogic.clickPlan).
+    readonly property string activeClick: SettingsService.value("dock.activeClick") === "minimize" ? "minimize" : "cycle"
+    // Off until Settings > Dock turns them on: unread counts on the icons
+    // (dock/BadgeLogic.js), the windows' previews under the pointer
+    // (dock/PreviewLogic.js) and the wheel for an app's volume.
+    readonly property bool badgesOn: enabled && SettingsService.value("dock.badges") === true
+    readonly property bool previewsOn: enabled && SettingsService.value("dock.previews") === true
+    readonly property bool wheelVolumeOn: enabled && SettingsService.value("dock.wheelVolume") === true
     readonly property bool reserves: visibility === "always"
     readonly property bool intellihide: enabled && visibility === "intellihide"
     readonly property var screenNames: Logic.screensFor(SettingsService.value("dock.screens"),
@@ -91,16 +111,25 @@ Singleton {
 
     // The windows as the apps need them: no geometry here, so a window that
     // moves rebuilds nothing - and no focus, which each icon reads for itself
-    // (activeOf), so a focus change rebuilds nothing either.
-    readonly property var windows: enabled ? Hyprland.toplevels.values.map(toplevel => ({
-        address: addressOf(toplevel),
-        appClass: classOf(toplevel),
-        workspace: toplevel.workspace ? toplevel.workspace.id : -1,
-        workspaceName: toplevel.workspace ? toplevel.workspace.name : "",
-        monitor: toplevel.monitor ? toplevel.monitor.name : "",
-        urgent: toplevel.urgent === true,
-        seq: seen[addressOf(toplevel)] || 0
-    })).filter(window => window.address.length) : []
+    // (activeOf), so a focus change rebuilds nothing either. No title either,
+    // but where one says something the class does not: a Citrix session's
+    // names its desktop (`entryHint`, DockLogic.citrixEntryFor), and with the
+    // badges on a web app's carries its unread count (`badge`). Only those
+    // windows' titles are read, so another window's new title rebuilds nothing.
+    readonly property var windows: enabled ? Hyprland.toplevels.values.map(toplevel => {
+        const cls = classOf(toplevel)
+        return {
+            address: addressOf(toplevel),
+            appClass: cls,
+            workspace: toplevel.workspace ? toplevel.workspace.id : -1,
+            workspaceName: toplevel.workspace ? toplevel.workspace.name : "",
+            monitor: toplevel.monitor ? toplevel.monitor.name : "",
+            urgent: toplevel.urgent === true,
+            seq: seen[addressOf(toplevel)] || 0,
+            entryHint: Logic.isCitrixSession(cls) ? Logic.citrixEntryFor(toplevel.title, citrixEntries) : "",
+            badge: badgesOn && Badges.isWebApp(cls) ? Badges.titleBadge(toplevel.title) : 0
+        }
+    }).filter(window => window.address.length) : []
     // The window with the focus, from Hyprland's own record: the toplevels'
     // `activated` stayed false for every window in the nested checks, so a
     // click on the active app focused the window it was already on. And only
@@ -114,7 +143,8 @@ Singleton {
         if (!toplevel) return ""
         const ipc = toplevel.lastIpcObject || {}
         return Logic.frontAddress({ address: addressOf(toplevel), workspace: toplevel.workspace ? toplevel.workspace.id : 0,
-                                    pinned: ipc.pinned === true },
+                                    pinned: ipc.pinned === true,
+                                    parked: Minimize.isParked(toplevel.workspace ? toplevel.workspace.name : "") },
                                   Hyprland.focusedWorkspace ? Hyprland.focusedWorkspace.id : 0)
     }
 
@@ -135,6 +165,11 @@ Singleton {
     function pinOf(entry) {
         return { id: entry.id, name: entry.name, icon: entry.icon, startupClass: entry.startupClass }
     }
+    // The desktops subscribed in Citrix Workspace (DockLogic.isCitrixEntry), for
+    // the sessions' windows: read once per scan of the desktop entries.
+    readonly property var citrixEntries: enabled && entriesRevision >= 0
+        ? DesktopEntries.applications.values.filter(entry => !entry.noDisplay && Logic.isCitrixEntry(entry.categories)).map(pinOf)
+        : []
     // The session's default apps, for @files/@terminal/@browser: read once
     // when a pin asks for them (default-apps.py list), again when Settings >
     // Default apps changes one.
@@ -166,6 +201,11 @@ Singleton {
             || DesktopEntries.byId(String(cls).toLowerCase())
         return entry ? pinOf(entry) : null
     }
+    // An entry by its exact id, for a window that names one (a Citrix session).
+    function lookupId(id) {
+        const entry = DesktopEntries.byId(id)
+        return entry && !entry.noDisplay ? pinOf(entry) : null
+    }
     // What the model was handed last, outside any binding's dependencies: the
     // same objects come back for the apps that did not change, which is the
     // only way Quickshell's ScriptModel matches them right (pitfall 76).
@@ -188,7 +228,7 @@ Singleton {
     function resolverFor(list) {
         if (resolverStore.pins !== list || !resolverStore.find) {
             resolverStore.pins = list
-            resolverStore.find = Logic.resolver(list, lookup)
+            resolverStore.find = Logic.resolver(list, lookup, lookupId)
         }
         return resolverStore.find
     }
@@ -197,8 +237,16 @@ Singleton {
     function decorated(list) {
         return list.map(item => Object.assign(item, {
             pinnable: item.pinned || pinnable(item.pin),
-            launching: launching[item.key] !== undefined }))
+            launching: launching[item.key] !== undefined,
+            badge: badgesOn ? Badges.itemBadge(item, notificationCounts) : 0 }))
     }
+    // The unread notifications per app (BadgeLogic.unseenByApp), while the
+    // badges are on: an app whose title says nothing has these.
+    readonly property var notificationCounts: badgesOn
+        ? Badges.unseenByApp(NotificationService.history.map(notification => ({
+              id: notification.id, desktopEntry: notification.desktopEntry, appName: notification.appName })),
+              NotificationService.unseen)
+        : ({})
     readonly property var items: enabled && entriesRevision >= 0
         ? kept(decorated(Logic.build(pins, windows, lookup, { showRunning: showRunning, resolve: resolverFor(pins) })))
         : []
@@ -245,6 +293,15 @@ Singleton {
         return toplevel && toplevel.title ? toplevel.title : ""
     }
     function entryOf(item) { return item && item.entryId && !item.special ? DesktopEntries.byId(item.entryId) : null }
+    // Whether a window is kept on top (pinned, in Hyprland's words), for the
+    // app menu's row. Hyprland's own record, which only refreshToplevels()
+    // fills (testing.md pitfall 99): the menu reads it once as it opens.
+    function keptOnTop(address) {
+        const toplevel = Hyprland.toplevels.values.find(item => addressOf(item) === address)
+        const ipc = toplevel ? toplevel.lastIpcObject || {} : {}
+        return ipc.pinned === true
+    }
+    function readWindows() { Hyprland.refreshToplevels() }
 
     // ---- intellihide -----------------------------------------------------------------
     // Each dock's body on the screen (global, logical), as Dock.qml reports it.
@@ -412,6 +469,8 @@ Singleton {
         edgePointer(name, false)
         endKeyboard(name)
         endDrag(name)
+        holdStreams(name, false)
+        if (previewScreen === name) dropPreview()
     }
 
     // Where each dock's surface sits on its screen, for the apps' menu and the
@@ -528,6 +587,7 @@ Singleton {
     }
     onScreenItemsChanged: checkDrag()
     onKeyboardScreenChanged: if (keyboardScreen.length) {
+        hidePreview()
         const active = itemsOn(keyboardScreen).findIndex(item => activeOf(item))
         keyIndex = Math.max(0, active)
         // A dock with items but no apps: on the nearest item.
@@ -613,6 +673,123 @@ Singleton {
         }
     }
 
+    // ---- previews of an app's windows ----------------------------------------------
+    // The app whose windows the strip shows (shell/dock/DockPreview.qml,
+    // dock/PreviewLogic.js): on which dock, which app, and where its icon is
+    // on that screen (screen-local). The apps widget asks once the pointer
+    // has rested on a running app, where its name would show; the strip stays
+    // while the pointer is on the icon or on the strip itself, and goes a
+    // moment after it left both - or at once for a press, a drag, a panel or
+    // the dock's keys. `previewShown` goes first and the rest a fade later.
+    property string previewScreen: ""
+    property string previewKey: ""
+    property var previewIcon: null
+    property bool previewShown: false
+    property bool previewHovered: false
+    readonly property var previewItem: previewScreen.length ? itemFor(previewKey, previewScreen) : null
+    function showPreview(name, key, rect) {
+        if (!previewsOn || !name || !key || !rect || dragKey.length > 0 || PanelService.active.length > 0
+            || keyboardScreen.length > 0) return false
+        if (!Preview.wanted(true, itemFor(key, name))) return false
+        previewHide.stop()
+        previewGone.stop()
+        previewScreen = name
+        previewKey = key
+        previewIcon = rect
+        previewShown = true
+        return true
+    }
+    // The pointer left the icon: the strip goes unless the pointer reached it.
+    function releasePreview(name) {
+        if (previewScreen === name && previewShown && !previewHovered) previewHide.restart()
+    }
+    function previewPointer(on) {
+        previewHovered = on === true
+        if (previewHovered) previewHide.stop()
+        else if (previewShown) previewHide.restart()
+    }
+    function hidePreview() {
+        previewHide.stop()
+        previewHovered = false
+        if (!previewShown) return
+        previewShown = false
+        previewGone.restart()
+    }
+    // Gone at once, without the fade: its dock went.
+    function dropPreview() {
+        previewHide.stop()
+        previewGone.stop()
+        previewShown = false
+        previewHovered = false
+        previewScreen = ""
+        previewKey = ""
+        previewIcon = null
+    }
+    Timer {
+        id: previewHide
+        interval: Animations.dockHideDelay
+        onTriggered: if (!root.previewHovered) root.hidePreview()
+    }
+    Timer {
+        id: previewGone
+        interval: Animations.popupClose
+        onTriggered: if (!root.previewShown) root.dropPreview()
+    }
+    // Its app's last window closed, or the app went: nothing to show.
+    onPreviewItemChanged: if (previewShown && !Preview.wanted(true, previewItem)) hidePreview()
+    onPreviewsOnChanged: if (!previewsOn) dropPreview()
+    onDragKeyChanged: if (dragKey.length) hidePreview()
+    Connections {
+        target: PanelService
+        enabled: root.previewShown
+        function onActiveChanged() { if (PanelService.active.length) root.hidePreview() }
+    }
+
+    // ---- the wheel over an icon: its app's volume -----------------------------------
+    // A playback stream's own names are there before PipeWire's node is bound,
+    // its application's names and its volume only once it is: the streams are
+    // bound (AudioService.trackNodes) while the pointer is on a dock and the
+    // wheel turns volumes, never otherwise.
+    property var streamHolds: ({})
+    function holdStreams(name, on) {
+        if (!name) return
+        const held = streamHolds[name] === true
+        if (on === held || (on && !wheelVolumeOn)) return
+        const next = Object.assign({}, streamHolds)
+        if (on) next[name] = true
+        else delete next[name]
+        streamHolds = next
+        if (on) AudioService.trackNodes()
+        else AudioService.untrackNodes()
+    }
+    onWheelVolumeOnChanged: if (!wheelVolumeOn) for (const name of Object.keys(streamHolds)) holdStreams(name, false)
+    function streamInfo(node) {
+        const props = node && node.properties ? node.properties : {}
+        return { appName: props["application.name"] || "", binary: props["application.process.binary"] || "",
+                 icon: props["application.icon-name"] || "", name: node ? node.name || "" : "",
+                 description: node ? node.description || "" : "" }
+    }
+    // An app's playback streams (BadgeLogic.streamMatches).
+    function streamsOf(item) {
+        if (!item) return []
+        const entry = entryOf(item)
+        const program = entry ? Logic.program(entry.command) : ""
+        return AudioService.playbackStreams.filter(node => Badges.streamMatches(item, program, streamInfo(node)))
+    }
+    // The wheel turned `steps` notches over an app (positive up): each of its
+    // streams by a volume key's step. The first one's level after, -1 when
+    // nothing of it plays.
+    function stepVolume(key, steps, name) {
+        const item = itemFor(key, name)
+        if (!wheelVolumeOn || !item || !steps) return -1
+        // Bound ones only (`ready`): an unbound node has its `audio`, but no
+        // volume in it yet to step from (Quickshell's PwNode).
+        const streams = streamsOf(item).filter(node => node.ready && node.audio)
+        if (!streams.length) return -1
+        for (const node of streams) AudioService.stepVolume(node, steps * Badges.VOLUME_STEP)
+        return streams[0].audio.volume
+    }
+
     // ---- drag and menu --------------------------------------------------------------
     property string dragKey: ""
     property string dragScreen: ""
@@ -632,8 +809,14 @@ Singleton {
     // let it go: Hyprland hands the focus back to a layer that still holds it
     // (the overview's and the switcher's reason, Animations.overviewDispatchDelay).
     property string pendingFocus: ""
+    // A minimized window comes back to its workspace instead: focused where it
+    // is, Hyprland would open its special workspace over the screen.
     function focusWindow(address) {
         if (!address) return
+        if (minimized(address)) {
+            restoreWindow(address)
+            return
+        }
         if (keyboardScreen.length || PanelService.active === "dockMenu") {
             pendingFocus = address
             endKeyboard()
@@ -654,15 +837,57 @@ Singleton {
     function closeWindow(address) {
         if (address) HyprCompat.dispatch(HyprCompat.commands.closeWindow(address))
     }
+    // Whether a window is minimized, from the windows the dock has (the
+    // service is asked only to act).
+    function minimized(address) {
+        const window = windows.find(item => item.address === address)
+        return !!window && Minimize.isParked(window.workspaceName)
+    }
+    // Minimized windows (services/MinimizeService.qml): back to the front - after
+    // the dock's keys or its menu have let go, as for a focus.
+    function restoreWindow(address) {
+        const held = keyboardScreen.length > 0 || PanelService.active === "dockMenu"
+        endKeyboard()
+        if (PanelService.active === "dockMenu") PanelService.close("dockMenu")
+        return MinimizeService.restore(address, true, held ? Animations.overviewDispatchDelay : 0)
+    }
+    function minimizeWindow(address) {
+        endKeyboard()
+        return MinimizeService.minimize(address)
+    }
+    // All of an app's windows that are not minimized, or all that are (the
+    // menu's two rows) - those on `name` when the docks show their own
+    // screen's. Restored, the one used last ends in front.
+    function minimizeWindows(key, name) {
+        const item = itemFor(key, name)
+        if (!item) return false
+        let done = 0
+        for (const window of item.windows) if (!window.minimized && MinimizeService.minimize(window.address)) done += 1
+        endKeyboard()
+        return done > 0
+    }
+    function restoreWindows(key, name) {
+        const item = itemFor(key, name)
+        if (!item) return false
+        const parked = item.windows.filter(window => window.minimized)
+        if (!parked.length) return false
+        const front = mru.find(address => parked.some(window => window.address === address)) || parked[parked.length - 1].address
+        for (const window of parked) if (window.address !== front) MinimizeService.restore(window.address, false, 0)
+        return restoreWindow(front)
+    }
 
     // A click: start it, its window to the front, or the next of its windows -
     // of those on `name` when the docks show their own screen's.
+    // A window minimized comes back, and with dock.activeClick "minimize" the
+    // app in front is minimized (DockLogic.clickPlan).
     function activate(key, name) {
         const item = itemFor(key, name)
         if (!item) return false
-        const target = Logic.clickTarget(item, activeAddress, mru)
+        const target = Logic.clickPlan(item, activeAddress, mru, activeClick)
         if (target.action === "launch") return launch(item)
         if (target.action === "focus") focusWindow(target.address)
+        else if (target.action === "restore") return restoreWindow(target.address)
+        else if (target.action === "minimize") return minimizeWindow(target.address)
         else endKeyboard()
         return target.action !== "none"
     }
@@ -810,7 +1035,10 @@ Singleton {
             covered: screens.filter(screen => covered(screen.name)).length, polling: polling,
             hotkey: hotkeyScreen.length > 0, keyboard: keyboardScreen.length > 0,
             menuOpen: PanelService.active === "dockMenu", dragging: dragKey.length > 0,
-            perScreen: perScreen, keyOnItem: keyItemType.length > 0
+            perScreen: perScreen, keyOnItem: keyItemType.length > 0,
+            minimized: windows.filter(window => Minimize.isParked(window.workspaceName)).length,
+            activeClick: activeClick, badges: badgesOn, badged: items.filter(item => item.badge > 0).length,
+            previews: previewsOn, previewOpen: previewShown, wheelVolume: wheelVolumeOn
         })
     }
     // The apps' places on the screens, for tests: by index, screen-local,

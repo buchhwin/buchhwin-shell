@@ -37,7 +37,7 @@ var titleGroups = {
     "Terminal": "apps", "Web browser": "apps", "File manager": "apps",
     "Launcher": "panels", "Control center": "panels", "Settings": "panels", "Notification center": "panels",
     "Emoji picker": "panels", "Wallpaper picker": "panels", "Profiles and modes": "panels", "Dock": "panels",
-    "Start menu": "panels",
+    "Start menu": "panels", "Display switcher": "panels", "Start my work apps": "apps",
     "All keyboard shortcuts": "panels", "Pick a color off the screen": "panels",
     "Desktop mode: widgets, bar, notch": "workspaces", "Mode: minimal, work, gaming, laptop, desk": "workspaces",
     "Dashboard": "panels", "Session menu": "panels", "Overview": "panels", "Clipboard history": "panels",
@@ -46,18 +46,43 @@ var titleGroups = {
     "Resize window": "windows", "Move window": "windows", "Next window": "windows", "Previous window": "windows",
     "Switch to selected window": "windows",
     "Screenshot of a region": "screenshots", "Screenshot of the screen": "screenshots", "Screenshot of a window": "screenshots",
+    "Copy text from the screen": "screenshots",
     "Record a region": "screenshots", "Record the screen": "screenshots",
     "Lock screen": "system", "Restart buchhwin-shell": "system", "Lid closed": "system", "Lid opened": "system",
     "Volume up": "system", "Volume down": "system", "Mute audio": "system", "Mute microphone": "system",
     "Brightness up": "system", "Brightness down": "system", "Play or pause": "system", "Next track": "system",
-    "Previous track": "system", "Exit Hyprland": "system"
+    "Previous track": "system", "Exit Hyprland": "system",
+    "Next workspace": "workspaces", "Previous workspace": "workspaces",
+    "Move window to the next workspace": "workspaces", "Move window to the previous workspace": "workspaces",
+    "Keep window on top": "windows", "Minimize window": "windows", "Restore minimized window": "windows",
+    "Pass the keys to the window": "windows", "Give the keys back": "windows",
+    "Drop-down terminal": "apps",
+    "Zoom in": "system", "Zoom out": "system", "Reset zoom": "system", "Color filter on or off": "system",
+    "Spread Citrix over the screens": "windows",
+    "Push to talk (hold)": "system", "Caps Lock message": "system"
+}
+
+// The shell actions that are no panel, by what they do: a custom shortcut's
+// title (shellTitle) and the conf dialect's rows (describeExec), which carry
+// no description.
+var actionTitles = {
+    "workspaces next": "Next workspace", "workspaces previous": "Previous workspace",
+    "workspaces moveNext": "Move window to the next workspace",
+    "workspaces movePrevious": "Move window to the previous workspace",
+    "workspaces scroll down": "Next workspace", "workspaces scroll up": "Previous workspace",
+    "zoom increase": "Zoom in", "zoom decrease": "Zoom out", "zoom reset": "Reset zoom",
+    "colorFilter toggle": "Color filter on or off", "window keepOnTop": "Keep window on top",
+    "window minimize": "Minimize window", "window restore": "Restore minimized window",
+    "dropdown toggle": "Drop-down terminal", "citrix span": "Spread Citrix over the screens",
+    "audio micMute": "Mute microphone", "audio talk": "Push to talk (hold)", "osd capsLock": "Caps Lock message"
 }
 
 var panelTitles = {
     launcher: "Launcher", controlCenter: "Control center", settings: "Settings", notifications: "Notification center",
     dashboard: "Dashboard", powerMenu: "Session menu", overview: "Overview", clipboard: "Clipboard history",
     editor: "Layout editor", emoji: "Emoji picker", wallpaperPicker: "Wallpaper picker",
-    profile: "Profiles and modes", shortcuts: "All keyboard shortcuts", dock: "Dock", startMenu: "Start menu"
+    profile: "Profiles and modes", shortcuts: "All keyboard shortcuts", dock: "Dock", startMenu: "Start menu", displays: "Display switcher",
+    assistant: "Assistant"
 }
 
 var keyLabels = {
@@ -67,9 +92,13 @@ var keyLabels = {
     "comma": ",", "period": ".", "minus": "-", "plus": "+", "slash": "/", "backslash": "\\", "semicolon": ";",
     "apostrophe": "'", "grave": "`", "equal": "=", "less": "<", "greater": ">", "numbersign": "#", "asterisk": "*",
     "bracketleft": "[", "bracketright": "]", "adiaeresis": "Ä", "odiaeresis": "Ö", "udiaeresis": "Ü", "ssharp": "ß",
-    "alt_l": "Alt", "alt_r": "Alt (right)", "super_l": "Super", "super_r": "Super (right)",
+    "alt_l": "Alt", "alt_r": "Alt (right)", "super_l": "Super", "super_r": "Super (right)", "caps_lock": "Caps Lock",
     "mouse:272": "Left drag", "mouse:273": "Right drag", "mouse:274": "Middle drag",
     "mouse_up": "Scroll up", "mouse_down": "Scroll down", "mouse_left": "Scroll left", "mouse_right": "Scroll right",
+    // Keys bound by their place rather than by what they print: the one left
+    // of 1 (the drop-down terminal's), ^ on the German layout the session
+    // starts with and ` on a US one, and Escape.
+    "code:49": "^", "code:9": "Esc",
     "switch:on:lid switch": "Lid closed", "switch:off:lid switch": "Lid opened",
     "xf86audioraisevolume": "Volume up", "xf86audiolowervolume": "Volume down", "xf86audiomute": "Mute",
     "xf86audiomicmute": "Mic mute", "xf86monbrightnessup": "Brightness up", "xf86monbrightnessdown": "Brightness down",
@@ -164,8 +193,11 @@ function describeExec(arg) {
         if (match[1] === "colorPicker") return titleOf("Pick a color off the screen")
         if (match[1] === "desktop") return titleOf("Desktop mode: widgets, bar, notch")
         if (match[1] === "mode") return titleOf("Mode: minimal, work, gaming, laptop, desk")
+        if (match[1] === "sessionApps") return titleOf("Start my work apps")
         if (panelTitles[match[1]]) return titleOf(panelTitles[match[1]])
     }
+    match = text.match(/ipc call (workspaces (?:next|previous|moveNext|movePrevious)|workspaces scroll (?:up|down)|zoom (?:increase|decrease|reset)|colorFilter toggle|window keepOnTop|window minimize|window restore|dropdown toggle|citrix span|audio micMute)\b/)
+    if (match && actionTitles[match[1]]) return titleOf(actionTitles[match[1]])
     // The workspace binds carry their number and a `||` fallback to Hyprland's
     // own dispatcher, so they need the number out of the text rather than a
     // fixed title. Nine of each: without these, eighteen of the session's
@@ -177,8 +209,9 @@ function describeExec(arg) {
     }
     match = text.match(/launch-default\.sh (terminal|browser|files)\b/)
     if (match) return titleOf(match[1] === "terminal" ? "Terminal" : match[1] === "browser" ? "Web browser" : "File manager")
-    match = text.match(/screenshot\.sh (region|screen|window)\b/)
-    if (match) return titleOf(match[1] === "region" ? "Screenshot of a region" : match[1] === "screen" ? "Screenshot of the screen" : "Screenshot of a window")
+    match = text.match(/screenshot\.sh (region|screen|window|text)\b/)
+    if (match) return titleOf(match[1] === "region" ? "Screenshot of a region" : match[1] === "screen" ? "Screenshot of the screen"
+        : match[1] === "text" ? "Copy text from the screen" : "Screenshot of a window")
     if (/reload-shell\.sh\b/.test(text)) return titleOf("Restart buchhwin-shell")
     if (/session-action\.sh lock\b/.test(text)) return titleOf("Lock screen")
     match = text.match(/launch-terminal\.sh\b(.*)$/)
@@ -227,10 +260,33 @@ function describe(bind) {
     case "movetoworkspace": return titleOf("Move window to workspace " + arg + " and follow", "workspaces")
     case "movetoworkspacesilent": return titleOf("Move window to workspace " + arg, "workspaces")
     case "exit": return titleOf("Exit Hyprland")
+    case "submap": return titleOf(arg === "reset" ? "Give the keys back" : "Pass the keys to the window")
     case "mouse": return titleOf(arg === "movewindow" ? "Move window" : arg === "resizewindow" ? "Resize window" : arg, "windows")
+    // The conf dialect's binds on the shell's own global shortcuts (push to
+    // talk, Caps Lock's message): `buchhwin:audio.talk` is "audio talk".
+    case "global": {
+        const action = arg.indexOf(Shell.APPID + ":") === 0 ? arg.slice(Shell.APPID.length + 1).split(".").join(" ") : ""
+        return actionTitles[action] ? titleOf(actionTitles[action]) : titleOf(("global " + arg).trim(), "other", { raw: true })
+    }
     case "__lua": return titleOf("Lua action", "other", { raw: true })
     default: return titleOf((bind.dispatcher + " " + arg).trim(), "other", { raw: true })
     }
+}
+
+// The key of a bind as the configuration wrote it: its name, or `code:N`
+// for one bound by its place on the keyboard (the drop-down terminal's key
+// left of 1), which `hyprctl -j binds` reports as a keycode and no name. The
+// Lua dialect reports neither for such a bind (key "", keycode 0: Settings
+// showed Super and an empty cap): the shell's own binds by place are known
+// by their description, and the key comes from here.
+var KEYS_BY_PLACE = { "Drop-down terminal": "code:49" }
+function bindKey(bind) {
+    const key = String(bind && bind.key !== undefined && bind.key !== null ? bind.key : "")
+    if (key.length) return key
+    const code = Number(bind && bind.keycode)
+    if (isFinite(code) && code > 0) return "code:" + Math.round(code)
+    const known = bind && bind.has_description ? KEYS_BY_PLACE[String(bind.description || "")] : undefined
+    return known || ""
 }
 
 // Rows for the overview; custom shortcuts from the store take their titles
@@ -238,14 +294,15 @@ function describe(bind) {
 function rows(binds, custom, labelFor) {
     return (binds || []).filter(bind => !bind.submap).map(bind => {
         const mask = Number(bind.modmask) || 0
+        const key = bindKey(bind)
         const entry = (custom || []).find(item => sameCombo(bind, modmask(item.mods), item.key))
         const info = entry ? titleOf(labelFor ? labelFor(entry) : entryLabel(entry), "custom") : describe(bind)
         // Alt_L with the Alt modifier (the switcher's release bind) reads "Release Alt".
-        let keys = keyParts(mask, bind.key)
+        let keys = keyParts(mask, key)
         if (keys.length > 1 && keys.indexOf(keys[keys.length - 1]) < keys.length - 1) keys = keys.slice(0, -1)
         if (bind.release) keys = keys.slice(0, -1).concat(["Release " + keys[keys.length - 1]])
         return {
-            modmask: mask, key: bind.key, keys: keys, combo: keys.join("+"),
+            modmask: mask, key: key, keys: keys, combo: keys.join("+"),
             title: info.title, group: info.group, raw: info.raw === true,
             // What the search matches besides the title: a Lua bind cannot
             // say what it runs, so a custom one offers its app id or command.
@@ -418,9 +475,11 @@ function normalizeEntry(item) {
 }
 
 // What a shell action is called on the sheet and in the list: the panel it
-// opens ("startMenu key" is "Start menu").
+// opens ("startMenu key" is "Start menu"), or what it does ("citrix span").
 function shellTitle(action) {
-    const target = String(action || "").trim().split(/\s+/)[0]
+    const text = String(action || "").trim().split(/\s+/).join(" ")
+    if (Object.prototype.hasOwnProperty.call(actionTitles, text)) return actionTitles[text]
+    const target = text.split(" ")[0]
     return Object.prototype.hasOwnProperty.call(panelTitles, target) ? panelTitles[target] : String(action || "")
 }
 

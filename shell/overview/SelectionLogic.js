@@ -36,7 +36,10 @@ function step(selected, delta, count) {
 // `rows` is OverviewLogic.groups(). Each stop is { kind: "window" | "card" |
 // "new", key, row, card, workspace } with `window` (a window's entry) or
 // `entry` (the card's) and `closable` (whether Delete may close the card).
-function stops(rows, query) {
+// The minimized windows (`minimized`, OverviewLogic.minimizedWindows) come
+// last, in their own row under the cards, as stops of kind "minimized" with
+// their `window` - matched by a search as any window is.
+function stops(rows, query, minimized) {
     const typed = String(query || "").trim().length > 0
     const result = []
     const list = rows || []
@@ -55,6 +58,10 @@ function stops(rows, query) {
                           closable: Overview.closable(card, row) })
         })
     })
+    for (const window of Array.prototype.slice.call(minimized || []))
+        if (window && Overview.matches(window, query))
+            result.push({ kind: "minimized", key: "m:" + window.address, row: -1, card: -1, workspace: window.origin || 0,
+                          window: window })
     return result
 }
 
@@ -80,7 +87,8 @@ function indexOf(list, key, fallback) {
 // the other monitor's. From a window they go by the card it is on. Where there
 // is no line that way (a single line of cards, the first or the last line, or
 // a search that leaves windows only) they step like Left and Right, as they
-// always did, so the arrows never go dead.
+// always did, so the arrows never go dead - which is also how Down from the
+// last line reaches the minimized windows under the cards, and Up leaves them.
 function vertical(list, selected, delta, columns) {
     const all = list || []
     const current = clamp(selected, all.length)
@@ -88,7 +96,7 @@ function vertical(list, selected, delta, columns) {
     const width = Math.max(1, Math.floor(Number(columns)) || 1)
     const lines = []
     all.forEach((stop, index) => {
-        if (stop.kind === "window") return
+        if (stop.kind === "window" || stop.kind === "minimized") return
         const line = Math.floor(stop.card / width)
         let last = lines[lines.length - 1]
         if (!last || last.row !== stop.row || last.line !== line) {

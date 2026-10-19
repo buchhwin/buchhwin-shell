@@ -9,6 +9,12 @@ ShellRoot {
         T.eq([A.effectiveDark("dark", 12), A.effectiveDark("light", 23), A.effectiveDark("auto", 12)], [true, false, false], "fixed themes and daytime")
         T.eq([A.effectiveDark("auto", 19), A.effectiveDark("auto", 6), A.effectiveDark("auto", 7), A.effectiveDark("auto", 18)],
              [true, true, false, false], "automatic switches at 19:00 and 07:00")
+        // Sunset to sunrise: the sun's answer wins over the hours; without
+        // one (the clock choice, no weather place) the hours decide.
+        T.eq([A.effectiveDark("auto", 12, true), A.effectiveDark("auto", 21, false), A.effectiveDark("auto", 21, null),
+              A.effectiveDark("auto", 12, undefined)], [true, false, true, false], "automatic by the sun")
+        T.eq([A.effectiveDark("dark", 12, false), A.effectiveDark("light", 23, true), A.effectiveDark("purple", 23, true)],
+             [true, false, false], "a fixed theme does not ask the sun")
 
         // Parsing tool output.
         T.eq([A.unquote("'prefer-dark'\n"), A.unquote("\"Breeze\""), A.unquote("default"), A.unquote(undefined)],

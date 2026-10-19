@@ -24,7 +24,17 @@ Singleton {
     readonly property var recentFolders: Logic.recentFolders(SettingsService.value("wallpaper.recentFolders"))
         .filter(path => SettingsService.expandHome(path) !== folder)
     property string picturesDir: ""
-    readonly property string configuredPath: SettingsService.expandHome(SettingsService.value("wallpaper.path"))
+    // A wallpaper for each theme (WallpaperLogic.themePath): the light or the
+    // dark one where it is set, the shared one otherwise. The theme is
+    // Colors.dark, so "Automatic" (by the hours or by the sun) swaps the
+    // picture as it swaps the panels.
+    readonly property bool themePair: SettingsService.value("wallpaper.themePair") === true
+    readonly property string lightPath: SettingsService.expandHome(String(SettingsService.value("wallpaper.lightPath") || ""))
+    readonly property string darkPath: SettingsService.expandHome(String(SettingsService.value("wallpaper.darkPath") || ""))
+    readonly property string configuredPath: Logic.themePath(themePair, Colors.dark, lightPath, darkPath,
+                                                             SettingsService.expandHome(SettingsService.value("wallpaper.path")))
+    // "light", "dark" or "shared": which of the three is on the desktop.
+    readonly property string themeSide: Logic.themeSide(themePair, Colors.dark, lightPath, darkPath)
     readonly property bool slideshow: SettingsService.value("wallpaper.slideshow")
     readonly property int intervalMinutes: Math.max(1, SettingsService.value("wallpaper.intervalMinutes"))
     readonly property string order: SettingsService.value("wallpaper.order")
@@ -99,13 +109,14 @@ Singleton {
         }
     }
 
-    // screen: "" for all monitors (also clears per-monitor choices).
+    // screen: "" for all monitors (also clears per-monitor choices). With a
+    // wallpaper for each theme it is the one of the theme in use.
     function setWallpaper(path, screen) {
         if (screen && screen.length) {
             saveState(Logic.withScreen(state, screen, path))
             return
         }
-        SettingsService.set("wallpaper.path", path)
+        SettingsService.set(Logic.pickKey(themePair, Colors.dark), path)
         slideshowPath = ""
         if (Object.keys(state.screens).length) {
             let next = state
@@ -118,6 +129,12 @@ Singleton {
     // has been read it is not known whether a screen has a wallpaper of its
     // own, and until the folder has, whether that one is there.
     function currentFor(screen) { return Logic.pathFor(state, screen, current, images, imagesReady, stateLoaded) }
+    // One side of the pair, from Settings > Wallpaper: `dark` true for the
+    // dark theme's. An empty path lets that side show the shared wallpaper.
+    function themeWallpaper(dark) { return dark ? darkPath : lightPath }
+    function setThemeWallpaper(dark, path) {
+        return SettingsService.set(Logic.pickKey(true, dark), String(path || ""))
+    }
     function hasOwn(screen) { return state.screens[screen] !== undefined }
     function resetScreen(screen) { saveState(Logic.withScreen(state, screen, "")) }
     function isFavourite(path) { return state.favourites.indexOf(path) >= 0 }

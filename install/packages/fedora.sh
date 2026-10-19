@@ -23,6 +23,8 @@ packages=(
   kitty zsh starship fastfetch zsh-autosuggestions zsh-syntax-highlighting
   # the backends the shell drives
   brightnessctl wireplumber pipewire-utils playerctl NetworkManager
+  # the alarm clock a timer rings with, and the notification sounds (pw-play)
+  sound-theme-freedesktop
   plocate jq curl grim slurp swappy wl-clipboard cliphist gammastep
   # xclip: reads what an X11 program (Citrix) copied, for the clipboard
   # bridge (scripts/x11-clipboard-bridge.py)

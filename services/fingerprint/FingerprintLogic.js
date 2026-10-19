@@ -403,3 +403,88 @@ function parseLockFingerprint(family, output, exitCode) {
     if (lock === true || system === true) return true
     return lock === false && system === false ? false : null
 }
+
+// ---- the reader for admin prompts only (polkit) ----------------------------------
+// The finger works on the lock screen only, by design: not system-auth, so the
+// login screen and sudo never wait for it. polkit's password dialogs - an
+// enrollment's own question, a system connection, a drive - still asked for
+// the password. Their PAM service is polkit-1, which includes system-auth on
+// Arch and Fedora, so a line above that include gives polkit and nothing else
+// the reader. Settings > Lock Screen shows the command; it is the user's to
+// run with sudo, and the off command takes the line out again, leaving the
+// file as it was. openSUSE's includes common-auth, and pam-config writes
+// the rest there: not offered.
+//
+// Arch's polkit (127) ships its file only in PAM's vendor directory,
+// /usr/lib/pam.d, which libpam reads only while /etc/pam.d has no file of
+// that name. So the line goes into the file in /etc, a copy of the vendor's
+// made first where there is none, and on Arch the way back removes that copy
+// again once it is the vendor's file byte for byte: a copy left in /etc
+// would hide the next polkit package's own file for good. Elsewhere the file
+// in /etc is taken as the distribution's own and stays.
+//
+// The line waits for one touch for ten seconds, then the dialog asks for the
+// password as before: pam_fprintd's own default is three tries in thirty
+// seconds, a long time to look at a dialog with no field in it.
+var POLKIT_PAM = "/etc/pam.d/polkit-1"
+var POLKIT_VENDOR_PAM = "/usr/lib/pam.d/polkit-1"
+var POLKIT_PAM_LINE = "auth       sufficient   pam_fprintd.so max-tries=1 timeout=10"
+
+function polkitSupported(family) {
+    return family === "arch" || family === "fedora"
+}
+
+// The copy first, only where /etc has no file yet; then, from the first
+// active pam_fprintd line to the end, sed branches past the insert, so a
+// second run adds nothing (DistroLogic.fingerprintOnCommand does the same for
+// the lock's file); nothing else in the file changes.
+function polkitOnCommand(family) {
+    if (!polkitSupported(family)) return ""
+    return "sudo sh -c '[ -e " + POLKIT_PAM + " ] || cp " + POLKIT_VENDOR_PAM + " " + POLKIT_PAM + "' && "
+        + "sudo sed -i '/^\\s*auth\\s[^#]*pam_fprintd\\.so/,$b; /^auth\\s\\+include\\s\\+system-auth\\s*$/i "
+        + POLKIT_PAM_LINE + "' " + POLKIT_PAM
+}
+
+// Every active auth line naming pam_fprintd goes: the file has none of its
+// own (polkit ships it with the four includes), so that is the one line the
+// on command added - or one put there by hand, which off means as well. On
+// Arch the copy goes too when it is the vendor's file again; elsewhere the
+// file in /etc is the distribution's own and stays.
+function polkitOffCommand(family) {
+    if (!polkitSupported(family)) return ""
+    const off = "sudo sed -i '/^\\s*auth\\s[^#]*pam_fprintd\\.so/d' " + POLKIT_PAM
+    if (family !== "arch") return off
+    return off + " && if cmp -s " + POLKIT_PAM + " " + POLKIT_VENDOR_PAM + "; then sudo rm " + POLKIT_PAM + "; fi"
+}
+
+// Read-only, while Settings > Lock Screen is open (FingerprintService.refresh):
+// the file PAM reads, /etc's while there is one, else the vendor's.
+function polkitReadCommand(family) {
+    if (!polkitSupported(family)) return []
+    return ["sh", "-c", 'if [ -e "$1" ]; then exec cat -- "$1"; fi; exec cat -- "$2"', "sh", POLKIT_PAM, POLKIT_VENDOR_PAM]
+}
+
+// Whether polkit's own file offers the reader: true, false, or null when the
+// file could not be read (or has no auth line at all).
+function parsePolkit(output, exitCode) {
+    if (Number(exitCode) !== 0) return null
+    return systemFingerprintPam(String(output || ""))
+}
+
+// What the page says: "unsupported" (not Arch or Fedora), "unknown" (not
+// read yet), "system" (the reader is in the system-wide stack already, so
+// polkit has it through its include), "on" or "off".
+function polkitState(family, polkitEnabled, systemEnabled) {
+    if (!polkitSupported(family)) return "unsupported"
+    if (systemEnabled === true) return "system"
+    if (polkitEnabled === true) return "on"
+    if (polkitEnabled === false) return "off"
+    return "unknown"
+}
+
+function polkitText(state) {
+    if (state === "system") return "Password dialogs already take the finger: the reader is on for the whole system."
+    if (state === "on") return "Password dialogs for administrator tasks take the finger first, then ask for the password."
+    if (state === "off") return "Password dialogs for administrator tasks ask for the password only."
+    return ""
+}

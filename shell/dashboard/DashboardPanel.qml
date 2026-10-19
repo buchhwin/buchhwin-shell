@@ -332,6 +332,8 @@ ShellPanel {
         case "events": return eventsCard
         case "media": return mediaCard
         case "system": return systemCard
+        case "worldClock": return worldClockCard
+        case "notes": return notesCard
         }
         // Not one of the dashboard's own cards: a desktop widget it accepts.
         return WidgetRegistry.isAvailable(type) ? widgetCardItem : null
@@ -379,7 +381,7 @@ ShellPanel {
                     Layout.fillWidth: true
                     visible: !clockBody.tiny
                     text: DateFormat.date(clock.date, SettingsService.locale,
-                        clockBody.compact ? "short" : "long")
+                        clockBody.compact ? "short" : "long", SettingsService.dateOrder, SettingsService.shortDateNumbers)
                     role: clockBody.compact ? "small" : "headline"
                     font.weight: Typography.light
                 }
@@ -527,6 +529,50 @@ ShellPanel {
         }
     }
 
+    // A few places and their time. The dashboard's own minute clock drives
+    // it, so it moves with the time card and stops with the panel.
+    Component {
+        id: worldClockCard
+        Item {
+            id: worldClockBody
+            readonly property bool shown: true
+            // The Loader's, under a name the card does not have itself:
+            // `fitClass: fitClass` inside it would read its own.
+            readonly property string cellFit: fitClass
+            WorldClockCard {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: Math.max(implicitHeight, parent.height)
+                cellHeight: worldClockBody.height
+                fitClass: worldClockBody.cellFit
+                now: clock.date
+                active: root.shown
+            }
+        }
+    }
+
+    // One plain text file, saved as it is typed (NotesCard).
+    Component {
+        id: notesCard
+        Item {
+            id: notesBody
+            readonly property bool shown: true
+            // The Loader's, under a name the card does not have itself:
+            // `fitClass: fitClass` inside it would read its own.
+            readonly property string cellFit: fitClass
+            NotesCard {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: Math.max(implicitHeight, parent.height)
+                cellHeight: notesBody.height
+                fitClass: notesBody.cellFit
+                active: root.shown
+            }
+        }
+    }
+
     Component {
         id: eventsCard
         Item {
@@ -550,7 +596,7 @@ ShellPanel {
                     }
                     Item { Layout.fillWidth: true }
                     ShellText {
-                        text: DateFormat.date(root.selectedDay, SettingsService.locale, "short")
+                        text: DateFormat.date(root.selectedDay, SettingsService.locale, "short", SettingsService.dateOrder, SettingsService.shortDateNumbers)
                         role: "small"
                         muted: true
                     }

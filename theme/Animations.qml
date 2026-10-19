@@ -3,13 +3,16 @@ import Quickshell
 import QtQuick
 import qs.services
 import "../services/appearance/AnimationLogic.js" as Logic
+import "../services/power/EffectsLogic.js" as EffectsLogic
 
 // Durations follow Promt §11. Animation Mode scales them: Full (default),
 // Reduced (shorter, no movement) and Off. The pace inside Full is the speed
 // setting's job - see AnimationLogic for why there is no longer a Fast and a
 // Normal to choose between.
 Singleton {
-    readonly property string mode: SettingsService.animationMode
+    // Full runs as Reduced while the lighter effects on battery are on
+    // (Settings > Power); the stored mode stays the user's.
+    readonly property string mode: EffectsLogic.animationMode(SettingsService.animationMode, SettingsService.lightEffects === true)
     // The mode decides the rhythm, the speed setting scales it. `factor` is a
     // *duration* multiplier, so a faster speed divides it: at 2x an animation
     // takes half as long.

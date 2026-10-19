@@ -220,6 +220,76 @@ ColumnLayout {
                 }
             }
         }
+        // A wallpaper for each theme (WallpaperService.themePair): it follows
+        // Colors.dark, so Automatic swaps the picture with the panels.
+        SettingsSection {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignTop
+            title: "Light and dark"
+            description: "While this is on, the wallpaper you pick is kept for the theme you are in."
+
+            SettingRow {
+                Layout.fillWidth: true
+                labelFills: true
+                label: "A wallpaper for each theme"
+                hint: WallpaperService.slideshow ? "Not while the slideshow runs." : ""
+                ShellToggle {
+                    focusOnTab: true
+                    checked: WallpaperService.themePair
+                    onToggled: value => SettingsService.set("wallpaper.themePair", value)
+                }
+            }
+            SettingRow {
+                visible: WallpaperService.themePair
+                Layout.fillWidth: true
+                label: "Light theme"
+                hint: WallpaperService.lightPath.length ? Logic.displayName(WallpaperService.lightPath) : "The shared wallpaper until one is picked"
+                RowLayout {
+                    spacing: Metrics.spaceSm
+                    ShellButton {
+                        focusOnTab: true
+                        compact: true
+                        text: "Use current"
+                        enabledState: WallpaperService.current.length > 0
+                        onClicked: WallpaperService.setThemeWallpaper(false, WallpaperService.current)
+                    }
+                    ShellButton {
+                        focusOnTab: true
+                        compact: true
+                        variant: "ghost"
+                        icon: Icons.reset
+                        toolTip: "Back to the shared wallpaper"
+                        visible: WallpaperService.lightPath.length > 0
+                        onClicked: WallpaperService.setThemeWallpaper(false, "")
+                    }
+                }
+            }
+            SettingRow {
+                visible: WallpaperService.themePair
+                Layout.fillWidth: true
+                label: "Dark theme"
+                hint: WallpaperService.darkPath.length ? Logic.displayName(WallpaperService.darkPath) : "The shared wallpaper until one is picked"
+                RowLayout {
+                    spacing: Metrics.spaceSm
+                    ShellButton {
+                        focusOnTab: true
+                        compact: true
+                        text: "Use current"
+                        enabledState: WallpaperService.current.length > 0
+                        onClicked: WallpaperService.setThemeWallpaper(true, WallpaperService.current)
+                    }
+                    ShellButton {
+                        focusOnTab: true
+                        compact: true
+                        variant: "ghost"
+                        icon: Icons.reset
+                        toolTip: "Back to the shared wallpaper"
+                        visible: WallpaperService.darkPath.length > 0
+                        onClicked: WallpaperService.setThemeWallpaper(true, "")
+                    }
+                }
+            }
+        }
     }
 
     SettingsSection {

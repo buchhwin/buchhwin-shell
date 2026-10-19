@@ -4,6 +4,8 @@ import qs.theme
 import qs.services
 import qs.shell.dock
 import "../../services/dock/DockLogic.js" as Logic
+import "../../services/dock/PreviewLogic.js" as Preview
+import "../../services/dock/BadgeLogic.js" as Badges
 
 // The dock's apps (DockService.items): the pinned ones, then - after a line -
 // the ones that only have windows. A pill on the dock holds it like any other
@@ -14,6 +16,11 @@ import "../../services/dock/DockLogic.js" as Logic
 // The pill sets the properties every widget has; the icon size is the
 // dock's own setting - smaller only when the dock's edge has no room for all
 // of them (Dock.qml measures the room the other pills leave, DockLogic.fit).
+//
+// With Settings > Dock's previews on, the pointer resting on a running app
+// shows its windows (shell/dock/DockPreview.qml) where its name would show;
+// with the wheel for the volume on, the wheel over an app turns its sound
+// and the name's place says how loud.
 Item {
     id: root
 
@@ -66,7 +73,12 @@ Item {
     HoverHandler {
         id: hover
         onPointChanged: if (DockService.magnifies) root.pointerAlong = hovered ? (root.vertical ? point.position.y : point.position.x) : -1
-        onHoveredChanged: if (!hovered) root.pointerAlong = -1
+        onHoveredChanged: {
+            if (!hovered) root.pointerAlong = -1
+            // The streams are bound while the pointer is here, so the wheel
+            // finds their volume (DockService.holdStreams).
+            if (root.screenName.length) DockService.holdStreams(root.screenName, hovered && DockService.wheelVolumeOn)
+        }
     }
 
     // Between the pins and the apps that are only running.
@@ -108,12 +120,14 @@ Item {
             keyFocus: root.keyboard && DockService.keyIndex === index
             running: DockService.runningOf(modelData)
             active: DockService.activeOf(modelData)
+            wheelTurns: DockService.wheelVolumeOn && running
             dragging: DockService.dragKey === modelData.key && root.dragging
             removing: dragging && root.dragAway
             z: dragging ? 1 : 0
-            onActivated: DockService.activate(modelData.key, root.screenName)
-            onNewWindow: DockService.newWindow(modelData.key)
-            onMenuWanted: root.openMenu(index)
+            onActivated: { DockService.hidePreview(); DockService.activate(modelData.key, root.screenName) }
+            onNewWindow: { DockService.hidePreview(); DockService.newWindow(modelData.key) }
+            onMenuWanted: { DockService.hidePreview(); root.openMenu(index) }
+            onWheeled: steps => root.turnVolume(index, steps)
             onDragStarted: {
                 DockService.dragKey = modelData.key
                 DockService.dragScreen = root.screenName
@@ -150,7 +164,44 @@ Item {
     }
     Timer { id: labelTimer; interval: Animations.dockLabelDelay; onTriggered: root.labelShown = true }
     Timer { id: labelGrace; interval: Animations.dockHideDelay; onTriggered: root.labelShown = false }
+    // The row lost the icon the name was over (DockLogic.labelInRow).
+    onAppsChanged: {
+        const next = Logic.labelInRow({ index: labelIndex, shown: labelShown }, apps.length)
+        if (!next) return
+        labelTimer.stop()
+        labelGrace.stop()
+        labelIndex = next.index
+        labelShown = next.shown
+    }
     Timer { id: noticeTimer; interval: Metrics.osdTimeout; onTriggered: root.notice = "" }
+
+    // ---- the windows instead of the name ---------------------------------------
+    // Where the name would show, an app with windows shows them (with the
+    // dock's previews on, PreviewLogic.wanted): asked when the name would come
+    // up, let go when it would go - the strip keeps itself while the pointer
+    // is on it - and taken down at once for an app that has no windows to show.
+    readonly property var labelApp: labelIndex >= 0 && labelIndex < apps.length ? apps[labelIndex] : null
+    readonly property bool previewing: DockService.previewsOn && Preview.wanted(true, labelApp)
+    function syncPreview() {
+        if (!DockService.previewsOn || !screenName.length) return
+        if (labelShown && previewing && !dragging) DockService.showPreview(screenName, labelApp.key, screenRect(labelIndex))
+        else if (!labelShown) DockService.releasePreview(screenName)
+        else DockService.hidePreview()
+    }
+    onLabelShownChanged: syncPreview()
+    onLabelIndexChanged: if (labelShown) syncPreview()
+
+    // ---- the wheel: an app's volume --------------------------------------------
+    // Said where its name shows (DockService.stepVolume, BadgeLogic.volumeNotice).
+    function turnVolume(index, steps) {
+        const app = apps[index]
+        if (!app) return
+        DockService.hidePreview()
+        const level = DockService.stepVolume(app.key, steps, screenName)
+        labelIndex = index
+        notice = Badges.volumeNotice(level)
+        noticeTimer.restart()
+    }
     function itemRect(index) {
         const size = placed.sizes[index] !== undefined ? placed.sizes[index] : slot
         const offset = placed.offsets[index] !== undefined ? placed.offsets[index] : 0
@@ -169,7 +220,8 @@ Item {
         text: root.dragAway ? "Unpin"
             : root.notice.length ? root.notice
             : root.labelIndex >= 0 && root.apps[root.labelIndex] ? root.apps[root.labelIndex].name : ""
-        shown: root.dragging ? root.dragAway : root.labelShown || root.notice.length > 0
+        // An app whose windows show above it does not show its name too.
+        shown: root.dragging ? root.dragAway : (root.labelShown && !root.previewing) || root.notice.length > 0
         clampToWindow: true
     }
 
@@ -212,21 +264,26 @@ Item {
         if (!screenName.length) return
         DockService.reportRects(screenName, null)
         // Gone in the middle of a drag (the pill taken off the dock): the drag
-        // goes with it.
+        // goes with it, and so do the streams it held and its windows' strip.
         if (dragging) DockService.endDrag(screenName)
+        DockService.holdStreams(screenName, false)
+        if (DockService.previewScreen === screenName) DockService.hidePreview()
     }
 
     // ---- menu ------------------------------------------------------------------
-    // Its place on the screen: mapped to the dock's content as `dock rects`
-    // is, moved by where the dock's surface sits (Dock.qml reports it).
-    function openMenu(index) {
-        const app = apps[index]
-        if (!app) return
+    // An icon's place on the screen: mapped to the dock's content as `dock
+    // rects` is, moved by where the dock's surface sits (Dock.qml reports it).
+    // The menu and the previews come out of it.
+    function screenRect(index) {
         const rect = itemRect(index)
         const topLeft = mapToItem(frameItem(), rect.x, rect.y)
         const origin = DockService.originOn[screenName] || { x: 0, y: 0 }
-        DockService.openMenu(app.key, screenName, { x: topLeft.x + origin.x, y: topLeft.y + origin.y,
-                                                    width: rect.width, height: rect.height })
+        return { x: topLeft.x + origin.x, y: topLeft.y + origin.y, width: rect.width, height: rect.height }
+    }
+    function openMenu(index) {
+        const app = apps[index]
+        if (!app) return
+        DockService.openMenu(app.key, screenName, screenRect(index))
     }
     Connections {
         target: DockService

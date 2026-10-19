@@ -5,6 +5,7 @@ import Quickshell.Services.Pipewire
 import QtQuick
 import "audio/AudioRoutingLogic.js" as Routing
 import "audio/AudioLabelLogic.js" as Labels
+import "audio/MicLogic.js" as MicLogic
 
 // PipeWire devices and application streams, per-app output routing and the
 // microphone level meter of Settings > Audio.
@@ -19,7 +20,7 @@ Singleton {
     readonly property var playbackStreams: nodes.filter(node => node.isStream && hasType(node, PwNodeType.AudioOutStream))
     // The level meter's own recording stream does not count as "in use".
     readonly property var captureStreams: nodes.filter(node => node.isStream && hasType(node, PwNodeType.AudioInStream)
-                                                       && !Routing.isMeterStream(node.name))
+                                                       && !Routing.isShellCapture(node.name))
     readonly property bool ready: Pipewire.ready
     readonly property real volume: sink && sink.audio ? sink.audio.volume : 0
     readonly property bool muted: sink && sink.audio ? sink.audio.muted : true
@@ -141,6 +142,103 @@ Singleton {
         return true
     }
 
+    // ---- the microphone key: every microphone (MicLogic.plan) ----------------
+    // The key muted the default input alone, and an app that had opened
+    // another microphone (the laptop's own beside a headset) stayed live. Now
+    // a press mutes every microphone, and the next one turns back on the
+    // ones it muted and the default. With a single microphone, or with
+    // Settings > Audio's switch off, it toggles the default as it always did.
+    // The other microphones are bound for the press only (a bound node
+    // reports its changes; nothing needs them otherwise): the press asks for
+    // them, waits until they are ready - a few milliseconds, at most
+    // `micKeyWait` - and lets them go a moment after.
+    readonly property bool micKeyAll: SettingsService.value("audio.micKeyAll") !== false
+    // After a press with more than one microphone: `muted` what it did,
+    // `changed` how many it turned on again, `total` how many there are
+    // (the OSD's "All microphones muted").
+    signal microphonesSet(bool muted, int changed, int total)
+    property bool micKeyBinding: false
+    property bool micKeyPending: false
+    property int micKeyTries: 0
+    readonly property int micKeyWait: 600
+    // The microphones the last press muted, by node name (an id is not kept
+    // across a reconnect, a name is).
+    property var micMutedByKey: []
+
+    function micKey() {
+        if (!micKeyAll || sources.length <= 1) {
+            if (source && source.audio) toggleMute(source)
+            else Quickshell.execDetached(["wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle"])
+            return
+        }
+        micKeyRelease.stop()
+        micKeyBinding = true
+        if (micKeyPending) return
+        micKeyPending = true
+        micKeyTries = 0
+        // Bound already (a panel that shows them is open): at once.
+        if (sources.every(node => node.ready && node.audio)) applyMicKey()
+        else micKeyStep.restart()
+    }
+    function applyMicKey() {
+        micKeyPending = false
+        micKeyStep.stop()
+        const list = sources.slice()
+        // A node that is not bound yet reads as live (MicLogic.plan), so it
+        // is muted rather than left open for not knowing.
+        const step = MicLogic.plan(list.map(node => ({
+            name: node.name || "", muted: node.ready && node.audio ? node.audio.muted : undefined
+        })), source ? source.name || "" : "", micMutedByKey)
+        micMutedByKey = step.remember
+        for (const change of step.changes) {
+            const node = list.find(item => (item.name || "") === change.name)
+            if (!node) continue
+            if (node.ready && node.audio) node.audio.muted = change.muted
+            else Quickshell.execDetached(["wpctl", "set-mute", String(node.id), change.muted ? "1" : "0"])
+        }
+        microphonesSet(step.mute, step.mute ? 0 : step.changes.length, list.length)
+        micKeyRelease.restart()
+    }
+    Timer {
+        id: micKeyStep
+        interval: 40
+        repeat: true
+        onTriggered: {
+            root.micKeyTries += 1
+            const ready = root.sources.every(node => node.ready && node.audio)
+            if (ready || root.micKeyTries * interval >= root.micKeyWait) root.applyMicKey()
+        }
+    }
+    Timer { id: micKeyRelease; interval: 2000; onTriggered: root.micKeyBinding = false }
+
+    // ---- push to talk (MicLogic.talkStep) ------------------------------------
+    // A key held turns the default microphone on, letting go puts it back the
+    // way it was: muted again when the key turned it on, left on when it was
+    // on before. A release the shell never hears cannot leave the microphone
+    // on for good: the microphone's display stays on screen while the hold
+    // lasts (Osd), the next press ends it, and so does MicLogic.TALK_LIMIT_MS.
+    property bool talking: false
+    property var talkState: ({ talking: false, restore: false })
+    // The microphone the press turned on: a headset plugged in while the key
+    // is held does not move the release to another one.
+    property var talkNode: null
+    function pushToTalk(down) {
+        // A press while held ends the hold on the microphone it holds: the
+        // shell missed a release (MicLogic.talkStep).
+        const starting = down === true && !talkState.talking
+        const node = starting ? source : talkNode
+        const audio = node && node.audio ? node.audio : null
+        if (starting && !audio) return
+        const step = MicLogic.talkStep(talkState, down === true, audio ? audio.muted : false)
+        talkState = step.state
+        talking = step.state.talking
+        talkNode = talking ? node : null
+        if (talking) talkLimit.restart()
+        else talkLimit.stop()
+        if (step.set !== null && audio) audio.muted = step.set
+    }
+    Timer { id: talkLimit; interval: MicLogic.TALK_LIMIT_MS; onTriggered: root.pushToTalk(false) }
+
     function setDefaultSink(node) { if (node) Pipewire.preferredDefaultAudioSink = node }
     function setDefaultSource(node) { if (node) Pipewire.preferredDefaultAudioSource = node }
 
@@ -179,7 +277,8 @@ Singleton {
 
     PwObjectTracker {
         objects: {
-            const list = root.nodesBound ? root.sinks.concat(root.sources, root.playbackStreams, root.captureStreams) : []
+            const list = root.nodesBound ? root.sinks.concat(root.sources, root.playbackStreams, root.captureStreams)
+                : root.micKeyBinding ? root.sources.slice() : []
             for (const node of [root.sink, root.source]) {
                 if (node && list.indexOf(node) < 0) list.push(node)
             }

@@ -280,6 +280,60 @@ ColumnLayout {
         }
     }
 
+    // The keyboard passthrough (hypr/, services/hypr/PassthroughLogic.js) and
+    // the Citrix session over the desk's screens: what a remote desktop needs
+    // from the keys and the screens of this one.
+    SettingsSection {
+        Layout.fillWidth: true
+        title: "Keyboard passthrough"
+        description: "Every key goes to the window in front - Alt+Tab, the Windows key and " + ShortcutService.keyHint("SUPER + L", true)
+            + " reach a Citrix session or a virtual machine instead of this desktop - until the same key again. Volume, brightness, media keys and the lid stay with this desktop; a chip in the corner says the keys are away."
+
+        // The key caps at the right, where every key cap of the list above
+        // stands.
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Key"
+            hint: "In and out again. A click on the chip, or another window taking the focus, gives the keys back too."
+            KeyChips { keys: ShortcutService.keyHintParts("SUPER + Escape") }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "On by itself while Citrix is in full screen"
+            hint: "Hand the keys over by itself while a Citrix session in full screen has the focus, and take them back when it leaves full screen or another window is in front."
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("input.passthroughCitrix") === true
+                onToggled: value => SettingsService.set("input.passthroughCitrix", value)
+            }
+        }
+        SettingRow {
+            id: spanRow
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Spread Citrix over the screens"
+            // What the last try came to, said here as well as in the OSD.
+            property string result: ""
+            hint: (result.length ? result + ". " : "")
+                + "Hyprland's full screen covers one screen. Start the session in a window, then spread it: it becomes a floating window as large as the external screens side by side, and the session fills it."
+            Connections {
+                target: HyprlandService
+                function onSpanFinished(message, ok) { spanRow.result = message }
+            }
+            // A button that looks like one: a bare ghost word read as a
+            // label. The display switcher's "Extend" glyph.
+            ShellButton {
+                focusOnTab: true
+                icon: "\u{f037a}"
+                text: "Spread"
+                variant: "surface"
+                onClicked: HyprlandService.spanCitrix()
+            }
+        }
+    }
+
     SettingsSection {
         Layout.fillWidth: true
         visible: GestureService.touchpadShown

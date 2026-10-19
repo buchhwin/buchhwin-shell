@@ -49,15 +49,21 @@ Item {
     // The event hint needs the calendar while this clock can draw it; the
     // backend no longer starts for the setting alone (CalendarService.wanted).
     readonly property CalendarDemand calendarDemand: CalendarDemand { active: root.showIndicators && CalendarService.hintActive }
+    // A meeting from five minutes before its start until its end: the event
+    // hint's place takes a Join glyph a click opens (CalendarService.join).
+    readonly property var joinEvent: showIndicators && CalendarService.hintActive ? CalendarService.nextJoin(clock.date) : null
     readonly property var indicators: {
         if (!showIndicators) return []
         const result = []
-        if (CalendarService.hintActive && CalendarService.upcoming(clock.date) !== null)
+        if (CalendarService.hintActive && root.joinEvent === null && CalendarService.upcoming(clock.date) !== null)
             result.push({ icon: "󰃰", color: root.accentInk })
         if (HyprlandService.screencastActive) result.push({ icon: "󰹑", color: root.dangerInk })
         if (AudioService.micInUse) result.push({ icon: "󰍬", color: root.warningInk })
         if (NotificationService.dndActive) result.push({ icon: "󰂛", color: root.mutedTextColor })
         else if (NotificationService.unread > 0) result.push({ icon: "󰂞", color: root.accentInk })
+        // Stay awake holds the lock and sleep off: said while it does, so it
+        // is not left on by accident (IdleService).
+        if (IdleService.stayAwake) result.push({ icon: IdleService.stayAwakeIcon, color: root.mutedTextColor })
         // A low battery is PowerService's low, in the danger colour every
         // other battery uses. It had its own two steps here (amber from 20 %,
         // red from 10 %) that no other surface drew; the escalation lives in
@@ -74,7 +80,7 @@ Item {
     // hides its content while a fullscreen window covers it (PillBar) - the
     // clock's size then shrank behind the hidden bar and its pill sprang
     // back to width on the way out of fullscreen.
-    readonly property bool indicatorsShown: indicators.length > 0 || showRecording
+    readonly property bool indicatorsShown: indicators.length > 0 || showRecording || joinEvent !== null
     readonly property bool detailShown: sizeClass !== "small" || detail.opacity > 0
     readonly property bool secondaryShown: sizeClass === "large"
     readonly property real indicatorWidth: indicatorsShown ? indicatorRow.implicitWidth + Metrics.spaceSm * scaleFactor : 0
@@ -110,7 +116,7 @@ Item {
                 spacing: Metrics.spaceXs * root.scaleFactor
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: recordingMouse.containsMouse ? "󰓛" : "󰑊"
+                    text: recordingMouse.containsMouse ? Icons.stop : "󰑊"
                     color: Colors.recordingText
                     font.family: Typography.iconFamily
                     font.pixelSize: Typography.bodyLargeSize * root.scaleFactor
@@ -138,6 +144,22 @@ Item {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: RecordingService.stop()
+            }
+        }
+        Text {
+            visible: root.joinEvent !== null
+            anchors.verticalCenter: parent.verticalCenter
+            text: Icons.join
+            color: root.accentInk
+            font.family: Typography.iconFamily
+            font.pixelSize: Typography.titleSize * root.scaleFactor
+            textFormat: Text.PlainText
+            renderType: Typography.renderType
+            MouseArea {
+                anchors.fill: parent
+                anchors.margins: -Metrics.spaceXxs
+                cursorShape: Qt.PointingHandCursor
+                onClicked: CalendarService.join(root.joinEvent)
             }
         }
         Repeater {
@@ -188,9 +210,9 @@ Item {
         visible: root.detailShown
         opacity: root.sizeClass !== "small" || root.showHoverDate ? 1 : 0
         text: root.sizeClass === "medium"
-            ? DateFormat.date(clock.date, SettingsService.locale, "short")
+            ? DateFormat.date(clock.date, SettingsService.locale, "short", SettingsService.dateOrder, SettingsService.shortDateNumbers)
             : root.sizeClass === "large" ? SettingsService.locale.toString(clock.date, "dddd")
-            : DateFormat.date(clock.date, SettingsService.locale, "long")
+            : DateFormat.date(clock.date, SettingsService.locale, "long", SettingsService.dateOrder, SettingsService.shortDateNumbers)
         color: root.sizeClass === "large" ? root.textColor : root.mutedTextColor
         font.family: Typography.family
         font.pixelSize: (root.sizeClass === "large" ? Typography.headlineSize : Typography.bodySize) * root.scaleFactor
@@ -206,7 +228,7 @@ Item {
         width: root.width
         horizontalAlignment: root.textAlign
         visible: root.secondaryShown
-        text: DateFormat.date(clock.date, SettingsService.locale, "day")
+        text: DateFormat.date(clock.date, SettingsService.locale, "day", SettingsService.dateOrder, SettingsService.shortDateNumbers)
         color: root.mutedTextColor
         font.family: Typography.family
         font.pixelSize: Typography.titleSize * root.scaleFactor

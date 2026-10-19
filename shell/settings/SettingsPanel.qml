@@ -105,7 +105,7 @@ ShellPanel {
             searchInput.text = ""
             selectTimer.stop()
         }
-        openPage(PanelService.args.page)
+        openPage(PanelService.args.page, PanelService.args.section)
         Qt.callLater(revealPage)
     }
     // A page asked for by name (`buchhwin settings open PAGE`, a link from
@@ -113,8 +113,50 @@ ShellPanel {
     // into the page Loader's path, so `settings open foo` showed Appearance's
     // title over an empty body, logged a load error, and the bad name stuck
     // for every later open.
-    function openPage(asked) {
+    function openPage(asked, section) {
         if (typeof asked === "string" && Nav.pageById(asked)) choosePage(asked)
+        if (typeof section === "string" && section.length) {
+            askedSection = section
+            sectionTries = 0
+            sectionReveal.restart()
+        }
+    }
+    // A section asked for by its title (`{ page, section }`: the assistant's
+    // Settings button): scrolled to the top of the page's view once the page
+    // has laid it out. Desktop extras has nine sections, and a link to the
+    // last one landed at the first. Tried for a moment while the page loads
+    // and lays out; a title the page does not have is let go.
+    property string askedSection: ""
+    property int sectionTries: 0
+    Timer {
+        id: sectionReveal
+        interval: 60
+        repeat: true
+        onTriggered: {
+            root.sectionTries += 1
+            if (root.revealSection() || root.sectionTries >= 20) {
+                stop()
+                root.askedSection = ""
+            }
+        }
+    }
+    function findSection(item, title) {
+        if (!item || item.visible === false) return null
+        if (item.title === title && item.scope !== undefined) return item
+        for (const child of item.children) {
+            const found = findSection(child, title)
+            if (found) return found
+        }
+        return null
+    }
+    function revealSection() {
+        if (!askedSection.length || !pageLoader.item || contentFlick.height <= 0) return false
+        const section = findSection(pageLoader.item, askedSection)
+        if (!section || section.height <= 0) return false
+        const top = section.mapToItem(contentFlick.contentItem, 0, 0).y - Metrics.spaceLg
+        const maxY = Math.max(0, contentFlick.contentHeight - contentFlick.height)
+        contentFlick.contentY = Math.max(0, Math.min(maxY, top))
+        return true
     }
     onPageChanged: {
         contentFlick.contentY = 0
@@ -173,7 +215,7 @@ ShellPanel {
     onFocusedItemChanged: if (focusedItem) revealFocus(focusedItem)
     Connections {
         target: PanelService
-        function onArgsChanged() { if (root.wanted) root.openPage(PanelService.args.page) }
+        function onArgsChanged() { if (root.wanted) root.openPage(PanelService.args.page, PanelService.args.section) }
     }
 
     RowLayout {

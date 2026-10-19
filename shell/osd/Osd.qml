@@ -1,4 +1,5 @@
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import QtQuick.Layouts
@@ -8,6 +9,8 @@ import qs.shell.components
 import "../../services/origin/OriginLogic.js" as Origin
 import "../components/PanelPlaceLogic.js" as Place
 import "OsdLogic.js" as Logic
+import "../../services/audio/MicLogic.js" as MicLogic
+import "../../services/lock/LockLogic.js" as LockLogic
 
 // On-screen display for volume, microphone mute, screen brightness and the
 // keyboard backlight, and for a short message such as the new desktop mode. It
@@ -26,7 +29,7 @@ PanelWindow {
     property string message: ""
     property string messageIcon: ""
     property bool armed: false
-    readonly property real level: kind === "brightness" ? BrightnessService.value
+    readonly property real level: kind === "brightness" ? BrightnessService.osdLevel
         : kind === "kbdBacklight" ? KbdBacklightService.value
         : kind === "mic" ? AudioService.micVolume : AudioService.volume
     readonly property bool mutedState: kind === "mic" ? AudioService.micMuted
@@ -78,7 +81,14 @@ PanelWindow {
         || Origin.barSpot(LayoutService.barBottom(screenName),
                           targetScreen ? targetScreen.width : 0, "centre", Metrics.screenMargin,
                           barEdge, targetScreen ? targetScreen.height : 0)
-    readonly property real boxWidth: Metrics.osdWidth
+    // A message is as wide as its words, up to Metrics.osdMessageMaxWidth: at
+    // the levels' width the one that says what to do was cut off ("Leave
+    // full screen in the Citrix toolba…"). Read from the text's natural width,
+    // which does not wrap and so does not follow the box (no loop).
+    readonly property real boxWidth: isMessage
+        ? Math.min(Metrics.osdMessageMaxWidth, Math.max(Metrics.osdWidth, messageText.implicitWidth + Metrics.iconMd
+                                                                              + Metrics.spaceMd + Metrics.spaceLg * 2))
+        : Metrics.osdWidth
     // The box out of a bar's pill ends at the pill's outer edge rather than
     // at the screen margin further in: never further in than what it comes
     // out of, never less than 0 (as ShellPanel's PanelPlaceLogic.outerClear).
@@ -178,7 +188,16 @@ PanelWindow {
     WlrLayershell.namespace: "buchhwin-osd"
     WlrLayershell.layer: WlrLayer.Overlay
 
-    Timer { id: hideTimer; interval: Metrics.osdTimeout; onTriggered: window.showing = false }
+    // The microphone stays on screen while push to talk holds it on: its
+    // display is the one sign that the key is doing what it should.
+    Timer {
+        id: hideTimer
+        interval: Metrics.osdTimeout
+        onTriggered: {
+            if (window.kind === "mic" && AudioService.talking) restart()
+            else window.showing = false
+        }
+    }
     // Ignore the initial values reported while services start.
     Timer { interval: Animations.startupQuiet; running: true; onTriggered: window.armed = true }
     // A new output - headphones connecting over Bluetooth, a dock - comes
@@ -201,6 +220,7 @@ PanelWindow {
             const changed = Logic.deviceChanged(lastSink, sink, sinkSeen)
             lastSink = sink
             sinkSeen = sinkSeen || sink !== null
+            if (changed && toastOutput && armed && sink !== null) outputToastTimer.restart()
             if (changed) { sinkSettling.restart(); return }
         }
         if (!sinkSettling.running) show("volume")
@@ -213,7 +233,137 @@ PanelWindow {
             sourceSeen = sourceSeen || source !== null
             if (changed) { sourceSettling.restart(); return }
         }
+        // The microphone key's own message ("All microphones muted") is
+        // what the press said; the default input's mute arriving a moment
+        // later must not replace it with the plain display.
+        if (Date.now() < micMessageUntil) return
         if (!sourceSettling.running) show("mic")
+    }
+    property real micMessageUntil: 0
+    function microphonesSet(muted, changed, total) {
+        const text = MicLogic.message(muted, changed, total)
+        micMessageUntil = MicLogic.messageHold(text, Date.now(), Metrics.osdTimeout)
+        if (text.length) showMessage(text, muted ? "󰍭" : "󰍬")
+    }
+
+    // ---- short messages for state changes (Settings > Desktop) ---------------
+    // Each one off unless turned on (OsdLogic.outputToast and the rest): the
+    // output that plays now, the charger, a VPN, Caps Lock. Nothing is
+    // watched for one that is off, and none speaks in the first moments of a
+    // session, while the services report where they start.
+    readonly property bool toastOutput: SettingsService.value("toasts.output") === true
+    readonly property bool toastCharger: SettingsService.value("toasts.charger") === true
+    readonly property bool toastVpn: SettingsService.value("toasts.vpn") === true
+    readonly property bool toastCaps: SettingsService.value("toasts.capsLock") === true
+
+    // The output: its name once the new default has settled (a headset
+    // connecting brings its sink, then its profile).
+    property string lastOutputLabel: ""
+    Timer {
+        id: outputToastTimer
+        interval: 800
+        onTriggered: {
+            const sink = AudioService.sink
+            const label = sink ? AudioService.shortLabel(sink, AudioService.sinks) : ""
+            const text = Logic.outputToast(window.lastOutputLabel, label)
+            window.lastOutputLabel = label
+            if (text.length && window.toastOutput) window.showMessage(text, AudioService.deviceIcon(sink, false))
+        }
+    }
+
+    // The charger: what was last said against now, 1.5 s after a change -
+    // UPower reports a resume or a dock in several steps.
+    function chargerNow() {
+        return { hasBattery: PowerService.hasBattery, onBattery: PowerService.onBattery,
+                 charging: PowerService.charging, percent: PowerService.percent }
+    }
+    property var lastCharger: null
+    Timer {
+        id: chargerToastTimer
+        interval: 1500
+        onTriggered: {
+            const now = window.chargerNow()
+            const text = Logic.chargerToast(window.lastCharger, now)
+            window.lastCharger = now
+            if (text.length) window.showMessage(text, PowerService.icon)
+        }
+    }
+    Connections {
+        target: PowerService
+        enabled: window.toastCharger && window.armed
+        function onOnBatteryChanged() { chargerToastTimer.restart() }
+        function onChargingChanged() { chargerToastTimer.restart() }
+    }
+
+    // A VPN: the tunnels that are up, against the last list read - once
+    // NetworkService has read its list at all (an empty one before is not
+    // "disconnected").
+    function vpnNow() { return NetworkService.activeVpns.map(item => ({ uuid: item.uuid, name: item.name })) }
+    property var lastVpns: null
+    Timer {
+        id: vpnToastTimer
+        interval: 300
+        onTriggered: {
+            if (!NetworkService.connectionsRead) return
+            const now = window.vpnNow()
+            const text = window.lastVpns === null ? "" : Logic.vpnToast(window.lastVpns, now)
+            window.lastVpns = now
+            if (text.length) window.showMessage(text, "󰖂")
+        }
+    }
+    Connections {
+        // No target while the message is off: the OSD alone never starts
+        // the network service.
+        target: window.toastVpn ? NetworkService : null
+        enabled: window.armed
+        function onActiveVpnsChanged() { vpnToastTimer.restart() }
+        function onConnectionsReadChanged() { vpnToastTimer.restart() }
+    }
+
+    // Where each one starts: taken when it is turned on, or once the
+    // session's first moments are over.
+    function startToasts() {
+        if (!armed) return
+        if (toastCharger && lastCharger === null) lastCharger = chargerNow()
+        if (toastVpn && lastVpns === null && NetworkService.connectionsRead) lastVpns = vpnNow()
+        if (toastOutput) lastOutputLabel = AudioService.sink ? AudioService.shortLabel(AudioService.sink, AudioService.sinks) : ""
+    }
+    onArmedChanged: startToasts()
+    onToastChargerChanged: { lastCharger = null; startToasts() }
+    onToastVpnChanged: { lastVpns = null; startToasts() }
+    onToastOutputChanged: startToasts()
+
+    // Caps Lock: its key's release bind sends `osd capsLock` (it does not
+    // take the key from the window), and the state comes from the
+    // compositor, which keeps it - asked only while the message is on.
+    function capsLock() {
+        if (!toastCaps || capsRead.running) return
+        capsRead.running = true
+    }
+    Process {
+        id: capsRead
+        stderr: ErrorLog { label: "Osd.capsRead" }
+        command: ["hyprctl", "-j", "devices"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const state = LockLogic.keyboardState(text)
+                window.showMessage(Logic.capsToast(state.capsLock), "󰘲")
+            }
+        }
+    }
+
+    // A message with sample text whatever the settings say, for screenshots
+    // (IPC `osd previewToast`): output, charger, vpn, capsLock, mics.
+    function previewToast(kindName) {
+        const sample = Logic.previewToast(kindName)
+        if (!sample) return false
+        showMessage(sample.text, sample.icon)
+        return true
+    }
+    // Flags only (IPC `osd get`).
+    function osdState() {
+        return { showing: showing, kind: kind, inNotch: inNotch, talking: AudioService.talking,
+                 toasts: { output: toastOutput, charger: toastCharger, vpn: toastVpn, capsLock: toastCaps } }
     }
 
     Connections {
@@ -223,10 +373,17 @@ PanelWindow {
         function onSinkChanged() { window.volumeMoved() }
         function onMicMutedChanged() { window.micMoved() }
         function onSourceChanged() { window.micMoved() }
+        function onMicrophonesSet(muted, changed, total) { window.microphonesSet(muted, changed, total) }
+        // Push to talk shows the microphone while held, even when it was on
+        // already and nothing changed.
+        function onTalkingChanged() { if (AudioService.talking) window.show("mic") }
     }
     Connections {
         target: BrightnessService
         function onValueChanged() { if (Date.now() >= BrightnessService.quietUntil) window.show("brightness") }
+        // A brightness key on an external screen (DDC/CI): its level, not the
+        // backlight's (BrightnessService.osdLevel).
+        function onDdcStepped() { window.show("brightness") }
     }
     Connections {
         target: KbdBacklightService
@@ -266,10 +423,12 @@ PanelWindow {
             ShellIcon { glyph: window.icon; size: Metrics.iconMd; color: window.mutedState ? Colors.mutedText : Colors.text }
 
             ShellText {
+                id: messageText
                 Layout.fillWidth: true
                 visible: window.isMessage
                 text: window.message
                 role: "small"
+                elide: Text.ElideRight
             }
 
             Item {

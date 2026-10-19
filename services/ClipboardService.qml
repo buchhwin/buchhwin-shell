@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import QtQuick
 import "clipboard/ClipboardLogic.js" as Logic
+import "clipboard/PinLogic.js" as Pin
 
 // Clipboard history through cliphist with its own database in the shell's
 // cache directory. Text and images are recorded while the setting is on;
@@ -44,8 +45,10 @@ Singleton {
         }).filter(entry => /^\d+$/.test(entry.id))
     }
 
-    // Preview path once it has been decoded, otherwise "".
+    // Preview path once it has been decoded, otherwise "". A pinned picture
+    // is its own file, there from the moment it was pinned.
     function thumbnail(entry) {
+        if (entry.pinned === true) return entry.image ? "file://" + pinsDir + "/" + Pin.fileName(entry) : ""
         if (!entry.image || !readyThumbs[entry.thumb]) return ""
         return "file://" + thumbDir + "/" + entry.thumb
     }
@@ -60,6 +63,7 @@ Singleton {
         if (entry.image) Quickshell.execDetached(["rm", "-f", "--", thumbDir + "/" + entry.thumb])
     }
 
+    // The history only: pinned entries stay (they are kept apart for that).
     function wipe() {
         // A wipe creates the database when there is none yet (a clear before
         // the first copy), and the recorders set its mode only as they start.
@@ -69,6 +73,151 @@ Singleton {
         readyThumbs = ({})
         // cliphist starts its ids at 1 again.
         if (ageMarks.length) saveMarks([])
+    }
+
+    // ---- pinned entries (Ctrl+P in the panel; PinLogic has how) -------------
+    // A copy of each pinned entry's content in the state directory, outside
+    // cliphist's rotation, "Clear history" and both ways of forgetting. The
+    // index is read the first time the panel opens (a small JSON file) and
+    // written by the shell alone, so it is not watched.
+    readonly property string pinsDir: Paths.stateDir + "/clipboard-pins"
+    property var pins: []              // [{ id, image, format, text }], newest first
+    // The pins as the panel lists them: marked, and made once per change of
+    // the pins rather than in the panel's filter on every key.
+    readonly property var pinRows: pins.map(item => Object.assign({ pinned: true }, item))
+    property bool pinsRead: false
+    // An index that is there but could not be read is kept as it is, and
+    // nothing is pinned over it.
+    property bool pinsWritable: true
+    readonly property bool pinsFull: Pin.full(pins)
+    readonly property int pinLimit: Pin.LIMIT
+    // The panel says why a pin did nothing: the list is full.
+    signal pinRefused()
+
+    // Turning `preload` on is what reads a FileView that never read (pitfall
+    // 34), and from the panel's open it is switched a turn later.
+    function loadPins() {
+        if (pinsRead || pinsFile.preload) return
+        Qt.callLater(() => { pinsFile.preload = true })
+    }
+
+    function isPinned(entry) { return entry !== null && entry !== undefined && entry.pinned === true }
+
+    // A history entry into the pins, or a pin out of them.
+    function togglePin(entry) {
+        if (!entry) return false
+        return isPinned(entry) ? unpin(entry) : pin(entry)
+    }
+
+    function pin(entry) {
+        if (!entry || isPinned(entry) || !pinsRead || !pinsWritable || pinProc.running) return false
+        if (pinsFull) { pinRefused(); return false }
+        pinProc.entry = { image: entry.image === true, format: entry.image ? entry.format : "", text: entry.text }
+        pinProc.command = Pin.pinCommand(pinsDir, dbPath, entry.id, entry.image ? entry.format : "txt")
+        pinProc.running = true
+        return true
+    }
+
+    // `clipboard pin N` over IPC: the history's N-th entry (0 the newest, as
+    // the panel lists them), once the pins are read - an IPC call can come
+    // before the panel ever opened.
+    property var pendingPin: null
+    function pinAt(index) {
+        const entry = entries[index]
+        if (!entry) return false
+        if (pinsRead) return pin(entry)
+        pendingPin = entry
+        loadPins()
+        return true
+    }
+    onPinsReadChanged: if (pinsRead && pendingPin) {
+        const entry = pendingPin
+        pendingPin = null
+        pin(entry)
+    }
+    function unpinAt(index) {
+        return unpin(pins.length > index && index >= 0 ? pinRows[index] : null)
+    }
+
+    function unpin(item) {
+        if (!isPinned(item) || !pinsWritable) return false
+        Quickshell.execDetached(Pin.removeCommand(pinsDir, item))
+        savePins(Pin.without(pins, item.id))
+        return true
+    }
+
+    function copyPin(item) {
+        if (isPinned(item)) Quickshell.execDetached(Pin.copyCommand(pinsDir, item))
+    }
+
+    function savePins(list) {
+        pins = list
+        pinsWrite.restart()
+    }
+    // One write per turn of the event loop (pitfall 3): a pin and an unpin
+    // in the same turn are one write of the list as it stands.
+    Timer { id: pinsWrite; interval: 0; onTriggered: pinsFile.setText(Pin.serialize(root.pins)) }
+
+    FileView {
+        id: pinsFile
+        path: Paths.stateDir + "/clipboard-pins.json"
+        preload: false
+        atomicWrites: true
+        printErrors: false
+        onLoaded: {
+            const read = Pin.parse(text())
+            root.pins = read.pins
+            if (!read.ok) {
+                root.pinsWritable = false
+                console.warn("buchhwin-shell: the clipboard's pinned entries are unreadable, kept as they are:", path)
+                root.pinsRead = true
+                return
+            }
+            // Pinning waits for the settle run (pinsRead comes at its end): a
+            // pin run beside it would have its temporary file removed as no
+            // pin's, or its new pin dropped with the names listed before it.
+            pinsSettle.command = Pin.settleCommand(root.pinsDir, read.pins)
+            pinsSettle.running = true
+        }
+        // Not there yet is no pins; anything else is a file that is there
+        // and is not written over (pitfall 132).
+        onLoadFailed: error => {
+            if (error !== FileViewError.FileNotFound) {
+                root.pinsWritable = false
+                console.warn("buchhwin-shell: the clipboard's pinned entries could not be read:", FileViewError.toString(error))
+            }
+            root.pinsRead = true
+        }
+        onSaved: Quickshell.execDetached(["chmod", "600", "--", pinsFile.path])
+    }
+
+    // Once, after the index is read: what no pin owns goes, and a pin whose
+    // file went is dropped (PinLogic.settleCommand, .present).
+    Process {
+        id: pinsSettle
+        stderr: ErrorLog { label: "ClipboardService.pinsSettle" }
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const kept = Pin.present(root.pins, text.split("\n").filter(line => line.length))
+                if (kept.length !== root.pins.length) root.savePins(kept)
+            }
+        }
+        // The listing is in by now (pitfall 131): pins may be taken.
+        onExited: root.pinsRead = true
+    }
+
+    Process {
+        id: pinProc
+        property var entry: null
+        stderr: ErrorLog { label: "ClipboardService.pinProc" }
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const id = Pin.pinnedId(text)
+                if (!id.length || !pinProc.entry) return
+                const next = Pin.withPin(root.pins, Object.assign({ id: id }, pinProc.entry))
+                if (next) root.savePins(next)
+            }
+        }
     }
 
     // ---- forgetting (both off by default; ClipboardLogic has how) ------------

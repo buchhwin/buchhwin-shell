@@ -75,7 +75,7 @@ GridLayout {
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignTop
         title: "Theme"
-        description: "Light, dark or automatic (dark from 19:00 to 07:00)"
+        description: "Light, dark or automatic: by the clock or from sunset to sunrise"
 
         SegmentedControl {
             focusOnTab: true
@@ -87,6 +87,29 @@ GridLayout {
                 { value: "auto", label: "Automatic", icon: "󰔎" }
             ]
             onSelected: value => SettingsService.set("appearance.theme", value)
+        }
+        // How Automatic decides (SunService): by the clock, or by the sun at
+        // the weather place - the one Night Light's sun mode uses.
+        SettingRow {
+            Layout.fillWidth: true
+            visible: SettingsService.theme === "auto"
+            label: "Automatic switches"
+            SegmentedControl {
+                focusOnTab: true
+                Layout.fillWidth: true
+                current: SettingsService.value("appearance.autoTheme")
+                options: [{ value: "clock", label: "By the clock" }, { value: "sun", label: "By the sun" }]
+                onSelected: value => SettingsService.set("appearance.autoTheme", value)
+            }
+        }
+        // Today's times in sight under the choice, as Night Light's line says
+        // its state: in the info dot alone, "By the sun" gave no answer - least
+        // of all without a weather place to take the sun from.
+        ShellText {
+            Layout.fillWidth: true
+            visible: SettingsService.theme === "auto" && text.length > 0
+            text: SettingsService.value("appearance.autoTheme") === "sun" ? SunService.summary : "Dark from 19:00 to 07:00"
+            role: "small"; muted: true; wrapMode: Text.Wrap
         }
         // Qt reads the icon theme once, when the shell starts, and
         // scripts/start-shell.sh picks it by the panels' brightness: after a
@@ -220,6 +243,36 @@ GridLayout {
             visible: NightLightService.sunNeedsLocation
             text: "Sunset and sunrise use the weather location. Set it under Weather."
             role: "small"; color: Colors.warning; wrapMode: Text.Wrap
+        }
+    }
+
+    // A color filter over the whole screen (ScreenEffectsService): Hyprland
+    // runs one of the shaders in shaders/ over every frame while it is on.
+    SettingsSection {
+        Layout.fillWidth: true
+        title: "Color filter"
+        description: "Grayscale, colors that stay apart for color-blind eyes, or the colors inverted, over the whole screen. "
+            + ShortcutService.keyHint("SUPER + CTRL + C", true) + " turns it on and off. While it is on, every frame goes through it, which costs the graphics card a little."
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "On"
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("display.colorFilterOn") === true
+                onToggled: value => ScreenEffectsService.setFilterOn(value)
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            label: "Filter"
+            ShellSelect {
+                focusOnTab: true
+                Layout.fillWidth: true
+                options: ScreenEffectsService.filters
+                current: ScreenEffectsService.filter
+                onSelected: value => SettingsService.set("display.colorFilter", value)
+            }
         }
     }
 
@@ -430,6 +483,16 @@ GridLayout {
                 onReleased: value => SettingsService.set("appearance.blurStrength", Math.round(value * 100) / 100)
             }
             ShellText { text: Math.round(SettingsService.blurStrength * 100) + "%"; role: "small"; muted: true; Layout.minimumWidth: Metrics.iconXl }
+        }
+        // The lighter effects on battery (Settings > Power) take the blur and
+        // Full motion away while their power source applies; the values here
+        // stay the user's and are back the moment it no longer does.
+        ShellText {
+            Layout.fillWidth: true
+            visible: SettingsService.lightEffects === true
+            text: "Lighter effects are on (Settings > Power): no blur, and Full motion runs as Reduced"
+            role: "small"; muted: true
+            wrapMode: Text.Wrap
         }
         // The pixel sliders below take whole steps (IntegerSlider): the
         // slider's own step is a twentieth of the range, and rounded it went

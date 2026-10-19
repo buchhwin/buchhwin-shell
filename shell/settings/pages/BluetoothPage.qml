@@ -48,6 +48,17 @@ ColumnLayout {
                 onToggled: value => BluetoothService.setDiscoverable(value)
             }
         }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Low battery warning"
+            hint: "A notification when a connected device - headphones, a mouse, a keyboard - is down to 15%, and again at 5%"
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("bluetooth.batteryWarning") !== false
+                onToggled: value => SettingsService.set("bluetooth.batteryWarning", value)
+            }
+        }
         ShellText {
             Layout.fillWidth: true
             visible: BluetoothService.agentStarting

@@ -4,10 +4,14 @@ import Quickshell.Io
 import QtQuick
 import "system/SystemLogic.js" as Logic
 import "system/ProcessLogic.js" as ProcessLogic
+import "system/SensorLogic.js" as Sensors
 
 // CPU, memory and disk usage for the stat widgets and the system popup.
 // Samples every two seconds only while something tracks it; the busiest
-// processes (read from /proc, ProcessLogic) only while the popup is open.
+// processes (read from /proc, ProcessLogic) only while the popup is open;
+// temperatures, the GPU's load and the fan (SensorLogic) only while the popup
+// or a temperature widget shows them, the disk's heat and the network's speed
+// only while the popup does.
 Singleton {
     id: root
     property int trackers: 0
@@ -108,11 +112,102 @@ Singleton {
     }
     Timer { id: processSoon; interval: 500; onTriggered: root.readProcesses() }
 
+    // One tick for all: the meters', the sensors' and the network's reads
+    // land together.
     Timer {
         interval: 2000
         repeat: true
-        running: root.trackers > 0
-        onTriggered: root.sample()
+        running: root.trackers > 0 || root.sensorTrackers > 0 || root.networkTrackers > 0
+        onTriggered: {
+            if (root.trackers > 0) root.sample()
+            if (root.sensorTrackers > 0) root.sampleSensors()
+            if (root.networkTrackers > 0) netFile.reload()
+        }
+    }
+
+    // ---- sensors and the network (SensorLogic) -------------------------------
+    // The files are found once, as the first tracker starts (the hwmonN
+    // numbers are the boot's), and from then on only the few picked are read:
+    // each FileView has its path only while something tracks the sensors. The
+    // network has trackers of its own - the popup; a temperature widget on the
+    // bar has no use for /proc/net/dev every two seconds. So has the disk: an
+    // NVMe drive's temperature is a command to the drive itself (the kernel
+    // asks it for its health log on every read), and drivetemp's read can
+    // keep a hard disk from spinning down - a drive asked every two seconds,
+    // for as long as a widget that does not even show the disk is placed.
+    property int sensorTrackers: 0
+    property int networkTrackers: 0
+    property int diskTrackers: 0
+    property var sensorPaths: null         // { cpu, gpu, gpuBusy, disk, fan }
+    property real cpuTemp: NaN             // degrees Celsius
+    property real gpuTemp: NaN
+    property real gpuBusy: NaN             // 0..1
+    property real diskTemp: NaN
+    property real fanRpm: NaN
+    property var netRates: null            // { rx, tx } bytes per second
+    property var lastNet: null             // { rx, tx, at }
+    readonly property bool sensing: sensorTrackers > 0 && sensorPaths !== null
+    readonly property bool fahrenheit: SettingsService.value("weather.unit") === "fahrenheit"
+
+    function trackSensors() {
+        sensorTrackers += 1
+        if (sensorPaths === null) { if (!discoverProc.running) discoverProc.running = true }
+        else sampleSensors()
+    }
+    function untrackSensors() { sensorTrackers = Math.max(0, sensorTrackers - 1) }
+    function trackNetwork() { networkTrackers += 1 }
+    function trackDisk() { diskTrackers += 1 }
+    function untrackDisk() { diskTrackers = Math.max(0, diskTrackers - 1) }
+    // The next open measures the network afresh, not against a read from
+    // minutes ago.
+    function untrackNetwork() {
+        networkTrackers = Math.max(0, networkTrackers - 1)
+        if (!networkTrackers) { lastNet = null; netRates = null }
+    }
+    function sampleSensors() {
+        for (const view of [cpuTempFile, gpuTempFile, gpuBusyFile, diskTempFile, fanFile])
+            if (view.path.length) view.reload()
+    }
+    // For `widgets sensors` over IPC: which sensors were found and what they
+    // read, numbers only (NaN, nothing read, as null).
+    function sensorStatus() {
+        const number = value => isFinite(value) ? value : null
+        const paths = sensorPaths
+        return { trackers: sensorTrackers, networkTrackers: networkTrackers, diskTrackers: diskTrackers,
+                 found: paths ? { cpu: paths.cpu.length > 0, gpu: paths.gpu.length > 0, gpuBusy: paths.gpuBusy.length > 0,
+                                  disk: paths.disk.length > 0, fan: paths.fan.length > 0 } : null,
+                 cpuTemp: number(cpuTemp), gpuTemp: number(gpuTemp), gpuBusy: number(gpuBusy),
+                 diskTemp: number(diskTemp), fanRpm: number(fanRpm),
+                 rx: netRates ? Math.round(netRates.rx) : null, tx: netRates ? Math.round(netRates.tx) : null }
+    }
+    function formatTemp(celsius) { return Sensors.formatTemp(celsius, fahrenheit) }
+    function formatRate(bytesPerSecond) { return Sensors.formatRate(bytesPerSecond) }
+    function tempLevel(celsius) { return Sensors.level(celsius) }
+
+    Process {
+        id: discoverProc
+        stderr: ErrorLog { label: "SystemStatsService.discoverProc" }
+        command: Sensors.discoveryCommand()
+        stdout: StdioCollector { onStreamFinished: root.sensorPaths = Sensors.pick(Sensors.parseDiscovery(text)) }
+    }
+
+    FileView { id: cpuTempFile; path: root.sensing ? root.sensorPaths.cpu : ""; printErrors: false; onLoaded: root.cpuTemp = Sensors.celsius(text()) }
+    FileView { id: gpuTempFile; path: root.sensing ? root.sensorPaths.gpu : ""; printErrors: false; onLoaded: root.gpuTemp = Sensors.celsius(text()) }
+    FileView { id: gpuBusyFile; path: root.sensing ? root.sensorPaths.gpuBusy : ""; printErrors: false; onLoaded: root.gpuBusy = Sensors.busy(text()) }
+    FileView { id: diskTempFile; path: root.sensing && root.diskTrackers > 0 ? root.sensorPaths.disk : ""; printErrors: false; onLoaded: root.diskTemp = Sensors.celsius(text()) }
+    FileView { id: fanFile; path: root.sensing ? root.sensorPaths.fan : ""; printErrors: false; onLoaded: root.fanRpm = Sensors.rpm(text()) }
+    FileView {
+        id: netFile
+        path: root.networkTrackers > 0 ? "/proc/net/dev" : ""
+        printErrors: false
+        onLoaded: {
+            const totals = Sensors.netTotals(text())
+            if (!totals) return
+            const now = Date.now()
+            const rates = Sensors.rates(root.lastNet, totals, root.lastNet ? now - root.lastNet.at : 0)
+            if (rates) root.netRates = rates
+            root.lastNet = { rx: totals.rx, tx: totals.tx, at: now }
+        }
     }
 
     Timer {

@@ -12,22 +12,27 @@ import qs.services
 // pretending to be one. Nothing on is a quiet glyph, not an empty widget.
 WidgetBase {
     id: root
-    // The three that change what the machine does rather than how it looks,
-    // and the ones whose being on is worth knowing from across the room.
+    // The ones that change what the machine does rather than how it looks,
+    // and whose being on is worth knowing from across the room. Stay awake
+    // among them: it is said while it holds the lock and sleep off, so it is
+    // not left on by accident - and in a pill the clock beside it shows no
+    // hints (ClockWidget's inGroup), so this is where the pill bar says it.
     readonly property bool dnd: NotificationService.dndActive
+    readonly property bool stayAwake: IdleService.stayAwake
     readonly property bool nightLight: NightLightService.active
     readonly property bool wifiOff: !NetworkService.wifiEnabled
-    readonly property int active: (dnd ? 1 : 0) + (nightLight ? 1 : 0) + (wifiOff ? 1 : 0)
+    readonly property int active: (dnd ? 1 : 0) + (stayAwake ? 1 : 0) + (nightLight ? 1 : 0) + (wifiOff ? 1 : 0)
 
     // Do Not Disturb wins the glyph when it is on: it is the one that changes
     // whether the machine may interrupt you, which is the thing you would want
-    // to be reminded of.
-    icon: root.dnd ? "󰂛" : root.nightLight ? Icons.nightLight : root.wifiOff ? "󰤮" : "󰕮"
+    // to be reminded of. Stay awake next: it keeps the screen unlocked.
+    icon: root.dnd ? "󰂛" : root.stayAwake ? IdleService.stayAwakeIcon : root.nightLight ? Icons.nightLight : root.wifiOff ? "󰤮" : "󰕮"
     iconColor: root.dnd || root.wifiOff ? root.warningInk : root.glyphInk
     label: ""
 
     name: "Control center"
     detail: root.dnd ? "Do Not Disturb"
+        : root.stayAwake ? "Staying awake"
         : root.wifiOff ? "Wi-Fi off"
         : root.nightLight ? "Night Light"
         : "Nothing on"

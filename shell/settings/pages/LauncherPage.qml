@@ -20,7 +20,11 @@ ColumnLayout {
     // Whether the file index holds anything from home is asked each time the
     // page shows (a few ms), so the hint under Files goes once it is fixed.
     PageActivity {
-        onOpened: if (SettingsService.value("launcher.fileSearch")) LauncherService.checkFileIndex()
+        onOpened: {
+            if (SettingsService.value("launcher.fileSearch")) LauncherService.checkFileIndex()
+            // Whether qalc is there, for the hint under the conversions.
+            if (SettingsService.value("launcher.conversions")) LauncherService.checkQalc()
+        }
     }
 
     SettingsSection {
@@ -213,6 +217,84 @@ ColumnLayout {
             row: true
             icon: Icons.pin
             title: "Nothing pinned yet"
+        }
+    }
+
+    // What a typed search finds besides apps and commands, each a few rows
+    // after the best app (LauncherService). Off, a source is not asked at all.
+    SettingsSection {
+        Layout.fillWidth: true
+        title: "Search results"
+        description: "Besides apps and commands, a search lists what it finds of these, after the best app. Typed after $, a command runs: Enter starts it, Ctrl+Enter in a terminal."
+
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Open windows"
+            hint: "Enter switches to the window, on whichever workspace it is"
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("launcher.windows")
+                onToggled: value => SettingsService.set("launcher.windows", value)
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "VS Code folders"
+            hint: "The folders VS Code opened last and those under ~/git, opened in the editor; Ctrl+Enter opens the folder"
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("launcher.codeFolders")
+                onToggled: value => SettingsService.set("launcher.codeFolders", value)
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Recent files"
+            hint: "What your applications opened lately; Ctrl+Enter opens the folder"
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("launcher.recentFiles")
+                onToggled: value => SettingsService.set("launcher.recentFiles", value)
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Unit and currency conversions"
+            hint: "10 km to mi, 20 C in F, 100 eur to usd, 255 to hex - with qalc; Enter copies the answer, Ctrl+Enter the number alone"
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("launcher.conversions")
+                onToggled: value => {
+                    SettingsService.set("launcher.conversions", value)
+                    if (value) LauncherService.checkQalc()
+                }
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Fetch exchange rates"
+            hint: "Once a day, before a currency conversion: the European Central Bank's rates, over the network. Off, the rates qalc has are used and the answer says they are offline."
+            enabled: SettingsService.value("launcher.conversions")
+            opacity: enabled ? 1 : Effects.disabledOpacity
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("launcher.exchangeRates")
+                onToggled: value => SettingsService.set("launcher.exchangeRates", value)
+            }
+        }
+        // Installing needs root, so the page only says what to run.
+        ShellText {
+            Layout.fillWidth: true
+            visible: SettingsService.value("launcher.conversions") === true && LauncherService.qalcMissing
+            text: "Conversions need qalc. " + DistroService.installHint("qalc")
+            role: "small"
+            color: Colors.warning
+            wrapMode: Text.Wrap
         }
     }
 

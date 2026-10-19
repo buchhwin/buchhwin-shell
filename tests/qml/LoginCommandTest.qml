@@ -87,6 +87,20 @@ ShellRoot {
         T.eq(L.shellWord("=ls"), "'=ls'", "a leading = is quoted (zsh looks it up as a command)")
         T.eq(L.shellWord("a=b"), "a=b", "an = inside a word is not")
         T.eq(L.shellWord(""), "''", "an empty word is still a word")
+
+        // As the page shows it: a break allowed after each folder of a path,
+        // nowhere else, and nothing more than that - the copy is the line.
+        const line = L.installCommand(root.plainScript, "/home/sample/Pictures/beach.jpg")
+        T.eq(L.shown("sudo /opt/a/b.sh --sddm-theme"), "sudo /opt/\u200Ba/\u200Bb.sh --sddm-theme",
+             "after each folder, not after the root's slash")
+        T.eq(L.shown(line).replace(/\u200B/g, ""), line, "the line shown is the line copied, apart from the breaks")
+        T.eq(L.shown("a // b /"), "a // b /", "no break before another slash or a space")
+        T.eq(L.shown(undefined), "", "nothing, nothing")
+        metrics.text = L.shown(line)
+        const breakable = metrics.advanceWidth
+        metrics.text = line
+        T.near(breakable, metrics.advanceWidth, "and the breaks take no room: nothing is drawn for them", 0.5)
         parse.running = true
     }
+    TextMetrics { id: metrics; font.family: "JetBrains Mono" }
 }

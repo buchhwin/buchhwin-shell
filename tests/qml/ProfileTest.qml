@@ -23,6 +23,11 @@ ShellRoot {
         // one turns it off, because a hand-picked profile that silently
         // reverts at the next monitor change is worse than one that does not.
         T.eq(all.map(P.autoAfter), [false, false, false, true, true], "only the two it chooses between")
+        // The user's own targets (Settings > Profiles, AutoModeLogic.owned).
+        T.eq(all.map(mode => P.autoAfter(mode, ["minimal"])), [true, false, false, false, false], "the user's targets own the switching")
+        T.eq(P.cycleMode("docked", all, false, ["minimal"]).auto, true, "landing on a target turns it on")
+        T.eq(P.cycleMode("minimal", all, true, ["minimal"]).autoChanged, true, "leaving it turns it off")
+        T.eq(P.cycleMode("gaming", all, false, []).auto, true, "an empty list is the shipped pair")
 
         // A whole round from minimal with automatic off: it stays off until
         // the cycle reaches laptop, and comes back off after docked.

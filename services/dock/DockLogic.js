@@ -1,5 +1,6 @@
 .pragma library
 .import "../hypr/HiddenWindows.js" as Hidden
+.import "MinimizeLogic.js" as Minimize
 
 // The dock (shell/dock/Dock.qml, services/DockService.qml): pinned apps - the
 // dock's own pins (LayoutService.dockLayout.pins) - and the apps that have
@@ -37,6 +38,10 @@ var COVER_EVENTS = ["openwindow", "closewindow", "movewindow", "movewindowv2", "
 // on each dock those with a window on its own screen (`dock.runningOn`). The
 // pins are on every dock either way.
 var RUNNING_ON = ["all", "screen"]
+// What a click on the app in front does (`dock.activeClick`): its next window,
+// as the dock always did, or minimize it, as a Windows or KDE taskbar does -
+// the Taskbar preset's.
+var ACTIVE_CLICK = ["cycle", "minimize"]
 
 function lower(text) { return String(text || "").toLowerCase() }
 
@@ -66,13 +71,14 @@ function toggleScreen(stored, name, all) {
 function optionValue(key, value) {
     const text = String(value === undefined || value === null ? "" : value).trim()
     switch (key) {
-    case "enabled": case "showRunning": case "magnification":
+    case "enabled": case "showRunning": case "magnification": case "badges": case "previews": case "wheelVolume":
         return text === "true" ? true : text === "false" ? false : null
     case "visibility": return VISIBILITY.indexOf(text) >= 0 ? text : null
     case "position": return POSITIONS.indexOf(text) >= 0 ? text : null
     case "span": return SPANS.indexOf(text) >= 0 ? text : null
     case "startOpens": return START_OPENS.indexOf(text) >= 0 ? text : null
     case "runningOn": return RUNNING_ON.indexOf(text) >= 0 ? text : null
+    case "activeClick": return ACTIVE_CLICK.indexOf(text) >= 0 ? text : null
     case "iconSize": return ICON_SIZES.indexOf(Number(text)) >= 0 && /^\d+$/.test(text) ? Number(text) : null
     case "margin": return MARGINS.indexOf(Number(text)) >= 0 && /^\d+$/.test(text) ? Number(text) : null
     // Output names (eDP-1, DP-8, HDMI-A-1), comma-separated; "" is every screen.
@@ -117,11 +123,16 @@ function resolve(cls, pins, lookup) {
 // desktop entries, which is what the lookup reads. The pins' names are
 // lowered once here rather than once per window and pin; the match is
 // entryMatches'.
-function resolver(pins, lookup) {
+//
+// `hint`: the entry a window says it is beyond its class - a Citrix session's
+// (citrixEntryFor), whose class is Wfica for every desktop. The pinned one of
+// that id, else the entry itself (`byId`), else the class as usual.
+function resolver(pins, lookup, byId) {
     const list = Array.prototype.slice.call(pins || []).filter(pin => pin && lower(pin.id).length > 0)
         .map(pin => ({ entry: pin, id: lower(pin.id), wm: lower(pin.startupClass), last: lower(lastSegment(pin.id)) }))
     const known = Object.create(null)
-    return function (cls) {
+    const hinted = Object.create(null)
+    const classOf = function (cls) {
         const name = String(cls || "")
         if (!name.length) return null
         if (known[name] !== undefined) return known[name]
@@ -141,6 +152,50 @@ function resolver(pins, lookup) {
         known[name] = found
         return found
     }
+    return function (cls, hint) {
+        const id = String(hint || "")
+        if (!id.length || !String(cls || "").length) return classOf(cls)
+        if (hinted[id] !== undefined) return hinted[id] || classOf(cls)
+        const pinned = list.find(pin => pin.entry.id === id)
+        const entry = pinned ? pinned.entry : typeof byId === "function" ? byId(id) : null
+        hinted[id] = entry && entry.id === id ? { key: "app:" + id, entry: entry } : null
+        return hinted[id] || classOf(cls)
+    }
+}
+
+// ---- Citrix --------------------------------------------------------------------
+// A desktop subscribed in Citrix Workspace is a desktop entry of its own
+// (category Citrix-subscribed, StartupWMClass the desktop's name: RDS-Office,
+// LAB), but its session is a window of class Wfica, whichever desktop it is,
+// with the desktop's name at the start of its title. Matched by the class
+// alone, the pin never lit up, the session showed as a second icon (Citrix
+// Workspace Engine, whose StartupWMClass is Wfica) and a click on the pin
+// asked the store for a second session. (Plasma's task manager also looks
+// beyond the class, at the X11 instance name.)
+function isCitrixEntry(categories) {
+    return Array.prototype.slice.call(categories || []).some(category => lower(category) === "citrix-subscribed")
+}
+function isCitrixSession(cls) {
+    return lower(cls) === "wfica"
+}
+// The id of the subscribed desktop a session window's title names: one whose
+// StartupWMClass (else its name) starts the title as a whole name - "LAB" is
+// not "LABRADOR", and "RDS" not "RDS-Office-2": a hyphen, a dot or an
+// underscore go on with the name, as they do in RDS-Office -, the longest
+// first. "" for none (the toolbar, the connection centre). `entries`: [{ id,
+// name, startupClass }].
+function citrixEntryFor(title, entries) {
+    const text = lower(title).trim()
+    if (!text.length) return ""
+    let best = null
+    for (const entry of Array.prototype.slice.call(entries || [])) {
+        const word = lower(entry && (entry.startupClass || entry.name)).trim()
+        if (!word.length || text.indexOf(word) !== 0) continue
+        const next = text.charAt(word.length)
+        if (next.length && /[0-9a-z_.-]/.test(next)) continue
+        if (!best || word.length > best.length) best = { id: String(entry.id), length: word.length }
+    }
+    return best ? best.id : ""
 }
 
 // The windows a dock shows: none of the shell's helpers (HiddenWindows.js)
@@ -176,7 +231,7 @@ function build(pins, windows, lookup, options) {
     })
     const sorted = visibleWindows(windows).slice().sort((a, b) => (a.seq || 0) - (b.seq || 0))
     for (const window of sorted) {
-        const found = find(window.appClass)
+        const found = find(window.appClass, window.entryHint)
         let item = byKey[found.key]
         if (!item) {
             if (!showRunning) continue
@@ -188,14 +243,18 @@ function build(pins, windows, lookup, options) {
             byKey[item.key] = item
             items.push(item)
         }
+        // `minimized`: on its special workspace (MinimizeLogic); `badge`: the
+        // count its title shows, while the dock's badges are on (BadgeLogic).
         item.windows.push({ address: window.address, workspace: window.workspace,
                             workspaceName: String(window.workspaceName || ""), monitor: window.monitor,
-                            seq: window.seq || 0, urgent: window.urgent === true })
+                            seq: window.seq || 0, urgent: window.urgent === true, appClass: String(window.appClass),
+                            minimized: Minimize.isParked(window.workspaceName), badge: Math.max(0, Number(window.badge) || 0) })
     }
     for (const item of items) {
         item.running = item.windows.length > 0
         item.urgent = item.windows.some(window => window.urgent)
         item.count = item.windows.length
+        item.minimized = item.windows.filter(window => window.minimized).length
     }
     return items
 }
@@ -231,9 +290,13 @@ function sameObjects(previous, next) {
 // workspace, on a special one (open over it), pinned to all of them, or with
 // nothing known to say otherwise; else "". Quickshell keeps the last window
 // as Hyprland's `activeToplevel` when an empty workspace takes the focus.
-// window: { address, workspace, pinned }.
+// window: { address, workspace, pinned, parked (minimized) }.
 function frontAddress(window, focusedId) {
     if (!window || !window.address) return ""
+    // Minimized: Quickshell keeps it as the active window when it was the
+    // last one on its workspace, and it is on a special workspace - which
+    // otherwise counts as open over the focused one.
+    if (window.parked === true) return ""
     const workspace = Number(window.workspace)
     const focused = Number(focusedId)
     if (!(focused > 0) || !(workspace > 0) || window.pinned === true) return String(window.address)
@@ -256,6 +319,38 @@ function clickTarget(item, activeAddress, mru) {
     for (const address of mru || [])
         if (windows.some(window => window.address === address)) return { action: "focus", address: address }
     return { action: "focus", address: windows[0].address }
+}
+
+// clickTarget with minimized windows: a window it would bring to the front
+// that is minimized comes back instead ("restore": focusing it would open its
+// special workspace over the screen), and with `activeClick` "minimize" (the
+// Taskbar preset's, dock.activeClick) a click on the app in front minimizes
+// its window, as a Windows or KDE taskbar does - the next click brings it
+// back, since the window used last is the one restored. A window that cannot
+// be minimized (MinimizeLogic.canMinimize: the drop-down terminal, a
+// scratchpad) cycles as before.
+function clickPlan(item, activeAddress, mru, activeClick) {
+    const target = clickTarget(item, activeAddress, mru)
+    const windows = (item && item.windows) || []
+    const active = windows.find(window => window.address === activeAddress) || null
+    if (active && activeClick === "minimize" && Minimize.canMinimize(active)) return { action: "minimize", address: active.address }
+    if (target.action !== "focus") return target
+    const window = windows.find(candidate => candidate.address === target.address)
+    return window && window.minimized === true ? { action: "restore", address: target.address } : target
+}
+
+// The marks under an app, one per window up to `max`: "window", "minimized"
+// (drawn hollow) - or one "active" bar for the app in front, one "launching"
+// (faint) for an app started and not running yet, one "window" for one that
+// runs without windows of its own (the shell's Settings). In the windows'
+// order.
+function dotStates(item, running, active, launching, max) {
+    const windows = Array.prototype.slice.call((item && item.windows) || [])
+    if (!running) return launching ? ["launching"] : []
+    if (active) return ["active"]
+    if (!windows.length) return ["window"]
+    const limit = Math.max(1, Math.round(Number(max) || MAX_DOTS))
+    return windows.slice(0, limit).map(window => window && window.minimized === true ? "minimized" : "window")
 }
 
 // The desktop action that opens a new window, when the entry has one (Brave,
@@ -283,16 +378,30 @@ function newWindowAction(actions, command) {
 // to `maxWindows`, then a "more"), new, action (desktop actions but the new
 // window one), pin/unpin, close. A pin row that is off says why (`reason`:
 // "full", or "hidden" for an entry the dock could not draw once pinned).
-// `command` is the entry's own, for the new window action.
-function menuRows(item, actions, pinnedFull, maxWindows, command) {
+// `command` is the entry's own, for the new window action. With `options`
+// { minimize: true } (the dock's menu) a minimized window's row says so
+// (`minimized`), and after the windows come minimize (the ones that can be,
+// MinimizeLogic.canMinimize) and restore (the ones that are), each with its
+// count.
+function menuRows(item, actions, pinnedFull, maxWindows, command, options) {
     if (!item) return []
     const rows = []
     const windows = item.windows || []
+    const minimizing = !!options && options.minimize === true
     const shown = Math.max(0, Math.min(windows.length, maxWindows === undefined ? windows.length : maxWindows))
-    for (let index = 0; index < shown; ++index)
-        rows.push({ kind: "window", address: windows[index].address, workspace: windows[index].workspace,
-                    workspaceName: String(windows[index].workspaceName || "") })
+    for (let index = 0; index < shown; ++index) {
+        const row = { kind: "window", address: windows[index].address, workspace: windows[index].workspace,
+                      workspaceName: String(windows[index].workspaceName || "") }
+        if (minimizing && windows[index].minimized === true) row.minimized = true
+        rows.push(row)
+    }
     if (windows.length > shown) rows.push({ kind: "more", count: windows.length - shown })
+    if (minimizing) {
+        const parked = windows.filter(window => window && window.minimized === true).length
+        const free = windows.filter(window => window && window.minimized !== true && Minimize.canMinimize(window)).length
+        if (free > 0) rows.push({ kind: "minimize", count: free })
+        if (parked > 0) rows.push({ kind: "restore", count: parked })
+    }
     // The shell's Settings and a default's placeholder: no entry of their
     // own to start a second time or to list actions of.
     if (item.special) {
@@ -318,6 +427,8 @@ function menuRows(item, actions, pinnedFull, maxWindows, command) {
 // "Scratchpad" -, and nothing for a workspace not known.
 function workspaceLabel(id, name) {
     const text = String(name || "")
+    // A minimized window's own special workspace (MinimizeLogic).
+    if (Minimize.isParked(text)) return Minimize.parkedLabel(text)
     if (text === "special" || text.indexOf("special:") === 0) {
         const rest = text.slice("special:".length)
         return rest.length && rest !== "special" ? "Scratchpad " + rest : "Scratchpad"
@@ -838,6 +949,17 @@ function labelAfter(state, index, entered) {
         return { index: current, shown: shown, timer: shown ? "hide" : "stop" }
     }
     return shown ? { index: at, shown: true, timer: "stop" } : { index: at, shown: false, timer: "show" }
+}
+
+// The name once the row has `count` icons: an icon taken away under the
+// pointer while it was the last one (its app closed) is gone without a
+// leave - a delegate that goes says nothing as it goes - and its name stayed
+// up past the row's end, an empty bubble where no icon is. Taken down, both
+// timers stopped; any other row keeps the name where it is.
+function labelInRow(state, count) {
+    const s = state || {}
+    const index = s.index === undefined || s.index === null ? -1 : s.index
+    return index < Math.max(0, Math.round(Number(count) || 0)) ? null : { index: -1, shown: false, timer: "stop" }
 }
 
 // ---- zones --------------------------------------------------------------------

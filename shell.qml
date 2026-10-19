@@ -1,6 +1,7 @@
 import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
+import QtQml
 import qs.shell.emoji
 import qs.shell.welcome
 import qs.shell.launcher
@@ -27,6 +28,8 @@ import qs.shell.overview
 import qs.shell.switcher
 import qs.shell.shortcuts
 import qs.shell.popups
+import qs.shell.assistant
+import qs.shell.sharepicker
 import qs.shell.components
 import qs.services
 import qs.theme
@@ -58,6 +61,9 @@ ShellRoot {
     // Low battery warnings watch UPower from startup.
     readonly property bool powerReady: PowerService.lowBatteryLevel > 0
     readonly property bool displaysReady: DisplayService.confirmSeconds > 0
+    // A color filter chosen before is put back at the start; without one the
+    // zoom and filter service is not made until a key or a panel asks for it.
+    readonly property bool screenEffectsReady: SettingsService.value("display.colorFilterOn") !== true || ScreenEffectsService.ready
     readonly property bool inputReady: InputService.current !== null
     readonly property bool clipboardReady: ClipboardService.dbPath.length > 0
     readonly property bool adaptiveReady: AdaptiveService.suggestedMode !== undefined
@@ -77,6 +83,12 @@ ShellRoot {
     readonly property bool appThemeReady: AppThemeService.statePath.length > 0
     // With no weather place set, the location by IP is asked for once.
     readonly property bool locationReady: LocationService.autoLocate !== undefined
+    // Minimized windows come back at every start, and an app's own minimize
+    // button is heard from the start (MinimizeService).
+    readonly property bool minimizeReady: MinimizeService.realSession !== undefined
+    // Apps' places are sent to Hyprland from startup, and a login's work
+    // apps and offer come from here (Settings > Apps; nothing without them).
+    readonly property bool sessionAppsReady: SessionAppsService.storePath.length > 0
     WallpaperLayer {}
     ScreenCorners {}
     WidgetHost {}
@@ -252,6 +264,30 @@ ShellRoot {
         }
     }
 
+    // Apps in their places (Settings > Apps, services/SessionAppsService.qml):
+    // the work apps, the last session's apps, a place per app. get() says
+    // counts and flags only, never an app's name.
+    IpcHandler {
+        id: sessionAppsIpc
+        target: "sessionApps"
+        function get(): string { return SessionAppsService.describe() }
+        // The work apps not running yet, started (Super+Alt+W); with none set,
+        // Settings > Apps opens. The number started.
+        function startWork(): int { return SessionAppsService.startWork() }
+        // The last session's apps started again and put back.
+        function reopen(): bool { return SessionAppsService.reopen() }
+        // The windows of now kept as the end of a session keeps them, or the
+        // kept ones forgotten.
+        function snapshot(): bool { return SessionAppsService.snapshotNow() }
+        function forget(): bool { return SessionAppsService.forget() }
+        // A place for an app: a connected screen by its connector name ("" for
+        // any), one of its ten workspaces or 0 for the one it shows, floating.
+        function placeApp(app: string, screen: string, workspace: int, floating: bool): bool {
+            return SessionAppsService.placeApp(app, screen, workspace, floating)
+        }
+        function unplaceApp(app: string): bool { return SessionAppsService.unplace(app) }
+    }
+
     IpcHandler {
         id: launcherIpc
         target: "launcher"
@@ -271,6 +307,13 @@ ShellRoot {
                                     cells: LayoutService.launcherCells,
                                     choices: LayoutService.launcherChoices() })
         }
+        // Opened with TEXT typed, as if it had been: a nested session can
+        // show a query's rows in a screenshot without a keyboard.
+        function search(text: string): void { PanelService.open("launcher", { query: text }) }
+        // The rows TEXT gives (kind, key, title, subtitle), without opening
+        // anything. Conversions, recent files and VS Code's folders are read
+        // in the background: ask again a moment later for them.
+        function results(text: string): string { return LauncherService.describe(text) }
     }
 
     IpcHandler {
@@ -292,6 +335,10 @@ ShellRoot {
         // drag actually put one instead of trusting the list order. Layout ids
         // and rectangles only - the shell's own words for its own parts.
         function rects(): string { return JSON.stringify(LayoutService.quickCells) }
+        // A tile from the picker's catalogue onto the active mode's panel, as
+        // the picker adds it (false for a type it does not know): a nested
+        // check reaches a tile that is in nobody's layout yet this way.
+        function addTile(type: string): bool { return LayoutService.quickAdd(type) }
     }
 
     IpcHandler {
@@ -303,9 +350,11 @@ ShellRoot {
         function toggleDnd(): void { NotificationService.toggleDnd() }
         function setDnd(mode: string): void { NotificationService.setDnd(mode) }
         function clear(): void { NotificationService.clearAll() }
-        // Counts and flags only: no notification titles, bodies or app names.
+        // Counts and flags only: no notification titles, bodies or app names
+        // (NotificationService.report: shares, why it is quiet, the popups'
+        // screen, held back, notices, kept, sounds).
         function get(): string {
-            return JSON.stringify({ serverWanted: NotificationService.serverWanted,
+            return JSON.stringify(Object.assign({ serverWanted: NotificationService.serverWanted,
                                     server: NotificationService.server !== null,
                                     history: NotificationService.history.length,
                                     popups: NotificationService.popups.length,
@@ -316,7 +365,14 @@ ShellRoot {
                                     autoSuppressed: NotificationService.autoSuppressed,
                                     suppressed: NotificationService.suppressed,
                                     fullscreenActive: HyprlandService.fullscreenActive,
-                                    gameActive: HyprlandService.gameActive })
+                                    gameActive: HyprlandService.gameActive }, NotificationService.report()))
+        }
+        // A popup of the shell's own (NotificationService.postNotice): no
+        // sender, no history. For scripts, and for looking at the popups in a
+        // nested session, which runs no notification server. False when Do
+        // Not Disturb holds it back.
+        function notice(summary: string, body: string): bool {
+            return NotificationService.postNotice({ summary: summary, body: body }) !== null
         }
     }
 
@@ -338,6 +394,13 @@ ShellRoot {
             return SettingsService.set("appearance.animationSpeed", Math.round(speed * 20) / 20)
         }
         function setTheme(theme: string): bool { return SettingsService.set("appearance.theme", theme) }
+        // The theme's automatic switching and what the sun says now - no
+        // times and no place (they would tell where the user is).
+        function themeState(): string {
+            return JSON.stringify({ theme: SettingsService.theme, autoTheme: SettingsService.value("appearance.autoTheme"),
+                                    dark: Colors.dark, sun: { known: SunService.known, ready: SunService.ready,
+                                                              night: SunService.night, polar: SunService.polar } })
+        }
         // Not what says where the user is or what they did (the weather place,
         // the calendars, the colours picked, the folders and files used):
         // for those only whether they are set (IpcLogic.privateSetting).
@@ -376,6 +439,15 @@ ShellRoot {
         // can catch it.
         function arrange(on: bool): void { LayoutService.dashboardEditing = on }
         function rects(): string { return JSON.stringify(LayoutService.dashboardCells) }
+        // A card onto the dashboard of the mode in use, as the picker adds it
+        // ("worldClock", "notes", a widget type); and which cards it has, and
+        // how many places the world clock shows (not which).
+        function add(type: string): bool { return LayoutService.dashboardAdd(type) }
+        function get(): string {
+            return JSON.stringify({ cards: LayoutService.dashboardTypes,
+                                    worldClocks: String(SettingsService.value("desktop.worldClocks") || "").split(",")
+                                        .filter(part => part.trim().length).length })
+        }
         function open(): void { PanelService.open("dashboard") }
         function close(): void { PanelService.close("dashboard") }
     }
@@ -409,6 +481,24 @@ ShellRoot {
         function get(): string { return PanelService.active }
     }
 
+    // The newer widgets, for checks: the tray, the command widgets, the
+    // sensors and the media popup's visualizer. Counts, flags and numbers -
+    // never an app's name, a command or what it printed.
+    IpcHandler {
+        target: "widgets"
+        function tray(): string { return JSON.stringify(TrayService.status()) }
+        // The menu of the N-th app a tray widget shows, at the default place.
+        function trayMenu(index: int): bool {
+            const item = TrayService.shownItems[index]
+            return item ? TrayService.openMenu(item, {}) : false
+        }
+        function commands(): string { return JSON.stringify(CommandWidgetService.status()) }
+        // "one", "two" or "three": run now, as Settings' "Run now" does.
+        function runCommand(slot: string): void { CommandWidgetService.runNow(slot) }
+        function sensors(): string { return JSON.stringify(SystemStatsService.sensorStatus()) }
+        function visualizer(): string { return JSON.stringify(MprisService.visualizerStatus()) }
+    }
+
     IpcHandler {
         target: "weather"
         function refresh(): void { WeatherService.refresh() }
@@ -436,7 +526,34 @@ ShellRoot {
                                     daysWithEvents: Object.keys(CalendarService.eventDays).length,
                                     writableCalendars: CalendarService.newEventCalendars.length,
                                     writeAllowed: CalendarService.writeAllowed, editor: CalendarService.saveState,
-                                    eventCheck: CalendarService.identityState, eventCheckReason: CalendarService.identityReason })
+                                    eventCheck: CalendarService.identityState, eventCheckReason: CalendarService.identityReason,
+                                    linkCalendars: CalendarService.linkCalendars.length, joinPreview: CalendarService.joinPreview })
+        }
+        // Calendars from a link: how many and in which state - no names, no
+        // hosts, never the link. Asks the helper again in the real session
+        // (the answer is then the one before).
+        function links(): string {
+            CalendarService.refreshLinks()
+            return JSON.stringify({ state: CalendarService.linkState, listing: CalendarService.linkListing,
+                                    count: CalendarService.linkCalendars.length,
+                                    statuses: CalendarService.linkCalendars.map(row => row.status),
+                                    error: CalendarService.linkError, preview: CalendarService.linkPreview.length > 0 })
+        }
+        // Events on a day (YYYY-MM-DD) that carry a meeting link; no titles.
+        function meetings(day: string): int {
+            const parts = day.split("-").map(Number)
+            return CalendarService.eventsFor(new Date(parts[0], parts[1] - 1, parts[2]))
+                .filter(event => CalendarService.meetingFor(event) !== null).length
+        }
+        // Joins the INDEX-th event of a day as its Join button does: the
+        // service ("teams", "meet", "zoom", "webex") or "" without a meeting.
+        // A test session opens nothing (get's joinPreview says what it would).
+        function join(day: string, index: int): string {
+            const parts = day.split("-").map(Number)
+            const events = CalendarService.eventsFor(new Date(parts[0], parts[1] - 1, parts[2]))
+            if (index < 0 || index >= events.length) return ""
+            const found = CalendarService.meetingFor(events[index])
+            return found && CalendarService.join(events[index]) ? found.service : ""
         }
         // New-event dialog for today in dry-run mode: saving shows the
         // request that would be sent instead of sending it.
@@ -471,9 +588,21 @@ ShellRoot {
         function passwordDialog(ssid: string): void { PanelService.open("wifiPassword", { ssid: ssid, security: "WPA2" }) }
         function hiddenDialog(): void { PanelService.open("wifiPassword", { hidden: true }) }
         function hotspotDialog(): void { PanelService.open("wifiPassword", { hotspot: true }) }
+        // A captive portal's card and line without a portal, for screenshots;
+        // its "Sign in" then opens nothing (NetworkService.portalPreview).
+        function previewPortal(on: bool): void { NetworkService.portalPreview = on }
+        // What the card's "Sign in" does: the portal's page in the browser.
+        function signIn(): void { NetworkService.openPortal() }
+        // mountinfo read again, for the drives' counts in `get` a moment later.
+        function readShares(): void { NetworkService.readShares() }
+        // Flags and counts; no network names, no paths.
         function get(): string {
             return JSON.stringify({ wifi: NetworkService.wifiEnabled, connected: NetworkService.connected,
-                                    hotspot: NetworkService.hotspotActive, busy: NetworkService.helperState })
+                                    hotspot: NetworkService.hotspotActive, busy: NetworkService.helperState,
+                                    portal: NetworkService.signInNeeded, portalPreview: NetworkService.portalPreview,
+                                    shares: NetworkService.shares.length,
+                                    sharesMounted: NetworkService.shares.filter(item => item.mounted).length,
+                                    vpnUp: NetworkService.vpnUp })
         }
     }
 
@@ -481,10 +610,27 @@ ShellRoot {
         target: "bluetooth"
         // Sample dialog for tests and screenshots; answers never reach BlueZ.
         function previewPairing(kind: string): void { BluetoothService.previewPairing(kind) }
+        // What a low battery warning says, logged and not sent (no device needed).
+        function previewBatteryWarning(): string { return BluetoothService.previewBatteryWarning() }
         function get(): string {
             return JSON.stringify({ available: BluetoothService.available, enabled: BluetoothService.enabled,
-                                    agentAllowed: BluetoothService.agentAllowed, agentReady: BluetoothService.agentReady })
+                                    agentAllowed: BluetoothService.agentAllowed, agentReady: BluetoothService.agentReady,
+                                    batteryWarning: BluetoothService.batteryWarning, lowBattery: BluetoothService.lowDevices })
         }
+    }
+
+    IpcHandler {
+        id: osdIpc
+        target: "osd"
+        // Caps Lock's key sends this on its release (hypr: a bind that leaves
+        // the key to the window): "Caps Lock on" or "off" with Settings >
+        // Desktop > Caps Lock on, nothing otherwise.
+        function capsLock(): void { osd.capsLock() }
+        // The OSD's messages with sample text, whatever the settings say, for
+        // screenshots: output, charger, vpn, capsLock, mics.
+        function previewToast(kind: string): bool { return osd.previewToast(kind) }
+        // Flags only: shown, the kind, push to talk, which messages are on.
+        function get(): string { return JSON.stringify(osd.osdState()) }
     }
 
     IpcHandler {
@@ -529,7 +675,7 @@ ShellRoot {
                                     enrolled: FingerprintService.fingers.length, stages: FingerprintService.stages,
                                     preview: FingerprintService.preview, trackers: FingerprintService.trackers,
                                     mode: FingerprintService.mode, lidClosed: FingerprintService.lidClosed,
-                                    enabledNow: FingerprintService.enabledNow,
+                                    enabledNow: FingerprintService.enabledNow, polkit: FingerprintService.polkitState,
                                     phase: state ? state.phase : "", stage: state ? state.stage : 0,
                                     message: state ? state.message : FingerprintService.message })
         }
@@ -551,6 +697,17 @@ ShellRoot {
             DrivesService.askPassphrase(found.drive, found.volume)
             return "dialog open"
         }
+        // The system disk as the last look saw it: / and /home, free and
+        // total bytes and which are low; a look now; and what a filesystem of
+        // SIZE bytes with FREE left would be told (worked out, never sent).
+        function space(): string {
+            return JSON.stringify({ enabled: DrivesService.lowSpaceEnabled, realSession: DrivesService.realSession,
+                                    entries: DrivesService.spaceEntries.map(entry => ({ mounts: entry.mounts, free: entry.free, size: entry.size,
+                                                                                      low: DrivesService.lowSpaceEntries.indexOf(entry) >= 0 })),
+                                    warned: Object.keys(DrivesService.spaceWarned).length })
+        }
+        function checkSpace(): void { DrivesService.checkSpace() }
+        function previewSpace(free: real, size: real): string { return DrivesService.previewSpace(free, size) }
         // Counts only, no labels, mount points or passphrases.
         function get(): string {
             return JSON.stringify({ available: DrivesService.available, drives: DrivesService.drives.length,
@@ -562,7 +719,8 @@ ShellRoot {
                                     mtp: DrivesService.mtpAvailable,
                                     busy: Object.keys(DrivesService.busy).length, pending: DrivesService.pending.length,
                                     realSession: DrivesService.realSession, preview: DrivesService.preview,
-                                    notify: DrivesService.notifyEnabled, autoOpen: DrivesService.autoOpen })
+                                    notify: DrivesService.notifyEnabled, autoOpen: DrivesService.autoOpen,
+                                    lowSpace: DrivesService.lowSpaceEnabled })
         }
     }
 
@@ -615,10 +773,46 @@ ShellRoot {
                                     offline: UpdatesService.result.offline, realSession: UpdatesService.realSession,
                                     preview: UpdatesService.preview, checkHours: UpdatesService.checkHours,
                                     notify: UpdatesService.notifyEnabled,
+                                    core: UpdatesService.corePackages.length, news: UpdatesService.news.length,
+                                    pacnew: UpdatesService.pacnew.length, coreCheck: UpdatesService.coreCheck,
+                                    whatsNew: UpdatesService.whatsNew,
                                     shell: { known: UpdatesService.shell.known, repo: UpdatesService.shell.repo,
                                              behind: UpdatesService.shell.behind, ahead: UpdatesService.shell.ahead,
                                              dirty: UpdatesService.shell.dirty, updatable: UpdatesService.shellUpdatable,
                                              checking: UpdatesService.shellChecking, auto: UpdatesService.shellAuto } })
+        }
+    }
+
+    IpcHandler {
+        target: "snapshots"
+        // The copies of the whole setup (Settings > Profiles > Backups): names,
+        // kinds, times and counts, read anew with refresh.
+        function refresh(): void { SnapshotService.refresh() }
+        function get(): string {
+            return JSON.stringify({ listed: SnapshotService.listed, busy: SnapshotService.busy, working: SnapshotService.working,
+                                    message: SnapshotService.message, takenDay: SnapshotService.takenDay,
+                                    automatic: SnapshotService.automatic, snapshots: SnapshotService.snapshots })
+        }
+        // A copy now; the day's one as the first write of a day takes it.
+        function take(): bool { return SnapshotService.takeNow() }
+        function daily(): void { SnapshotService.beforeWrite() }
+        // A listed copy back after keeping one of now; the shell restarts
+        // when anything was written. Never an import: that is a file the
+        // user picks.
+        function restore(name: string): bool { return SnapshotService.restore(name) }
+    }
+
+    IpcHandler {
+        target: "health"
+        // session-check.sh and doctor.sh in their --json modes, read-only, as
+        // Settings > About runs them, and what the shell knows on top.
+        function check(): void { HealthService.check(true) }
+        // Levels, sections, texts and actions; whether a command is there, not the command.
+        function get(): string {
+            return JSON.stringify({ running: HealthService.running, lastRun: HealthService.lastRun, summary: HealthService.summary,
+                                    items: HealthService.items.map(item => ({ id: item.id, level: item.level, section: item.section,
+                                                                              text: item.text, action: item.action,
+                                                                              command: item.command.length > 0 })) })
         }
     }
 
@@ -682,6 +876,17 @@ ShellRoot {
         function toggle(): void { AdaptiveService.setFocus(!AdaptiveService.focusActive) }
         function set(active: bool): void { AdaptiveService.setFocus(active) }
         function get(): bool { return AdaptiveService.focusActive }
+        // A Focus session: Focus now, and off again with a ring after the
+        // time ("25m", "1h", "45" minutes) - `buchhwin focus start 25m`.
+        function start(duration: string): bool { return AdaptiveService.focusForText(duration) }
+        // Whether Focus is on, whether a session runs, its seconds left and
+        // what the control center's tile says.
+        function session(): string {
+            const ends = AdaptiveService.focusEndsAt
+            return JSON.stringify({ active: AdaptiveService.focusActive, session: AdaptiveService.focusSession,
+                                    remaining: ends > 0 ? Math.max(0, Math.ceil((ends - Date.now()) / 1000)) : 0,
+                                    label: AdaptiveService.focusLabel })
+        }
     }
 
     IpcHandler {
@@ -779,7 +984,8 @@ ShellRoot {
         function get(): string {
             return JSON.stringify({ open: PanelService.isOpen("wallpaperPicker"),
                                     images: WallpaperService.images.length,
-                                    favourites: WallpaperService.favourites.length })
+                                    favourites: WallpaperService.favourites.length,
+                                    themePair: WallpaperService.themePair, themeSide: WallpaperService.themeSide })
         }
     }
 
@@ -799,7 +1005,50 @@ ShellRoot {
         function toggle(): void { PanelService.toggle("clipboard") }
         function open(): void { PanelService.open("clipboard") }
         function close(): void { PanelService.close("clipboard") }
-        function get(): string { return JSON.stringify({ enabled: ClipboardService.enabled, entries: ClipboardService.entries.length }) }
+        function get(): string {
+            return JSON.stringify({ enabled: ClipboardService.enabled, entries: ClipboardService.entries.length,
+                                    pinned: ClipboardService.pins.length, pinsRead: ClipboardService.pinsRead })
+        }
+        // Pin the history's N-th entry (0 the newest, as the panel lists them;
+        // the history is read when the panel opens), or unpin the N-th pin.
+        function pin(index: int): bool { return ClipboardService.pinAt(index) }
+        function unpin(index: int): bool { return ClipboardService.unpinAt(index) }
+    }
+
+    // The assistant panel (shell/assistant): Ollama on this computer, never
+    // another machine. `ask` opens it and asks (the question waits for the
+    // model list when that is not there yet); `get` is counts and states,
+    // never a question, an answer or a model's name.
+    IpcHandler {
+        id: assistantIpc
+        target: "assistant"
+        function toggle(): void { PanelService.toggle("assistant") }
+        function open(): void { PanelService.open("assistant") }
+        function close(): void { PanelService.close("assistant") }
+        function ask(text: string): bool {
+            PanelService.open("assistant")
+            return AssistantService.ask(text)
+        }
+        function stop(): void { AssistantService.stop() }
+        function clear(): void { AssistantService.clear() }
+        function refresh(): void { AssistantService.refresh() }
+        function get(): string { return AssistantService.describe() }
+    }
+
+    // The share picker (shell/sharepicker) for xdg-desktop-portal-hyprland:
+    // scripts/share-picker.sh hands a request in (DIR: its private directory
+    // under $XDG_RUNTIME_DIR/buchhwin-shell/share-picker, nowhere else) and
+    // waits for the answer on a FIFO there; "opened" or why not. `open` is the
+    // preview Settings has a button for (a choice in it shares nothing);
+    // `get` is counts and flags, never a title.
+    IpcHandler {
+        id: sharePickerIpc
+        target: "sharePicker"
+        function request(dir: string, allowToken: bool): string { return SharePickerService.take(dir, allowToken) }
+        function cancel(dir: string): bool { return SharePickerService.cancel(dir) }
+        function open(): bool { return SharePickerService.openPreview() }
+        function close(): void { PanelService.close("sharePicker") }
+        function get(): string { return SharePickerService.describe() }
     }
 
     IpcHandler {
@@ -821,7 +1070,15 @@ ShellRoot {
             if (!BrightnessService.available || !isFinite(value)) return
             BrightnessService.current = Math.round(Math.max(0, Math.min(1, value)) * BrightnessService.maximum)
         }
-        function get(): string { return JSON.stringify({ available: BrightnessService.available, value: BrightnessService.value }) }
+        // The external screens' brightness over DDC/CI (BrightnessService): ask
+        // them now, or set one by its connector name (0-1). A nested shell runs
+        // ddcutil only as the stand-in BUCHHWIN_DDCUTIL names.
+        function detect(): void { BrightnessService.ddcDetect() }
+        function setDisplay(name: string, value: real): bool { return BrightnessService.setDdc(name, value) }
+        function get(): string {
+            return JSON.stringify({ available: BrightnessService.available, value: BrightnessService.value,
+                                    ddc: BrightnessService.ddcState, displays: BrightnessService.ddcSummary() })
+        }
     }
 
     IpcHandler {
@@ -834,6 +1091,17 @@ ShellRoot {
         // session without a running shell still switches the old way.
         function switchTo(local: int): void { HyprlandService.switchLocal(local) }
         function move(local: int): void { HyprlandService.moveLocal(local) }
+        // The neighbouring workspace of the monitor under the focus - the pip
+        // beside the lit one, one new one past the last (Super+Page Up/Down;
+        // HyprlandService.stepWorkspace) - and with the window along
+        // (Super+Shift+Page Up/Down). The wheel's binds have a function of
+        // their own, "down" or "up": checks.py binds holds an action to one
+        // combination.
+        function next(): void { HyprlandService.stepWorkspace(1) }
+        function previous(): void { HyprlandService.stepWorkspace(-1) }
+        function moveNext(): void { HyprlandService.stepWindow(1) }
+        function movePrevious(): void { HyprlandService.stepWindow(-1) }
+        function scroll(direction: string): void { HyprlandService.stepWorkspace(direction === "up" ? -1 : 1) }
         function get(): string {
             return JSON.stringify({ perMonitor: HyprlandService.perMonitor,
                                     focusedMonitor: HyprlandService.focusedMonitorName,
@@ -841,8 +1109,116 @@ ShellRoot {
                                     active: HyprlandService.monitorList.map(m =>
                                         m.name + ":" + HyprlandService.activeWorkspaceOn(m.name)),
                                     offsets: HyprlandService.monitorList.map(m =>
-                                        m.name + ":" + HyprlandService.offsetFor(m.name)) })
+                                        m.name + ":" + HyprlandService.offsetFor(m.name)),
+                                    keepEmpty: HyprlandService.keepsEmpty,
+                                    held: Object.keys(HyprlandService.keptOn).map(Number).sort((a, b) => a - b),
+                                    holdLimit: HyprlandService.holdLimit() })
         }
+        // Empty workspaces held open (Settings > Bar & notch, "Keep empty
+        // workspaces open"; the profile's setting), switched while the shell
+        // runs: the smoke test turns it on and off around a step of its own,
+        // where a seeded settings.json would hold workspaces for every other
+        // step too (testing.md pitfall 102).
+        function setKeepEmpty(on: bool): bool { return SettingsService.set("workspaces.keepEmpty", on) }
+    }
+
+    // The screen zoom (Super and + / - / 0; ScreenEffectsService): one step
+    // in or out along its ladder, back to 100 %, or a factor of 1 to 8 - with
+    // the OSD saying when it is off again.
+    IpcHandler {
+        id: zoomIpc
+        target: "zoom"
+        function increase(): void { ScreenEffectsService.zoomBy(1); root.zoomOsd() }
+        function decrease(): void { ScreenEffectsService.zoomBy(-1); root.zoomOsd() }
+        function reset(): void { ScreenEffectsService.resetZoom(); root.zoomOsd() }
+        function set(factor: real): void { ScreenEffectsService.setZoom(factor); root.zoomOsd() }
+        function get(): string {
+            return JSON.stringify({ factor: ScreenEffectsService.zoom, zoomed: ScreenEffectsService.zoomed })
+        }
+    }
+    // Only once the zoom is off: Hyprland zooms around the pointer, and the
+    // message at the bottom of the screen was zoomed off it by the very zoom
+    // it reported (half gone at 1.25×, gone from 1.5×). The zoom itself is
+    // the answer to the keys; the control center's tile says the factor.
+    function zoomOsd() {
+        if (!ScreenEffectsService.zoomed) osd.showMessage("Zoom off", "󰍊")
+    }
+
+    // The color filters (Super+Ctrl+C, Settings > Appearance;
+    // ScreenEffectsService): the chosen one on and off, one by its name
+    // (grayscale, deuteranopia, protanopia, tritanopia, invert), the next one.
+    IpcHandler {
+        id: colorFilterIpc
+        target: "colorFilter"
+        function toggle(): void { ScreenEffectsService.toggleFilter(); root.filterOsd() }
+        function enable(name: string): bool {
+            const done = ScreenEffectsService.setFilter(name)
+            if (done) root.filterOsd()
+            return done
+        }
+        function off(): void { ScreenEffectsService.setFilterOn(false); root.filterOsd() }
+        function cycle(): void { ScreenEffectsService.cycleFilter(); root.filterOsd() }
+        function get(): string {
+            return JSON.stringify({ on: ScreenEffectsService.filterOn, filter: ScreenEffectsService.filter })
+        }
+    }
+    function filterOsd() {
+        osd.showMessage(ScreenEffectsService.filterOn ? ScreenEffectsService.filterLabel : "Color filter off", "󰌁")
+    }
+
+    // A window kept on top (Super+Ctrl+T, the dock's menu): floated if it is
+    // tiled, then pinned; again to let it go (HyprlandService.keepOnTop). The
+    // active window, or the one at `address` (hyprctl's, with or without 0x).
+    IpcHandler {
+        id: windowIpc
+        target: "window"
+        function keepOnTop(): void { HyprlandService.keepOnTop("") }
+        function keepOnTopAt(address: string): void { HyprlandService.keepOnTop(address) }
+        // Minimize and restore (services/MinimizeService.qml): Super+H, Super+Shift+H,
+        // the dock, the overview and Alt+Tab. `minimized` is counts and flags only.
+        function minimize(): bool { return MinimizeService.minimizeActive() }
+        function restore(): bool { return MinimizeService.restoreLast() }
+        function restoreAll(): int { return MinimizeService.restoreAll() }
+        function minimizeWindow(address: string): bool { return MinimizeService.minimize(address) }
+        function restoreWindow(address: string): bool { return MinimizeService.restore(address, true, 0) }
+        function minimized(): string { return MinimizeService.describe() }
+    }
+
+    // The drop-down terminal (Super+^): started the first time, shown or put
+    // away after that (HyprlandService.toggleDropdown).
+    IpcHandler {
+        id: dropdownIpc
+        target: "dropdown"
+        function toggle(): void { HyprlandService.toggleDropdown() }
+        function get(): string { return JSON.stringify({ open: HyprlandService.dropdownOpen() }) }
+    }
+
+    // The keyboard passthrough (Super+Esc in and out; HyprlandService): every
+    // key to the window in front until it is left. `leave` is the way out
+    // from a script, and works whoever went in.
+    IpcHandler {
+        target: "passthrough"
+        function enter(): void { HyprlandService.setPassthrough(true) }
+        function leave(): void { HyprlandService.setPassthrough(false) }
+        function toggle(): void { HyprlandService.setPassthrough(!HyprlandService.passthrough) }
+        function get(): string {
+            return JSON.stringify({ active: HyprlandService.passthrough, auto: HyprlandService.passthroughAuto,
+                                    byShell: HyprlandService.passByShell })
+        }
+    }
+
+    // A Citrix session over the desk's screens side by side (the launcher,
+    // Settings > Shortcuts): a floating window as large as the external
+    // screens together, and back into the layout. The OSD says what came of it.
+    IpcHandler {
+        target: "citrix"
+        function span(): void { HyprlandService.spanCitrix() }
+        function unspan(): void { HyprlandService.unspanCitrix() }
+        function get(): string { return JSON.stringify(HyprlandService.spanReport()) }
+    }
+    Connections {
+        target: HyprlandService
+        function onSpanFinished(message: string, ok: bool) { osd.showMessage(message, "󰍺") }
     }
 
     IpcHandler {
@@ -874,22 +1250,47 @@ ShellRoot {
         function lidClosed(): void { IdleService.lidClosed() }
         function lidOpened(): void { IdleService.lidOpened() }
         function setStayAwake(value: bool): void { IdleService.stayAwake = value }
+        // off, 1h, unplug (only with a charger in) or manual; false when it
+        // cannot start now. Not remembered as the quick switches' choice.
+        function stayAwake(mode: string): bool { return IdleService.holdAwake(mode) }
+        // The battery popup's switch and the control center's tile.
+        function toggleStayAwake(): bool { return IdleService.toggleStayAwake() }
+        // The charge limit through UPower, real session only (false when
+        // refused: no UPower support, a nested session, a change running).
+        function setChargeLimit(on: bool): bool { return PowerService.setChargeLimit(on) }
+        function chargeOnce(): bool { return PowerService.chargeOnce() }
+        function cancelChargeOnce(): bool { return PowerService.cancelChargeOnce() }
+        function refreshChargeLimit(): void { PowerService.refreshChargeLimit() }
+        // Lighter effects as if their power source applied: keep, light, or
+        // "" to follow the source again - for a nested session, which cannot
+        // unplug the host.
+        function previewEffects(value: string): void {
+            PowerService.effectsPreview = ["keep", "light"].indexOf(value) >= 0 ? value : ""
+        }
         // Which source Settings > Power edits: battery, ac or "" (the active one).
         function showSource(name: string): void { PowerService.pageSource = ["battery", "ac"].indexOf(name) >= 0 ? name : "" }
         function get(): string {
             const settings = name => ({ screenOff: PowerService.sourceValue(name, "screenOffMinutes"), lock: PowerService.sourceValue(name, "lockMinutes"),
                                         suspend: PowerService.sourceValue(name, "suspendMinutes"), dim: PowerService.sourceValue(name, "dimBeforeScreenOff"),
-                                        lid: PowerService.sourceValue(name, "lidAction"), profile: PowerService.sourceValue(name, "profile") })
+                                        lid: PowerService.sourceValue(name, "lidAction"), profile: PowerService.sourceValue(name, "profile"),
+                                        effects: PowerService.sourceValue(name, "effects") })
             return JSON.stringify({ source: PowerService.source, hasBattery: PowerService.hasBattery,
                                     screenOff: IdleService.screenOffMinutes, lock: IdleService.lockMinutes, suspend: IdleService.suspendMinutes,
                                     dim: IdleService.dimBeforeScreenOff, lid: IdleService.lidAction, profileChoice: PowerService.profileChoice,
                                     lockBeforeSleep: IdleService.lockBeforeSleep, lidClosed: DisplayService.lidClosed,
-                                    stayAwake: IdleService.stayAwake, realSession: IdleService.realSession,
+                                    stayAwake: IdleService.stayAwake, stayAwakeMode: IdleService.stayAwakeMode,
+                                    stayAwakeLeft: IdleService.stayAwakeSubtitle, stayAwakeLimit: IdleService.stayAwakeLimit,
+                                    chargeLimit: PowerService.chargeLimit, chargeLimitLabel: PowerService.chargeLimitLabel,
+                                    chargeOnce: PowerService.chargeOnceActive, chargeWritable: PowerService.chargeWritable,
+                                    chargeError: PowerService.chargeLimitError, stateLabel: PowerService.stateLabel,
+                                    lightEffects: PowerService.lightEffects, animationMode: Animations.mode,
+                                    realSession: IdleService.realSession,
                                     battery: settings("battery"), ac: settings("ac") })
         }
     }
 
     IpcHandler {
+        id: displaysIpc
         target: "displays"
         function get(): string {
             return JSON.stringify({ dirty: DisplayService.dirty, confirming: DisplayService.confirming, countdown: DisplayService.countdown,
@@ -898,12 +1299,18 @@ ShellRoot {
                                     // the session - so it is worth being able to read it.
                                     dialect: HyprCompat.dialect,
                                     monitors: DisplayService.monitors.map(m => m.name + " " + m.width + "x" + m.height + "@" + Math.round(m.refresh)
-                                        + " " + m.x + "," + m.y + " x" + m.scale + " t" + m.transform + (m.disabled ? " off" : "")),
+                                        + " " + m.x + "," + m.y + " x" + m.scale + " t" + m.transform + (m.disabled ? " off" : "")
+                                        + (m.mirror ? " mirror:" + m.mirror : "")),
                                     // The edited copy as well as the live state. Without it the
                                     // only way to see what a drag or an arrow-key nudge did was
                                     // to read a row on the page, which a nested test cannot.
                                     draft: DisplayService.draft.map(m => m.name + " " + m.x + "," + m.y
-                                        + " x" + m.scale + " t" + m.transform + (m.disabled ? " off" : "")) })
+                                        + " x" + m.scale + " t" + m.transform + (m.disabled ? " off" : "")
+                                        + (m.mirror ? " mirror:" + m.mirror : "")),
+                                    // The display switcher: what the screens do now (internal, duplicate,
+                                    // extend, external), the choice in force ("" for none), the mirrors.
+                                    projection: DisplayService.currentProjection, projectionHeld: DisplayService.projection,
+                                    mirrors: DisplayService.mirrorNames })
         }
         // A scale a saved file may ask for too (DisplayLogic.validScale,
         // 0.5-3): `Number()` alone let NaN or 0 through into the draft, and
@@ -918,6 +1325,20 @@ ShellRoot {
         function apply(): bool { return DisplayService.apply() }
         function keep(): bool { return DisplayService.keep() }
         function revert(): bool { return DisplayService.revert() }
+        // The display switcher (Super+Shift+P): open, or closed again.
+        function toggleSwitcher(): void { PanelService.toggle("displaySwitcher") }
+        // The projector key (XF86Display): open, or with the switcher open the
+        // next choice - as Windows' Win+P.
+        function key(): void {
+            if (PanelService.active === "displaySwitcher") DisplayService.stepSwitcher()
+            else PanelService.open("displaySwitcher")
+        }
+        // One of the switcher's choices at once: internal, duplicate, extend or
+        // external (ProjectionLogic). False where it cannot be made.
+        function setProjection(mode: string): bool { return DisplayService.setProjection(mode) }
+        // Settings > Displays' Mirror into the draft ("" for none); apply and
+        // keep as for the rest of the page.
+        function setMirror(name: string, source: string): bool { return DisplayService.setMirror(name, source) }
     }
 
     IpcHandler {
@@ -1002,10 +1423,14 @@ ShellRoot {
         target: "timer"
         // A countdown in the notch: "5m", "90s", "1h30m", "1:30" or minutes.
         function start(duration: string): bool { return TimerService.startText(duration) }
-        function stop(): void { TimerService.stop() }
-        // Running, and the seconds left; no label, there is none.
+        // The timer, and a Focus session only when no timer runs.
+        function stop(): void { TimerService.stopTimer() }
+        // Running, and the seconds left of the one shown; what it counts
+        // ("timer" or "focus") and every run with its seconds left. No label,
+        // there is none.
         function get(): string {
-            return JSON.stringify({ running: TimerService.running, remaining: Math.ceil(TimerService.remaining / 1000) })
+            return JSON.stringify({ running: TimerService.running, remaining: Math.ceil(TimerService.remaining / 1000),
+                                    kind: TimerService.kind, runs: TimerService.describe() })
         }
     }
 
@@ -1019,7 +1444,14 @@ ShellRoot {
         function up(): void { if (!AudioService.stepVolume(AudioService.sink, 0.05)) Quickshell.execDetached(["wpctl", "set-volume", "-l", "1.0", "@DEFAULT_AUDIO_SINK@", "5%+"]) }
         function down(): void { if (!AudioService.stepVolume(AudioService.sink, -0.05)) Quickshell.execDetached(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "5%-"]) }
         function mute(): void { if (AudioService.sink && AudioService.sink.audio) AudioService.toggleMute(AudioService.sink); else Quickshell.execDetached(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"]) }
-        function micMute(): void { if (AudioService.source && AudioService.source.audio) AudioService.toggleMute(AudioService.source); else Quickshell.execDetached(["wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle"]) }
+        // The microphone key: every microphone, and pressed again the ones it
+        // muted (AudioService.micKey; with one microphone or the setting off,
+        // the default as before, wpctl without a bound node).
+        function micMute(): void { AudioService.micKey() }
+        // Push to talk (Super+T held): the default microphone on while the key
+        // is down, back the way it was when it is let go. The shortcut passes
+        // the key's edge (ShellShortcuts.HOLD).
+        function talk(down: bool): void { AudioService.pushToTalk(down) }
         // Route an app stream (node id) to a sink, by its id (as `get` lists
         // them) or its node.name; "default" resets.
         function route(stream: string, sink: string): bool {
@@ -1039,7 +1471,9 @@ ShellRoot {
                                         id: item.id, target: IpcLogic.sinkIdOf(AudioService.streamTarget(item), sinks) })),
                                     routingTrackers: AudioService.routingTrackers, meterTrackers: AudioService.meterTrackers,
                                     meterRunning: AudioService.meterRunning, micInUse: AudioService.micInUse,
-                                    level: AudioService.inputLevel })
+                                    level: AudioService.inputLevel, talking: AudioService.talking,
+                                    sources: AudioService.sources.length, micKeyAll: AudioService.micKeyAll,
+                                    micMuted: AudioService.micMuted })
         }
     }
 
@@ -1064,7 +1498,7 @@ ShellRoot {
     // the alias.
     function cycleMode(): string {
         const step = Profile.cycleMode(LayoutService.activeMode, LayoutService.modeNames,
-                                       SettingsService.value("desktop.autoProfile"))
+                                       SettingsService.value("desktop.autoProfile"), AdaptiveService.autoOwned)
         // Do Not Disturb before the switch: a mode can turn it on, and leaving
         // it off again, and nothing else on screen says so.
         const dndBefore = { active: NotificationService.dndActive, by: NotificationService.dndBy }
@@ -1086,6 +1520,13 @@ ShellRoot {
         target: "profile"
         function set(name: string): bool { return LayoutService.setActiveProfile(name) }
         function get(): string { return LayoutService.activeProfile }
+        // Where the automatic switching goes and where it would go now: mode
+        // names only.
+        function automatic(): string {
+            return JSON.stringify({ on: SettingsService.value("desktop.autoProfile") === true, targets: AdaptiveService.autoTargets,
+                                    suggested: AdaptiveService.suggestedMode, mode: LayoutService.activeMode,
+                                    laptop: AdaptiveService.hasInternal })
+        }
         function list(): string { return LayoutService.profileNames.join(" ") }
         // `Super+P`. The two levels small enough to be a key.
         function toggle(): void { PanelService.toggle("profilePopup") }
@@ -1121,11 +1562,20 @@ ShellRoot {
     LazyLoader { active: PanelService.demanded.pairing === true; PairingDialog {} }
     LazyLoader { active: PanelService.demanded.driveUnlock === true; UnlockDialog {} }
     Osd { id: osd }
+    // While the keys go to a window (the keyboard passthrough): the chip that
+    // says so. No surface the rest of the time.
+    LazyLoader { active: HyprlandService.passthrough; PassthroughChip {} }
     LazyLoader { active: PanelService.demanded.clipboard === true; ClipboardPanel {} }
     LazyLoader { active: PanelService.demanded.wallpaperPicker === true; WallpaperPicker {} }
     Overview {}
     Switcher {}
     LazyLoader { active: PanelService.demanded.settings === true; SettingsPanel {} }
+    // The assistant (a model Ollama runs on this computer) and the share
+    // picker (xdg-desktop-portal-hyprland's custom picker,
+    // scripts/share-picker.sh): built on their first open and nothing before
+    // (PanelService.lazyPanels).
+    LazyLoader { active: PanelService.demanded.assistant === true; AssistantPanel {} }
+    LazyLoader { active: PanelService.demanded.sharePicker === true; SharePickerPanel {} }
     NetworkPopup {}
     VpnPopup {}
     BluetoothPopup {}
@@ -1137,6 +1587,12 @@ ShellRoot {
     PrivacyPopup {}
     SystemPopup {}
     ProfilePopup {}
+    // The display switcher (Super+Shift+P, the projector key): built on its
+    // first open - most sessions never meet a projector (PanelService.lazyPanels).
+    LazyLoader { active: PanelService.demanded.displaySwitcher === true; DisplaySwitcher {} }
+    // A tray widget's menu, out of the icon it was opened from: built the
+    // first time a menu opens (a right click on a tray widget's icon).
+    LazyLoader { active: PanelService.demanded.trayMenu === true; TrayMenuPopup {} }
     // Built on their first open, not at the start: a panel is built whether it
     // opens or not (testing.md pitfall 101; 5-10 MB nested), and these may
     // never open. PanelService asks for them (`demanded`) and opens them once
@@ -1195,17 +1651,19 @@ ShellRoot {
         notifications: notificationsIpc, dashboard: dashboardIpc, powerMenu: powerMenuIpc,
         overview: overviewIpc, wallpaperPicker: wallpaperPickerIpc, colorPicker: colorPickerIpc,
         switcher: switcherIpc, clipboard: clipboardIpc, emoji: emojiIpc, recording: recordingIpc,
-        workspaces: workspacesIpc, kbdBacklight: kbdBacklightIpc, brightness: brightnessIpc, audio: audioIpc,
-        gestures: gesturesIpc, dock: dockIpc, startMenu: startMenuIpc
+        workspaces: workspacesIpc, kbdBacklight: kbdBacklightIpc, brightness: brightnessIpc, audio: audioIpc, osd: osdIpc,
+        gestures: gesturesIpc, dock: dockIpc, startMenu: startMenuIpc, displays: displaysIpc, sessionApps: sessionAppsIpc, assistant: assistantIpc,
+        zoom: zoomIpc, colorFilter: colorFilterIpc, window: windowIpc, dropdown: dropdownIpc
     })
-    function runShortcut(name) {
+    function runShortcut(name, pressed) {
         const call = ShellShortcuts.parse(name)
         const handler = call ? shortcutTargets[call.target] : null
         if (!handler || typeof handler[call.fn] !== "function") {
             console.warn("buchhwin-shell: unknown shortcut", name)
             return
         }
-        handler[call.fn].apply(handler, call.args)
+        // A held key's shortcut (push to talk) gets its edge after its arguments.
+        handler[call.fn].apply(handler, ShellShortcuts.holds(name) ? call.args.concat([pressed === true]) : call.args)
     }
     Variants {
         model: ShellShortcuts.names()
@@ -1214,8 +1672,8 @@ ShellRoot {
             appid: ShellShortcuts.APPID
             name: modelData
             description: modelData
-            onPressed: if (ShellShortcuts.runsOn(modelData, true)) root.runShortcut(modelData)
-            onReleased: if (ShellShortcuts.runsOn(modelData, false)) root.runShortcut(modelData)
+            onPressed: if (ShellShortcuts.runsOn(modelData, true)) root.runShortcut(modelData, true)
+            onReleased: if (ShellShortcuts.runsOn(modelData, false)) root.runShortcut(modelData, false)
         }
     }
 }

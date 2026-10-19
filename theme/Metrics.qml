@@ -481,6 +481,9 @@ Singleton {
 
     // On-screen display for volume and brightness.
     readonly property int osdWidth: 300
+    // A message (the Citrix span's, a mode's, a toast) grows with its words
+    // up to this, rather than being cut off at the levels' width.
+    readonly property int osdMessageMaxWidth: 480
     readonly property int osdBottomMargin: 96
     readonly property int osdTimeout: 1400
     // Widget content inside a pill is drawn slightly smaller than on the desktop.

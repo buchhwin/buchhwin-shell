@@ -3,6 +3,8 @@ import qs.theme
 import qs.services
 import qs.shell.components
 import "../../services/dock/DockLogic.js" as Logic
+import "../../services/dock/BadgeLogic.js" as Badges
+import "../components/WheelLogic.js" as Wheel
 
 // One app on the dock: its icon, the dots for its windows, and the pointer.
 // The apps widget places it and sizes its slot; this draws it and says what
@@ -12,6 +14,11 @@ import "../../services/dock/DockLogic.js" as Logic
 //
 // The icon fills Metrics.dockIconFill of its slot: an app icon drawn edge to
 // edge (Alacritty's is a full square) stood on the dock's rounded border.
+//
+// A minimized window's dot is hollow, and with the dock's badges on an
+// unread count stands on the icon's corner (`app.badge`, dock/BadgeLogic.js).
+// The wheel turns the app's volume only where the apps widget says so
+// (`wheelTurns`, dock.wheelVolume); otherwise it is handed on.
 Item {
     id: root
 
@@ -44,6 +51,10 @@ Item {
     // one (a pointer leave cancels the press): where it was last, and
     // whether it was still going away from the dock (DockLogic.cancelOutcome).
     signal dragCanceled(real along, real acrossOut, bool rising)
+    // The wheel over the icon, in whole steps (WheelLogic.step: a notch, or a
+    // stretch of a swipe), positive up - while `wheelTurns`.
+    property bool wheelTurns: false
+    signal wheeled(int steps)
 
     readonly property bool hovered: mouse.containsMouse
     readonly property real drawn: Math.round(iconSize * Metrics.dockIconFill)
@@ -106,6 +117,30 @@ Item {
                 color: parent.settings ? Colors.accentFillText : Colors.mutedText
             }
         }
+
+        // The unread count, on the icon's corner and moving with it (a drag,
+        // the launch breath). A fill that carries a label: the accent fill
+        // and its text.
+        Rectangle {
+            id: badge
+            readonly property string label: Badges.badgeText(root.app.badge)
+            visible: label.length > 0
+            height: Metrics.iconSm
+            width: Math.max(height, count.implicitWidth + Metrics.spaceXs * 2)
+            x: parent.width - width + Metrics.spaceXs
+            y: -Metrics.spaceXs
+            radius: height / 2
+            color: Colors.accentFill
+            border.width: Metrics.borderWidth
+            border.color: Colors.panelFor("dock")
+            ShellText {
+                id: count
+                anchors.centerIn: parent
+                text: badge.label
+                role: "caption"
+                color: Colors.accentFillText
+            }
+        }
     }
 
     // Hover and press: a soft square behind the icon, like a bar item's.
@@ -125,24 +160,31 @@ Item {
         controlRadius: Metrics.radiusInner
     }
 
-    // The windows: a dot each, up to three; the active app's is a short bar in
-    // the accent. A starting app gets one faint dot. On the edge side.
+    // The windows: a dot each, up to three, a minimized one's hollow; the
+    // active app's is a short bar in the accent. A starting app gets one faint
+    // dot. On the edge side (DockLogic.dotStates).
+    readonly property var dotStates: Logic.dotStates(app, running, active, launching, Metrics.dockMaxDots)
     Row {
         id: dots
-        visible: root.running || root.launching
+        visible: root.dotStates.length > 0
         spacing: Metrics.dockDotGap
         rotation: root.vertical ? 90 : 0
         x: root.vertical ? (root.edge === "left" ? -Metrics.dockPadding / 2 - width / 2 : root.width + Metrics.dockPadding / 2 - width / 2)
                          : (root.width - width) / 2
         y: root.vertical ? (root.height - height) / 2 : root.height + (Metrics.dockPadding - height) / 2
         Repeater {
-            model: root.active ? 1 : Math.max(1, Math.min(root.app.count, Metrics.dockMaxDots))
+            model: root.dotStates
             Rectangle {
-                width: root.active ? Metrics.dockDotActive : Metrics.dockDot
+                required property string modelData
+                readonly property bool hollow: modelData === "minimized"
+                readonly property color ink: root.app.urgent ? Colors.warning : modelData === "active" ? Colors.accentFill : Colors.mutedText
+                width: modelData === "active" ? Metrics.dockDotActive : Metrics.dockDot
                 height: Metrics.dockDot
                 radius: height / 2
-                color: root.app.urgent ? Colors.warning : root.active ? Colors.accentFill : Colors.mutedText
-                opacity: !root.running ? Effects.disabledOpacity : 1
+                color: hollow ? "transparent" : ink
+                border.width: hollow ? Metrics.borderWidth : 0
+                border.color: ink
+                opacity: modelData === "launching" ? Effects.disabledOpacity : 1
             }
         }
     }
@@ -219,6 +261,17 @@ Item {
             moved = false
             root.dragOffset = 0
             if (was) root.dragCanceled(lastAlong, lastOut, rising)
+        }
+        // A MouseArea's wheel, not a WheelHandler's: one that is not taken is
+        // handed on (testing.md pitfall 90).
+        property var wheelCarry: null
+        onWheel: wheel => {
+            if (!root.wheelTurns) {
+                wheel.accepted = false
+                return
+            }
+            wheelCarry = Wheel.step(wheelCarry, wheel.phase, wheel.angleDelta.y, wheel.pixelDelta.y)
+            if (wheelCarry.steps !== 0) root.wheeled(wheelCarry.steps)
         }
     }
 

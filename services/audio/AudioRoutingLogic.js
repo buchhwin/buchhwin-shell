@@ -122,3 +122,13 @@ function outputOptions(sinks, defaultLabel) {
 function isMeterStream(name) {
     return name === METER_NODE
 }
+
+// node.name of the media popup's visualizer (cava, services/media/
+// VisualizerLogic.js NODE_NAME): it records the default output's monitor, the
+// sound that is playing, not a microphone.
+var VISUALIZER_NODE = "buchhwin-shell-visualizer"
+
+// The shell's own capture streams, which are no "microphone in use".
+function isShellCapture(name) {
+    return name === METER_NODE || name === VISUALIZER_NODE
+}

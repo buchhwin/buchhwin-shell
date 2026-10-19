@@ -128,6 +128,10 @@ ColumnLayout {
         }
     }
 
+    // The three command widgets, wherever they are placed (bar, notch,
+    // desktop, dashboard): set up here, offered in every picker.
+    CommandWidgetsSection { Layout.fillWidth: true }
+
     SettingsSection {
         Layout.fillWidth: true
         visible: !LayoutService.widgetsShown

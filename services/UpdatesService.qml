@@ -50,6 +50,29 @@ Singleton {
     readonly property bool flatpakUpdating: flatpakJob.busy
     readonly property bool actionsAllowed: realSession && !preview
     readonly property string flatpakInstallations: Logic.installationsText(result)
+    // The shell's own foundation in the list (UpdatesLogic, "the shell's own
+    // foundation"): Quickshell, Qt, Hyprland and its libraries.
+    readonly property var corePackages: Logic.corePackages(result)
+    readonly property string coreNote: Logic.coreNote(result)
+    function coreKind(item) { return Logic.coreKind(item ? item.name : "") }
+    // Arch: the news to read before the upgrade and the .pacnew files left
+    // after one, from the last check that asked (UpdatesLogic, "Arch: news
+    // before the upgrade"). The preview has a fixture of its own for them.
+    property var previewExtras: Logic.emptyExtras()
+    readonly property var extras: preview ? previewExtras : (state.extras || Logic.emptyExtras())
+    readonly property var news: extras.news
+    readonly property var pacnew: extras.pacnew
+    readonly property string pacnewNote: Logic.pacnewNote(pacnew)
+    readonly property string pacdiffCommand: Logic.PACDIFF_COMMAND
+    // What the start after a core update says (scripts/updates-after-start.py,
+    // started by start-shell.sh, reads both from settings.json): "off",
+    // "problems" (only when the log or the IPC targets show some) or "always".
+    readonly property string coreCheck: ["off", "problems", "always"].indexOf(SettingsService.value("updates.coreCheck")) >= 0
+        ? SettingsService.value("updates.coreCheck") : "problems"
+    // One quiet notice with the commit subjects after the checkout moved.
+    readonly property bool whatsNew: SettingsService.value("updates.whatsNew") === true
+    function openNews() { Quickshell.execDetached(["xdg-open", "https://archlinux.org/news/"]); PanelService.close("settings") }
+
     // Expanded lists on the page (kept here so IPC can open them for screenshots).
     property bool packagesExpanded: false
     property bool flatpaksExpanded: false
@@ -144,7 +167,8 @@ Singleton {
         now = Date.now()
         const next = Logic.parseReport(text)
         const errors = [next.packageError, next.flatpakError].filter((item, index, list) => item.length && list.indexOf(item) === index)
-        const nextState = Object.assign({}, state, { lastAttempt: checkProc.started })
+        const nextState = Object.assign({}, state, { lastAttempt: checkProc.started,
+                                                     extras: Logic.mergeExtras(state.extras, Logic.parseExtras(text)) })
         if (next.checked) nextState.lastCheck = checkProc.started
         if (checkProc.refresh && next.packagesKnown && !next.packagesCached) nextState.lastRefresh = checkProc.started
         // Keep the last known list when a source failed without a cache.
@@ -351,10 +375,12 @@ Singleton {
         preview = true
         message = ""
         if (sampleFile.loaded) result = Logic.parseReport(sampleFile.text())
+        if (extrasSample.loaded) previewExtras = Logic.mergeExtras(null, Logic.parseExtras(extrasSample.text()))
     }
 
     function stopPreview() {
         preview = false
+        previewExtras = Logic.emptyExtras()
         message = ""
         result = state.result || Logic.emptyResult()
     }
@@ -366,6 +392,12 @@ Singleton {
         path: root.preview ? Paths.shellFile("tests/fixtures/updates-report.txt") : ""
         printErrors: false
         onLoaded: if (root.preview) root.result = Logic.parseReport(text())
+    }
+    FileView {
+        id: extrasSample
+        path: root.preview ? Paths.shellFile("tests/fixtures/updates-arch-extras.txt") : ""
+        printErrors: false
+        onLoaded: if (root.preview) root.previewExtras = Logic.mergeExtras(null, Logic.parseExtras(text()))
     }
 
     // ---- check process and schedule ----------------------------------------------

@@ -6,7 +6,7 @@ import "appearance/AppThemeLogic.js" as Logic
 
 // Settings > Appearance "Apps follow theme" and "Use the shell accent in apps"
 // (both opt-in): KDE/Qt and GTK apps switch with the shell's effective theme
-// (selector, Dark Mode chip, Automatic at 07:00/19:00) - for GTK the GNOME
+// (selector, Dark Mode chip, Automatic at 07:00/19:00 or at sunrise and sunset) - for GTK the GNOME
 // keys, the icon theme and ~/.config/gtk-{3,4}.0 (AppThemeLogic.gtkTargets) -
 // KDE apps (Dolphin's folder icons, selections) take the effective shell
 // accent. Each change first queries the current values (read-only, including
@@ -33,7 +33,10 @@ Singleton {
     // Also the wallpaper accent when "From wallpaper" is on.
     readonly property string accent: SettingsService.accent
     readonly property bool restoreOnLogout: SettingsService.value("appearance.appsRestoreOnLogout")
-    readonly property bool dark: Logic.effectiveDark(SettingsService.theme, clock.hours)
+    // The same rule as Colors.dark: "auto" by the hours, or by the sun at the
+    // weather place (SunService) while it has an answer.
+    readonly property bool dark: Logic.effectiveDark(SettingsService.theme, clock.hours,
+                                                     SunService.ready ? SunService.night : null)
     readonly property string statePath: Paths.stateDir + "/apptheme.json"
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || Paths.home + "/.config"
     readonly property string autostartPath: configHome + "/autostart/" + Logic.AUTOSTART_NAME

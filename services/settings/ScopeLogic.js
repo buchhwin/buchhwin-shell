@@ -27,8 +27,13 @@ var MACHINE_LABELS = [
     { entries: ["clipboard"], label: "the clipboard history" },
     { entries: ["autostart"], label: "what starts at login" },
     { entries: ["updates"], label: "the update checks" },
-    { entries: ["drives"], label: "what a new drive does" },
-    { entries: ["terminal.alacrittyDaemon"], label: "how Alacritty windows start" }
+    { entries: ["drives"], label: "what drives and a full disk say" },
+    { entries: ["terminal.alacrittyDaemon"], label: "how Alacritty windows start" },
+    { entries: ["notifications.keepHistory"], label: "the notifications kept across restarts" },
+    { entries: ["desktop.worldClocks"], label: "the world clock's places" },
+    { entries: ["commandWidgets"], label: "the command widgets" },
+    { entries: ["assistant"], label: "the assistant" },
+    { entries: ["sharePicker"], label: "the share picker" }
 ]
 // What nobody sets as a choice, so the sentence leaves it out: versions,
 // one-shot markers and the tour, and what the shell remembers by itself (the

@@ -5,7 +5,7 @@ import qs.theme
 import qs.services
 import qs.shell.components
 import "../../../services/profile/ProfileLogic.js" as Profile
-import "../../../services/settings/ScopeLogic.js" as Scope
+import "../../../services/profile/AutoModeLogic.js" as AutoMode
 
 // The two levels, as one page. A profile is a card; its five modes are a
 // compact row **inside** the card rather than five rows under it, because five
@@ -43,11 +43,51 @@ ColumnLayout {
             labelFills: true
             visible: AdaptiveService.hasInternal
             label: "Choose the mode automatically"
-            hint: "Laptop without, Desk with an external display. It switches the mode inside the profile you are in; it never changes the profile."
+            hint: "Switches the mode inside the profile you are in when an external display comes or goes; it never changes the profile."
             ShellToggle {
                 focusOnTab: true
                 checked: SettingsService.value("desktop.autoProfile")
                 onToggled: value => SettingsService.set("desktop.autoProfile", value)
+            }
+        }
+        // Where it goes (AutoModeLogic.js); shown while it is on.
+        SettingRow {
+            Layout.fillWidth: true
+            visible: AdaptiveService.hasInternal && SettingsService.value("desktop.autoProfile") === true
+            label: "At the desk"
+            hint: "With an external display"
+            ShellSelect {
+                focusOnTab: true
+                Layout.fillWidth: true
+                options: AutoMode.options("desk", LayoutService.modeNames, LayoutService.templates)
+                current: AdaptiveService.autoTargets.desk
+                onSelected: value => SettingsService.set("desktop.autoModeDesk", value)
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            visible: AdaptiveService.hasInternal && SettingsService.value("desktop.autoProfile") === true
+            label: "On the road"
+            hint: "Without one"
+            ShellSelect {
+                focusOnTab: true
+                Layout.fillWidth: true
+                options: AutoMode.options("road", LayoutService.modeNames, LayoutService.templates)
+                current: AdaptiveService.autoTargets.road
+                onSelected: value => SettingsService.set("desktop.autoModeRoad", value)
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            visible: AdaptiveService.hasInternal && SettingsService.value("desktop.autoProfile") === true
+            label: "On battery"
+            hint: "On the road and off the charger"
+            ShellSelect {
+                focusOnTab: true
+                Layout.fillWidth: true
+                options: AutoMode.options("battery", LayoutService.modeNames, LayoutService.templates)
+                current: AdaptiveService.autoTargets.battery
+                onSelected: value => SettingsService.set("desktop.autoModeBattery", value)
             }
         }
 
@@ -260,13 +300,32 @@ ColumnLayout {
                    : page.activeModeDescription)
             role: "small"; muted: true; wrapMode: Text.Wrap
         }
+        // Whether entering this mode turns Do Not Disturb on and leaving it
+        // turns it off (LayoutService.modeDnd): as the mode ships - on in
+        // Gaming, off in the other four - until it is switched here.
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Do Not Disturb in this mode"
+            hint: "On as you enter the mode, off again as you leave it. One you turn on yourself stays as you set it."
+            ShellToggle {
+                focusOnTab: true
+                enabledState: !LayoutService.readOnly
+                checked: LayoutService.modeDnd(LayoutService.activeMode)
+                onToggled: value => LayoutService.setModeDnd(value)
+            }
+        }
 
         // The settings a mode owns, named rather than implied: a user who
         // changes the blur in Docked and finds Laptop unchanged should be able
         // to read why here, and a control that has a scope has to say it.
+        // The machine's settings are pointed to rather than listed: every
+        // one of them says so where it is set (ScopeNote), and the list grew
+        // into seven lines with every feature (ScopeLogic.machineSettings
+        // keeps the words).
         ShellText {
             Layout.fillWidth: true
-            text: "Blur, panel opacity, animation mode and speed, corner radius, window borders and gaps are the mode's own - each mode keeps its own. Everything else belongs to the profile, except " + Scope.machineSettings() + ", which stay the same in every profile."
+            text: "Blur, panel opacity, animation mode and speed, corner radius, window borders and gaps are the mode's own - each mode keeps its own. Everything else belongs to the profile, except the settings marked \u201cThe same in every profile\u201d."
             role: "small"; muted: true; wrapMode: Text.Wrap
         }
         // A page of this panel: the forward chevron, after the word, where
@@ -281,6 +340,144 @@ ColumnLayout {
             Layout.fillWidth: true
             text: "Layout is read-only: " + LayoutService.readOnlyReason
             color: Colors.warning
+            wrapMode: Text.Wrap
+        }
+    }
+
+    // Copies of the whole setup (SnapshotService): one a day on the first
+    // change, kept for 14 days; Restore, Export and Import. Listed while the
+    // page is open, and a restore keeps a copy of now first.
+    PageActivity { onOpened: SnapshotService.refresh() }
+
+    SettingsSection {
+        Layout.fillWidth: true
+        title: "Backups"
+        description: "Once a day, at the first change, a copy of the whole setup is kept for 14 days: every profile with its modes and settings, wallpapers, shortcuts, monitors, the terminal's fastfetch and the notification rules. Restoring one keeps a copy of now first, then the shell restarts."
+
+        EmptyState {
+            Layout.fillWidth: true
+            row: true
+            visible: SnapshotService.listed && SnapshotService.snapshots.length === 0
+            icon: "󰁯"
+            title: "No copies yet"
+            description: "The first one is kept at the next change, or now with Keep a copy"
+        }
+        // Keyed by name (pitfall 76): a list read again keeps its rows, and
+        // an armed Restore stays armed.
+        Repeater {
+            model: ScriptModel { values: SnapshotService.shownSnapshots.map(item => item.name) }
+            ListRow {
+                id: snapshotRow
+                required property string modelData
+                readonly property var snapshot: SnapshotService.find(modelData)
+                Layout.fillWidth: true
+                interactive: false
+                icon: "󰁯"
+                title: SnapshotService.whenText(snapshotRow.snapshot)
+                subtitle: SnapshotService.subtitle(snapshotRow.snapshot)
+                ShellButton {
+                    focusOnTab: true
+                    icon: Icons.undo
+                    text: "Restore"
+                    compact: true
+                    confirm: true
+                    confirmText: "Restore?"
+                    enabledState: !SnapshotService.busy
+                    toolTip: "Puts this copy back after keeping one of now; the shell restarts"
+                    onClicked: SnapshotService.restore(snapshotRow.modelData)
+                }
+            }
+        }
+        ShellButton {
+            focusOnTab: true
+            visible: SnapshotService.snapshots.length > SnapshotService.shownSnapshots.length || SnapshotService.showAll
+            text: SnapshotService.showAll ? "Show fewer" : "Show all " + SnapshotService.snapshots.length
+            variant: "ghost"
+            compact: true
+            onClicked: SnapshotService.showAll = !SnapshotService.showAll
+        }
+
+        // An import says what it replaces before it does it.
+        ShellCard {
+            Layout.fillWidth: true
+            visible: SnapshotService.importPath.length > 0
+            implicitHeight: importColumn.implicitHeight + Metrics.spaceMd * 2
+            ColumnLayout {
+                id: importColumn
+                anchors.fill: parent
+                anchors.margins: Metrics.spaceMd
+                spacing: Metrics.spaceXs
+                ShellText {
+                    Layout.fillWidth: true
+                    text: "Import " + SnapshotService.importPath.replace(/^.*\//, "") + "?"
+                    wrapMode: Text.Wrap
+                }
+                ShellText {
+                    Layout.fillWidth: true
+                    text: SnapshotService.importText
+                    role: "caption"
+                    wrapMode: Text.Wrap
+                }
+                RowLayout {
+                    spacing: Metrics.spaceSm
+                    ShellButton {
+                        focusOnTab: true
+                        icon: "󰇚"
+                        text: "Import"
+                        variant: "accent"
+                        compact: true
+                        confirm: true
+                        confirmText: "Import?"
+                        enabledState: !SnapshotService.busy
+                        onClicked: SnapshotService.confirmImport()
+                    }
+                    ShellButton {
+                        focusOnTab: true
+                        text: "Cancel"
+                        compact: true
+                        onClicked: SnapshotService.cancelImport()
+                    }
+                }
+            }
+        }
+
+        Flow {
+            Layout.fillWidth: true
+            spacing: Metrics.spaceSm
+            ShellButton {
+                focusOnTab: true
+                icon: Icons.add
+                text: SnapshotService.working === "take" ? "Keeping …" : "Keep a copy"
+                compact: true
+                enabledState: !SnapshotService.busy
+                toolTip: "A copy of the setup as it is now, beside the daily ones"
+                onClicked: SnapshotService.takeNow()
+            }
+            ShellButton {
+                focusOnTab: true
+                icon: "󰕒"
+                text: "Export setup …"
+                compact: true
+                enabledState: !SnapshotService.busy
+                toolTip: "The whole setup as one file, for a stick or a share - it holds your settings, the weather's place included"
+                onClicked: SnapshotService.exportSetup()
+            }
+            ShellButton {
+                focusOnTab: true
+                icon: "󰇚"
+                text: "Import …"
+                compact: true
+                enabledState: !SnapshotService.busy
+                toolTip: "A setup exported before; the page says what it replaces first"
+                onClicked: SnapshotService.importSetup()
+            }
+        }
+        ShellText {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: SnapshotService.message
+            role: "caption"
+            color: SnapshotService.messageError ? Colors.warning : Colors.mutedText
             wrapMode: Text.Wrap
         }
     }

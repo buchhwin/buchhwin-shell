@@ -99,6 +99,33 @@ Singleton {
         onExited: code => { exitCode = code; finish() }
     }
 
+    // Whether polkit's own PAM file offers the reader (FingerprintLogic, "the
+    // reader for admin prompts only"): null while unknown. Read with every
+    // refresh, like the lines above, and only then: nothing reads it while
+    // Settings > Lock Screen is closed.
+    property var polkitEnabled: null
+    readonly property string polkitState: Logic.polkitState(DistroService.family, polkitEnabled, systemEnabled)
+    function readPolkitPam() {
+        const command = Logic.polkitReadCommand(DistroService.family)
+        if (!realSession || preview || command.length === 0 || polkitProc.running) return
+        polkitProc.command = command
+        polkitProc.running = true
+    }
+    Process {
+        id: polkitProc
+        stderr: StdioCollector {}
+        property string output: ""
+        property bool outputDone: false
+        property int exitCode: -1
+        function finish() {
+            if (!outputDone || exitCode < 0) return
+            root.polkitEnabled = Logic.parsePolkit(output, exitCode)
+        }
+        stdout: StdioCollector { onStreamFinished: { polkitProc.output = text; polkitProc.outputDone = true; polkitProc.finish() } }
+        onStarted: { output = ""; outputDone = false; exitCode = -1 }
+        onExited: code => { exitCode = code; finish() }
+    }
+
     // Lid state from UPower (read-only); the preview keeps its synthetic value.
     function readLid() {
         if (preview || lidProc.running) return
@@ -141,6 +168,7 @@ Singleton {
     function refresh() {
         if (preview) return
         readSystemPam()
+        readPolkitPam()
         const argv = Logic.listCommand(user)
         if (!argv) return
         if (listProc.running) { refreshQueued = true; return }

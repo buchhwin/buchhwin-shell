@@ -22,6 +22,7 @@ ShellRoot {
         T.eq(S.modmask(["SHIFT", "SUPER"]), 65, "modmask from names")
         T.eq(S.comboText(76, "F5"), "Super+Ctrl+Alt+F5", "combo text in display order")
         T.eq(S.keyLabel("RETURN"), "Enter", "Return is Enter")
+        T.eq(S.keyLabel("Caps_Lock"), "Caps Lock", "Caps Lock by its name, not its keysym")
         T.eq(S.keyLabel("XF86AudioRaiseVolume"), "Volume up", "known XF86 key")
         T.eq(S.keyLabel("XF86KbdLightOnOff"), "Kbd Light On Off", "other XF86 keys split")
         T.eq(S.keyLabel("mouse:272"), "Left drag", "mouse button")
@@ -49,6 +50,8 @@ ShellRoot {
         T.eq([S.describeExec("quickshell --path /opt/b ipc call dock toggle").title,
               S.describeExec("quickshell --path /opt/b ipc call dock toggle").group], ["Dock", "panels"],
              "the dock's key in the conf dialect, which has no description")
+        T.eq(S.describeExec("/opt/b/scripts/screenshot.sh text"), { title: "Copy text from the screen", group: "screenshots" },
+             "the screenshots' text mode (Super+Alt+T in the conf dialect)")
         T.eq(S.describeExec("quickshell --path /opt/b ipc call startMenu toggle"), { title: "Start menu", group: "panels" },
              "the start menu, once a key is put on it")
         T.eq(S.describeExec("quickshell --path /opt/b ipc call startMenu key"), { title: "Start menu", group: "panels" },
@@ -143,6 +146,16 @@ ShellRoot {
         T.eq(S.rowKeys(twice), ["apps|Super+E|Files", "apps|Super+E|Files#2"], "one combination bound twice gets a count")
         T.eq(S.rowKeys(null), [], "no rows, no keys")
 
+        // The conf dialect's push to talk and Caps Lock binds are the shell's
+        // global shortcuts, and its microphone key goes through the shell.
+        T.eq([S.describe({ dispatcher: "global", arg: "buchhwin:audio.talk" }),
+              S.describe({ dispatcher: "global", arg: "buchhwin:osd.capsLock" }),
+              S.describeExec("quickshell --path /opt/b ipc call audio micMute || wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle")],
+             [{ title: "Push to talk (hold)", group: "system" }, { title: "Caps Lock message", group: "system" },
+              { title: "Mute microphone", group: "system" }], "push to talk, Caps Lock and the microphone key in the conf dialect")
+        T.eq(S.describe({ dispatcher: "global", arg: "other:thing" }), { title: "global other:thing", group: "other", raw: true },
+             "another program's global shortcut stays a raw line")
+
         // Lua config: `__lua` binds carry descriptions
         const luaRows = S.rows(S.parseBinds(lua.text()), [], null)
         T.eq(row(luaRows, "Super+D").title, "Launcher", "Lua description")
@@ -183,7 +196,8 @@ ShellRoot {
         T.eq([S.validAppId("org.kde.dolphin"), S.validAppId("Citrix_subscribed_XenApp 7.x.RDS-Buchhwin $S101-255"),
               S.validAppId("a;b"), S.validAppId("a\nb"), S.validAppId("--unit"), S.validAppId("a/b"), S.validAppId(""), S.validAppId(3)],
              [true, true, false, false, false, false, false, false], "desktop ids a bind can carry")
-        T.eq(S.shellActions(), [{ value: "startMenu key", label: "Start menu" }], "the start menu is offered as a shell action")
+        T.eq(S.shellActions(), [{ value: "startMenu key", label: "Start menu" }, { value: "assistant toggle", label: "Assistant" }],
+             "the start menu and the assistant are offered as shell actions")
         T.eq(S.normalizeEntry({ mods: ["SUPER"], key: "S", shell: "startMenu toggle" }), { mods: ["SUPER"], key: "S", shell: "startMenu key" },
              "a shortcut stored with the old action is the key's")
         T.eq(S.entryLabel({ mods: ["SUPER"], key: "S", shell: "startMenu key" }), "Start menu", "a shell action named by its panel")

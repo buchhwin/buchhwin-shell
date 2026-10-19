@@ -1,12 +1,16 @@
 pragma Singleton
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
 import "hypr/HiddenWindows.js" as Hidden
 import "hypr/FullscreenLogic.js" as Fullscreen
+import "hypr/PassthroughLogic.js" as Passthrough
+import "hypr/WindowToolsLogic.js" as Tools
 import "workspaces/WorkspaceLogic.js" as Workspaces
 import "overview/OverviewLogic.js" as Overview
+import "lock/LockLogic.js" as LockLogic
 
 // Compositor state: focus, fullscreen, games and workspaces.
 Singleton {
@@ -16,12 +20,16 @@ Singleton {
     // A config reload (file change, `hyprctl reload`) resets every option the
     // shell set at runtime; services re-apply theirs on this signal.
     signal configReloaded()
+    // The submap of binds in use, "" for the normal ones (socket2
+    // "submap>>NAME"): the keyboard passthrough's, below.
+    property string submap: ""
 
     Connections {
         target: Hyprland
         function onRawEvent(event) {
             if (event.name === "screencast") root.screencastActive = String(event.data).split(",")[0] === "1"
             else if (event.name === "configreloaded") root.configReloaded()
+            else if (event.name === "submap") root.submap = String(event.data || "")
         }
     }
 
@@ -67,7 +75,12 @@ Singleton {
     // A ShellScreen's x/y are logical, in the same space as Hyprland's.
     readonly property var monitorList: Hyprland.monitors.values
         .map(monitor => Quickshell.screens.find(screen => screen.name === monitor.name))
-        .filter(screen => !!screen)
+        // Nor a monitor that mirrors another: Hyprland takes it out of its
+        // monitor list and moves its workspaces away, but Quickshell hears of
+        // that only at its next monitor read (DisplayService asks for one). A
+        // block for it would send workspaces where nothing can show them
+        // (testing.md pitfall 117).
+        .filter(screen => !!screen && DisplayService.mirrorNames.indexOf(screen.name) < 0)
         .map(screen => ({ name: screen.name, x: screen.x, y: screen.y }))
     readonly property string focusedMonitorName: Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
 
@@ -223,6 +236,44 @@ Singleton {
     function moveLocal(localId) {
         const id = localToGlobal(localId)
         if (id > 0) HyprCompat.dispatch(HyprCompat.commands.moveActiveSilent(id))
+    }
+
+    // The neighbouring workspace of the monitor under the focus (Super+Page
+    // Up/Down, Super and the wheel): the pip beside the lit one in the row
+    // that monitor's bar or notch draws - the same entries in the session's
+    // mode - or one new workspace past the last (Workspaces.step). Worked out
+    // when the key is pressed, so it costs nothing in between.
+    function stepTarget(direction) {
+        const screen = focusedMonitorName
+        const active = activeWorkspaceOn(screen)
+        const offset = offsetFor(screen)
+        const pips = Workspaces.entries(SettingsService.value("workspaces.mode"), SettingsService.value("workspaces.count"),
+            workspaces.map(workspace => ({
+                id: workspace.id,
+                name: workspace.name,
+                windows: Hidden.visibleCount(workspace.toplevels.values.map(toplevel => ({
+                    appId: toplevel.wayland ? toplevel.wayland.appId : "",
+                    ipcClass: toplevel.lastIpcObject ? toplevel.lastIpcObject.class : ""
+                }))),
+                toplevels: workspace.toplevels.values.length,
+                kept: keeps(workspace),
+                screen: workspace.monitor ? workspace.monitor.name : ""
+            })),
+            screen, active, offset, focusedWorkspace !== null ? focusedWorkspace.id : -1, perMonitor)
+        return Workspaces.step(pips, active, direction, offset)
+    }
+    function stepWorkspace(direction) {
+        const id = stepTarget(direction)
+        if (id > 0) focusWorkspace(id)
+    }
+    // With the window, the view going along. Only with a window in front:
+    // from an empty workspace there is nothing to take, and the step would
+    // be a plain switch the user did not ask for. The drop-down terminal
+    // stays on the workspace of its own.
+    function stepWindow(direction) {
+        if (activeToplevel === null || activeHidden || activeAppId === Tools.DROPDOWN_CLASS) return
+        const id = stepTarget(direction)
+        if (id > 0) HyprCompat.dispatch(HyprCompat.commands.moveActive(id))
     }
 
     // True while the workspace shown on this screen has a *fullscreen* window -
@@ -440,4 +491,224 @@ Singleton {
         }
         HyprCompat.dispatch(HyprCompat.commands.workspace(id))
     }
+
+    // ---- Window tools --------------------------------------------------------
+    //
+    // Each asks `hyprctl -j clients` once when it is used - a window's
+    // floating, pinned and fullscreen state is Hyprland's record, which
+    // Quickshell's toplevels carry only after an explicit refresh (pitfall
+    // 99) - and sends what WindowToolsLogic makes of it. No process and no
+    // timer before that.
+    readonly property bool realSession: !LockLogic.lockProcess(Quickshell.shellId)
+
+    function parseClients(text) {
+        try {
+            const list = JSON.parse(text)
+            return Array.isArray(list) ? list : []
+        } catch (error) {
+            return []
+        }
+    }
+
+    // Keep a window on top (Super+Ctrl+T, the dock's menu): the active one,
+    // or the one at `address`. `floatedForTop` remembers the windows the
+    // shell floated for this, which go back into the layout when let go.
+    property var floatedForTop: ({})
+    function keepOnTop(address) {
+        if (clientsForTop.running) return
+        clientsForTop.address = String(address || "")
+        clientsForTop.running = true
+    }
+    function keepOnTopFrom(clients, address) {
+        const client = Tools.clientAt(clients, address)
+        const known = String(client ? client.address : "")
+        const plan = Tools.keepOnTop(client, floatedForTop[known] === true)
+        // Windows that have closed since are forgotten here, not tracked.
+        const kept = {}
+        for (const item of clients)
+            if (item && floatedForTop[item.address] === true && item.address !== known) kept[item.address] = true
+        if (plan && plan.floated) kept[known] = true
+        floatedForTop = kept
+        if (!plan) return
+        HyprCompat.dispatchInOrder(plan.steps.map(step => step === "float"
+            ? HyprCompat.commands.toggleFloating(known) : HyprCompat.commands.togglePin(known)))
+    }
+    Process {
+        id: clientsForTop
+        property string address: ""
+        command: ["hyprctl", "-j", "clients"]
+        stderr: ErrorLog { label: "HyprlandService.clientsForTop" }
+        stdout: StdioCollector { onStreamFinished: root.keepOnTopFrom(root.parseClients(text), clientsForTop.address) }
+    }
+
+    // The drop-down terminal (Super+^): shown or put away while its window is
+    // there, started the first time - through launch-alacritty.sh, the
+    // Alacritty daemon's window like any other (one process for all of
+    // them), with the class hypr/'s rule knows. A second press while it is
+    // still coming is not a second window.
+    // Asked, not bound: a binding would look through every window each time
+    // one opens or closes, for a terminal that may never be started.
+    function dropdownOpen() {
+        return Tools.dropdownAction(ToplevelManager.toplevels.values.map(toplevel => toplevel.appId)) === "toggle"
+    }
+    function toggleDropdown() {
+        if (dropdownOpen()) {
+            HyprCompat.dispatch(HyprCompat.commands.toggleSpecial(Tools.DROPDOWN_WORKSPACE))
+            return
+        }
+        if (dropdownStarting.running) return
+        dropdownStarting.restart()
+        Quickshell.execDetached([Paths.script("launch-alacritty.sh"), "--class", Tools.DROPDOWN_CLASS, "-T", "Drop-down terminal"])
+    }
+    Timer { id: dropdownStarting; interval: 3000 }
+
+    // A Citrix session over the desk's screens side by side (`citrix span`,
+    // the launcher): a floating window the size of the external screens
+    // together, which the session fills - Hyprland's full screen is one
+    // monitor's. Nothing happens without the session window or without two
+    // screens in a row; `spanFinished` says what became of it (the OSD).
+    signal spanFinished(string message, bool ok)
+    property string spannedAddress: ""
+    property bool spannedWasFloating: false
+    function spanCitrix() {
+        if (clientsForSpan.running) return
+        clientsForSpan.mode = "span"
+        clientsForSpan.running = true
+    }
+    // Back into the layout, when the shell floated it for the span.
+    function unspanCitrix() {
+        if (clientsForSpan.running) return
+        clientsForSpan.mode = "unspan"
+        clientsForSpan.running = true
+    }
+    function screensNow() {
+        return Quickshell.screens.map(screen => ({ name: screen.name, x: screen.x, y: screen.y,
+                                                    width: screen.width, height: screen.height }))
+    }
+    function spanFrom(clients, mode) {
+        const client = Tools.citrixWindow(clients)
+        if (mode === "unspan") {
+            const spanned = spannedAddress.length ? Tools.clientAt(clients, spannedAddress) : null
+            if (!spanned) { spannedAddress = ""; spanFinished("No spread Citrix session", false); return }
+            if (!spannedWasFloating && spanned.floating === true)
+                HyprCompat.dispatch(HyprCompat.commands.toggleFloating(spanned.address))
+            spannedAddress = ""
+            spanFinished("Citrix back in the layout", true)
+            return
+        }
+        const target = Tools.spanTarget(screensNow())
+        const plan = Tools.spanPlan(client, target)
+        if (!plan.steps.length) { spanFinished(plan.reason, false); return }
+        const address = String(client.address)
+        HyprCompat.dispatchInOrder(plan.steps.map(step => step.kind === "float"
+            ? HyprCompat.commands.toggleFloating(address)
+            : step.kind === "size" ? HyprCompat.commands.resizeExact(address, step.width, step.height)
+            : HyprCompat.commands.moveExact(address, step.x, step.y)))
+        if (spannedAddress !== address) spannedWasFloating = client.floating === true
+        spannedAddress = address
+        spanFinished(Tools.spanText(target), true)
+    }
+    Process {
+        id: clientsForSpan
+        property string mode: "span"
+        command: ["hyprctl", "-j", "clients"]
+        stderr: ErrorLog { label: "HyprlandService.clientsForSpan" }
+        stdout: StdioCollector { onStreamFinished: root.spanFrom(root.parseClients(text), clientsForSpan.mode) }
+    }
+    // For `citrix get`: flags and counts, never a title.
+    function spanReport() {
+        const target = Tools.spanTarget(screensNow())
+        return { screensInRow: target ? target.names.length : 0, spanned: spannedAddress.length > 0 }
+    }
+
+    // ---- Keyboard passthrough ------------------------------------------------
+    //
+    // Super+Esc puts the keys in the `passthrough` submap (hypr/), where
+    // nothing but its way out is bound: every key reaches the focused window.
+    // The shell follows Hyprland's word on it (`submap`), shows the chip
+    // (shell/shortcuts/PassthroughChip.qml) and gives the keys back when the
+    // focus moves to another window - the binds the user reaches for there
+    // are this session's. With input.passthroughCitrix on it also hands them
+    // over by itself while a Citrix session is in full screen in front, and
+    // takes them back when it leaves full screen (PassthroughLogic.decide).
+    readonly property bool passthrough: Passthrough.activeIn(submap)
+    readonly property bool passthroughAuto: SettingsService.value("input.passthroughCitrix") === true
+    // The window the keys went to (its toplevel, which reads null once the
+    // window has closed - the focus moving on then asks again), as it was
+    // then; whether there was one; whether the shell gave them by itself.
+    property var passOwner: null
+    property var passOwnerInfo: null
+    property bool passHadOwner: false
+    property bool passByShell: false
+    // The shell's own request on its way, so the change it brings is not
+    // taken for the user's.
+    property string passAsked: ""
+    // The window the user took the keys back from while it still wanted
+    // them: not handed over again until the focus has been elsewhere.
+    property var passDeclined: null
+
+    function focusInfo(toplevel) {
+        return toplevel ? { present: true, same: toplevel === passOwner, appId: toplevel.appId || "",
+                            title: toplevel.title || "", fullscreen: toplevel.fullscreen === true }
+                        : { present: false, same: false, appId: "", title: "", fullscreen: false }
+    }
+    onPassthroughChanged: {
+        const focused = ToplevelManager.activeToplevel
+        if (passthrough) {
+            passOwner = focused
+            passOwnerInfo = focused ? { appId: focused.appId || "", title: focused.title || "" } : null
+            passHadOwner = focused !== null
+            passByShell = Passthrough.enteredByItself(passAsked)
+        } else {
+            // Taken back by the key while the session still wanted them:
+            // declined until the focus has been elsewhere.
+            if (passAsked !== "leave" && Passthrough.autoWanted(passthroughAuto, focusInfo(focused)))
+                passDeclined = focused
+            passOwner = null
+            passOwnerInfo = null
+            passHadOwner = false
+            passByShell = false
+        }
+        passAsked = ""
+        passCheck()
+    }
+    function passCheck() {
+        if (!realSession || !HyprCompat.detected) return
+        const focused = ToplevelManager.activeToplevel
+        if (passDeclined !== null && focused !== passDeclined) passDeclined = null
+        const action = Passthrough.decide({
+            active: passthrough, owner: passOwnerInfo, ownerGone: passHadOwner && passOwner === null,
+            auto: passByShell, focused: focusInfo(focused), enabled: passthroughAuto,
+            declined: passDeclined !== null && focused === passDeclined
+        })
+        if (action === "enter") setPassthrough(true, true)
+        else if (action === "leave") setPassthrough(false)
+    }
+    // IPC's way in and out (and the chip's), the same as the key; `automatic`
+    // for the shell's own handover (passCheck), which it also takes back.
+    function setPassthrough(on, automatic) {
+        if (on === passthrough) return
+        passAsked = on ? (automatic === true ? "auto" : "enter") : "leave"
+        passAskedExpiry.restart()
+        HyprCompat.dispatch(HyprCompat.commands.submap(on ? Passthrough.NAME : "reset"))
+    }
+    // A request Hyprland never answered (it was in that submap already) is
+    // not left to colour the user's next change.
+    Timer { id: passAskedExpiry; interval: 1000; onTriggered: root.passAsked = "" }
+    // Watched only while it can matter: the keys are with a window, or the
+    // automatic handover is on. Otherwise a focus change costs nothing here.
+    readonly property bool passWatching: realSession && (passthrough || passthroughAuto)
+    Connections {
+        target: ToplevelManager
+        enabled: root.passWatching
+        function onActiveToplevelChanged() { root.passCheck() }
+    }
+    Connections {
+        target: ToplevelManager.activeToplevel
+        enabled: root.passWatching
+        ignoreUnknownSignals: true
+        function onFullscreenChanged() { root.passCheck() }
+        function onTitleChanged() { root.passCheck() }
+    }
+    onPassthroughAutoChanged: passCheck()
 }

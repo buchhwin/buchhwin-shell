@@ -261,6 +261,76 @@ ColumnLayout {
                 color: FingerprintService.enabledNow && !root.pamLineMissing ? Colors.accentForeground : Colors.mutedText
                 wrapMode: Text.Wrap
             }
+            // The reader for polkit's password dialogs and nothing else
+            // (FingerprintLogic, "the reader for admin prompts only"): a
+            // line in /etc/pam.d/polkit-1, put there and taken out again by
+            // a command the user runs. The login screen and sudo stay
+            // password-only. Both commands are shown while it is off, so
+            // the way back is known before the way in is taken.
+            ShellCard {
+                Layout.fillWidth: true
+                visible: FingerprintService.available && ["on", "off", "system"].indexOf(FingerprintService.polkitState) >= 0
+                implicitHeight: polkitNote.implicitHeight + Metrics.spaceMd * 2
+                ColumnLayout {
+                    id: polkitNote
+                    anchors.fill: parent
+                    anchors.margins: Metrics.spaceMd
+                    spacing: Metrics.spaceXs
+                    readonly property string answer: FingerprintService.polkitState
+                    readonly property string onCommand: FingerprintLogic.polkitOnCommand(DistroService.family)
+                    readonly property string offCommand: FingerprintLogic.polkitOffCommand(DistroService.family)
+                    ShellText {
+                        Layout.fillWidth: true
+                        text: "Password dialogs"
+                        wrapMode: Text.Wrap
+                    }
+                    ShellText {
+                        Layout.fillWidth: true
+                        text: FingerprintLogic.polkitText(polkitNote.answer)
+                            + (polkitNote.answer === "off"
+                               ? " Run this once to let them take the finger as well - an enrollment's own question, a system connection, a drive. "
+                                 + "The login screen and sudo stay as they are. A dialog waits ten seconds for the finger, then asks for the password."
+                               : polkitNote.answer === "on" ? " This takes the line out of /etc/pam.d/polkit-1 again:" : "")
+                        role: "caption"
+                        wrapMode: Text.Wrap
+                    }
+                    ShellText {
+                        Layout.fillWidth: true
+                        visible: polkitNote.answer === "off"
+                        text: polkitNote.onCommand
+                        font.family: Typography.monoFamily
+                        wrapMode: Text.Wrap
+                    }
+                    ShellButton {
+                        focusOnTab: true
+                        visible: polkitNote.answer === "off"
+                        icon: Icons.copy
+                        text: "Copy command"
+                        onClicked: Quickshell.clipboardText = polkitNote.onCommand
+                    }
+                    ShellText {
+                        Layout.fillWidth: true
+                        visible: polkitNote.answer === "off"
+                        text: "The way back, should you want it:"
+                        role: "caption"
+                        wrapMode: Text.Wrap
+                    }
+                    ShellText {
+                        Layout.fillWidth: true
+                        visible: polkitNote.answer !== "system"
+                        text: polkitNote.offCommand
+                        font.family: Typography.monoFamily
+                        wrapMode: Text.Wrap
+                    }
+                    ShellButton {
+                        focusOnTab: true
+                        visible: polkitNote.answer !== "system"
+                        icon: Icons.copy
+                        text: polkitNote.answer === "on" ? "Copy command" : "Copy the way back"
+                        onClicked: Quickshell.clipboardText = polkitNote.offCommand
+                    }
+                }
+            }
         }
 
         Repeater {

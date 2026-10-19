@@ -274,7 +274,13 @@ hl.bind(keyFor("SUPER + CTRL + R"), exec(projectPath .. "/scripts/reload-shell.s
 hl.bind(keyFor("SUPER + ALT + E"), shell("editor toggle"), { description = "Layout editor" })
 hl.bind(keyFor("SUPER + ALT + D"), shell("desktop cycleMode"), { description = "Desktop mode: widgets, bar, notch" })
 hl.bind(keyFor("SUPER + ALT + P"), shell("mode cycle"), { description = "Mode: minimal, work, gaming, laptop, desk" })
+-- The work apps (Settings > Apps), started together.
+hl.bind(keyFor("SUPER + ALT + W"), shell("sessionApps startWork"), { description = "Start my work apps" })
 hl.bind(keyFor("SUPER + P"), shell("profile toggle"), { description = "Profiles and modes" })
+-- The display switcher (laptop only, duplicate, extend, external only), and
+-- the projector key, which moves on to the next choice while it is open.
+hl.bind(keyFor("SUPER + SHIFT + P"), shell("displays toggleSwitcher"), { description = "Display switcher" })
+hl.bind(keyFor("XF86Display"), shell("displays key"), { submap_universal = true, description = "Display switcher" })
 -- F1, not ?: on a German layout ? is Shift+ss and unreliable as a binding.
 hl.bind(keyFor("SUPER + F1"), shell("shortcuts toggleSheet"), { description = "All keyboard shortcuts" })
 hl.bind(keyFor("SUPER + D"), shell("launcher toggle"), { description = "Launcher" })
@@ -303,6 +309,8 @@ hl.bind(keyFor("SUPER + L"), exec(projectPath .. "/scripts/session-action.sh loc
 hl.bind(keyFor("SUPER + S"), exec(projectPath .. "/scripts/screenshot.sh region"), { description = "Screenshot of a region" })
 hl.bind(keyFor("SUPER + SHIFT + S"), exec(projectPath .. "/scripts/screenshot.sh screen"), { description = "Screenshot of the screen" })
 hl.bind(keyFor("SUPER + ALT + S"), exec(projectPath .. "/scripts/screenshot.sh window"), { description = "Screenshot of a window" })
+-- Text from a region of the screen (tesseract), on the clipboard.
+hl.bind(keyFor("SUPER + ALT + T"), exec(projectPath .. "/scripts/screenshot.sh text"), { description = "Copy text from the screen" })
 hl.bind(keyFor("Print"), exec(projectPath .. "/scripts/screenshot.sh region"), { description = "Screenshot of a region" })
 -- Screen recording (pressing it again stops).
 hl.bind(keyFor("SUPER + SHIFT + R"), shell("recording toggle region"), { description = "Record a region" })
@@ -315,6 +323,13 @@ hl.bind(keyFor("SUPER + F"), hl.dsp.window.fullscreen({ mode = "fullscreen" }), 
 -- asked how to do it: `hyprctl binds` found none, while the shortcut sheet has
 -- known the title "Toggle floating" since it was written.
 hl.bind(keyFor("SUPER + C"), hl.dsp.window.float(), { description = "Toggle floating" })
+-- Minimize (services/MinimizeService.qml): the window to a special workspace of
+-- its own, listed on the dock, in the overview and in Alt+Tab. Without a shell
+-- to answer, Shift brings every minimized window back
+-- (scripts/restore-minimized.sh); Super+H minimizes nothing then - a window
+-- minimized without the shell would be listed nowhere.
+hl.bind(keyFor("SUPER + H"), shell("window minimize"), { description = "Minimize window" })
+hl.bind(keyFor("SUPER + SHIFT + H"), shellOr("window restore", exec(projectPath .. "/scripts/restore-minimized.sh")), { description = "Restore minimized window" })
 
 -- SUPER + arrows resize repeatedly; in tiled dwindle layouts this moves the split.
 hl.bind(keyFor("SUPER + RIGHT"), hl.dsp.window.resize({ x = 30, y = 0, relative = true }), { repeating = true, description = "Resize window" })
@@ -367,41 +382,103 @@ hl.bind(keyFor("SUPER + SHIFT + 7"), shellOr("workspaces move 7", hl.dsp.window.
 hl.bind(keyFor("SUPER + SHIFT + 8"), shellOr("workspaces move 8", hl.dsp.window.move({ workspace = 8, follow = false })), { description = "Move window to workspace 8" })
 hl.bind(keyFor("SUPER + SHIFT + 9"), shellOr("workspaces move 9", hl.dsp.window.move({ workspace = 9, follow = false })), { description = "Move window to workspace 9" })
 
+-- The neighbouring workspace of the monitor under the focus: the next or
+-- previous pip of its row, one new one past the last (WorkspaceLogic.step),
+-- by key and by Super and the wheel - Windows' Win+Ctrl+arrows, GNOME's
+-- Super+Page Up/Down. With Shift the window goes along. Through the shell
+-- like the numbers, so the per-monitor blocks and the held workspaces count;
+-- without one, Hyprland's own `m+1`, the monitor's existing workspaces. One
+-- wheel step per binds.scroll_event_delay (300 ms), so a touchpad swipe is a
+-- step too, not ten.
+hl.bind(keyFor("SUPER + Next"), shellOr("workspaces next", hl.dsp.focus({ workspace = "m+1" })), { description = "Next workspace" })
+hl.bind(keyFor("SUPER + Prior"), shellOr("workspaces previous", hl.dsp.focus({ workspace = "m-1" })), { description = "Previous workspace" })
+hl.bind(keyFor("SUPER + SHIFT + Next"), shellOr("workspaces moveNext", hl.dsp.window.move({ workspace = "m+1" })), { description = "Move window to the next workspace" })
+hl.bind(keyFor("SUPER + SHIFT + Prior"), shellOr("workspaces movePrevious", hl.dsp.window.move({ workspace = "m-1" })), { description = "Move window to the previous workspace" })
+hl.bind(keyFor("SUPER + mouse_down"), shellOr("workspaces scroll down", hl.dsp.focus({ workspace = "m+1" })), { description = "Next workspace" })
+hl.bind(keyFor("SUPER + mouse_up"), shellOr("workspaces scroll up", hl.dsp.focus({ workspace = "m-1" })), { description = "Previous workspace" })
+
+-- A window kept on top: floated if it is tiled, then pinned - on every
+-- workspace of its monitor, above the rest (PowerToys' Win+Ctrl+T). Again to
+-- let it go; one the shell floated for this goes back into the layout.
+hl.bind(keyFor("SUPER + CTRL + T"), shell("window keepOnTop"), { description = "Keep window on top" })
+
+-- The drop-down terminal: one Alacritty window on a special workspace of its
+-- own, shown over whatever is on screen and put away again (Yakuake). The key
+-- left of 1 by its place - ^ on a German keyboard, ` on a US one; the first
+-- press starts the window. Without a shell the key still shows or hides it.
+hl.bind(keyFor("SUPER + code:49"), shellOr("dropdown toggle", hl.dsp.workspace.toggle_special("buchhwin-dropdown")), { description = "Drop-down terminal" })
+
+-- Screen zoom around the pointer, Hyprland's cursor.zoom_factor, in the
+-- shell's steps with the OSD (services/hypr/ScreenEffectsLogic.js): Super and
+-- + / - / 0, beside each other on the German layout.
+hl.bind(keyFor("SUPER + plus"), shell("zoom increase"), { description = "Zoom in" })
+hl.bind(keyFor("SUPER + minus"), shell("zoom decrease"), { description = "Zoom out" })
+hl.bind(keyFor("SUPER + 0"), shell("zoom reset"), { description = "Reset zoom" })
+-- The color filter chosen in Settings > Appearance, on and off (Windows'
+-- Win+Ctrl+C).
+hl.bind(keyFor("SUPER + CTRL + C"), shell("colorFilter toggle"), { description = "Color filter on or off" })
+
+-- Keyboard passthrough: every key goes to the focused window - Alt+Tab, the
+-- Windows key and Super+L reach a Citrix session or a virtual machine instead
+-- of this session - until Super+Esc again. The submap holds nothing but that
+-- way out, bound here in the compositor so it never waits for the shell; the
+-- hardware keys below are bound for every submap (`submap_universal`) and keep
+-- working. The shell shows a chip while it lasts and gives the keys back when
+-- the focus goes to another window (services/hypr/PassthroughLogic.js). Both
+-- binds go through the same keyFor, so moving the key moves the way out too.
+hl.bind(keyFor("SUPER + Escape"), hl.dsp.submap("passthrough"), { description = "Pass the keys to the window" })
+hl.define_submap("passthrough", function()
+    hl.bind(keyFor("SUPER + Escape"), hl.dsp.submap("reset"), { description = "Give the keys back" })
+end)
+
 -- Pointer moving and resizing.
 hl.bind(keyFor("SUPER + mouse:272"), hl.dsp.window.drag(), { mouse = true, description = "Move window" })
 hl.bind(keyFor("SUPER + mouse:273"), hl.dsp.window.resize(), { mouse = true, description = "Resize window" })
 
 -- Hardware keys talk to the system backends directly; the shell follows the
--- resulting PipeWire, backlight and MPRIS events.
+-- resulting PipeWire, backlight and MPRIS events. They are bound for every
+-- submap: the keyboard passthrough above takes every other key, not these,
+-- and not the lid.
 --
 -- Except the volume keys, which the shell answers in the PipeWire connection
 -- it holds anyway (the same 5 % steps, up to 100 %): a held key repeats about
 -- 25 times a second, and each repeat was a `wpctl` process connecting to
 -- PipeWire. Without a shell they run wpctl, as the conf dialect's do.
-hl.bind(keyFor("XF86AudioRaiseVolume"), shellOr("audio up", exec("wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+")), { locked = true, repeating = true, description = "Volume up" })
-hl.bind(keyFor("XF86AudioLowerVolume"), shellOr("audio down", exec("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-")), { locked = true, repeating = true, description = "Volume down" })
-hl.bind(keyFor("XF86AudioMute"), shellOr("audio mute", exec("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")), { locked = true, description = "Mute audio" })
-hl.bind(keyFor("XF86AudioMicMute"), shellOr("audio micMute", exec("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle")), { locked = true, description = "Mute microphone" })
+hl.bind(keyFor("XF86AudioRaiseVolume"), shellOr("audio up", exec("wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+")), { locked = true, submap_universal = true, repeating = true, description = "Volume up" })
+hl.bind(keyFor("XF86AudioLowerVolume"), shellOr("audio down", exec("wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-")), { locked = true, submap_universal = true, repeating = true, description = "Volume down" })
+hl.bind(keyFor("XF86AudioMute"), shellOr("audio mute", exec("wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle")), { locked = true, submap_universal = true, description = "Mute audio" })
+hl.bind(keyFor("XF86AudioMicMute"), shellOr("audio micMute", exec("wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle")), { locked = true, submap_universal = true, description = "Mute microphone" })
+-- Push to talk: the default microphone is on while the key is held, and
+-- back the way it was when it is let go (AudioService.pushToTalk). The
+-- shell takes both edges of the global shortcut (ShellShortcuts.HOLD); a
+-- press while held ends the hold, should a release go unheard.
+hl.bind(keyFor("SUPER + T"), shell("audio talk"), { description = "Push to talk (hold)" })
+-- Caps Lock's message (Settings > Desktop > Messages on screen, off by
+-- default): sent on the release, whatever the modifiers, and the key stays
+-- the window's.
+hl.bind(keyFor("Caps_Lock"), shell("osd capsLock"), { release = true, non_consuming = true, ignore_mods = true, description = "Caps Lock message" })
 -- The backlight keys go through the shell, which runs the same brightnessctl
 -- step and then re-reads the backlight at once for the OSD (the udev monitor
 -- sees the change too - amdgpu sends a change uevent per write - but only
 -- after its debounce). As `exec("brightnessctl … && " .. ipc .. "brightness refresh")`
 -- every repeat of a held key - about 25 a second - started sh, brightnessctl
 -- and the Quickshell IPC client. Without a shell the key runs brightnessctl.
-hl.bind(keyFor("XF86MonBrightnessUp"), shellOr("brightness up", exec("brightnessctl -e4 -n2 set 5%+")), { locked = true, repeating = true, description = "Brightness up" })
-hl.bind(keyFor("XF86MonBrightnessDown"), shellOr("brightness down", exec("brightnessctl -e4 -n2 set 5%-")), { locked = true, repeating = true, description = "Brightness down" })
+hl.bind(keyFor("XF86MonBrightnessUp"), shellOr("brightness up", exec("brightnessctl -e4 -n2 set 5%+")), { locked = true, submap_universal = true, repeating = true, description = "Brightness up" })
+hl.bind(keyFor("XF86MonBrightnessDown"), shellOr("brightness down", exec("brightnessctl -e4 -n2 set 5%-")), { locked = true, submap_universal = true, repeating = true, description = "Brightness down" })
 -- The keyboard light goes through the shell rather than running brightnessctl
 -- here: the LED's name carries its driver's prefix (tpacpi on ThinkPads,
 -- asus or dell elsewhere) and a key binding cannot know it.
-hl.bind(keyFor("XF86KbdBrightnessUp"), shell("kbdBacklight up"), { locked = true, repeating = true, description = "Keyboard light up" })
-hl.bind(keyFor("XF86KbdBrightnessDown"), shell("kbdBacklight down"), { locked = true, repeating = true, description = "Keyboard light down" })
-hl.bind(keyFor("XF86KbdLightOnOff"), shell("kbdBacklight toggle"), { locked = true, description = "Keyboard light on or off" })
-hl.bind(keyFor("XF86AudioPlay"), exec("playerctl play-pause"), { locked = true, description = "Play or pause" })
-hl.bind(keyFor("XF86AudioPause"), exec("playerctl play-pause"), { locked = true, description = "Play or pause" })
-hl.bind(keyFor("XF86AudioNext"), exec("playerctl next"), { locked = true, description = "Next track" })
-hl.bind(keyFor("XF86AudioPrev"), exec("playerctl previous"), { locked = true, description = "Previous track" })
-hl.bind(keyFor("switch:on:Lid Switch"), exec(ipc .. "power lidClosed"), { locked = true, description = "Lid closed" })
-hl.bind(keyFor("switch:off:Lid Switch"), exec(ipc .. "power lidOpened"), { locked = true, description = "Lid opened" })
+hl.bind(keyFor("XF86KbdBrightnessUp"), shell("kbdBacklight up"), { locked = true, submap_universal = true, repeating = true, description = "Keyboard light up" })
+hl.bind(keyFor("XF86KbdBrightnessDown"), shell("kbdBacklight down"), { locked = true, submap_universal = true, repeating = true, description = "Keyboard light down" })
+hl.bind(keyFor("XF86KbdLightOnOff"), shell("kbdBacklight toggle"), { locked = true, submap_universal = true, description = "Keyboard light on or off" })
+hl.bind(keyFor("XF86AudioPlay"), exec("playerctl play-pause"), { locked = true, submap_universal = true, description = "Play or pause" })
+hl.bind(keyFor("XF86AudioPause"), exec("playerctl play-pause"), { locked = true, submap_universal = true, description = "Play or pause" })
+hl.bind(keyFor("XF86AudioNext"), exec("playerctl next"), { locked = true, submap_universal = true, description = "Next track" })
+hl.bind(keyFor("XF86AudioPrev"), exec("playerctl previous"), { locked = true, submap_universal = true, description = "Previous track" })
+-- Without a shell (gave up, still starting) `quickshell ipc` exits 255 and the
+-- lid still locks the screen.
+hl.bind(keyFor("switch:on:Lid Switch"), exec(ipc .. "power lidClosed || " .. projectPath .. "/scripts/session-action.sh lock"), { locked = true, submap_universal = true, description = "Lid closed" })
+hl.bind(keyFor("switch:off:Lid Switch"), exec(ipc .. "power lidOpened"), { locked = true, submap_universal = true, description = "Lid opened" })
 
 -- Rules ---------------------------------------------------------------------
 -- Quickshell surfaces use their own transparent layer windows. Blur only goes
@@ -441,7 +518,7 @@ hl.layer_rule({ name = "buchhwin-scrim-noblur", match = { namespace = "^(buchhwi
 -- namespace is shared with the full-screen picking overlay that does not
 -- animate itself. One regex without a comma: the conf parser in
 -- scripts/lib/checks.py splits a layerrule at its first comma.
-hl.layer_rule({ name = "buchhwin-self-animated", match = { namespace = "^(buchhwin-(batteryPopup|bluetoothPopup|clipboard|controlCenter|dashboard|driveUnlock|emoji|eventEditor|eventsPopup|launcher|mediaPopup|networkPopup|notifications|overview|pairing|powerMenu|privacyPopup|profilePopup|settings|shortcutSheet|systemPopup|volumePopup|vpnPopup|wallpaperPicker|weatherPopup|welcome|wifiPassword|switcher|osd|dockMenu|startMenu))$" }, no_anim = true })
+hl.layer_rule({ name = "buchhwin-self-animated", match = { namespace = "^(buchhwin-(batteryPopup|bluetoothPopup|clipboard|controlCenter|dashboard|driveUnlock|emoji|eventEditor|eventsPopup|launcher|mediaPopup|networkPopup|notifications|overview|pairing|powerMenu|privacyPopup|profilePopup|settings|shortcutSheet|systemPopup|volumePopup|vpnPopup|wallpaperPicker|weatherPopup|welcome|wifiPassword|switcher|osd|dockMenu|dock-preview|startMenu|assistant|sharePicker|displaySwitcher|trayMenu))$" }, no_anim = true })
 -- Citrix opens its own dialogs ("disconnect / log off", class Wfica, title
 -- exactly "wfica") on a workspace of its choosing, such as 1 while the
 -- session sits on 2, which looks like a hung session. Floating, centred and
@@ -471,4 +548,59 @@ hl.window_rule({
     no_anim = true,
     no_blur = true,
     no_shadow = true,
+})
+-- A browser's picture-in-picture video (Brave and Chromium title it "Picture
+-- in picture", Firefox "Picture-in-Picture"): floating, on every workspace,
+-- a quarter of the screen's width at 16:9 in its bottom right corner, clear of
+-- a dock or a taskbar, its shape kept when it is resized, and the focus left
+-- where it was. Without this it tiled into the layout like any window and was
+-- gone with the next workspace switch. The place is worked out from the size
+-- the rule gives, not from window_w/window_h: those are the window's size
+-- before the size rule (800x600 from the browser), and it landed 344 px from
+-- the right edge.
+hl.window_rule({
+    name = "picture-in-picture",
+    match = { title = "^(Picture[- ]in[- ][Pp]icture)$" },
+    float = true,
+    pin = true,
+    keep_aspect_ratio = true,
+    no_initial_focus = true,
+    size = "monitor_w*0.25 monitor_w*0.140625",
+    move = "monitor_w*0.75-24 monitor_h-monitor_w*0.140625-88",
+})
+-- Chromium's "... is sharing your screen" bar with its Stop and Hide buttons,
+-- which a Teams call in Brave opens as a small window of its own: tiled, it
+-- squeezed the windows beside it for the length of the call. Floating at the
+-- bottom centre on every workspace, and it does not take the focus. English
+-- and German titles; `[.]`, not a backslash, so both dialects spell it the
+-- same (a Lua string would need two).
+hl.window_rule({
+    name = "screen-share-indicator",
+    match = { title = "^(.* is sharing (your screen|a window|a tab)[.]|.* gibt (Ihren Bildschirm|ein Fenster|einen Tab) frei[.])$" },
+    float = true,
+    pin = true,
+    no_initial_focus = true,
+    move = "monitor_w*0.5-window_w*0.5 monitor_h-window_h-88",
+})
+-- The password prompts of the session - the KDE polkit agent and the KDE
+-- wallet's - in the middle of the screen over everything, on whatever
+-- workspace is shown: a prompt that tiled beside the windows, or waited on
+-- another workspace, looked like nothing was happening.
+hl.window_rule({
+    name = "system-prompts",
+    match = { class = "^(org[.]kde[.]polkit-kde-authentication-agent-1|polkit-kde-authentication-agent-1|org[.]kde[.]ksecretd|org[.]kde[.]kwalletd6)$" },
+    float = true,
+    center = true,
+    pin = true,
+})
+-- The drop-down terminal (Super+^, services/hypr/WindowToolsLogic.js): its
+-- own Alacritty window on its own special workspace, floating across the top
+-- of the screen; the specialWorkspace animation slides it in.
+hl.window_rule({
+    name = "buchhwin-dropdown",
+    match = { class = "^(buchhwin-dropdown)$" },
+    workspace = "special:buchhwin-dropdown",
+    float = true,
+    size = "monitor_w*0.9 monitor_h*0.45",
+    move = "monitor_w*0.05 monitor_h*0.04",
 })

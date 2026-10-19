@@ -75,7 +75,7 @@ ShellRoot {
             root.before = root.sizes()
             T.ok(root.before.row > 0 && root.before.rowLayout > 0 && root.before.widget > 0, "measured while shown")
             T.ok(clock.detailShown, "the pill clock shows its date line")
-            // Round 12, D6: a column count nothing reaches counted one gap
+            // A column count nothing reaches counted one gap
             // too many into the zone's width, and the dock sat off centre.
             T.eq(oldZone.implicitWidth, 78, "a Grid with more columns than items adds a trailing gap (why the zones changed)")
             T.eq(root.before.zone, 74, "a zone in one row is its items and the gaps between them, the hidden one left out")

@@ -39,7 +39,7 @@ Item {
         // black notch in the light theme. The dot is red on any surface.
         textColor: root.textColor
         mutedTextColor: root.mutedTextColor
-        icon: stopMouse.containsMouse ? "󰓛" : "󰑊"
+        icon: stopMouse.containsMouse ? Icons.stop : "󰑊"
         iconColor: Colors.recording
         // "Saving …" has nowhere to go on a strip a pill wide, and the
         // elapsed time is what the chip is for, so stacked it stays on the

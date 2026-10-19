@@ -375,13 +375,16 @@ function parseState(text) {
         state.result = Object.assign(emptyResult(), data.result)
     if (data.shell && typeof data.shell === "object" && Array.isArray(data.shell.commits))
         state.shell = Object.assign(emptyShell(), data.shell)
+    // Arch's news and .pacnew files, from a file that has them (UpdatesService
+    // reads a missing one as none).
+    if (data.extras && typeof data.extras === "object") state.extras = cleanExtras(data.extras)
     return state
 }
 
 function serializeState(state) {
     return JSON.stringify({ version: 1, lastCheck: state.lastCheck, lastAttempt: state.lastAttempt,
                             lastRefresh: state.lastRefresh, notified: state.notified, result: state.result,
-                            shell: state.shell }, null, 2) + "\n"
+                            shell: state.shell, extras: state.extras || emptyExtras() }, null, 2) + "\n"
 }
 
 // ---- the shell itself -----------------------------------------------------------
@@ -516,4 +519,167 @@ function unitWatchCommand(unit) {
 // so; the automatic one tries again at its next check).
 function shellUpdateAllowed(upgrading, flatpakUpdating) {
     return !upgrading && !flatpakUpdating
+}
+
+// ---- the shell's own foundation ---------------------------------------------------
+// The packages the shell stands on: an upgrade of one changes the shell under
+// the session that is running (Arch is rolling, and the shell leans on
+// quirks of Quickshell 0.3.2 and Hyprland 0.56). Tagged "Shell core" in the
+// list, with what to do after the upgrade. "session": the compositor and its
+// libraries, which keep running the old version until the next login, while
+// hyprctl and the portal are new; "shell": Quickshell and the Qt it is built
+// on, loaded into the running shell. Names as Arch, Fedora (Copr) and openSUSE
+// ship them, and the -git builds of the AUR.
+var CORE_SESSION = /^(hyprland|xdg-desktop-portal-hyprland|aquamarine|hyprutils|hyprlang|hyprgraphics|hyprcursor)(-git)?$/
+var CORE_SHELL = /^(quickshell(-git)?|qt6-(base|declarative|wayland)|qt6-qt(base|base-gui|declarative|wayland)|libQt6(Core|Gui|Qml|Quick|WaylandClient)6)$/
+
+// "session", "shell" or "" for one package name.
+function coreKind(name) {
+    const text = String(name || "")
+    if (CORE_SESSION.test(text)) return "session"
+    if (CORE_SHELL.test(text)) return "shell"
+    return ""
+}
+
+function corePackages(result) {
+    return (result && result.packages || []).filter(item => coreKind(item.name).length > 0)
+}
+
+// The line under the package list when the upgrade holds some of them.
+function coreNote(result) {
+    const core = corePackages(result)
+    if (!core.length) return ""
+    const names = core.map(item => item.name)
+    const shown = names.length > 4 ? names.slice(0, 4).join(", ") + " and " + (names.length - 4) + " more" : names.join(", ")
+    const session = core.some(item => coreKind(item.name) === "session")
+    return "Shell core in this upgrade: " + shown + ". "
+        + (session ? "Log out and back in afterwards - the compositor keeps running the old version until then."
+                   : "Restart the shell afterwards (Super+Ctrl+R).")
+        + " The shell checks itself after its next start."
+}
+
+// ---- Arch: news before the upgrade, configuration files after it ---------------
+// updates-check.sh adds two sections on Arch: @news, an AUR helper's -Pw (the
+// Arch news newer than the installed packages - the ones that ask for a
+// manual step before -Syu), and @pacnew, `pacdiff -o` (the .pacnew and
+// .pacsave files upgrades left beside the system's own configuration).
+
+// paru/yay -Pw: "2025-11-06 Title" at the start of a line, the article
+// indented under it; "No new news" when there is none.
+function parseNews(text) {
+    const items = []
+    let current = null
+    for (const line of String(text || "").split("\n")) {
+        const head = /^(\d{4}-\d{2}-\d{2})\s+(\S.*)$/.exec(line)
+        if (head) {
+            current = { date: head[1], title: head[2].trim().slice(0, 200), summary: "" }
+            items.push(current)
+            continue
+        }
+        if (current && !current.summary.length && /^\s+\S/.test(line)) {
+            const summary = line.trim()
+            current.summary = summary.length > 200 ? summary.slice(0, 197) + "…" : summary
+        }
+    }
+    return items.slice(0, 10)
+}
+
+// pacdiff -o: one path per line.
+function parsePacnew(text) {
+    return String(text || "").split("\n").map(line => line.trim())
+        .filter(line => /^\/[^\0]*\.(pacnew|pacsave|pacorig)(\.\d+)?$/.test(line) && line.length <= 512)
+        .slice(0, 50)
+}
+
+function emptyExtras() {
+    return { news: [], pacnew: [], newsKnown: false, pacnewKnown: false }
+}
+
+// The two sections of a report; a section the report does not have (another
+// distribution, no AUR helper, a nested session) or one that failed is not
+// known, and the last known answer stays (mergeExtras).
+function parseExtras(text) {
+    const sections = parseSections(text)
+    const extras = emptyExtras()
+    const news = sections["news"]
+    // paru says "no new news" on stderr and exits 1 when there is none (seen
+    // with paru 2.x on Arch); any other failure (offline, the feed
+    // unreachable) keeps what was known.
+    const newsErrors = sections["news-stderr"]
+    const noNews = text => /no new news/i.test(text || "")
+    if (news && (news.code === 0 || noNews(news.text) || (news.code === 1 && !!newsErrors && noNews(newsErrors.text)))) {
+        extras.news = parseNews(news.text)
+        extras.newsKnown = true
+    }
+    const pacnew = sections["pacnew"]
+    if (pacnew && pacnew.code === 0) {
+        extras.pacnew = parsePacnew(pacnew.text)
+        extras.pacnewKnown = true
+    }
+    return extras
+}
+
+function mergeExtras(previous, next) {
+    const before = previous || emptyExtras()
+    return {
+        news: next.newsKnown ? next.news : before.news || [],
+        pacnew: next.pacnewKnown ? next.pacnew : before.pacnew || [],
+        newsKnown: next.newsKnown || !!before.newsKnown,
+        pacnewKnown: next.pacnewKnown || !!before.pacnewKnown
+    }
+}
+
+// What updates.json keeps of them, checked like the rest of the state.
+function cleanExtras(data) {
+    const extras = emptyExtras()
+    if (!data || typeof data !== "object") return extras
+    if (Array.isArray(data.news))
+        extras.news = data.news.filter(item => item && typeof item.date === "string" && typeof item.title === "string")
+            .slice(0, 10).map(item => ({ date: item.date, title: item.title, summary: typeof item.summary === "string" ? item.summary : "" }))
+    if (Array.isArray(data.pacnew)) extras.pacnew = parsePacnew(data.pacnew.join("\n"))
+    extras.newsKnown = data.newsKnown === true
+    extras.pacnewKnown = data.pacnewKnown === true
+    return extras
+}
+
+function pacnewNote(paths) {
+    const count = (paths || []).length
+    if (!count) return ""
+    return plural(count, "configuration file", "configuration files") + " from upgrades "
+        + (count === 1 ? "waits" : "wait") + " beside the system's own (.pacnew). Look at them and merge what you want with:"
+}
+
+// -s: pacdiff runs as the user and asks sudo only to replace or remove a file.
+var PACDIFF_COMMAND = "pacdiff -s"
+
+// ---- the shell's own version (Settings > About) ----------------------------------
+// `git log -10 --format=%h%x09%cs%x09%s` of the checkout the shell runs from:
+// [{ hash, date, subject }], the newest first.
+function parseLog(text) {
+    return String(text || "").split("\n").map(line => line.split("\t")).filter(parts => parts.length >= 3
+        && /^[0-9a-f]{4,40}$/.test(parts[0]) && /^\d{4}-\d{2}-\d{2}$/.test(parts[1]))
+        .map(parts => ({ hash: parts[0], date: parts[1], subject: parts.slice(2).join("\t").trim() }))
+}
+
+// "2026-10-19" → "Oct 19" ("Oct 19 2025" in another year than `now`'s): the
+// order checkedText writes a day in, on this page and beside it.
+function shortDate(day, now) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""))
+    if (!match) return ""
+    const month = MONTHS[parseInt(match[2], 10) - 1]
+    if (!month) return ""
+    const text = month + " " + parseInt(match[3], 10)
+    return now && new Date(now).getFullYear() !== parseInt(match[1], 10) ? text + " " + match[1] : text
+}
+
+// "e5a68ce · Oct 19", or "" for a checkout git does not know.
+function versionLine(commits, now) {
+    const head = (commits || [])[0]
+    if (!head) return ""
+    const date = shortDate(head.date, now)
+    return head.hash + (date.length ? " · " + date : "")
+}
+
+function logCommand(dir) {
+    return ["git", "-C", String(dir || "."), "log", "-10", "--format=%h%x09%cs%x09%s"]
 }

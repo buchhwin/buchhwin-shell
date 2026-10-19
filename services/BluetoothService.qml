@@ -4,6 +4,8 @@ import Quickshell.Bluetooth
 import Quickshell.Io
 import QtQuick
 import "bluetooth/BluetoothLogic.js" as Logic
+import "bluetooth/DeviceBatteryLogic.js" as DeviceBattery
+import "lock/LockLogic.js" as LockLogic
 
 // BlueZ adapter and devices. Discovery only runs while a page requests it.
 Singleton {
@@ -275,10 +277,71 @@ Singleton {
         return "󰂯"
     }
 
+    // ---- low batteries of connected devices (DeviceBatteryLogic) ------------
+    // Headphones dying in a call: a notice at 15 % and at 5 % per device, by
+    // the laptop's own rules (once each, armed again once charged), sent to
+    // the shell's own notification server. Only in the real session - a
+    // nested shell's notify-send reaches the host's server - and never in the
+    // lock's process. What it reads is what the rows show already: the
+    // battery of a connected device that reports one, which BlueZ updates
+    // every few minutes; checked 2 s after a change, so a device that comes
+    // with its level is one step.
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool batteryWarning: SettingsService.value("bluetooth.batteryWarning") !== false
+    readonly property bool warningsAllowed: !lockProcess && Quickshell.env("BUCHHWIN_NESTED") !== "1"
+    readonly property var batteryLevels: warningsAllowed ? connected.filter(device => device.batteryAvailable).map(device => ({
+        address: String(device.address || ""), name: device.name || device.address || "",
+        percent: Math.round(device.battery * 100), icon: device.icon || ""
+    })) : []
+    readonly property string batteryInput: JSON.stringify(batteryLevels) + "|" + batteryWarning
+    onBatteryInputChanged: batteryCheck.restart()
+    property var batteryState: ({ fired: {} })
+    // The notice that is out per device ({ address: title }), so it goes
+    // once the device has been charged.
+    property var batteryNotices: ({})
+    // How many connected devices are low now (IPC `bluetooth get`).
+    readonly property int lowDevices: batteryLevels.filter(item => DeviceBattery.low(item.percent)).length
+    Timer { id: batteryCheck; interval: 2000; onTriggered: root.checkBatteries() }
+    function checkBatteries() {
+        const step = DeviceBattery.update(batteryState, batteryLevels, batteryWarning)
+        batteryState = step.state
+        for (const address of step.cleared) dismissBatteryNotice(address)
+        for (const warning of step.warnings) {
+            const text = DeviceBattery.message(warning)
+            dismissBatteryNotice(warning.address)
+            const notices = Object.assign({}, batteryNotices)
+            notices[warning.address] = text.title
+            batteryNotices = notices
+            Quickshell.execDetached(["notify-send", "--app-name=Bluetooth", "--icon=" + text.icon,
+                                     "--urgency=" + text.urgency, "--", text.title, text.body])
+        }
+    }
+    function dismissBatteryNotice(address) {
+        const title = batteryNotices[address]
+        if (title === undefined) return
+        const notices = Object.assign({}, batteryNotices)
+        delete notices[address]
+        batteryNotices = notices
+        const list = NotificationService.history
+        for (let i = list.length - 1; i >= 0; --i) {
+            const item = list[i]
+            if (item && item.appName === "Bluetooth" && item.summary === title) item.dismiss()
+        }
+    }
+    // What a warning says, without sending it (IPC `bluetooth previewBatteryWarning`):
+    // the log line, for a nested check without a device.
+    function previewBatteryWarning() {
+        const text = DeviceBattery.message({ name: "Example headset", percent: DeviceBattery.LOW_LEVEL, icon: "audio-headset", kind: "low" })
+        console.info("buchhwin-shell: bluetooth: notification (preview, not sent):", text.title, "—", text.body)
+        return text.title
+    }
+
     function deviceStatus(device) {
         if (!device) return ""
         if (device.pairing) return "Pairing …"
-        const battery = device.batteryAvailable ? " · " + Math.round(device.battery * 100) + "%" : ""
+        const percent = device.batteryAvailable ? Math.round(device.battery * 100) : -1
+        // A low one says so in words: the line is the same ink either way.
+        const battery = percent < 0 ? "" : DeviceBattery.low(percent) ? " · Battery low, " + percent + "%" : " · " + percent + "%"
         if (device.connected) return "Connected" + battery
         if (device.paired || device.bonded) return "Paired"
         return "Nearby"

@@ -6,7 +6,9 @@ import qs.services
 import qs.shell.components
 import "../../services/notifications/NotificationLogic.js" as Logic
 
-// Super+N notification history with Do Not Disturb.
+// Super+N notification history with Do Not Disturb, and under "Earlier" the
+// ones kept from before the shell's last restart (Settings > Notifications
+// "Keep notifications across restarts").
 ShellPanel {
     id: root
     keyNavigation: true
@@ -14,7 +16,7 @@ ShellPanel {
     // history the field is hidden, and the keys went into it all the same:
     // the empty state turned into "No notification matches" for words nobody
     // could see.
-    keyForward: NotificationService.history.length > 0 ? search : null
+    keyForward: NotificationService.listed > 0 ? search : null
     // The first notification while the centre is open brings the field, and
     // the panel's own key holder lets go as it does (ShellPanel hands the
     // focus over only as it opens): the field takes it then, or Escape and
@@ -36,7 +38,7 @@ ShellPanel {
     // there for one tile and "No notifications". Asked of the history, not of
     // the search, so a word that matches nothing does not fold the card up
     // under the field while it is typed.
-    cardHeight: NotificationService.history.length > 0 ? roomBelowTop : -1
+    cardHeight: NotificationService.listed > 0 ? roomBelowTop : -1
 
     // Group keys the user expanded ("N more").
     property var expanded: ({})
@@ -58,10 +60,23 @@ ShellPanel {
     // rather than worked out again for each notification it dismisses.
     readonly property var matching: shown && !NotificationService.clearing
         ? Logic.search(NotificationService.history, query) : []
-    readonly property var groups: Logic.group(matching)
+    // Grouped as the cards name them: a browser's site as its web app
+    // (NotificationService.describe).
+    readonly property var groups: Logic.group(matching, NotificationService.describe)
     // What the list below is keyed by, and how a key finds its group.
     readonly property var groupKeys: groups.map(entry => entry.key)
     readonly property var groupIndex: Logic.groupIndex(groups)
+    // The kept ones from before the restart, newest first, searched like the
+    // rest; keyed by their ids (strings) as the groups are by their keys.
+    readonly property var earlierMatching: shown && !NotificationService.clearing
+        ? Logic.search(NotificationService.earlier, query) : []
+    readonly property var earlierIds: earlierMatching.map(item => item.id)
+    readonly property var earlierIndex: {
+        const index = {}
+        for (const item of earlierMatching) index[item.id] = item
+        return index
+    }
+    readonly property int matchCount: matching.length + earlierMatching.length
 
     // The field, not the query: the panel is built once and keeps its field,
     // so clearing only `query` reopened it with the old words still in the
@@ -80,7 +95,7 @@ ShellPanel {
             title: "Notifications"
 
             ShellButton {
-                visible: NotificationService.history.length > 0
+                visible: NotificationService.listed > 0
                 text: "Clear all"; compact: true; variant: "ghost"
                 // Every notification of every app, with no way back: it asks
                 // twice, like every button that destroys something.
@@ -92,7 +107,7 @@ ShellPanel {
         ShellTextField {
             id: search
             Layout.fillWidth: true
-            visible: NotificationService.history.length > 0
+            visible: NotificationService.listed > 0
             icon: Icons.search
             placeholder: "Search notifications …"
             onTextChanged: root.query = text
@@ -112,16 +127,16 @@ ShellPanel {
             Layout.fillWidth: true
             Layout.fillHeight: true
             // The empty state's room, for the measured card.
-            implicitHeight: root.matching.length === 0 ? empty.implicitHeight + Metrics.spaceXl * 2 : 0
+            implicitHeight: root.matchCount === 0 ? empty.implicitHeight + Metrics.spaceXl * 2 : 0
 
             EmptyState {
                 id: empty
                 // A search only while there is something to search: words
                 // typed before Clear all stay in the hidden field, and the
                 // empty centre said "No notification matches" for them.
-                readonly property bool searching: root.query.length > 0 && NotificationService.history.length > 0
+                readonly property bool searching: root.query.length > 0 && NotificationService.listed > 0
                 anchors.centerIn: parent
-                visible: root.matching.length === 0
+                visible: root.matchCount === 0
                 icon: searching ? Icons.search : "󰂜"
                 title: searching ? "No notification matches" : "No notifications"
             }
@@ -129,7 +144,7 @@ ShellPanel {
             Flickable {
                 id: list
                 anchors.fill: parent
-                visible: root.matching.length > 0
+                visible: root.matchCount > 0
                 clip: true
                 contentHeight: groupColumn.implicitHeight
                 boundsBehavior: Flickable.StopAtBounds
@@ -205,11 +220,13 @@ ShellPanel {
                                 // normal here.
                                 ShellButton {
                                     readonly property string rule: NotificationService.appRule(groupItem.group.key)
-                                    icon: rule === "mute" ? "󰂛" : rule === "critical" ? Icons.warning : "󰂚"
+                                    icon: rule === "mute" ? "󰂛" : rule === "critical" ? Icons.warning
+                                        : rule === "always" ? "\u{f0d59}" : "󰂚"
                                     compact: true
                                     variant: rule === "default" ? "ghost" : "surface"
                                     toolTip: rule === "mute" ? "Muted · click to unmute"
                                         : rule === "critical" ? "Always urgent · click for normal"
+                                        : rule === "always" ? "Never muted · click for normal"
                                         : "Normal · click to mute this app"
                                     onClicked: NotificationService.setAppRule(groupItem.group.key, Logic.nextAppRule(rule))
                                 }
@@ -233,6 +250,29 @@ ShellPanel {
                                     now: root.now
                                 }
                             }
+                        }
+                    }
+
+                    // From before the shell's last restart: what they said
+                    // and when, nothing to act on but a web app to open.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Metrics.spaceXs
+                        visible: root.earlierIds.length > 0
+                        spacing: Metrics.spaceSm
+                        SectionLabel { text: "Earlier" }
+                        ShellText { text: String(root.earlierIds.length); role: "caption" }
+                        Item { Layout.fillWidth: true }
+                    }
+                    Repeater {
+                        model: ScriptModel { values: root.shown ? root.earlierIds : [] }
+                        NotificationCard {
+                            required property string modelData
+                            Layout.fillWidth: true
+                            notification: root.earlierIndex[modelData]
+                                || ({ id: modelData, earlier: true, appName: "", summary: "", body: "", actions: [], hints: {} })
+                            receivedAt: NotificationService.arrivalOf(notification)
+                            now: root.now
                         }
                     }
                 }

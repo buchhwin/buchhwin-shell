@@ -1,6 +1,7 @@
 pragma Singleton
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import QtQuick
 import qs.theme
 import "launcher/Calculator.js" as Calc
@@ -12,11 +13,18 @@ import "launcher/Pinned.js" as Pinned
 import "launcher/LaunchLogic.js" as Launch
 import "launcher/FileSearch.js" as FileSearch
 import "launcher/ResultsLogic.js" as Results
+import "launcher/ConvertLogic.js" as Convert
+import "launcher/WindowResults.js" as Windows
+import "launcher/RecentFiles.js" as Recent
+import "launcher/CodeFolders.js" as Code
+import "launcher/RunCommand.js" as Run
 import "settings/SettingsNavLogic.js" as Nav
 
-// Launcher providers. Prefixes: none = apps (+ calculator, commands and, for
-// something that looks like an address, "Open"), ">" commands, "/" files
-// (plocate), "@" settings, "=" calculator, "?" web search, ":" emoji.
+// Launcher providers. Prefixes: none = apps (+ calculator, conversions,
+// commands, open windows, VS Code's folders, recent files and, for something
+// that looks like an address, "Open"), ">" commands, "/" files (plocate),
+// "@" settings, "=" calculator, "?" web search, ":" emoji, "$" a command to
+// run.
 Singleton {
     id: root
 
@@ -35,6 +43,11 @@ Singleton {
     // What the switch shows, in the order Settings > Launcher put them. The
     // rules a stored order has to survive are in ModeOrder, with their test.
     readonly property var modes: ModeOrder.apply(SettingsService.value("launcher.modeOrder"), allModes)
+    // "$ command" is a prefix, not one of the switch's modes: a mode there is
+    // a segment more in everyone's switch and a row in Settings > Launcher's
+    // order, for something typed rather than browsed. The field still says
+    // what it does (its glyph and "Run …") while the prefix is there.
+    readonly property var runMode: ({ id: "run", prefix: Run.PREFIX, label: "Run", icon: "󰆍" })
     // Where the categories are is a layout question now, not a setting: the
     // block sits in the sidebar, or in the column as a row of chips, or
     // nowhere. `Launcher.qml` reads the zone; nothing outside it needs to.
@@ -145,7 +158,7 @@ Singleton {
         { title: "Timer: 5 minutes", keywords: "timer countdown 5 minutes wecker uhr minuten", icon: "󰔛", run: () => TimerService.start(300) },
         { title: "Timer: 10 minutes", keywords: "timer countdown 10 minutes wecker uhr minuten", icon: "󰔛", run: () => TimerService.start(600) },
         { title: "Timer: 25 minutes", keywords: "timer countdown 25 minutes pomodoro focus wecker minuten", icon: "󰔛", run: () => TimerService.start(1500) },
-        { title: "Timer: stop", keywords: "timer countdown stop cancel wecker abbrechen", icon: "󰔞", run: () => TimerService.stop() },
+        { title: "Timer: stop", keywords: "timer countdown stop cancel wecker abbrechen", icon: "󰔞", run: () => TimerService.stopTimer() },
         { title: "Do Not Disturb: 1 hour", keywords: "dnd focus quiet nicht stören ruhe stunde", icon: Icons.busy, run: () => NotificationService.setDnd("1h") },
         { title: "Do Not Disturb: until tomorrow", keywords: "dnd quiet night nicht stören ruhe nacht morgen", icon: Icons.untilMorning, run: () => NotificationService.setDnd("tomorrow") },
         { title: "Do Not Disturb: on", keywords: "dnd quiet nicht stören ruhe", icon: "󰂛", run: () => NotificationService.setDnd("manual") },
@@ -159,23 +172,64 @@ Singleton {
         { title: "Mode: gaming", keywords: "mode modus profile layout games profil spiele", icon: "󰊴", run: () => LayoutService.setActiveMode("gaming") },
         { title: "Mode: laptop", keywords: "mode modus profile layout profil", icon: "󰌢", run: () => LayoutService.setActiveMode("laptop") },
         { title: "Mode: desk", keywords: "mode modus profile layout monitor display profil docked dock schreibtisch", icon: "󰍹", run: () => LayoutService.setActiveMode("docked") },
+        // The display switcher (Super+Shift+P) and its choices, for a projector
+        // or a meeting room's screen. Applied after the launcher has closed: a
+        // choice can take its screen away. One that cannot be made does nothing.
+        { title: "Display switcher", keywords: "display monitor projector beamer duplicate mirror extend presentation bildschirm spiegeln erweitern präsentation", icon: "\u{f0379}", run: () => PanelService.open("displaySwitcher") },
+        { title: "Displays: duplicate", keywords: "display monitor projector beamer duplicate mirror same presentation bildschirm spiegeln duplizieren präsentation", icon: "\u{f0191}", run: () => { PanelService.close(); Qt.callLater(() => DisplayService.setProjection("duplicate")) } },
+        { title: "Displays: extend", keywords: "display monitor projector beamer extend side by side bildschirm erweitern", icon: "\u{f037a}", run: () => { PanelService.close(); Qt.callLater(() => DisplayService.setProjection("extend")) } },
+        { title: "Displays: laptop only", keywords: "display monitor laptop only internal screen bildschirm nur laptop", icon: "\u{f0322}", run: () => { PanelService.close(); Qt.callLater(() => DisplayService.setProjection("internal")) } },
+        { title: "Displays: external only", keywords: "display monitor projector beamer external only second screen bildschirm nur extern", icon: "\u{f0379}", run: () => { PanelService.close(); Qt.callLater(() => DisplayService.setProjection("external")) } },
         { title: "Animations: full", keywords: "animation full fast animationen voll schnell", icon: "󰓅", run: () => SettingsService.set("appearance.animationMode", "full") },
         { title: "Animations: reduced", keywords: "animation reduced motion animationen reduziert", icon: "󰾆", run: () => SettingsService.set("appearance.animationMode", "reduced") },
         { title: "Toggle Night Light", keywords: "night light blue light warm nachtlicht nachtmodus blaulicht", icon: Icons.nightLight, run: () => NightLightService.toggle() },
         { title: "Focus: on", keywords: "focus concentration quiet widgets fokus konzentration ruhe", icon: Icons.focus, run: () => AdaptiveService.setFocus(true) },
         { title: "Focus: off", keywords: "focus concentration fokus konzentration", icon: Icons.focus, run: () => AdaptiveService.setFocus(false) },
+        // Focus with an end: off again after 25 minutes, with a ring.
+        { title: "Focus: 25 minutes", keywords: "focus session pomodoro 25 minutes timer concentration quiet fokus sitzung konzentration ruhe minuten", icon: Icons.focus, run: () => AdaptiveService.focusFor(1500) },
         { title: "Overview", keywords: "overview windows workspaces expose übersicht fenster", icon: Icons.arrange, run: () => PanelService.open("overview") },
+        // Settings > Apps: with nothing set, each opens that page instead.
+        { title: "Start my work apps", keywords: "work apps start morning together arbeit apps starten morgens", icon: Icons.play, run: () => SessionAppsService.startWork() },
+        { title: "Reopen the last session's apps", keywords: "reopen restore session last apps login wiederherstellen wieder öffnen sitzung letzte", icon: Icons.window, run: () => SessionAppsService.reopen() },
         { title: "Clipboard", keywords: "clipboard history copy zwischenablage verlauf kopieren", icon: Icons.copy, run: () => PanelService.open("clipboard") },
-        { title: "Screenshot: region", keywords: "screenshot capture region selection bildschirmfoto foto bereich auswahl", icon: "󰩭", run: () => { PanelService.close(); screenshotDelay.mode = "region"; screenshotDelay.restart() } },
-        { title: "Screenshot: screen", keywords: "screenshot capture screen monitor bildschirmfoto foto bildschirm", icon: "󰹑", run: () => { PanelService.close(); screenshotDelay.mode = "screen"; screenshotDelay.restart() } },
+        // A model on this computer, through Ollama (shell/assistant).
+        { title: "Assistant", keywords: "assistant ai chat ask question ollama local model llm assistent ki frage fragen", icon: Icons.assistant, run: () => PanelService.open("assistant") },
+        // A click on a window takes that window, a drag a region
+        // (scripts/screenshot.sh hands slurp the windows on screen).
+        { title: "Screenshot: region", keywords: "screenshot capture region selection window click bildschirmfoto foto bereich auswahl fenster klick", icon: "󰩭", run: () => root.screenshot(["region"]) },
+        { title: "Screenshot: screen", keywords: "screenshot capture screen monitor bildschirmfoto foto bildschirm", icon: "󰹑", run: () => root.screenshot(["screen"]) },
+        // For a menu or a tooltip, which a selection overlay would close:
+        // three seconds to open it, then the screen.
+        { title: "Screenshot: screen in 3 seconds", keywords: "screenshot capture screen delay timer later menu tooltip bildschirmfoto verzögert später sekunden", icon: "󰃩", run: () => root.screenshot(["--delay", "3", "screen"]) },
+        // Text out of a picture of it: a Citrix session, a scanned page, a
+        // dialog that will not let its text be selected (tesseract).
+        { title: "Copy text from the screen", keywords: "ocr text recognition copy screen region tesseract texterkennung text kopieren bildschirm bereich", icon: "󱄽", run: () => root.screenshot(["text"]) },
         { title: "Record region", keywords: "screen recording record region video capture bildschirmaufnahme aufnahme bereich", icon: "󰑊", run: () => { PanelService.close(); RecordingService.startSoon("region") } },
         { title: "Record screen", keywords: "screen recording record screen monitor video capture bildschirmaufnahme aufnahme bildschirm", icon: "󰑋", run: () => { PanelService.close(); RecordingService.startSoon("screen") } },
-        { title: "Stop recording", keywords: "screen recording stop video bildschirmaufnahme aufnahme beenden", icon: "󰓛", run: () => RecordingService.stop() },
+        { title: "Stop recording", keywords: "screen recording stop video bildschirmaufnahme aufnahme beenden", icon: Icons.stop, run: () => RecordingService.stop() },
+        // The screen zoom and the color filters (ScreenEffectsService), keep
+        // on top, the drop-down terminal, the keyboard passthrough and the
+        // Citrix session over the desk's screens (HyprlandService).
+        { title: "Zoom in", keywords: "zoom magnifier magnify bigger larger lupe vergrößern größer", icon: "󰍋", run: () => ScreenEffectsService.zoomBy(1) },
+        { title: "Zoom out", keywords: "zoom magnifier smaller lupe verkleinern kleiner", icon: "󰍊", run: () => ScreenEffectsService.zoomBy(-1) },
+        { title: "Zoom: off", keywords: "zoom magnifier reset 100 lupe zurücksetzen aus", icon: "󰍊", run: () => ScreenEffectsService.resetZoom() },
+        { title: "Color filter: on", keywords: "color filter colour grayscale colorblind farbfilter graustufen farbenblind an", icon: "󰌁", run: () => ScreenEffectsService.setFilterOn(true) },
+        { title: "Color filter: off", keywords: "color filter colour grayscale colorblind farbfilter graustufen farbenblind aus", icon: "󰌁", run: () => ScreenEffectsService.setFilterOn(false) },
+        { title: "Color filter: grayscale", keywords: "color filter colour grayscale greyscale black white focus farbfilter graustufen schwarz weiß", icon: "󰌁", run: () => ScreenEffectsService.setFilter("grayscale") },
+        { title: "Color filter: red-green", keywords: "color filter colorblind deuteranopia protanopia red green farbfilter farbenblind rot grün", icon: "󰌁", run: () => ScreenEffectsService.setFilter("deuteranopia") },
+        { title: "Color filter: blue-yellow", keywords: "color filter colorblind tritanopia blue yellow farbfilter farbenblind blau gelb", icon: "󰌁", run: () => ScreenEffectsService.setFilter("tritanopia") },
+        { title: "Color filter: inverted", keywords: "color filter invert inverted negative farbfilter invertiert umkehren", icon: "󰌁", run: () => ScreenEffectsService.setFilter("invert") },
+        { title: "Keep window on top", keywords: "keep on top always above pin float window immer im vordergrund anheften fenster", icon: Icons.pin, run: () => { PanelService.close(); HyprlandService.keepOnTop("") } },
+        { title: "Drop-down terminal", keywords: "terminal dropdown drop down quake yakuake guake scratchpad alacritty konsole", icon: "󰆍", run: () => { PanelService.close(); HyprlandService.toggleDropdown() } },
+        { title: "Keys to the window", keywords: "keyboard passthrough citrix remote desktop vm virtual machine windows key tastatur durchreichen fernzugriff", icon: "󰌌", run: () => { PanelService.close(); HyprlandService.setPassthrough(true) } },
+        { title: "Citrix over the screens", keywords: "citrix span spread multi monitor screens desktop viewer both bildschirme beide verteilen", icon: "󰍺", run: () => { PanelService.close(); HyprlandService.spanCitrix() } },
+        { title: "Citrix back into the layout", keywords: "citrix unspan tile back layout zurück", icon: "󰍺", run: () => HyprlandService.unspanCitrix() },
         { title: "Lock", keywords: "lock sperren", icon: Icons.lock, run: () => SessionService.run("lock") },
         { title: "Fingerprint unlock: automatic", keywords: "fingerprint unlock lock screen lid dock automatic fingerabdruck entsperren sperrbildschirm deckel automatisch", icon: "󰈷", run: () => FingerprintService.setMode("auto") },
         { title: "Fingerprint unlock: on", keywords: "fingerprint unlock lock screen on fingerabdruck entsperren sperrbildschirm an ein", icon: "󰈷", run: () => FingerprintService.setMode("on") },
         { title: "Fingerprint unlock: off", keywords: "fingerprint unlock lock screen password off fingerabdruck entsperren sperrbildschirm passwort aus", icon: "󰈷", run: () => FingerprintService.setMode("off") },
         { title: "Stay awake: on", keywords: "caffeine idle awake koffein wach bleiben", icon: "󰅶", run: () => IdleService.stayAwake = true },
+        { title: "Stay awake for 1 hour", keywords: "caffeine idle awake hour koffein wach bleiben stunde", icon: "󰅶", run: () => IdleService.holdAwake("1h") },
         { title: "Stay awake: off", keywords: "caffeine idle awake koffein wach bleiben", icon: "󰾪", run: () => IdleService.stayAwake = false },
         { title: "Sleep", keywords: "suspend sleep bereitschaft", icon: Icons.suspend, run: () => SessionService.run("suspend") },
         { title: "Log out …", keywords: "logout log out abmelden", icon: Icons.logout, run: () => PanelService.open("powerMenu", { confirm: "logout" }) },
@@ -200,11 +254,16 @@ Singleton {
     ])
 
     // Let the launcher close before the screen is captured.
+    function screenshot(args) {
+        PanelService.close()
+        screenshotDelay.args = args
+        screenshotDelay.restart()
+    }
     Timer {
         id: screenshotDelay
-        property string mode: "region"
+        property var args: ["region"]
         interval: 350
-        onTriggered: Quickshell.execDetached([Paths.script("screenshot.sh"), mode])
+        onTriggered: Quickshell.execDetached([Paths.script("screenshot.sh")].concat(args))
     }
 
     property var fileResults: []
@@ -395,15 +454,27 @@ Singleton {
 
     function modeFor(text) {
         const first = text.charAt(0)
+        // "$100 to eur" is a conversion with the dollar in front, not a
+        // command: the prefix runs whatever else follows it.
+        if (first === Run.PREFIX && !Convert.parse(text)) return runMode
         return modes.find(mode => mode.prefix.length && mode.prefix === first) || modes[0]
     }
 
     function results(text, category) {
         const mode = modeFor(text)
         const query = mode.prefix.length ? text.slice(1) : text
+        if (mode.id === "run") {
+            const run = runResult(text)
+            return run ? [run] : []
+        }
         if (mode.id === "commands") return commandResults(query, 50)
         if (mode.id === "settings") return settingsResults(query)
         if (mode.id === "calculator") {
+            // "= 10 km to mi" is a conversion; anything else the calculator's.
+            if (Convert.parse(query)) {
+                const converted = conversionResult(query)
+                return converted ? [converted] : []
+            }
             const calc = calculatorResult(query)
             return calc ? [calc] : []
         }
@@ -425,13 +496,347 @@ Singleton {
             const calc = calculatorResult(query)
             if (calc) lead.push(calc)
         }
+        const converted = conversionResult(query)
+        if (converted) lead.push(converted)
         // A typed address: first when it is one beyond doubt
         // ("example.org/page", "https://…"), after the best app when it is a
         // bare host, which "readme.md" is too (ResultsLogic.appsMode).
         const address = addressResult(query)
         const appList = apps(query, category)
-        const commandList = query.trim().length >= 2 ? commandResults(query, 3) : []
-        return Results.appsMode(lead, address, Web.addressLeads(query), appList, commandList)
+        const typed = query.trim().length >= 2
+        const commandList = typed ? commandResults(query, 3) : []
+        // The other sources only once something is typed: with an empty
+        // field the list is every app, and a window or a file among them
+        // would be noise. Each brings its few best rows.
+        const extras = typed && category === "All"
+            ? windowResults(query).concat(codeResults(query), recentResults(query)) : []
+        return Results.appsMode(lead, address, Web.addressLeads(query), appList, commandList, extras)
+    }
+
+    // ---- "$ command" -------------------------------------------------------
+    // One row for the line typed after "$": Enter runs it, Ctrl+Enter runs it
+    // in the session's terminal, which stays open for the output
+    // (launcher/RunCommand.js has how, and why a browser goes the long way).
+    function runResult(text) {
+        const command = Run.parse(text)
+        if (!command.length) return null
+        return { kind: "run", key: "run", title: "Run " + command, subtitle: "Enter runs it · Ctrl+Enter in a terminal",
+                 icon: runMode.icon,
+                 run: () => root.runCommand(command, false),
+                 alternate: () => root.runCommand(command, true) }
+    }
+
+    // Ctrl+Enter keeps the terminal for the output (RunCommand.context).
+    function runCommand(command, inTerminal) {
+        const terminal = inTerminal || Run.needsTerminal(command, entries)
+        const context = Run.context(command, name => Paths.script(name), terminal, inTerminal)
+        if (!context) return
+        context.workingDirectory = Paths.home
+        Quickshell.execDetached(context)
+    }
+
+    // ---- open windows ------------------------------------------------------
+    // From Quickshell's list of the compositor's windows, which the shell
+    // keeps anyway: no process, nothing asked. Read only from `results`, so
+    // only while the launcher shows something typed.
+    readonly property bool windowSearch: SettingsService.value("launcher.windows") !== false
+
+    function appEntry(appId) {
+        return appId.length ? DesktopEntries.heuristicLookup(appId) : null
+    }
+
+    function windowResults(query) {
+        if (!windowSearch) return []
+        const names = {}
+        const appName = appId => {
+            if (names[appId] === undefined) {
+                const entry = appEntry(appId)
+                names[appId] = entry && entry.name ? entry.name : appId
+            }
+            return names[appId]
+        }
+        return Windows.matches(Windows.entries(Hyprland.toplevels.values), query, score, appName).map(window => ({
+            kind: "window", key: "window:" + window.address, title: window.title || appName(window.appId),
+            subtitle: Windows.subtitle(window, appName), icon: Icons.window,
+            get iconSource() {
+                const entry = root.appEntry(window.appId)
+                return root.iconSource([entry ? entry.icon : "", window.appId])
+            },
+            run: () => root.focusWindowSoon(window.address)
+        }))
+    }
+
+    // After the launcher has let go of the keyboard, or Hyprland hands the
+    // focus back to the window it had (SwitcherService waits the same way).
+    function focusWindowSoon(address) {
+        focusTimer.address = address
+        focusTimer.restart()
+    }
+    Timer {
+        id: focusTimer
+        property string address: ""
+        interval: 120
+        onTriggered: {
+            try {
+                HyprCompat.dispatch(HyprCompat.commands.focusWindow(address))
+            } catch (error) {
+                console.warn("buchhwin-shell: LauncherService: no window to focus")
+            }
+        }
+    }
+
+    // ---- recent files ------------------------------------------------------
+    // The list GTK and KDE applications keep of what they opened, read when a
+    // query first asks for it in an open (one file, a few KB to a few
+    // hundred) and let go when the launcher closes: nothing watched, nothing
+    // kept while it is shut. A path set anew each time is a fresh read
+    // (pitfall 91), where a reload() of a FileView that read once may hand
+    // back the old text.
+    readonly property bool recentSearch: SettingsService.value("launcher.recentFiles") !== false
+    readonly property string recentFile: (Quickshell.env("XDG_DATA_HOME") || Paths.home + "/.local/share") + "/recently-used.xbel"
+    property string recentPath: ""
+    property var recentList: []
+
+    function recentResults(query) {
+        if (!recentSearch) return []
+        // Scheduled, never written here: `results` is a binding (pitfall 34).
+        Qt.callLater(root.loadRecent)
+        return Recent.matches(recentList, query, score).map(file => ({
+            kind: "file", key: "recent:" + file.path, title: file.name,
+            subtitle: (file.kind === "folder" ? "Recent folder · " : "Recent file · ") + file.folder,
+            icon: file.kind === "folder" ? Icons.folder : file.kind === "image" ? "󰋩" : file.kind === "pdf" ? "󰈦" : "󰈔",
+            run: () => Quickshell.execDetached(["xdg-open", file.path]),
+            alternate: () => Quickshell.execDetached(["xdg-open", file.path.slice(0, file.path.lastIndexOf("/")) || "/"])
+        }))
+    }
+
+    function loadRecent() {
+        if (recentPath.length || !recentSearch) return
+        recentPath = recentFile
+        holdBriefly()
+    }
+
+    FileView {
+        id: recentView
+        path: root.recentPath
+        printErrors: false
+        onLoaded: root.recentList = Recent.parse(text(), Paths.home)
+        onLoadFailed: root.recentList = []
+    }
+
+    // ---- VS Code's folders ---------------------------------------------------
+    // "Open in VS Code" for the folders it opened last and those under ~/git,
+    // read by scripts/launcher-code-folders.py once per open (~20 ms), only
+    // when VS Code (or Codium) is installed and a query asks.
+    readonly property bool codeSearch: SettingsService.value("launcher.codeFolders") !== false
+    property var codeFound: null
+    property bool codeAsked: false
+
+    function codeResults(query) {
+        if (!codeSearch) return []
+        const editor = Code.editorEntry(visibleApps())
+        if (!editor) return []
+        Qt.callLater(root.loadCode)
+        if (!codeFound) return []
+        const list = Code.folders(codeFound, editor.editor, Paths.home)
+        return Code.matches(list, query, score).map(folder => ({
+            kind: "folder", key: "code:" + folder.path, title: folder.name,
+            subtitle: "Open in " + (editor.app.name || "VS Code") + " · " + folder.place,
+            get iconSource() { return root.iconSource(editor.app.icon) },
+            icon: Icons.folder,
+            run: () => {
+                const context = Code.openContext(editor.app, folder.path, name => Paths.script(name))
+                if (context) Quickshell.execDetached(context)
+            },
+            // The folder itself, in the file manager.
+            alternate: () => Quickshell.execDetached(["xdg-open", folder.workspace
+                ? folder.path.slice(0, folder.path.lastIndexOf("/")) : folder.path])
+        }))
+    }
+
+    function loadCode() {
+        if (codeAsked || !codeSearch) return
+        codeAsked = true
+        codeProc.running = true
+        holdBriefly()
+    }
+
+    Process {
+        id: codeProc
+        command: ["python3", Paths.script("launcher-code-folders.py")]
+        stderr: ErrorLog { label: "LauncherService.codeProc" }
+        stdout: StdioCollector {
+            // Only for the open that asked: one closed meanwhile let it go.
+            onStreamFinished: if (root.codeAsked) root.codeFound = Code.parse(text)
+        }
+    }
+
+    // ---- conversions ---------------------------------------------------------
+    // "10 km to mi", "20 C in F", "100 eur to usd" through qalc (launcher/
+    // ConvertLogic.js has the shape and what of the answer counts), once the
+    // typing has settled: one short process per settled query, none for
+    // anything else. qalc keeps its settings and fetched rates in a folder of
+    // the shell's own: it saves its mode on every exit, and the user's own
+    // qalculate settings are theirs.
+    readonly property bool conversions: SettingsService.value("launcher.conversions") !== false
+    readonly property bool exchangeRates: SettingsService.value("launcher.exchangeRates") === true
+    readonly property string qalcDir: Paths.cacheDir + "/qalc"
+    // expression → the answer, or false for none. A new object on each
+    // answer, so `results` hears of it.
+    property var convertAnswers: ({})
+    property var convertPending: null
+    // Set once a run could not start: qalc is not installed (Settings >
+    // Launcher says so, and doctor.sh names the package).
+    property bool qalcMissing: false
+    property real ratesFetchedAt: 0
+    property real ratesRetryAt: 0
+
+    function conversionResult(query) {
+        if (!conversions || qalcMissing) return null
+        const parsed = Convert.parse(query)
+        if (!parsed) return null
+        const known = convertAnswers[parsed.expression]
+        if (known === undefined) {
+            Qt.callLater(root.queueConversion, parsed)
+            return null
+        }
+        if (!known) return null
+        return { kind: "calculator", key: "convert", title: known.title,
+                 subtitle: Convert.subtitle(parsed, known, ratesFetchedAt > 0), icon: "󰓡",
+                 run: () => { Quickshell.clipboardText = known.copy },
+                 // The number alone, for a field that wants no unit.
+                 alternate: () => { Quickshell.clipboardText = known.number || known.copy } }
+    }
+
+    function queueConversion(parsed) {
+        if (!parsed || convertAnswers[parsed.expression] !== undefined) return
+        if (convertPending && convertPending.expression === parsed.expression) return
+        convertPending = parsed
+        convertDebounce.restart()
+    }
+
+    // Until the typing settles: "10 km to m" is on the way to "10 km to mi".
+    Timer {
+        id: convertDebounce
+        interval: 300
+        onTriggered: root.startConversion()
+    }
+
+    // One run at a time; the next waits for its exit (onRunningChanged).
+    function startConversion() {
+        const job = convertPending
+        if (!job || convertProc.running || qalcMissing) return
+        convertPending = null
+        if (convertAnswers[job.expression] !== undefined) return
+        const now = Date.now()
+        const fetching = Convert.needsRates(job, exchangeRates, ratesFetchedAt, now) && now >= ratesRetryAt
+        convertProc.job = job
+        convertProc.fetching = fetching
+        convertProc.started = false
+        convertProc.command = Convert.command(job, fetching)
+        convertProc.running = true
+        convertKill.interval = fetching ? 8000 : 3000
+        convertKill.restart()
+        holdBriefly()
+    }
+
+    function takeAnswer(job, output, fetching) {
+        if (!job) return
+        let fresh = false
+        if (fetching) {
+            // A fetch that failed (offline) says so in its output; it is
+            // tried again in ten minutes rather than with every keystroke.
+            if (Convert.ratesFailed(output)) ratesRetryAt = Date.now() + Convert.RATES_RETRY_MS
+            else { ratesFetchedAt = Date.now(); fresh = true }
+        }
+        // New rates make every answer before them old.
+        const next = fresh ? {} : Object.assign({}, convertAnswers)
+        next[job.expression] = Convert.answer(output, job) || false
+        convertAnswers = next
+    }
+
+    Process {
+        id: convertProc
+        // What this run was asked, kept until the next one starts: the
+        // output is taken by the job it belongs to, whichever of the stream's
+        // end and the exit comes first.
+        property var job: null
+        property bool fetching: false
+        property bool started: false
+        environment: ({ XDG_CONFIG_HOME: root.qalcDir + "/config", XDG_DATA_HOME: root.qalcDir + "/data" })
+        stderr: ErrorLog { label: "LauncherService.convertProc" }
+        stdout: StdioCollector {
+            onStreamFinished: root.takeAnswer(convertProc.job, text, convertProc.fetching)
+        }
+        onStarted: started = true
+        onRunningChanged: {
+            if (running) return
+            convertKill.stop()
+            // Never started: no qalc (Quickshell says "Process failed to
+            // start" once, and the launcher asks no more this session).
+            if (!started) root.qalcMissing = true
+            if (root.convertPending) Qt.callLater(root.startConversion)
+        }
+    }
+    Timer {
+        id: convertKill
+        interval: 3000
+        onTriggered: if (convertProc.running) convertProc.running = false
+    }
+
+    // Whether qalc is there, for Settings > Launcher: asked when the page
+    // shows (a few ms), as the file index is.
+    function checkQalc() {
+        if (!qalcCheck.running) qalcCheck.running = true
+    }
+    Process {
+        id: qalcCheck
+        command: ["sh", "-c", "command -v qalc >/dev/null"]
+        onExited: code => root.qalcMissing = code !== 0
+    }
+
+    // ---- the launcher opens and closes ---------------------------------------
+    // What a query read for this open goes again when it closes: the recent
+    // files, VS Code's folders and the answers of qalc (the rates in them age).
+    function launcherClosed() {
+        recentPath = ""
+        recentList = []
+        codeAsked = false
+        codeFound = null
+        if (codeProc.running) codeProc.running = false
+        // A run still under way answers no one: its answer is not kept.
+        convertProc.job = null
+        convertPending = null
+        convertDebounce.stop()
+        convertAnswers = ({})
+        releaseTimer.stop()
+    }
+
+    // The same goes when something else asked: the start menu's search
+    // reads these sources too, and IPC `launcher results` with nothing open.
+    // The launcher lets go itself when it closes; for the others it is half
+    // a minute after the last read, or once the start menu has closed. The
+    // timer only runs while something read is held.
+    function holdBriefly() {
+        if (PanelService.active !== "launcher") releaseTimer.restart()
+    }
+    Timer {
+        id: releaseTimer
+        interval: 30000
+        onTriggered: {
+            if (PanelService.active === "startMenu") restart()
+            else if (PanelService.active !== "launcher") root.launcherClosed()
+        }
+    }
+
+    // The rows a query gives, as the launcher would show them, for IPC
+    // (`launcher results TEXT`): kinds, keys, titles and subtitles only.
+    // What a source reads in the background (qalc, the recent files, VS
+    // Code's folders) comes in a moment later - ask again.
+    function describe(text) {
+        const list = results(String(text || ""), "All").map(entry => ({
+            kind: entry.kind || "", key: entry.key || "", title: entry.title || "", subtitle: entry.subtitle || "" }))
+        return JSON.stringify(list)
     }
 
     // ---- files -------------------------------------------------------------

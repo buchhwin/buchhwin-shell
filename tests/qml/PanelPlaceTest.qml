@@ -5,7 +5,7 @@ import "../../shell/components/PanelPlaceLogic.js" as P
 
 // What a panel and a notification popup keep clear of (PanelPlaceLogic,
 // ShellPanel's bottom/left/right offsets and the popup stack): the bar and the
-// dock beyond it. Round 12: the notification center ran down over the
+// dock beyond it. The notification center ran down over the
 // taskbar, bar-pill panels and popups stood where the dock is beyond a
 // bottom bar, the corner popups covered a right dock, and a key
 // opened its panel under a desktop clock a screen away from the taskbar's

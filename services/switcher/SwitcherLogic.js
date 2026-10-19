@@ -1,11 +1,15 @@
 .pragma library
 .import "../hypr/HiddenWindows.js" as Hidden
+.import "../dock/MinimizeLogic.js" as Minimize
 
 // Pure helpers for the Alt+Tab window switcher: windows from
 // `hyprctl -j clients` in most-recently-used order and the wrapping selection.
 
 // Mapped, visible windows (without the session's hidden helper windows) ordered by Hyprland's focusHistoryID (0 = focused
-// last). Windows without a history id go last, in address order.
+// last). Windows without a history id go last, in address order. Minimized
+// windows (services/dock/MinimizeLogic.js) are listed - Alt+Tab is one of the
+// ways back to them - after all the others, as on Windows: the window just
+// minimized was used last, and a quick Alt+Tab brought it straight back.
 function build(clients) {
     return (clients || [])
         .filter(client => client && client.address && client.mapped !== false && client.hidden !== true
@@ -17,17 +21,21 @@ function build(clients) {
                 address: String(client.address), title: String(client.title || ""),
                 appClass: String(client.class || client.initialClass || ""),
                 workspace: Number(workspace.id) || 0, workspaceName: workspaceLabel(workspace),
+                minimized: Minimize.isParked(workspace.name),
                 focusOrder: Number.isFinite(history) && history >= 0 ? history : Number.MAX_SAFE_INTEGER,
                 width: Array.isArray(client.size) ? Number(client.size[0]) || 0 : 0,
                 height: Array.isArray(client.size) ? Number(client.size[1]) || 0 : 0
             }
         })
-        .sort((a, b) => a.focusOrder - b.focusOrder || (a.address < b.address ? -1 : a.address > b.address ? 1 : 0))
+        .sort((a, b) => (a.minimized ? 1 : 0) - (b.minimized ? 1 : 0) || a.focusOrder - b.focusOrder
+                        || (a.address < b.address ? -1 : a.address > b.address ? 1 : 0))
 }
 
-// Badge text: the workspace name, special workspaces without their prefix.
+// Badge text: the workspace name, special workspaces without their prefix, a
+// minimized window's "Minimized".
 function workspaceLabel(workspace) {
     const name = String(workspace && workspace.name !== undefined ? workspace.name : workspace && workspace.id !== undefined ? workspace.id : "")
+    if (Minimize.isParked(name)) return "Minimized"
     return name.startsWith("special:") ? name.slice(8) : name
 }
 

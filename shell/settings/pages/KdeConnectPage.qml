@@ -225,7 +225,7 @@ ColumnLayout {
                     spacing: Metrics.spaceSm
                     ShellButton {
                         focusOnTab: true
-                        icon: "󰒊"
+                        icon: Icons.send
                         text: "Ping"
                         compact: true
                         enabledState: KdeConnectService.supports(deviceItem.device, "ping")

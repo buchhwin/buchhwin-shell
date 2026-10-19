@@ -37,8 +37,9 @@ const messages = {
     unavailable: "The calendars could not be read.",
     // calendar-helper.py writes through KDE's Akonadi Python bindings, which
     // Fedora packages and openSUSE Leap and Arch do not (CalendarService
-    // asks once whether they import).
-    noBindings: "Editing events needs the Akonadi Python bindings, which this distribution does not package. Use Merkuro."
+    // asks once whether they import). Not "not packaged": on Fedora they are
+    // only missing, and scripts/doctor.sh names the packages.
+    noBindings: "Editing events needs the Akonadi Python bindings, which are not installed here. Use Merkuro."
 }
 
 function refuse(reason) {

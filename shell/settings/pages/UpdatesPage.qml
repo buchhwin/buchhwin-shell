@@ -1,12 +1,17 @@
+import Quickshell
 import QtQuick
 import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../../services/appearance/DateFormat.js" as DateFormat
 
 // Settings > Updates: last check, "Check now", system packages (security
-// updates first) and Flatpaks as expandable lists, hand-off to Discover and a
-// Flatpak update for the user installation, automatic check settings.
+// updates first, the shell's own foundation tagged "Shell core") and Flatpaks
+// as expandable lists, hand-off to Discover and a Flatpak update for the user
+// installation; on Arch the news to read before the upgrade and the .pacnew
+// files left after one; automatic check settings and what the shell says
+// after an update.
 ColumnLayout {
     id: root
     spacing: Metrics.pageGap
@@ -24,6 +29,10 @@ ColumnLayout {
         property string subtitle: ""
         property bool security: false
         property string badge: ""
+        // "session" or "shell" for a package the shell stands on
+        // (UpdatesLogic.coreKind); a security badge says more and wins.
+        property string core: ""
+        readonly property bool badged: security || core.length > 0
         Layout.fillWidth: true
         Layout.leftMargin: Metrics.spaceMd
         Layout.rightMargin: Metrics.spaceMd
@@ -42,17 +51,17 @@ ColumnLayout {
             ShellText { Layout.fillWidth: true; text: row.subtitle; role: "small"; muted: true; visible: text.length > 0 }
         }
         Rectangle {
-            visible: row.security
+            visible: row.badged
             implicitWidth: badgeText.implicitWidth + Metrics.spaceSm * 2
             implicitHeight: badgeText.implicitHeight + Metrics.spaceXxs * 2
             radius: Metrics.pillRadius(height)
-            color: Colors.warningSoft
+            color: row.security ? Colors.warningSoft : Colors.accentSoft
             ShellText {
                 id: badgeText
                 anchors.centerIn: parent
-                text: row.badge
+                text: row.security ? row.badge : "Shell core"
                 role: "caption"
-                color: Colors.warning
+                color: row.security ? Colors.warning : Colors.accentOnSoft
             }
         }
     }
@@ -175,6 +184,57 @@ ColumnLayout {
         title: "System packages"
         description: DistroService.packagesDescription
 
+        // Arch: the news newer than the installed packages, above the
+        // button that upgrades them - the ones that ask for a manual step
+        // say so before the upgrade, not after it.
+        ShellCard {
+            Layout.fillWidth: true
+            visible: UpdatesService.news.length > 0
+            implicitHeight: newsColumn.implicitHeight + Metrics.spaceMd * 2
+            ColumnLayout {
+                id: newsColumn
+                anchors.fill: parent
+                anchors.margins: Metrics.spaceMd
+                spacing: Metrics.spaceXs
+                ShellText {
+                    Layout.fillWidth: true
+                    text: UpdatesService.news.length === 1 ? "An Arch news item to read before the upgrade"
+                        : UpdatesService.news.length + " Arch news items to read before the upgrade"
+                    wrapMode: Text.Wrap
+                }
+                Repeater {
+                    model: UpdatesService.news
+                    ColumnLayout {
+                        id: newsItem
+                        required property var modelData
+                        Layout.fillWidth: true
+                        spacing: 0
+                        // The date as the shell writes dates (Settings > Desktop
+                        // extras > Clock), not as the feed has it.
+                        readonly property var day: /^\d{4}-\d{2}-\d{2}$/.test(String(modelData.date || ""))
+                            ? new Date(Number(modelData.date.slice(0, 4)), Number(modelData.date.slice(5, 7)) - 1, Number(modelData.date.slice(8, 10)))
+                            : null
+                        ShellText {
+                            Layout.fillWidth: true
+                            text: (newsItem.day ? DateFormat.date(newsItem.day, SettingsService.locale, "short", SettingsService.dateOrder,
+                                                                SettingsService.shortDateNumbers) : modelData.date) + " · " + modelData.title
+                            role: "small"
+                            wrapMode: Text.Wrap
+                        }
+                        ShellText { Layout.fillWidth: true; visible: text.length > 0; text: modelData.summary; role: "caption"; muted: true; wrapMode: Text.Wrap }
+                    }
+                }
+                ShellButton {
+                    focusOnTab: true
+                    // It leaves the panel for the browser (not one more page).
+                    trailingIcon: Icons.leavesPanel
+                    text: "Read on archlinux.org"
+                    compact: true
+                    onClicked: UpdatesService.openNews()
+                }
+            }
+        }
+
         ListRow {
             focusOnTab: true
             level: 1
@@ -225,6 +285,57 @@ ColumnLayout {
                 subtitle: UpdatesService.packageSubtitle(modelData)
                 security: modelData.security
                 badge: UpdatesService.severityLabel(modelData)
+                core: UpdatesService.coreKind(modelData)
+            }
+        }
+        ShellText {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            text: UpdatesService.coreNote
+            role: "caption"
+            wrapMode: Text.Wrap
+        }
+
+        // Arch: what earlier upgrades left beside the system's own
+        // configuration. Merging is the user's, in a terminal.
+        ShellCard {
+            Layout.fillWidth: true
+            visible: UpdatesService.pacnew.length > 0
+            implicitHeight: pacnewColumn.implicitHeight + Metrics.spaceMd * 2
+            ColumnLayout {
+                id: pacnewColumn
+                anchors.fill: parent
+                anchors.margins: Metrics.spaceMd
+                spacing: Metrics.spaceXs
+                ShellText {
+                    Layout.fillWidth: true
+                    text: UpdatesService.pacnewNote
+                    wrapMode: Text.Wrap
+                }
+                Repeater {
+                    model: UpdatesService.pacnew
+                    ShellText {
+                        required property string modelData
+                        Layout.fillWidth: true
+                        text: modelData
+                        role: "caption"
+                        muted: true
+                        font.family: Typography.monoFamily
+                        elide: Text.ElideMiddle
+                    }
+                }
+                ShellText {
+                    Layout.fillWidth: true
+                    text: UpdatesService.pacdiffCommand
+                    font.family: Typography.monoFamily
+                    wrapMode: Text.Wrap
+                }
+                ShellButton {
+                    focusOnTab: true
+                    icon: Icons.copy
+                    text: "Copy command"
+                    onClicked: Quickshell.clipboardText = UpdatesService.pacdiffCommand
+                }
             }
         }
     }
@@ -335,6 +446,41 @@ ColumnLayout {
             text: "Automatic checks and notifications only run in the buchhwin-shell session. Test sessions check from the cached package data."
             role: "caption"
             wrapMode: Text.Wrap
+        }
+    }
+
+    // What the first start after an update says (scripts/updates-after-start.py,
+    // which start-shell.sh runs beside the shell and which reads both settings
+    // from settings.json when the shell starts).
+    SettingsSection {
+        Layout.fillWidth: true
+        title: "After an update"
+        scope: "updates.coreCheck"
+        description: "The first start after Quickshell or Hyprland changed watches the shell for a minute: its log and its IPC targets. The first start after the shell's own checkout moved can name what changed."
+
+        SettingRow {
+            // One line in the label column: the wrapped label put the
+            // hint's dot right over its second word.
+            label: "After a core update"
+            hint: "Problems tells only when the minute found some; Always also says that the shell started cleanly"
+            SegmentedControl {
+                focusOnTab: true
+                Layout.fillWidth: true
+                current: UpdatesService.coreCheck
+                options: [{ value: "off", label: "Off" }, { value: "problems", label: "Problems" }, { value: "always", label: "Always" }]
+                onSelected: value => SettingsService.set("updates.coreCheck", value)
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Name the shell's changes"
+            hint: "One quiet notification with up to ten commit subjects when the shell starts from a newer checkout, with a button to About"
+            ShellToggle {
+                focusOnTab: true
+                checked: UpdatesService.whatsNew
+                onToggled: value => SettingsService.set("updates.whatsNew", value)
+            }
         }
     }
 }

@@ -77,6 +77,15 @@ ShellRoot {
     function mode(widgets) {
         return { widgets: widgets, groups: [], screens: ["DP-1"], desktopMode: "notch" }
     }
+    // A mode template (config/profiles/<mode>.json), with a FileView of its
+    // own (pitfall 91).
+    function template(name) {
+        const view = Qt.createQmlObject('import Quickshell.Io; FileView { blockLoading: true }', root)
+        view.path = Qt.resolvedUrl("../../config/profiles/" + name + ".json").toString().replace("file://", "")
+        const data = JSON.parse(view.text())
+        view.destroy()
+        return data
+    }
 
     Component.onCompleted: {
         // ---- the shipped file ------------------------------------------------
@@ -123,6 +132,27 @@ ShellRoot {
         }
         T.eq(rawDefault.settings.desktop.launcherWidth, 0,
              "Default's launcher opens at its designed width, where its mode names and categories fit")
+        // Default's dark panels at 0.88 in every mode: at the default 0.74 the
+        // muted text on its cards came to 3.3:1 over its own wallpaper, where
+        // text wants 4.5:1. The opacity is a mode's (ProfileLogic.MODE_SCOPED)
+        // and a profile's settings skip it, so each mode carries it; the four
+        // Default does not shape itself ship as entering them would make them
+        // - their template's desktop mode and bar, the rest left to it.
+        const modeNames = ["minimal", "work", "gaming", "laptop", "docked"]
+        T.eq(Object.keys(rawDefault.modes), modeNames, "Default ships all five modes")
+        T.eq(modeNames.map(name => rawDefault.modes[name].appearance), modeNames.map(() => ({ panelOpacity: 0.88 })),
+             "each with its panels at 0.88 and nothing else of the appearance: gaming's and laptop's effects still apply")
+        T.eq(rawDefault.settings.appearance.panelOpacity, undefined, "and none in its settings, which would be skipped")
+        const sanitizedDefault = L.sanitizeBuiltinProfile(rawDefault, "default")
+        T.eq(modeNames.map(name => sanitizedDefault.modes[name].appearance.panelOpacity), modeNames.map(() => 0.88),
+             "kept as the file is read")
+        for (const name of modeNames.slice(1)) {
+            const own = Object.assign({}, rawDefault.modes[name])
+            delete own.appearance
+            T.eq(L.sanitizeProfile({ modes: { [name]: own } }).modes[name],
+                 L.sanitizeProfile({ modes: { [name]: L.freshMode(root.template(name)) } }).modes[name],
+                 "Default's " + name + " is its template's, as a first entry makes it")
+        }
         // One order for the status readouts wherever a bar carries them: the
         // battery at the outer end, where its percent is.
         for (const name of ["work", "laptop", "docked"]) {
@@ -298,6 +328,12 @@ ShellRoot {
                  "exactly once")
             T.ok(LayoutService.pendingText.indexOf("\"builtin\": \"buchhwin\"") >= 0, "and it is written to the file")
             T.eq(LayoutService.removeProfile("buchhwin"), false, "the service refuses to remove it")
+            // The sandbox's first start: Default in use, with its shipped modes.
+            T.eq([LayoutService.activeProfile, LayoutService.activeMode, SettingsService.value("appearance.panelOpacity")],
+                 ["default", "minimal", 0.88], "a first start shows Default's panels at 0.88")
+            T.eq(L.modeConfig(LayoutService.config, "default", "work").appearance.panelOpacity, 0.88,
+                 "and its other modes keep them there")
+            T.eq(LayoutService.modeSettings("work")["appearance.panelOpacity"], undefined, "so entering one changes nothing about them")
             // Every shipped setting this shell knows is one SettingsService
             // takes: the right type and an allowed value. Otherwise applying
             // the profile logs a "rejected setting" per key and skips it.

@@ -79,6 +79,28 @@ Singleton {
     // Pinning an app to the dock and the launcher.
     readonly property string pin: "󰐃"
     readonly property string unpin: "󰐄"
+    // A window put away and brought back up (the dock's menu): Material's
+    // window with its bar, and the arrow up out of the tray. Material's own
+    // "restore", the two squares, is `window` above, and its framed window
+    // is the active-window widget's.
+    readonly property string minimize: "\u{f05b0}"
+    readonly property string restore: "\u{f011d}"
+    // A window kept above the others (Super+Ctrl+T, the dock's menu). Not the
+    // pin: that one is the dock's own pin and unpin, in the same menu.
+    readonly property string keepOnTop: "\u{f003e}"
+    // Sending what was written (the assistant's question, a notification's
+    // reply) and stopping what runs (an answer on its way, a timer).
+    readonly property string send: "\u{f048a}"
+    readonly property string stop: "\u{f04db}"
+    // A screen shared with others: the share picker, Settings > Screen
+    // sharing.
+    readonly property string share: "\u{f1483}"
+    // Joining a meeting: the event list, the clock's hint, the notch. A
+    // camera with a person - the plain camera is the videos' (Default apps,
+    // the start menu's folders).
+    readonly property string join: "\u{f0919}"
+    // The local assistant, wherever it is offered.
+    readonly property string assistant: "\u{f167a}"
 
     // Modes and states with a switch of their own. One meaning, one glyph -
     // and the other way round: the moon stood for the dark theme, for Night

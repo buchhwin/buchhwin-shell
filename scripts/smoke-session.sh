@@ -11,7 +11,7 @@ if [[ -r "$project_dir/scripts/lib/hyprland-prefix.sh" ]]; then source "$project
 # Every IpcHandler target shell.qml declares, in its order; only `show` is
 # read, nothing is called. tests/python/smoke_targets_test.py holds this list
 # to shell.qml in both directions.
-expected_targets=(desktop editor welcome emoji launcher controlCenter notifications powerMenu settings appTheme dashboard popup weather calendar network bluetooth kdeConnect fingerprint drives accounts updates recording shortcuts nightLight focus overview gestures colorPicker wallpaperPicker switcher clipboard brightness workspaces kbdBacklight power displays bar notch timer audio mode profile dock startMenu)
+expected_targets=(desktop editor welcome emoji launcher controlCenter notifications powerMenu settings appTheme dashboard popup weather calendar network bluetooth kdeConnect fingerprint drives accounts updates recording shortcuts nightLight focus overview gestures colorPicker wallpaperPicker switcher clipboard brightness workspaces kbdBacklight power displays bar notch timer audio osd mode profile dock startMenu zoom colorFilter window dropdown passthrough citrix sessionApps widgets snapshots health assistant sharePicker)
 [[ -n ${BUCHHWIN_EXPECTED_TARGETS:-} ]] && read -r -a expected_targets <<<"$BUCHHWIN_EXPECTED_TARGETS"
 
 # Warnings from the environment or Quickshell itself rather than from this shell:
@@ -551,13 +551,19 @@ if [[ ${1:-} == --nested ]]; then
     ipc_call popup close >/dev/null
     [[ -z $(popup_is "") ]] || not_opened+=("popup $popup (did not close)")
   done
-  for panel in notifications overview clipboard emoji wallpaperPicker powerMenu; do
+  for panel in notifications overview clipboard emoji wallpaperPicker powerMenu assistant sharePicker; do
     ipc_call "$panel" open >/dev/null
     [[ $(popup_is "$panel") == "$panel" ]] || not_opened+=("$panel")
     walked=$(( walked + 1 ))
     ipc_call "$panel" close >/dev/null
     [[ -z $(popup_is "") ]] || not_opened+=("$panel (did not close)")
   done
+  # The display switcher, built on its first open (Super+Shift+P).
+  ipc_call displays toggleSwitcher >/dev/null
+  [[ $(popup_is displaySwitcher) == displaySwitcher ]] || not_opened+=("displaySwitcher")
+  walked=$(( walked + 1 ))
+  ipc_call displays toggleSwitcher >/dev/null
+  [[ -z $(popup_is "") ]] || not_opened+=("displaySwitcher (did not close)")
   ipc_call editor open >/dev/null
   editing=""
   for _ in {1..20}; do
@@ -642,6 +648,56 @@ if [[ ${1:-} == --nested ]]; then
     else
       printf 'failed   a configuration reload moved things:\n         before %s\n         after  %s\n' \
         "$(tr '\n' ' ' <<<"$placed_before")" "$(tr '\n' ' ' <<<"$placed_after")"
+      status=1
+    fi
+  fi
+
+  # Empty workspaces held open (workspaces.keepEmpty): the two passed
+  # through are held, nothing else is made, and switched off again they go.
+  # Its first design held a workspace that then moved, the monitor left
+  # empty got the next number, that was held in turn - 670 workspaces in
+  # seconds, nested (pitfall 117). Switched over IPC around this step alone,
+  # so no other step runs with held workspaces, and off again whatever
+  # happens. Locals 8 and 9 of the focused monitor: no step before uses them.
+  workspace_ids() { hyprctl -j workspaces 2>/dev/null | jq -c '[.[] | select(.id > 0) | .id] | sort' 2>/dev/null || true; }
+  layout=$(ipc_call workspaces get)
+  focused=$(jq -r '.focusedMonitor // ""' <<<"$layout" 2>/dev/null || true)
+  offset=$(jq -r --arg m "$focused" 'first(.offsets[] | select(startswith($m + ":")) | ltrimstr($m + ":")) // ""' \
+    <<<"$layout" 2>/dev/null || true)
+  shown=$(jq -r --arg m "$focused" 'first(.active[] | select(startswith($m + ":")) | ltrimstr($m + ":")) // ""' \
+    <<<"$layout" 2>/dev/null || true)
+  if [[ -z $focused || ! $offset =~ ^[0-9]+$ || ! $shown =~ ^[0-9]+$ ]] || (( shown <= offset || shown > offset + 7 )); then
+    printf 'failed   no keepEmpty check: workspaces get read no focused monitor, offset and shown workspace below local 8 (%s)\n' \
+      "${layout:-none}"
+    status=1
+  else
+    ids_before=$(workspace_ids)
+    passed=$(jq -c --argjson o "$offset" '. + [$o + 8, $o + 9] | unique' <<<"$ids_before" 2>/dev/null || true)
+    ipc_call workspaces setKeepEmpty true >/dev/null
+    sleep 0.6
+    for local in 8 9 $(( shown - offset )); do
+      ipc_call workspaces switchTo "$local" >/dev/null
+      sleep 0.6
+    done
+    ids_held="" held=""
+    for _ in {1..10}; do
+      ids_held=$(workspace_ids)
+      [[ $ids_held == "$passed" ]] && break
+      sleep 0.3
+    done
+    held=$(ipc_call workspaces get | jq -c '[.held[], .holdLimit]' 2>/dev/null || true)
+    ipc_call workspaces setKeepEmpty false >/dev/null
+    ids_after=""
+    for _ in {1..10}; do
+      sleep 0.3
+      ids_after=$(workspace_ids)
+      [[ $ids_after == "$ids_before" ]] && break
+    done
+    if [[ -n $ids_before && $ids_held == "$passed" && $ids_after == "$ids_before" ]]; then
+      printf 'ok       keepEmpty holds the two workspaces passed through, no more, and lets them go\n'
+    else
+      printf 'failed   keepEmpty: before %s, wanted %s while held, got %s (held, limit: %s), after %s\n' \
+        "${ids_before:-none}" "${passed:-none}" "${ids_held:-none}" "${held:-none}" "${ids_after:-none}"
       status=1
     fi
   fi

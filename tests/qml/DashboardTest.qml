@@ -58,13 +58,14 @@ ShellRoot {
              L.dashboardItems(d)[0], "an unknown id changes nothing")
 
         // The picker offers what is not on it. A fresh dashboard is not the
-        // whole catalogue: `media` and `system` are there to be added, not to
-        // arrive with seven cards already on the screen.
-        T.eq(D.missing(types(d)).map(card => card.type), ["media", "system"],
-             "a default dashboard still has the two readouts to offer")
+        // whole catalogue: `media` and `system`, the world clock and the notes
+        // are there to be added, not to arrive with eight cards already on the
+        // screen.
+        T.eq(D.missing(types(d)).map(card => card.type), ["media", "system", "worldClock", "notes"],
+             "a default dashboard still has the two readouts, the world clock and the notes to offer")
         T.eq(D.missing([]).length, D.catalogue.length, "an empty one can have everything back")
         T.eq(D.missing(["clock"]).map(card => card.type),
-             ["weather", "calendar", "events", "media", "system"], "and the rest in catalogue order")
+             ["weather", "calendar", "events", "media", "system", "worldClock", "notes"], "and the rest in catalogue order")
         T.eq(D.missing(D.catalogue.map(card => card.type)).length, 0, "a dashboard with everything offers nothing")
 
         // The two new ones, and the reason their start sizes are not the

@@ -30,7 +30,10 @@ function sampleEvents(date, colors) {
         make("Design review", at(0, 9, 15), at(0, 10, 45), false, orange),
         make("Lunch", at(0, 12), at(0, 13), false, green, { sampleLocation: "Cafeteria" }),
         make("Focus time", at(1, 8), at(1, 11), false, blue),
-        make("Call", at(1, 9), at(1, 10), false, orange),
+        // An online meeting as an Outlook invitation writes it, so the
+        // preview shows a Join button (an invented link that joins nothing).
+        make("Call", at(1, 9), at(1, 10), false, orange,
+             { description: "Sample meeting for screenshots.\nJoin the meeting now<https://teams.microsoft.com/l/meetup-join/sample>" }),
         make("Reminder", at(2, 14), at(2, 14), false, purple),
         make("Workshop", at(3, 10), at(3, 16), false, blue),
         make("Night train", at(4, 22), at(5, 6, 30), false, orange),

@@ -20,6 +20,8 @@ import qs.theme
 import "calendar/CalendarLogic.js" as Logic
 import "calendar/EventDraftLogic.js" as Draft
 import "calendar/EventEditLogic.js" as Edit
+import "calendar/LinkLogic.js" as Links
+import "calendar/MeetingLogic.js" as Meeting
 import "calendar/RecurrenceLogic.js" as Rec
 import "calendar/WeekLogic.js" as Week
 import "lock/LockLogic.js" as LockLogic
@@ -39,6 +41,11 @@ import "lock/LockLogic.js" as LockLogic
 // so a single occurrence can be moved or dropped without touching the rest.
 // Writing only happens in the real session; nested sessions, `calendar
 // editorPreview` and `calendar preview` show the request instead.
+//
+// Calendars from a link (Settings > Calendar) are Akonadi iCal resources on
+// a published URL, made and removed by scripts/calendar-link.py; their events
+// come through the plugin like any other calendar's. An event whose text
+// carries a Teams, Meet, Zoom or Webex link gets Join (MeetingLogic.js).
 Singleton {
     id: root
 
@@ -436,6 +443,236 @@ Singleton {
             root.saveMessage = "The calendar helper did not finish or could not start. "
                 + "Check the calendar in Merkuro before trying again."
         }
+    }
+
+    // ---- calendars from a link: scripts/calendar-link.py ---------------------
+    // Asked each time Settings > Calendar is shown (refreshLinks) and answered
+    // with the list after every change; nothing runs otherwise. The link goes
+    // in on stdin and is never kept here: the list names hosts only.
+    // A change (add, remove, fetch now) and a list run in processes of their
+    // own, so a list asked for meanwhile neither holds up nor drops what the
+    // user did.
+    // linkState: "" | adding | removing | syncing - a change on its way.
+    property var linkCalendars: []
+    property string linkState: ""
+    property bool linkListing: false
+    property string linkMessage: ""
+    property bool linkError: false
+    // Whether linkMessage is a list's ("Akonadi is not running"), which the
+    // next list that works takes back, rather than the answer to a change.
+    property bool linkMessageListed: false
+    // What a test session would have asked for, without the link.
+    property string linkPreview: ""
+    readonly property bool linkBusy: linkState.length > 0
+    // Moved on as a change starts and as it ends: a list begun before is
+    // older than the change's own answer and is dropped.
+    property int linkGeneration: 0
+
+    function refreshLinks() {
+        if (!realSession || LockLogic.lockProcess(Quickshell.shellId) || linkListing) return
+        linkListing = true
+        lister.generation = linkGeneration
+        lister.exitCode = -1
+        lister.outDone = false
+        lister.running = true
+        listerTimeout.restart()
+    }
+
+    // A page shown again starts without the last visit's words, unless a
+    // change is still on its way and its answer is yet to come.
+    function resetLinkMessage() {
+        if (linkBusy) return
+        linkMessage = ""
+        linkError = false
+        linkMessageListed = false
+        linkPreview = ""
+    }
+
+    // `text` is what was pasted; false when it is refused here (linkMessage
+    // says why) or another change is running.
+    function addLink(text, name) {
+        if (linkBusy) return false
+        const link = Links.normalize(text)
+        if (!link.ok) return linkFailed(link.error)
+        const request = Links.addRequest(text, name)
+        if (!realSession) {
+            const shown = Links.nameFor(name, link.url)
+            linkPreview = "add: " + shown + " from " + Links.hostOf(link.url) + ", read-only, every "
+                + Links.REFRESH_MINUTES + " minutes"
+            linkError = false
+            linkMessageListed = false
+            linkMessage = "Test session: this is what would be added. Nothing was changed."
+            return true
+        }
+        return startLink("add", request)
+    }
+    function removeLink(id) {
+        if (linkBusy || !Links.validId(id)) return false
+        if (!realSession) return linkFailed("Only in the buchhwin-shell session.")
+        return startLink("remove", JSON.stringify({ id: id }))
+    }
+    function syncLink(id) {
+        if (linkBusy || !Links.validId(id)) return false
+        if (!realSession) return linkFailed("Only in the buchhwin-shell session.")
+        return startLink("sync", JSON.stringify({ id: id }))
+    }
+    function linkFailed(message) {
+        linkError = true
+        linkMessageListed = false
+        linkMessage = message
+        return false
+    }
+
+    function startLink(command, request) {
+        linkMessage = ""
+        linkError = false
+        linkMessageListed = false
+        linkPreview = ""
+        linkGeneration += 1
+        linker.kind = command
+        linker.request = request
+        linker.exitCode = -1
+        linker.outDone = false
+        linker.command = ["python3", Paths.script("calendar-link.py"), command]
+        linker.running = true
+        linkerTimeout.restart()
+        linkState = command === "add" ? "adding" : command === "remove" ? "removing" : "syncing"
+        return true
+    }
+
+    function finishLink() {
+        if (!linkBusy || linker.exitCode < 0 || !linker.outDone) return
+        linkerTimeout.stop()
+        // Parsed, never logged: a status message is Akonadi's.
+        const answer = Links.parseAnswer(linker.exitCode, linkerOut.text)
+        linker.exitCode = -1
+        linkGeneration += 1
+        if (answer.ok || answer.calendars.length) linkCalendars = answer.calendars
+        linkError = !answer.ok
+        linkMessageListed = false
+        linkMessage = !answer.ok ? answer.message
+            : linker.kind === "add" ? "Added. The first events arrive once Akonadi has fetched the calendar."
+            : linker.kind === "remove" ? "Removed." : "Fetching now …"
+        // Last: whoever waits on the state (the page's form) reads the
+        // answer above when it changes.
+        linkState = ""
+        if (answer.ok) refresh()
+    }
+
+    function finishList() {
+        if (!linkListing || lister.exitCode < 0 || !lister.outDone) return
+        listerTimeout.stop()
+        const answer = Links.parseAnswer(lister.exitCode, listerOut.text)
+        lister.exitCode = -1
+        linkListing = false
+        if (lister.generation !== linkGeneration) return
+        if (answer.ok || answer.calendars.length) linkCalendars = answer.calendars
+        if (answer.ok) {
+            if (linkMessageListed) {
+                linkMessage = ""
+                linkMessageListed = false
+            }
+            return
+        }
+        // A look that finds Akonadi not running says so on the page, not as
+        // an error of something the user did, and not over a change's answer.
+        if (linkMessage.length && !linkMessageListed) return
+        linkError = false
+        linkMessageListed = true
+        linkMessage = answer.message
+    }
+
+    Process {
+        id: linker
+        property string kind: "add"
+        property string request: ""
+        property int exitCode: -1
+        property bool outDone: false
+        stdinEnabled: true
+        // The link on stdin, never as an argument (see LinkLogic.js).
+        onStarted: {
+            write(request + "\n")
+            stdinEnabled = false
+        }
+        onExited: code => { stdinEnabled = true; exitCode = code; root.finishLink() }
+        stdout: StdioCollector {
+            id: linkerOut
+            onStreamFinished: { linker.outDone = true; root.finishLink() }
+        }
+        stderr: ErrorLog { label: "calendar-link" }
+    }
+
+    Timer {
+        id: linkerTimeout
+        // The helper waits up to 20 s for a new agent, and each call 10 s.
+        interval: 60000
+        onTriggered: {
+            if (!root.linkBusy) return
+            linker.running = false
+            root.linkGeneration += 1
+            root.linkFailed("The calendar helper did not finish. Check Settings > Accounts before trying again.")
+            root.linkState = ""
+        }
+    }
+
+    // The list takes nothing on stdin.
+    Process {
+        id: lister
+        property int generation: 0
+        property int exitCode: -1
+        property bool outDone: false
+        command: ["python3", Paths.script("calendar-link.py"), "list"]
+        onExited: code => { exitCode = code; root.finishList() }
+        stdout: StdioCollector {
+            id: listerOut
+            onStreamFinished: { lister.outDone = true; root.finishList() }
+        }
+        stderr: ErrorLog { label: "calendar-link.list" }
+    }
+
+    Timer {
+        id: listerTimeout
+        interval: 30000
+        onTriggered: {
+            if (!root.linkListing) return
+            lister.running = false
+            root.linkListing = false
+        }
+    }
+
+    // ---- joining an online meeting -------------------------------------------
+    // The meeting an event joins ({ url, service, label }) or null; whether
+    // its Join belongs in a list (until it ends) or in the notch's day page
+    // and next to the clock (from MeetingLogic.LEAD_MINUTES before).
+    function meetingFor(event) { return Meeting.meeting(event) }
+    function listJoin(event, now) { return Meeting.listJoin(event, now || new Date()) }
+    function soonJoin(event, now) { return Meeting.soonJoin(event, now || new Date()) }
+    // Today's first meeting that offers Join now, or null.
+    function nextJoin(now) { return Meeting.nextJoin(remainingToday(now || new Date()), now || new Date()) }
+
+    // What the last Join in a test session would have opened, without the
+    // link: "teams: launch-brave.sh".
+    property string joinPreview: ""
+
+    // A Teams meeting opens in the Teams web app when there is one (through
+    // the browser's session launcher), anything else through the session's
+    // xdg-open. Outside the real session nothing starts - a link handed to a
+    // browser from a nested session would reach the user's real browser.
+    function join(event) {
+        const found = Meeting.meeting(event)
+        if (!found) return false
+        const app = found.service === "teams" ? Meeting.teamsApp(DesktopEntries.applications.values) : null
+        const command = Meeting.joinCommand(found, app, Paths.script)
+        if (!command) return false
+        if (!realSession) {
+            joinPreview = found.service + ": " + String(command[0]).split("/").pop()
+            console.info("buchhwin-shell: calendar (test session) would join a " + found.service + " meeting with "
+                         + joinPreview.slice(found.service.length + 2))
+            return true
+        }
+        Quickshell.execDetached(command)
+        PanelService.close()
+        return true
     }
 
     function openManager() {

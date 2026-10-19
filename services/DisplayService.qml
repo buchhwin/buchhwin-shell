@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Hyprland
 import QtQuick
 import "display/DisplayLogic.js" as Logic
+import "display/ProjectionLogic.js" as Projection
 import "lock/LockLogic.js" as LockLogic
 
 // Monitor configuration: edit a draft, apply it as Hyprland monitor rules
@@ -33,10 +34,97 @@ Singleton {
     // given and only warns, with input landing on the wrong screen. The
     // page's moves never produce an overlap (Logic.placeApart), so this only
     // catches a layout edited by hand.
-    readonly property bool valid: Logic.enabledCount(draft) > 0 && !Logic.overlapping(draft)
+    //
+    // At least one screen with a place of its own, and every mirror's source
+    // there, on and not a mirror itself: Hyprland refuses a mirror of a
+    // mirror and shows a mirror of nothing as a screen of its own. The page
+    // offers only sources that can be (Logic.mirrorChoices).
+    readonly property bool valid: Logic.shownCount(draft) > 0 && !Logic.overlapping(draft) && Logic.settleMirrors(draft) === draft
     readonly property bool overlapping: Logic.overlapping(draft)
     readonly property var transforms: Logic.TRANSFORMS
     readonly property var vrrModes: Logic.VRR
+
+    // ---- Mirrors and the display switcher ----------------------------------
+    //
+    // The monitors that show another one's picture now, by name. Hyprland
+    // takes a mirror out of its plain monitor list (Quickshell's
+    // Hyprland.monitors, which the per-monitor blocks of workspaces are made
+    // from) and moves its workspaces to another screen; `mirrorNames` is what
+    // the blocks and keepEmpty leave out.
+    readonly property var mirrorNames: Projection.mirrorNames(monitors)
+    readonly property bool mirroring: mirrorNames.length > 0
+    // What the monitors are doing, as the switcher's four choices
+    // (ProjectionLogic.current), and which of them can be made now.
+    readonly property string currentProjection: Projection.current(monitors, internalName)
+    readonly property var projectionChoices: Projection.choices(monitors, internalName, lidClosed)
+    // The switcher's choice in force: laid over the saved layout whenever
+    // that is applied (a config reload, the lid), until the monitors
+    // connected change (`projectionKey`) or another choice is made. Runtime
+    // only - Settings > Displays' Keep is what is saved. "" for none.
+    property string projection: ""
+    property string projectionKey: ""
+    // The monitors the choice switched off or made a mirror: what taking it
+    // back puts back (ProjectionLogic.undo), until a layout without it has
+    // been applied.
+    property var projectionTouched: []
+    // Where those stood before the choice (ProjectionLogic.placesOf): a
+    // screen that stops mirroring goes back there.
+    property var projectionPlaces: ({})
+    // The projector key pressed again while the switcher is open: it moves
+    // to the next choice (DisplaySwitcher).
+    signal switcherStepped()
+    function stepSwitcher() { switcherStepped() }
+
+    function focusedName() { return Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "" }
+
+    // The layout to apply: the saved one over the monitors as they would be
+    // without the switcher's choice, with the choice laid over it (when there
+    // is one) and the lid's adjustment after both. Null when there is
+    // nothing to apply (Logic.savedTarget). `mode` overrides the choice in
+    // force, for a new one; `touched` receives the monitors it touches.
+    function layoutTarget(mode, touched) {
+        const wanted = mode === undefined ? projection : mode
+        const live = projectionTouched.length ? Projection.undo(monitors, projectionTouched, projectionPlaces) : monitors
+        const focused = focusedName()
+        const project = wanted.length ? (base => {
+            const result = Projection.target(base, wanted, internalName, lidClosed, focused)
+            if (touched) touched.names = result ? result.touched : []
+            return result ? result.list : null
+        }) : null
+        return Logic.savedTarget(live, saved, internalName, lidClosed, lidKnown,
+                                 { project: project, force: projectionTouched.length > 0 })
+    }
+
+    // A choice of the switcher (Super+Shift+P, the projector key, IPC
+    // `displays setProjection`), applied at once - as Windows' and KDE's
+    // are. False when it cannot be made (ProjectionLogic.available) or while
+    // Settings > Displays waits for a Keep.
+    function setProjection(mode) {
+        if (lockProcess || confirming || !monitors.length) return false
+        if (!Projection.available(mode, monitors, internalName, lidClosed)) return false
+        const touched = { names: [] }
+        const plan = layoutTarget(mode, touched)
+        if (!plan) return false
+        projection = mode
+        projectionKey = Projection.setKey(monitors)
+        // Kept with what an earlier choice touched until a layout without
+        // either has been applied.
+        projectionPlaces = Projection.placesOf(monitors, touched.names, projectionPlaces)
+        projectionTouched = projectionTouched.concat(touched.names.filter(name => projectionTouched.indexOf(name) < 0))
+        if (Logic.changed(monitors, plan.target)) {
+            run(plan.target)
+            refreshSoon.restart()
+        }
+        return true
+    }
+
+    // The choice ends: the layout without it, at once (the projector
+    // unplugged, the lid shut on "Laptop only").
+    function dropProjection() {
+        if (!projection.length) return
+        projection = ""
+        projectionKey = ""
+    }
 
     // The lock screen's process (lock.qml) can create this service too - its
     // calendar reaches AppearanceService, whose X11 scale reads `monitors` -
@@ -91,6 +179,14 @@ Singleton {
             return
         }
         lidClosed = closed
+        // "Laptop only" behind a shut lid would leave every screen dark: the
+        // choice ends, and the layout without it comes back first.
+        if (closed && projection === "internal") {
+            dropProjection()
+            applySavedIfNeeded()
+            refreshSoon.restart()
+            return
+        }
         const name = internalName
         if (!name.length) return
         const panel = monitors.find(item => item.name === name)
@@ -106,8 +202,10 @@ Singleton {
             }
         } else {
             // Back at its saved place, or after the other screens
-            // (Logic.lidOpenTarget); one kept off stays off.
-            const back = Logic.lidOpenTarget(monitors, saved, name, lidRestore)
+            // (Logic.lidOpenTarget); one kept off stays off, and so does one
+            // the switcher's "External only" keeps off - switched on here, it
+            // would light up until the saved apply below took it again.
+            const back = projection === "external" ? null : Logic.lidOpenTarget(monitors, saved, name, lidRestore)
             if (back) run([back])
             if (lidDpms) setPanelPower(true)
             lidRestore = null
@@ -141,7 +239,11 @@ Singleton {
     // plans the workspace blocks after it. Without the second half the
     // blocks were planned 2 ms after the layout was sent, from the old
     // positions.
-    readonly property bool layoutPending: savedDelay.running || reapplyQueued || refreshSoon.running
+    // And while Quickshell's monitor list catches up with a mirror that came
+    // or went (`mirrorSettle`): Hyprland sends no event for it, and the
+    // blocks planned from a list that still holds the mirror would send
+    // workspaces to a screen that cannot show them.
+    readonly property bool layoutPending: savedDelay.running || reapplyQueued || refreshSoon.running || mirrorSettle.running
     function refresh() {
         if (monitorsProc.running) { refreshQueued = true; return }
         monitorsProc.running = true
@@ -194,15 +296,33 @@ Singleton {
         if (next) setPosition(name, next.x, next.y)
     }
     function setEnabled(name, value) {
-        const next = Logic.update(draft, name, { disabled: !value })
+        // A monitor switched off takes its mirrors' source with it: they are
+        // screens of their own again (Logic.settleMirrors).
+        const next = Logic.settleMirrors(Logic.update(draft, name, { disabled: !value }))
         // A monitor coming back keeps its old place, which may be under a
         // neighbour that moved in the meantime.
         if (Logic.enabledCount(next) > 0 && !confirming) draft = value ? Logic.spread(next) : next
     }
+    // Settings > Displays' "Mirror": `source` "" for a screen of its own. A
+    // monitor others mirror cannot mirror in turn (Hyprland refuses a
+    // mirror of a mirror), so those become screens of their own; one that
+    // stops mirroring goes back to its place, or after the others where that
+    // is taken.
+    function setMirror(name, source) {
+        if (confirming || !monitor(name)) return false
+        const wanted = String(source || "")
+        if (wanted.length && Logic.mirrorChoices(draft, name).indexOf(wanted) < 0) return false
+        let next = Logic.settleMirrors(Logic.update(draft, name, { mirror: wanted }))
+        if (!wanted.length) next = Projection.placeBack(next, [name])
+        draft = next
+        return true
+    }
+    function mirrorChoices(name) { return Logic.mirrorChoices(draft, name) }
     function discard() { if (!confirming) draft = monitors.slice() }
 
+    // A mirror's rule names its source (ProjectionLogic.monitorCommand).
     function run(list) {
-        HyprCompat.configure(HyprCompat.commands.combine(list.map(entry => HyprCompat.commands.monitor(entry))))
+        HyprCompat.configure(HyprCompat.commands.combine(list.map(entry => Projection.monitorCommand(entry))))
     }
 
     function apply() {
@@ -228,6 +348,18 @@ Singleton {
         repairWrite.stop()
         saved = Logic.kept(saved, draft, internalName, lidClosed, lidRestore)
         savedFile.setText(JSON.stringify(saved, null, 2) + "\n")
+        // What was kept is the layout now: a switcher's choice before it
+        // (which the page showed and the draft was made from) ends here.
+        dropProjection()
+        projectionTouched = []
+        projectionPlaces = ({})
+        // The draft is still in the order it was edited in, and `dirty`
+        // compares in the order the monitors are read: a mirror is read at
+        // its source's place, and a screen dragged past another comes back
+        // after it, so the kept layout read "Unsaved changes" until the next
+        // read. One read now hands the draft the monitors' order
+        // (Logic.refreshedDraft).
+        refresh()
         return true
     }
 
@@ -243,7 +375,12 @@ Singleton {
 
     function applySavedIfNeeded() {
         if (lockProcess || !savedLoaded) return
-        const plan = Logic.savedTarget(monitors, saved, internalName, lidClosed, lidKnown)
+        // The switcher's choice lasts while the same monitors are there.
+        if (projection.length && projectionKey !== Projection.setKey(monitors)) dropProjection()
+        const plan = layoutTarget()
+        // Without a choice in force, whatever an earlier one touched is
+        // back once this is sent.
+        if (!projection.length) { projectionTouched = []; projectionPlaces = ({}) }
         if (!plan) return
         const base = plan.base
         const target = plan.target
@@ -303,6 +440,12 @@ Singleton {
     }
 
     Timer { id: refreshSoon; interval: 400; onTriggered: root.refresh() }
+    // Quickshell's lists answer within a few milliseconds; this is the
+    // bound on how long the blocks of workspaces wait for them. And once
+    // more at its end: a screen that stops mirroring is made again from the
+    // workspace it is given, which may arrive after the first answer, and
+    // its active workspace is only filled in by a monitor read after that.
+    Timer { id: mirrorSettle; interval: 600; onTriggered: Hyprland.refreshMonitors() }
 
     Process {
         id: monitorsProc
@@ -314,6 +457,27 @@ Singleton {
                 try { parsed = Logic.parseMonitors(text) } catch (error) { return }
                 const before = root.monitors
                 root.monitors = parsed
+                // A mirror came or went. Hyprland tells nobody (setMirror posts
+                // no event), so Quickshell's monitor and workspace lists are
+                // asked again: the mirror leaves Hyprland.monitors and the
+                // per-monitor blocks with it, and a screen that stops
+                // mirroring comes back with the workspace it is given.
+                if (Projection.mirrorNames(before).join(",") !== Projection.mirrorNames(parsed).join(",")) {
+                    Hyprland.refreshWorkspaces()
+                    Hyprland.refreshMonitors()
+                    mirrorSettle.restart()
+                }
+                // Another set of monitors ends a switcher's choice; a monitor
+                // taken away does not bring a saved apply by itself (unless
+                // the lid is shut), so the layout without the choice is asked
+                // for here - unplugging the projector under "External only"
+                // has to bring the panel back, and after an "Extend" that
+                // touched nothing a screen the saved layout keeps off goes
+                // off again.
+                if ((root.projection.length || root.projectionTouched.length) && Projection.setKey(parsed) !== root.projectionKey) {
+                    root.dropProjection()
+                    savedDelay.restart()
+                }
                 // Changes not applied yet stay while the same monitors are
                 // there (Logic.refreshedDraft): reopening the page, a config
                 // reload or a moved shortcut threw them away without a word.

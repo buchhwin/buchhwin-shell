@@ -4,12 +4,15 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../services/media/VisualizerLogic.js" as Visualizer
 
 // Now playing pill/widget, laid out horizontally: cover on the left over a
 // blurred copy of it; on the right title, artist and album, seek bar with
 // times, shuffle / previous / play-pause / next / loop (where the player
 // supports them) and the player's own volume; a player switcher below when
-// several players are running.
+// several players are running. With Settings' switch on (off by default) and
+// full motion, bars under the transport move with the sound while something
+// plays - here only, never in the notch or the bar (VisualizerLogic).
 PopupPanel {
     id: root
     panelId: "mediaPopup"
@@ -40,8 +43,25 @@ PopupPanel {
         readonly property real shownPosition: seekable
             ? Math.max(0, Math.min(trackLength, seek.pressed ? seek.liveValue * trackLength : player.position)) : 0
         readonly property var entry: player && player.desktopEntry ? DesktopEntries.byId(player.desktopEntry) : null
-        Component.onCompleted: MprisService.trackers += 1
-        Component.onDestruction: MprisService.trackers = Math.max(0, MprisService.trackers - 1)
+        Component.onCompleted: { MprisService.trackers += 1; syncVisualizer() }
+        Component.onDestruction: {
+            MprisService.trackers = Math.max(0, MprisService.trackers - 1)
+            if (visualizerTracked) MprisService.visualizerTrackers = Math.max(0, MprisService.visualizerTrackers - 1)
+        }
+
+        // The body exists only while the popup is shown (PopupPanel), so
+        // the bars are asked for from here: cava runs while this counts and
+        // something plays.
+        readonly property bool showsVisualizer: Visualizer.shown(SettingsService.value("desktop.mediaVisualizer"),
+                                                                 Animations.motionEnabled, MprisService.hasPlayer)
+        property bool visualizerTracked: false
+        onShowsVisualizerChanged: syncVisualizer()
+        function syncVisualizer() {
+            if (showsVisualizer === visualizerTracked) return
+            visualizerTracked = showsVisualizer
+            if (visualizerTracked) MprisService.visualizerTrackers += 1
+            else MprisService.visualizerTrackers = Math.max(0, MprisService.visualizerTrackers - 1)
+        }
 
         EmptyState {
             Layout.fillWidth: true
@@ -213,6 +233,36 @@ PopupPanel {
                         accessibleName: "Player volume"
                         value: MprisService.volume
                         onMoved: value => MprisService.setVolume(value)
+                    }
+                }
+
+                // The bars: a row the transport's width, as tall as a small
+                // control, rising from its foot. Kept while paused (flat),
+                // so the popup does not change its height with the music.
+                Row {
+                    id: bars
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Metrics.controlHeightSm
+                    visible: media.showsVisualizer
+                    spacing: Metrics.spaceXxs
+                    readonly property real barWidth: Math.max(1, (width - spacing * (Visualizer.BARS - 1)) / Visualizer.BARS)
+                    Repeater {
+                        model: Visualizer.BARS
+                        Item {
+                            required property int index
+                            width: bars.barWidth
+                            height: bars.height
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                width: parent.width
+                                // A floor of a bar's width, so silence is a
+                                // row of dots rather than nothing.
+                                height: Math.max(width, parent.height * (MprisService.visualizerBars[parent.index] || 0))
+                                radius: Math.min(width, height) / 2
+                                color: Colors.accentFill
+                                opacity: MprisService.playing ? 1 : Effects.mutedOpacity
+                            }
+                        }
                     }
                 }
             }

@@ -3,14 +3,16 @@ import Quickshell
 import QtQuick
 import qs.services
 import "../services/appearance/ContrastLogic.js" as Contrast
+import "../services/appearance/AppThemeLogic.js" as AppTheme
 
 // Dark and light palettes. Components only use these tokens.
 Singleton {
-    // The theme: what the apps follow (AppThemeService keeps its own copy),
+    // The theme: what the apps follow (AppThemeService asks the same rule),
     // what the desktop behind everything is and what the Dark mode switch
-    // says. "auto" is dark from 19:00 to 07:00.
-    readonly property bool dark: SettingsService.theme === "dark"
-        || (SettingsService.theme === "auto" && (clock.hours >= 19 || clock.hours < 7))
+    // says. "auto" is dark from 19:00 to 07:00, or from sunset to sunrise at
+    // the weather place (SunService; the hours again while it has no answer).
+    readonly property bool dark: AppTheme.effectiveDark(SettingsService.theme, clock.hours,
+                                                        SunService.ready ? SunService.night : null)
     // What the panels really are, which decides every ink and surface step
     // drawn on them. The theme's own panels follow the theme; a panel colour
     // chosen in Settings > Appearance is what it is. With the theme alone

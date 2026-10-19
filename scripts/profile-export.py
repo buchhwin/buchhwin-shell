@@ -15,7 +15,8 @@ setting except what belongs to this machine or this person rather than to the
 look (DROP: at least ProfileLogic.GLOBAL_SETTINGS - where the weather is,
 hidden calendars, histories, onboarding, the screens, the keyboard layout and
 the pointer, power and the fingerprint reader, the clipboard history, what the
-login starts, updates, drives and how Alacritty windows start).
+login starts, updates, drives, how Alacritty windows start, the world clock's
+places, the command widgets, the assistant and the share picker).
 The profile in use is exported as it is set now; another one with the state it
 keeps in layout.json (LayoutService, `state`), and one that has none yet is
 refused rather than exported with the settings of the profile in use. Folder
@@ -61,6 +62,9 @@ DROP = {
     "desktop.settingsMoveX", "desktop.settingsMoveY",
     "power", "lock.fingerprint", "dock.screens", "notch.screens",
     "clipboard", "autostart", "updates", "drives", "terminal.alacrittyDaemon",
+    "notifications.keepHistory",
+    "desktop.worldClocks", "commandWidgets",
+    "assistant", "sharePicker",
     # A shipped profile has the dock off (the default dock and dock.* at
     # their defaults, ProfileLogic.completeLeaves): the dock is switched on
     # by whoever wants it, in the profile they want it in.
@@ -69,7 +73,7 @@ DROP = {
 # Folders that are kept, home-relative.
 PATHS = {"wallpaper.folder", "wallpaper.slideshowFolder", "recording.folder"}
 # Pictures chosen by name: shipped empty (see above), wherever they are.
-FILES = {"wallpaper.path", "login.wallpaper"}
+FILES = {"wallpaper.path", "wallpaper.lightPath", "wallpaper.darkPath", "login.wallpaper"}
 # A search address of the user's own: an intranet's, or one with a token in
 # it (IpcLogic.PRIVATE_SETTINGS keeps it to itself too). Shipped empty, and
 # the custom engine it belongs to with it: an empty custom one searches

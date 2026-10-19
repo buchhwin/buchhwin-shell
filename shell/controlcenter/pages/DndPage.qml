@@ -62,10 +62,22 @@ ColumnLayout {
                 onToggled: value => SettingsService.set("notifications.suppressGames", value)
             }
         }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Mute automatically while sharing the screen"
+            ShellToggle {
+                checked: SettingsService.value("notifications.suppressSharing")
+                onToggled: value => SettingsService.set("notifications.suppressSharing", value)
+            }
+        }
+        // Why, when it is (NotificationService.quietReason).
         ShellText {
             Layout.fillWidth: true
             visible: NotificationService.autoSuppressed
-            text: "Automatically muted right now"
+            text: NotificationService.quietReason === "sharing" ? "Muted while the screen is shared"
+                : NotificationService.quietReason === "game" ? "Muted while a game is in front"
+                : "Automatically muted right now"
             role: "small"
             color: Colors.warning
         }

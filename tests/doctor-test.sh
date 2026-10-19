@@ -30,7 +30,19 @@ stub() { for name in "$@"; do printf '#!/bin/sh\nexit 0\n' > "$bin/$name"; chmod
 printf '#!/bin/sh\nexit 1\n' > "$bin/python3"; chmod +x "$bin/python3"
 stub Hyprland hyprctl quickshell setpriv kitty zsh brightnessctl wpctl pw-metadata playerctl nmcli udevadm \
   jq swaylock curl gammastep checkupdates dnf5 zypper flatpak plasma-discover hyprland-dialog gtk-launch \
-  fastfetch cmatrix cava xclip
+  fastfetch cmatrix cava xclip qalc
+# tesseract with the data $TESS_LANGS names (English by default): the
+# screenshots' text mode is there.
+tesseract_stub() {
+  cat > "$bin/tesseract" <<'EOF'
+#!/bin/sh
+[ "$1" = --list-langs ] || exit 0
+echo 'List of available languages in "/usr/share/tessdata/" (2):'
+for lang in ${TESS_LANGS-eng osd}; do echo "$lang"; done
+EOF
+  chmod +x "$bin/tesseract"
+}
+tesseract_stub
 # plocate finds files under $HOME: the launcher's note stays out.
 printf '#!/bin/sh\necho 5\n' > "$bin/plocate"; chmod +x "$bin/plocate"
 # The system bus: what $BUS says, or no answer at all.
@@ -80,6 +92,19 @@ check 'Arch looks for checkupdates, not dnf5' 'has "ok       checkupdates" && ! 
 check 'Arch does not look for Discover (Updates upgrades in a terminal there)' '! has plasma-discover'
 check 'the services on the bus are found' 'has "ok       power profiles D-Bus service" && has "ok       NetworkManager" && has "ok       BlueZ"'
 check 'Arch has no Akonadi Python bindings to miss' 'has "note     Akonadi Python bindings are not packaged for arch" && ! has "missing  Akonadi"'
+
+# The launcher's conversions and the screenshots' text are optional: said,
+# with this system's packages, and the run still passes.
+check 'qalc and tesseract'"'"'s data are there' 'has "ok       qalc" && has "ok       tesseract"'
+doctor arch TESS_LANGS="afr osd"
+check 'tesseract without English or German data is said' \
+  'has "missing  tesseract'"'"'s English or German data (text from the screen; sudo pacman -S tesseract-data-eng tesseract-data-deu)" && [[ $rc -eq 0 ]]'
+rm "$bin/qalc" "$bin/tesseract"
+doctor fedora
+check 'without qalc and tesseract, in Fedora'"'"'s words' \
+  'has "missing  qalc (conversions in the launcher; sudo dnf install libqalculate)" && has "sudo dnf install tesseract tesseract-langpack-eng tesseract-langpack-deu" && [[ $rc -eq 0 ]]'
+stub qalc
+tesseract_stub
 
 # An Arch derivative is Arch here (the installers still refuse it).
 doctor cachyos

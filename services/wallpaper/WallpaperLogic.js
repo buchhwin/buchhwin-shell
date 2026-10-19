@@ -119,6 +119,36 @@ function currentPath(slideshowPath, configuredPath, images, checkedPath, missing
     return list.length ? list[0] : ""
 }
 
+// The configured wallpaper for the theme. Settings > Wallpaper "A wallpaper
+// for each theme" (`wallpaper.themePair`, off by default) keeps one for the
+// light theme and one for the dark (`wallpaper.lightPath`, `darkPath`); a
+// side that has none yet shows the shared one (`wallpaper.path`), so turning
+// the pair on changes nothing until a picture is picked for a side. Only the
+// shown one is decoded: the other is read at the switch, through the
+// desktop's cross-fade.
+function themePath(pairOn, dark, lightPath, darkPath, path) {
+    const shared = typeof path === "string" ? path : ""
+    if (pairOn !== true) return shared
+    const own = dark === true ? darkPath : lightPath
+    return typeof own === "string" && own.length ? own : shared
+}
+
+// Which picture `themePath` gives: "light", "dark" or "shared" (the pair off,
+// or the theme's side empty). For Settings and the IPC, which name no file.
+function themeSide(pairOn, dark, lightPath, darkPath) {
+    if (pairOn !== true) return "shared"
+    const own = dark === true ? darkPath : lightPath
+    return typeof own === "string" && own.length ? (dark === true ? "dark" : "light") : "shared"
+}
+
+// The setting a picked wallpaper goes into: with the pair on, the side of the
+// theme in use - picking in the dark theme sets the dark one -, else the
+// shared one.
+function pickKey(pairOn, dark) {
+    if (pairOn !== true) return "wallpaper.path"
+    return dark === true ? "wallpaper.darkPath" : "wallpaper.lightPath"
+}
+
 // Wallpaper for one screen: its own choice if the file is still available.
 //
 // At a start wallpapers.json and the folder are read in steps. Until

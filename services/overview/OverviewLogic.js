@@ -1,6 +1,7 @@
 .pragma library
 .import "../workspaces/WorkspaceLogic.js" as Workspaces
 .import "../hypr/HiddenWindows.js" as Hidden
+.import "../dock/MinimizeLogic.js" as Minimize
 
 // Pure helpers for the window overview: workspaces with their windows placed
 // relative to the monitor, from `hyprctl -j clients / monitors / workspaces`.
@@ -207,6 +208,22 @@ function newCard(id, monitor, aspect) {
 function closable(card, row) {
     if (!card || card.placeholder === true || card.filled === true || card.slot === true) return false
     return ((row && row.workspaces) || []).filter(entry => entry && entry.filled !== true).length > 1
+}
+
+// The minimized windows (services/dock/MinimizeLogic.js), which `build` leaves
+// out with every other special workspace's: a row of their own under the
+// workspaces, the one used last first. Each: { address, title, appClass,
+// origin (the workspace it goes back to, 0 for none known), label }.
+function minimizedWindows(clients) {
+    return Array.prototype.slice.call(clients || [])
+        .filter(client => client && client.workspace && Minimize.isParked(client.workspace.name)
+                && client.mapped !== false && !Hidden.isHiddenClient(client))
+        .map(client => ({ address: String(client.address), title: String(client.title || ""),
+                          appClass: String(client.class || client.initialClass || ""),
+                          origin: Minimize.originOf(client.workspace.name),
+                          label: Minimize.originLabel(client.workspace.name),
+                          focusOrder: Number(client.focusHistoryID) >= 0 ? Number(client.focusHistoryID) : 999 }))
+        .sort((a, b) => a.focusOrder - b.focusOrder || (a.address < b.address ? -1 : a.address > b.address ? 1 : 0))
 }
 
 // `hyprctl -j --batch "clients; monitors; workspaces"`: one process for the

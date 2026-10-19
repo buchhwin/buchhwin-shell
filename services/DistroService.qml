@@ -21,6 +21,8 @@ Singleton {
     readonly property bool upgradesInTerminal: Logic.upgradesInTerminal(family)
 
     function installHint(package_) { return Logic.installHint(family, package_) }
+    // The command alone, "" where the distribution is not known.
+    function installCommand(package_) { return Logic.installCommand(family, package_) || "" }
 
     FileView {
         path: "/etc/os-release"

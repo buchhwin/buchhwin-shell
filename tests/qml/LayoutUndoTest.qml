@@ -92,6 +92,38 @@ ShellRoot {
         T.eq(L.dndOnModeChange("", false, "gaming", "work", undefined), null, "a mode without effects leaves it")
         T.eq(L.dndOnModeChange(undefined, false, "work", "laptop", { dnd: "off" }), null, "\"off\" is no wish to turn it on")
 
+        // ---- a mode's own Do Not Disturb choice ------------------------------
+        // Settings > Profiles, "Do Not Disturb in this mode". Without a
+        // choice a mode does what its template says, so a layout from before
+        // the switch keeps gaming's and the other four's as they were.
+        T.eq([L.modeDnd({}, gaming), L.modeDnd({}, {}), L.modeDnd(undefined, { dnd: "1h" }), L.modeDnd(null, undefined)],
+             ["manual", "", "1h", ""], "no choice: the template's - gaming's on, the other four's none")
+        T.eq([L.modeDnd({ dnd: true }, {}), L.modeDnd({ dnd: true }, { dnd: "1h" }), L.modeDnd({ dnd: false }, gaming)],
+             ["manual", "1h", ""], "on takes the template's kind or else until turned off; off is none, gaming's too")
+        T.eq(L.modeDnd({ dnd: "yes" }, {}), "", "only a real choice counts")
+        T.eq(L.modeDndEffects({ dnd: false }, gaming), { dnd: "off", animationMode: "reduced" },
+             "the effects with the choice in them, the rest as the template has them")
+        T.eq(L.dndOnModeChange("", false, "gaming", "work", L.modeDndEffects({ dnd: true }, {})), { mode: "manual", by: "work" },
+             "a mode switched on takes Do Not Disturb as gaming does")
+        T.eq(L.dndOnModeChange("", false, "work", "gaming", L.modeDndEffects({ dnd: false }, gaming)), null,
+             "and gaming switched off leaves it off")
+        const choices = { profiles: { p: { modes: { work: { dnd: true }, laptop: { dnd: false } } }, q: { modes: { docked: { dnd: true } } } } }
+        T.eq(["gaming", "work", "laptop", "docked", "minimal"].map(name => L.modeMayOwnDnd(choices, name, name === "gaming" ? gaming : {})),
+             [true, true, false, true, false],
+             "a mode can own it when its template turns it on or a profile's mode of its name chose to")
+        T.eq(L.modeMayOwnDnd({ profiles: { p: { modes: { gaming: { dnd: false } } } } }, "gaming", gaming), true,
+             "gaming switched off still counts: one it owns from before must still end as it is left")
+        // The choice changed while the mode is in use acts at once.
+        T.eq(L.dndOnModeChoice("", false, "work", "manual"), { mode: "manual", by: "work" }, "switched on: on now, as the mode's")
+        T.eq(L.dndOnModeChoice("", true, "work", "manual"), null, "unless it is on already")
+        T.eq(L.dndOnModeChoice("work", true, "work", ""), { mode: "off", by: "" }, "switched off: the mode's own ends")
+        T.eq(L.dndOnModeChoice("", true, "work", ""), null, "one the user set stays")
+        T.eq(L.dndOnModeChoice("focus", true, "work", ""), null, "and so does Focus's")
+        // Kept in the mode as a choice only: a mode without one reads back
+        // without the field, so files from before stay as they were.
+        T.eq([L.sanitizeMode({ dnd: true }).dnd, L.sanitizeMode({ dnd: false }).dnd, "dnd" in L.sanitizeMode({}),
+              "dnd" in L.sanitizeMode({ dnd: "on" })], [true, false, false, false], "a boolean choice is kept, nothing else")
+
         // ---- the settings a step puts back -----------------------------------
         // Every step carries the notch's options (undoKeys); a dock preset's
         // step also carries the dock.* options it changed. Undone, the
@@ -162,6 +194,16 @@ ShellRoot {
         T.eq(L.withCurrentAppearance(restoredConfig, nowConfig, { p: ["minimal"] }).profiles.p.modes.minimal.appearance.gapsOut, 5,
              "a mode the step's change replaced (a Reset) gets the step's back")
         T.ok(L.withCurrentAppearance(restoredConfig, restoredConfig, null) === restoredConfig, "nothing to carry, nothing new")
+        // A mode's Do Not Disturb choice takes no step either.
+        const chose = (gaps, dnd) => Object.assign(mode(gaps), dnd === undefined ? {} : { dnd: dnd })
+        const choiceThen = { profiles: { p: { modes: { work: chose(7), laptop: chose(8, true), docked: chose(9, false) } } } }
+        const choiceNow = { profiles: { p: { modes: { work: chose(7, true), laptop: chose(8), docked: chose(9, false) } } } }
+        const kept = L.withCurrentAppearance(choiceThen, choiceNow, null).profiles.p.modes
+        T.eq([kept.work.dnd, "dnd" in kept.laptop, kept.docked.dnd], [true, false, false],
+             "each mode keeps the choice it has now, none where it has none")
+        T.ok(kept.docked === choiceThen.profiles.p.modes.docked, "an equal one is left as it is")
+        T.eq(L.withCurrentAppearance(choiceThen, choiceNow, { p: ["work"] }).profiles.p.modes.work.dnd, undefined,
+             "and a mode a Reset replaced gets the step's")
 
         // ---- a preset's description -----------------------------------------
         // Island's own text is 143 characters; the sanitizer cut it at 120.

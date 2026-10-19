@@ -34,7 +34,7 @@ Item {
     Text {
         id: label
         visible: !root.vertical
-        text: DateFormat.date(clock.date, SettingsService.locale, (root.sizeClass === "small" || root.sizeClass === "icon") ? "short" : "long")
+        text: DateFormat.date(clock.date, SettingsService.locale, (root.sizeClass === "small" || root.sizeClass === "icon") ? "short" : "long", SettingsService.dateOrder, SettingsService.shortDateNumbers)
         color: root.textColor
         font.family: Typography.family
         font.pixelSize: (root.sizeClass === "large" ? Typography.headlineSize

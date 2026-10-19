@@ -12,7 +12,7 @@ PopupPanel {
     readonly property CalendarDemand calendarDemand: CalendarDemand { active: root.shown }
     panelId: "eventsPopup"
     heading: "Today"
-    detail: DateFormat.date(clock.date, SettingsService.locale, "long")
+    detail: DateFormat.date(clock.date, SettingsService.locale, "long", SettingsService.dateOrder)
     glyph: "󰸗"
     glyphActive: CalendarService.remainingToday(clock.date).length > 0
     footerText: "Open dashboard"

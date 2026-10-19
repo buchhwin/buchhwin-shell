@@ -23,7 +23,8 @@ ShellRoot {
 
         const m = H.monitor({ name: "DP-1", width: 2560, height: 1440, refresh: 143.97, x: 1920, y: 0, scale: 1.25, transform: 0, vrr: 1 })
         T.eq(m.legacy, "keyword monitor DP-1,2560x1440@143.97,1920x0,1.25,transform,0,vrr,1", "legacy monitor rule")
-        T.eq(m.lua, "hl.monitor({ output = \"DP-1\", mode = \"2560x1440@143.97\", position = \"1920x0\", scale = 1.25, transform = 0, vrr = 1 })", "Lua monitor")
+        T.eq(m.lua, "hl.monitor({ output = \"DP-1\", mode = \"2560x1440@143.97\", position = \"1920x0\", scale = 1.25, transform = 0, vrr = 1, disabled = false, mirror = \"\" })",
+             "Lua monitor: on and no mirror said each time, as hl.monitor keeps an earlier call's")
         T.eq(H.monitor({ name: "eDP-1", disabled: true }).lua, "hl.monitor({ output = \"eDP-1\", disabled = true })", "disabled monitor")
 
         T.eq(H.env("XCURSOR_SIZE", "24"), { legacy: "keyword env XCURSOR_SIZE,24", legacyEmpty: [], lua: "hl.env(\"XCURSOR_SIZE\", \"24\")" }, "environment")

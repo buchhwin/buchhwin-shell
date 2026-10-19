@@ -6,6 +6,7 @@ import "hypr/HyprCommands.js" as Commands
 import "hypr/HyprAnimations.js" as Anim
 import "display/DisplayLogic.js" as DisplayLogic
 import "lock/LockLogic.js" as LockLogic
+import "power/EffectsLogic.js" as EffectsLogic
 
 // Applies appearance settings that live outside QML: Hyprland blur, window
 // rounding, borders and gaps, and the cursor theme. Session environment
@@ -43,9 +44,12 @@ Singleton {
 
     function applyHyprland() {
         if (lockProcess) return
+        // No blur while the lighter effects on battery are on (Settings >
+        // Power); the size stays the user's, for when it comes back.
+        const blur = EffectsLogic.blurStrength(SettingsService.blurStrength, SettingsService.lightEffects === true)
         const blurSize = Math.round(2 + SettingsService.blurStrength * 10)
         HyprCompat.setOptions({
-            "decoration:blur:enabled": SettingsService.blurStrength > 0,
+            "decoration:blur:enabled": blur > 0,
             "decoration:blur:size": blurSize,
             "decoration:rounding": SettingsService.windowRadius,
             "general:border_size": SettingsService.borderEnabled ? SettingsService.borderSize : 0,
@@ -76,7 +80,7 @@ Singleton {
     // two configuration files are checked against.
     function applyAnimations() {
         if (lockProcess) return
-        const mode = SettingsService.animationMode
+        const mode = EffectsLogic.animationMode(SettingsService.animationMode, SettingsService.lightEffects === true)
         const pace = Anim.pace(SettingsService.animationSpeed)
         HyprCompat.configure(Commands.animationMode(Anim.entries(mode, pace),
                                                    Anim.enabled(mode),
@@ -138,6 +142,7 @@ Singleton {
         function onGapsOutChanged() { debounce.restart() }
         function onAnimationModeChanged() { debounce.restart() }
         function onAnimationSpeedChanged() { debounce.restart() }
+        function onLightEffectsChanged() { debounce.restart() }
         function onXwaylandSharpChanged() { debounce.restart() }
         function onCursorThemeChanged() { root.applyCursor() }
         function onCursorSizeChanged() { root.applyCursor() }

@@ -8,10 +8,13 @@ import "../../services/arrange/ArrangeLogic.js" as Arrange
 import "../../services/launcher/LauncherCatalogue.js" as LauncherCatalogue
 import "../../services/launcher/ResultsLogic.js" as Results
 
-// Super+D launcher with apps, commands (>), files (/), settings (@) and a
-// calculator (=). Keyboard: arrows, PageUp/PageDown, Home/End, Tab switches
-// mode, Ctrl+Up/Down switches category, Enter runs, Ctrl+Enter alternate
-// action, Esc clears then closes.
+// Super+D launcher with apps, commands (>), files (/), settings (@), a
+// calculator and conversions (=), and "$ command" to run one; typed without
+// a prefix it also finds open windows, VS Code's folders and recent files.
+// Keyboard: arrows, PageUp/PageDown, Home/End, Tab switches mode,
+// Ctrl+Up/Down switches category, Enter runs, Ctrl+Enter alternate action
+// (a command in a terminal, a file's folder, a conversion's number alone),
+// Esc clears then closes.
 //
 // **Its parts are arranged, like every other large surface.** Five blocks -
 // the search field, the modes, the pinned apps, the categories and the
@@ -81,8 +84,11 @@ ShellPanel {
 
     onWantedChanged: {
         if (wanted) {
-            if (searchField) searchField.text = ""
-            query = ""
+            // Opened with something typed already (IPC `launcher search`),
+            // or empty as always.
+            const typed = typeof PanelService.args.query === "string" ? PanelService.args.query : ""
+            if (searchField) searchField.text = typed
+            query = typed
             category = "All"
             selectedIndex = 0
             // A refused pin is said for a moment, not again on the next open.
@@ -101,6 +107,9 @@ ShellPanel {
         if (shown) return
         LayoutService.launcherEditing = false
         LayoutService.reportLauncherCells({})
+        // What the open's queries read (recent files, VS Code's folders,
+        // conversions) is not kept while the launcher is shut.
+        LauncherService.launcherClosed()
     }
 
     function run(alternate) {
@@ -161,7 +170,10 @@ ShellPanel {
     function cycleMode(step) {
         const modes = LauncherService.modes
         const index = modes.indexOf(mode)
-        const next = modes[(index + step + modes.length) % modes.length]
+        // "$ command" is not in the ring: Tab goes to its first mode,
+        // Shift+Tab to its last.
+        const next = index < 0 ? modes[step > 0 ? 0 : modes.length - 1]
+            : modes[(index + step + modes.length) % modes.length]
         const rest = mode.prefix.length ? query.slice(1) : query
         if (searchField) searchField.text = next.prefix + rest
     }
@@ -353,7 +365,12 @@ ShellPanel {
             // the large one.
             ShellTextField {
                 id: search
-                Component.onCompleted: root.searchField = search
+                Component.onCompleted: {
+                    root.searchField = search
+                    // A block built anew (the layout changed) takes the query
+                    // it stands for, typed or handed over on open.
+                    if (root.query.length) search.text = root.query
+                }
                 Component.onDestruction: if (root.searchField === search) root.searchField = null
                 Layout.fillWidth: true
                 // The field holds the focus for as long as the launcher is
@@ -803,8 +820,10 @@ ShellPanel {
                     title: root.mode.id === "files" ? (root.query.length < 3 ? "Type a file name" : LauncherService.fileSearchRunning ? "Searching …"
                             : unindexed ? "Your home folder is not in the file index" : "No files found")
                         : root.mode.id === "calculator" ? "Calculator"
+                        : root.mode.id === "run" ? "Run a command"
                         : "No results"
-                    description: root.mode.id === "calculator" ? "Type an expression, e.g. = 12 * (3 + 4)"
+                    description: root.mode.id === "calculator" ? "Type an expression, e.g. = 12 * (3 + 4), or a conversion, e.g. = 10 km to mi"
+                        : root.mode.id === "run" ? "Type it after the $: Enter runs it, Ctrl+Enter runs it in a terminal"
                         : unindexed ? LauncherService.fileIndexHint : ""
                 }
             }

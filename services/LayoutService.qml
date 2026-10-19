@@ -937,6 +937,8 @@ Singleton {
     property string pendingText: ""
     function save() {
         if (readOnly || !loaded) return false
+        // The day's snapshot before the first write of a day (SnapshotService).
+        SnapshotService.beforeWrite()
         pendingText = JSON.stringify(config, null, 2) + "\n"
         writeTimer.restart()
         return true
@@ -1240,41 +1242,75 @@ Singleton {
 
     // Do Not Disturb is not a setting, it is session state, so it is not on
     // the mode-scoped list and applyModeSettings leaves it alone: it changes
-    // only when the mode does. A mode whose template turns it on does so
-    // when it finds it off, and turns it off again when it is left - unless
-    // the user changed it in between (Logic.dndOnModeChange; NotificationService
-    // keeps whose it is across shell restarts).
+    // only when the mode does. A mode that turns it on does so when it finds
+    // it off, and turns it off again when it is left - unless the user
+    // changed it in between (Logic.dndOnModeChange; NotificationService keeps
+    // whose it is across shell restarts). Which modes do is each mode's
+    // choice (Settings > Profiles, "Do Not Disturb in this mode":
+    // Logic.modeDnd); one that has made none does what its template says, so
+    // gaming turns it on and the other four do not.
     //
-    // Only a mode whose template turns it on can own it, so between two
-    // others there is nothing to ask - and NotificationService is not made
-    // for it: a unit test switching modes started the session's notification
-    // server on the user's bus (pitfall 82). A template not read yet is asked
-    // about as before.
+    // Only a mode that turns it on can own it (Logic.modeMayOwnDnd), so
+    // between two others there is nothing to ask - and NotificationService is
+    // not made for it: a unit test switching modes started the session's
+    // notification server on the user's bus (pitfall 82). A template not read
+    // yet is asked about as before.
     function modeDndTransition(from, to) {
         if (from === to) return
         const known = templates[from] !== undefined && templates[to] !== undefined
-        if (known && !Logic.turnsDndOn((templates[from] || {}).effects) && !Logic.turnsDndOn((templates[to] || {}).effects)) return
+        if (known && !Logic.modeMayOwnDnd(config, from, (templates[from] || {}).effects)
+                  && !Logic.modeMayOwnDnd(config, to, (templates[to] || {}).effects)) return
         if (typeof NotificationService === "undefined" || !NotificationService.setDnd) return
-        const effects = (templates[to] || {}).effects || {}
-        const change = Logic.dndOnModeChange(NotificationService.dndBy, NotificationService.dndActive, from, to, effects)
+        const change = Logic.dndOnModeChange(NotificationService.dndBy, NotificationService.dndActive, from, to, modeDndEffects(to))
         if (change) NotificationService.setDnd(change.mode, change.by)
+    }
+    // Mode `name` of the profile in use: whether entering it turns Do Not
+    // Disturb on, and its effects with that choice in them (AdaptiveService's
+    // Focus hands the Do Not Disturb back by them).
+    function modeDnd(name) {
+        return Logic.modeDnd(Logic.modeConfig(config, activeProfile, name), (templates[name] || {}).effects).length > 0
+    }
+    function modeDndEffects(name) {
+        return Logic.modeDndEffects(Logic.modeConfig(config, activeProfile, name), (templates[name] || {}).effects)
+    }
+    // The choice for the mode in use, kept in the mode as its appearance is:
+    // no undo step of its own, and an undo keeps it (withCurrentAppearance).
+    // It acts at once, as entering or leaving the mode would: switched on
+    // with Do Not Disturb off, it turns it on as the mode's; switched off,
+    // the mode's own ends, and one the user set stays.
+    //
+    // Not before the mode's template is in: until then the mode in use may not
+    // be in the file yet, and an edit would make it a placeholder that shows
+    // widgets for good (pitfall 119).
+    function setModeDnd(on) {
+        const name = activeMode
+        if (readOnly || !loaded || templates[name] === undefined) return false
+        const wanted = on === true
+        if (modeDnd(name) === wanted) return true
+        mutate(mode => { mode.dnd = wanted })
+        save()
+        if (typeof NotificationService === "undefined" || !NotificationService.setDnd) return true
+        const kind = Logic.modeDnd(modeConfig(), (templates[name] || {}).effects)
+        const change = Logic.dndOnModeChoice(NotificationService.dndBy, NotificationService.dndActive, name, kind)
+        if (change) NotificationService.setDnd(change.mode, change.by)
+        return true
     }
 
     // A reboot ends a manual Do Not Disturb, a mode's own with it
     // (NotificationLogic.dndAtBoot). Once the layout and the template of the
     // mode in use are both in, that mode is asked once and takes its own back
     // while it is still the one in use (NotificationService.resumeModeDnd):
-    // gaming came back from a reboot without it. Only a mode whose template
-    // turns Do Not Disturb on asks, so a start in any other mode - and every
-    // unit test that stays out of gaming - never makes NotificationService
-    // (pitfall 82).
+    // gaming came back from a reboot without it. Only a mode that turns Do
+    // Not Disturb on (its template's, or its own choice: modeDnd) asks, so a
+    // start in any other mode - and every unit test that stays out of gaming
+    // - never makes NotificationService (pitfall 82).
     property bool dndResumeAsked: false
     function resumeDndOnce() {
         if (dndResumeAsked || !loaded) return
         const template = templates[activeMode]
         if (template === undefined) return
         dndResumeAsked = true
-        if (!Logic.turnsDndOn(template.effects)) return
+        if (!modeDnd(activeMode)) return
         if (typeof NotificationService === "undefined" || !NotificationService.resumeModeDnd) return
         NotificationService.resumeModeDnd(activeMode)
     }

@@ -366,7 +366,461 @@
           }
         ]
       },
-      "appearance": {}
+      "appearance": {
+        "panelOpacity": 0.88
+      }
+    },
+    "work": {
+      "widgets": [],
+      "groups": [],
+      "screens": [],
+      "desktopMode": "pills",
+      "bar": {
+        "reserve": true,
+        "fullscreen": "hide",
+        "scale": 1,
+        "style": "pills",
+        "position": "floating",
+        "edge": "top",
+        "panelSpot": "widget",
+        "notificationSpot": "widget",
+        "screens": [],
+        "left": [
+          {
+            "id": "pill-1",
+            "items": [
+              {
+                "type": "workspace",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-2",
+            "items": [
+              {
+                "type": "activeWindow",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          }
+        ],
+        "center": [
+          {
+            "id": "pill-3",
+            "items": [
+              {
+                "type": "clock",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          }
+        ],
+        "right": [
+          {
+            "id": "pill-4",
+            "items": [
+              {
+                "type": "nowPlaying",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-5",
+            "items": [
+              {
+                "type": "network",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "volume",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "battery",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-6",
+            "items": [
+              {
+                "type": "notificationIndicator",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "quickPanel",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          }
+        ]
+      },
+      "appearance": {
+        "panelOpacity": 0.88
+      }
+    },
+    "gaming": {
+      "widgets": [],
+      "groups": [],
+      "screens": [],
+      "desktopMode": "notch",
+      "bar": {
+        "reserve": true,
+        "fullscreen": "hide",
+        "scale": 1,
+        "style": "pills",
+        "position": "floating",
+        "edge": "top",
+        "panelSpot": "widget",
+        "notificationSpot": "widget",
+        "screens": [],
+        "left": [
+          {
+            "id": "pill-1",
+            "items": [
+              {
+                "type": "workspace",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          }
+        ],
+        "center": [
+          {
+            "id": "pill-2",
+            "items": [
+              {
+                "type": "clock",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          }
+        ],
+        "right": [
+          {
+            "id": "pill-3",
+            "items": [
+              {
+                "type": "network",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "battery",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          }
+        ]
+      },
+      "appearance": {
+        "panelOpacity": 0.88
+      }
+    },
+    "laptop": {
+      "widgets": [],
+      "groups": [],
+      "screens": [],
+      "desktopMode": "pills",
+      "bar": {
+        "reserve": true,
+        "fullscreen": "hide",
+        "scale": 0.9,
+        "style": "bar",
+        "position": "attached",
+        "edge": "top",
+        "panelSpot": "widget",
+        "notificationSpot": "widget",
+        "screens": [],
+        "left": [
+          {
+            "id": "pill-1",
+            "items": [
+              {
+                "type": "workspace",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          }
+        ],
+        "center": [
+          {
+            "id": "pill-2",
+            "items": [
+              {
+                "type": "clock",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          }
+        ],
+        "right": [
+          {
+            "id": "pill-3",
+            "items": [
+              {
+                "type": "network",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "volume",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "battery",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-4",
+            "items": [
+              {
+                "type": "notificationIndicator",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "quickPanel",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          }
+        ]
+      },
+      "appearance": {
+        "panelOpacity": 0.88
+      }
+    },
+    "docked": {
+      "widgets": [],
+      "groups": [],
+      "screens": [],
+      "desktopMode": "pills",
+      "bar": {
+        "reserve": true,
+        "fullscreen": "hide",
+        "scale": 1,
+        "style": "pills",
+        "position": "floating",
+        "edge": "top",
+        "panelSpot": "widget",
+        "notificationSpot": "widget",
+        "screens": [],
+        "left": [
+          {
+            "id": "pill-1",
+            "items": [
+              {
+                "type": "workspace",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-2",
+            "items": [
+              {
+                "type": "activeWindow",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          }
+        ],
+        "center": [
+          {
+            "id": "pill-3",
+            "items": [
+              {
+                "type": "clock",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "date",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          }
+        ],
+        "right": [
+          {
+            "id": "pill-4",
+            "items": [
+              {
+                "type": "weather",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-5",
+            "items": [
+              {
+                "type": "nowPlaying",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-6",
+            "items": [
+              {
+                "type": "network",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "volume",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "battery",
+                "display": "full",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          },
+          {
+            "id": "pill-7",
+            "items": [
+              {
+                "type": "notificationIndicator",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              },
+              {
+                "type": "quickPanel",
+                "display": "icon",
+                "size": "small",
+                "w": 1,
+                "h": 1,
+                "options": {}
+              }
+            ]
+          }
+        ]
+      },
+      "appearance": {
+        "panelOpacity": 0.88
+      }
     }
   },
   "notch": {

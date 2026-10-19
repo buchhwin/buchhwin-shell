@@ -109,12 +109,38 @@ update_notes() {
   if grep -qE '^session/(buchhwin-shell-session-wrapper|buchhwin-shell\.desktop\.in)$' <<<"$changed"; then
     printf 'The session entry changed: sudo install/system-install.sh\n'
   fi
-  if grep -q '^session/pam/' <<<"$changed"; then
+  if pam_changed "$changed" "$distro"; then
     printf "The lock screen's PAM files changed: compare /etc/pam.d/buchhwin-lock* with session/pam/\n"
   fi
   if [[ $distro == opensuse-leap ]] && grep -q '^install/build-hyprland-leap\.sh$' <<<"$changed"; then
     printf "Hyprland's build changed: install/build-hyprland-leap.sh --apply\n"
   fi
+}
+# Whether the update changed a PAM file this system has. system-install.sh
+# installs session/pam/<name> with the suffix of the PAM stack it finds -
+# by the distribution's name first, then by the files the stack has - and
+# the same rule picks it here: the note came for a .suse file on Arch too.
+# The fingerprint lid helper counts wherever it is, and with no known
+# distribution every file does, as before.
+pam_present() { [[ -e /etc/pam.d/$1 || -e /usr/lib/pam.d/$1 ]]; }
+pam_changed() {
+  local changed=$1 distro=$2 suffix="" name
+  grep -q '^session/pam/' <<<"$changed" || return 1
+  [[ -n $distro ]] || return 0
+  grep -qx 'session/pam/buchhwin-lid-closed' <<<"$changed" && return 0
+  if [[ $distro == arch ]]; then
+    suffix=.arch
+  elif pam_present common-auth; then
+    suffix=.suse
+  elif pam_present system-auth && ! pam_present password-auth; then
+    suffix=.arch
+  elif [[ ! -e /etc/pam.d/system-auth && $distro == opensuse-leap ]]; then
+    suffix=.suse
+  fi
+  for name in buchhwin-lock buchhwin-lock-password; do
+    grep -qx "session/pam/$name$suffix" <<<"$changed" && return 0
+  done
+  return 1
 }
 # The names a version of the distribution's list installs with every run of
 # bootstrap.sh (--minimal too): its bootstrap, core, package and font lists

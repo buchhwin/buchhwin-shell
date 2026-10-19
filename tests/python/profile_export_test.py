@@ -101,7 +101,8 @@ with tempfile.TemporaryDirectory() as temp:
                        "theme": "dark"},
         "weather": {"enabled": True, "locationName": "Exampletown", "lat": 12.34, "lon": 56.78, "unit": "celsius"},
         "wallpaper": {"path": str(home / "Pictures" / "w.webp"), "folder": str(home / "Pictures" / "Walls"),
-                      "recentFolders": str(home / "Pictures")},
+                      "recentFolders": str(home / "Pictures"), "themePair": True,
+                      "lightPath": str(home / "Pictures" / "day.webp"), "darkPath": str(home / "Pictures" / "night.webp")},
         "login": {"wallpaper": str(home / "Pictures" / "login.png"), "blur": True},
         "onboarding": {"completed": True},
         "colorPicker": {"history": "#112233,#445566"},
@@ -150,6 +151,9 @@ with tempfile.TemporaryDirectory() as temp:
     check(profile["settings"]["wallpaper"]["folder"] == "~/Pictures/Walls", "a folder under the home directory is contracted to ~")
     check(profile["settings"]["wallpaper"]["path"] == "" and profile["settings"]["login"]["wallpaper"] == "",
           "a picture chosen by name is this machine's file and ships empty")
+    check(profile["settings"]["wallpaper"]["lightPath"] == "" and profile["settings"]["wallpaper"]["darkPath"] == ""
+          and profile["settings"]["wallpaper"]["themePair"] is True,
+          "so do the two of a wallpaper for each theme, and the choice itself stays")
     check(profile["settings"]["login"]["blur"] is True, "the rest of the login group stays")
     check("recentFolders" not in profile["settings"]["wallpaper"], "recent folders are this machine's")
     check("onboarding" not in profile["settings"] and "colorPicker" not in profile["settings"],

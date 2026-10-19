@@ -309,6 +309,122 @@ start_sweep() {
   sweep_pid=$!
 }
 
+# ---- when it gives up ---------------------------------------------------------
+# Five crashes in a minute used to end in a log line and nothing else: no bar,
+# no notifications, no launcher and nothing on the screen to say why - a
+# crash loop at login or after a deploy looked like a black desktop. The
+# compositor draws a notice itself (`hyprctl notify`: no shell and no
+# notification server needed, the same request in both config dialects),
+# naming the key that starts the shell again - the one Settings > Shortcuts
+# moved it to, if it did (shortcut-keys.txt, as hyprland.lua reads it).
+#
+# The lock before sleep and the idle lock went with the shell's own swayidle
+# (IdleService). A fallback swayidle takes both over until a shell is back,
+# with the settings the shell had (power.lockBeforeSleep and the shorter of
+# the two lock timeouts): the next start of this script ends it, and it ends
+# by itself with the compositor. Not in a nested session, whose lock and
+# sleep are the host's to worry about.
+runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/buchhwin-shell"
+fallback_file="$runtime_dir/fallback-idle.${HYPRLAND_INSTANCE_SIGNATURE:-none}"
+gave_up_file="$runtime_dir/gave-up.${HYPRLAND_INSTANCE_SIGNATURE:-none}"
+# "SUPER + CTRL + R", or what Settings > Shortcuts put in its place, written
+# the way the shell writes keys: "Super+Ctrl+R".
+restart_key() {
+  local file="${XDG_CONFIG_HOME:-$HOME/.config}/buchhwin-shell/shortcut-keys.txt" line key="SUPER + CTRL + R" part out=""
+  local pattern='^[[:space:]]*SUPER[[:space:]]*\+[[:space:]]*CTRL[[:space:]]*\+[[:space:]]*R[[:space:]]*=[[:space:]]*([^[:space:]].*[^[:space:]]|[^[:space:]])[[:space:]]*$'
+  if [[ -r $file ]]; then
+    while IFS= read -r line || [[ -n $line ]]; do
+      if [[ $line =~ $pattern ]]; then key=${BASH_REMATCH[1]}; fi
+    done <"$file"
+  fi
+  local parts=()
+  IFS='+' read -r -a parts <<<"$key"
+  for part in "${parts[@]}"; do
+    part=${part//[[:space:]]/}
+    [[ -n $part ]] || continue
+    case ${part^^} in
+      SUPER | CTRL | ALT | SHIFT) part=${part,,}; part=${part^} ;;
+    esac
+    out+=${out:++}$part
+  done
+  printf '%s' "${out:-Super+Ctrl+R}"
+}
+fallback_idle() {
+  [[ ${BUCHHWIN_NESTED:-0} == 1 ]] && return 0
+  command -v swayidle >/dev/null 2>&1 || return 0
+  # A display that is there: swayidle without one exits at once.
+  [[ -n ${WAYLAND_DISPLAY:-} && -S ${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/$WAYLAND_DISPLAY ]] || return 0
+  local action="$config_dir/scripts/session-action.sh" settings before=true minutes=0 quoted args=()
+  [[ -x $action ]] || action="$project_dir/scripts/session-action.sh"
+  [[ -x $action ]] || return 0
+  settings="${XDG_CONFIG_HOME:-$HOME/.config}/buchhwin-shell/settings.json"
+  if command -v jq >/dev/null 2>&1 && [[ -s $settings ]]; then
+    [[ $(jq -r '.power.lockBeforeSleep' "$settings" 2>/dev/null) == false ]] && before=false
+    minutes=$(jq -r '[.power.battery.lockMinutes, .power.ac.lockMinutes] | map(select(type == "number" and . > 0)) | min // 0' \
+      "$settings" 2>/dev/null) || minutes=0
+  fi
+  # swayidle runs its commands through sh, hence the quoted path (as IdleService does).
+  quoted="'${action//\'/\'\\\'\'}' lock"
+  [[ $before == true ]] && args+=(before-sleep "$quoted")
+  if [[ $minutes =~ ^[0-9]+$ ]] && (( minutes > 0 )); then args+=(timeout "$(( minutes * 60 ))" "$quoted"); fi
+  (( ${#args[@]} )) || return 0
+  mkdir -p -m 700 -- "$runtime_dir" 2>/dev/null || return 0
+  swayidle -w "${args[@]}" </dev/null >/dev/null 2>&1 &
+  printf '%s\n' "$!" 2>/dev/null >"$fallback_file" || true
+  note "started a fallback lock (swayidle, pid $!) until a shell is back"
+}
+gave_up() {
+  local key message
+  key=$(restart_key)
+  message="buchhwin-shell stopped after $restart_limit crashes in a minute - $key starts it again"
+  if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && command -v hyprctl >/dev/null 2>&1; then
+    # Icon 0 is the warning sign, colour 0 its own; half an hour on screen.
+    if hyprctl notify 0 1800000 0 "$message" >/dev/null 2>&1; then
+      { mkdir -p -m 700 -- "$runtime_dir" && : >"$gave_up_file"; } 2>/dev/null || true
+    fi
+  fi
+  fallback_idle
+}
+# The next start - the key, a reload, a deploy - takes the fallback back:
+# the shell it starts brings its own swayidle. The pid is checked for being
+# that swayidle before it is ended, and the notice goes from the screen.
+end_fallback() {
+  local pid cmdline
+  if [[ -e $gave_up_file ]]; then
+    rm -f -- "$gave_up_file"
+    hyprctl dismissnotify >/dev/null 2>&1 || true
+  fi
+  [[ -r $fallback_file ]] || return 0
+  pid=$(<"$fallback_file") || pid=""
+  rm -f -- "$fallback_file"
+  [[ $pid =~ ^[0-9]+$ && -r /proc/$pid/cmdline ]] || return 0
+  cmdline=$({ tr '\0' ' ' <"/proc/$pid/cmdline"; } 2>/dev/null) || return 0
+  # A swayidle by its first word, holding this configuration's lock command.
+  [[ ${cmdline%% *} == swayidle || ${cmdline%% *} == */swayidle ]] || return 0
+  [[ $cmdline == *"session-action.sh' lock"* ]] || return 0
+  kill "$pid" 2>/dev/null || true
+  note "ended the fallback lock (swayidle, pid $pid) of the shell that gave up before"
+}
+
+# ---- and what it says after an update ---------------------------------------
+# The first start after Quickshell or Hyprland changed is watched for a
+# minute, and the first after the checkout moved can name what changed
+# (scripts/updates-after-start.py, beside the shell, nothing in it): once per
+# start of this script, not for a crash restart. Only for a configuration
+# that has it - a test's stand-in tree does not. A nested session's says
+# nothing: its notices would reach the host's server, so it only writes down
+# what it would have said. Its decisions go to after-start.log (the last
+# start's), not into the shell's log, which the smoke test and session-check
+# read for errors - a commit subject or a problem it quotes would be one.
+after_start="$config_dir/scripts/updates-after-start.py"
+start_after_check() {
+  [[ -r $after_start ]] && command -v python3 >/dev/null 2>&1 || return 0
+  local extra=()
+  [[ ${BUCHHWIN_NESTED:-0} == 1 ]] && extra+=(--dry-run)
+  python3 "$after_start" --shell-dir "$config_dir" --log "$log_file" --state-dir "$state_dir" --pid "$1" \
+    "${extra[@]}" </dev/null >"$state_dir/after-start.log" 2>&1 &
+}
+
 # ---- and it is watched while it runs ---------------------------------------
 # The shell used to be `exec`ed and that was the end of this script's job, so a
 # crash simply left the desktop without a shell until somebody noticed. It is
@@ -337,6 +453,16 @@ start_sweep() {
 # ("since yesterday I cannot restart any more"). So the SIGTERM this script
 # receives is forwarded to the shell and ends the watching, and a restart is
 # only ever attempted while the compositor's socket is still there.
+#
+# **Quickshell's own crash handler is off for it** (QS_DISABLE_CRASH_HANDLER),
+# or none of this ever sees a crash: Quickshell 0.3.2 catches the SIGSEGV
+# itself, turns the crashed process into its crash reporter and either
+# restarts the configuration as that reporter's child - this script went on
+# waiting for the reporter, so its count never moved and the old shell's
+# helpers were not ended - or, within 10 s of a start, does not restart it
+# and exits without a signal, which ended this script too: no shell, no
+# notice, and the reporter left under PID 1 (nested, 19.10.). The core dump
+# is the system's either way (coredumpctl). An exported value wins.
 restart_window=60
 restart_limit=5
 restarts=0
@@ -464,6 +590,9 @@ disable_decorations=${QT_WAYLAND_DISABLE_WINDOWDECORATION:-1}
 # translucent pills anyway. Greyscale is what the shell already showed where
 # text went through a layer (the collapsed notch clock).
 text_antialiasing=${QSG_DISTANCEFIELD_ANTIALIASING:-gray}
+# Quickshell's crash handler, off: a crash is this script's to restart and
+# count (the watching below).
+crash_handler_off=${QS_DISABLE_CRASH_HANDLER:-1}
 # All of the above is the shell's alone, and quickshell's environment is what
 # every process it starts inherits: applications opened from the launcher
 # ran with two arenas, without Mesa's threads and without the Plasma look.
@@ -473,7 +602,7 @@ text_antialiasing=${QSG_DISTANCEFIELD_ANTIALIASING:-gray}
 # exported value is the session's, and stays.
 app_unset=()
 for name in MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION \
-            QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO; do
+            QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO QS_DISABLE_CRASH_HANDLER; do
   [[ -n ${!name:-} ]] || app_unset+=("$name")
 done
 app_qpa_theme=${QT_QPA_PLATFORMTHEME:-}
@@ -512,6 +641,8 @@ release_tray() {
   note "ended kded6 (pid $pid): it held the tray's StatusNotifierWatcher name"
 }
 
+end_fallback
+first_start=1
 while true; do
   status=0
   release_tray
@@ -519,10 +650,15 @@ while true; do
     MALLOC_ARENA_MAX="$malloc_arenas" MALLOC_CONF="$malloc_conf" \
     mesa_glthread="$mesa_glthread_value" GALLIUM_THREAD="$gallium_thread" \
     QT_WAYLAND_DISABLE_WINDOWDECORATION="$disable_decorations" QSG_DISTANCEFIELD_ANTIALIASING="$text_antialiasing" \
+    QS_DISABLE_CRASH_HANDLER="$crash_handler_off" \
     BUCHHWIN_APP_ENV_UNSET="${app_unset[*]}" BUCHHWIN_APP_QPA_THEME="$app_qpa_theme" \
     quickshell --no-duplicate --path "$config_dir" >>"$log_file" 2>&1 &
   child=$!
   start_sweep "$child"
+  if (( first_start )); then
+    first_start=0
+    start_after_check "$child"
+  fi
   # `wait` returns as soon as a trapped signal arrives, before the shell has
   # gone; wait again for its real status.
   wait "$child" || status=$?
@@ -555,6 +691,7 @@ while true; do
   restarts=$(( restarts + 1 ))
   if (( restarts > restart_limit )); then
     note "the shell died on signal $signal and has now done so $restart_limit times in ${restart_window}s - not restarting it again"
+    gave_up
     exit "$status"
   fi
   note "the shell died on signal $signal, restarting ($restarts of $restart_limit)"

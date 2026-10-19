@@ -165,6 +165,22 @@ ColumnLayout {
             text: "The level bar listens to the input only while this page is open. Nothing is recorded or saved, and it does not count as an app using the microphone."
             role: "caption"; wrapMode: Text.Wrap
         }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Mute key mutes every microphone"
+            hint: "Also one an app opened besides the selected input. Pressed again, it turns back on the ones it muted."
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("audio.micKeyAll") !== false
+                onToggled: value => SettingsService.set("audio.micKeyAll", value)
+            }
+        }
+        ShellText {
+            Layout.fillWidth: true
+            text: "Push to talk: hold " + ShortcutService.keyHint("SUPER + T", true) + " and the selected microphone is on while the key is down."
+            role: "caption"; wrapMode: Text.Wrap
+        }
     }
 
     SettingsSection {

@@ -4,8 +4,8 @@
 # alone: two malloc arenas (glibc's and jemalloc's), Mesa's glthread and
 # Gallium's threaded context off, no client-side window decorations, greyscale
 # text antialiasing, the icon theme handed over in QS_ICON_THEME (and whether
-# it was chosen for it), and no KDE platform theme (see start-shell.sh for the
-# measurements). Every process the shell starts
+# it was chosen for it), Quickshell's crash handler off, and no KDE platform
+# theme (see start-shell.sh for the measurements). Every process the shell starts
 # inherits that environment - and an application should not: a browser, an
 # editor or a remote-desktop client opened from the launcher ran with two
 # arenas and without Mesa's threads, and Qt applications without the Plasma look
@@ -28,7 +28,7 @@
 # not have is that shell's, and the platform theme comes back from there.
 # Source this file.
 app_env_shell_names=(MALLOC_ARENA_MAX MALLOC_CONF mesa_glthread GALLIUM_THREAD QT_WAYLAND_DISABLE_WINDOWDECORATION
-  QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO)
+  QSG_DISTANCEFIELD_ANTIALIASING QS_ICON_THEME BUCHHWIN_ICON_THEME_AUTO QS_DISABLE_CRASH_HANDLER)
 
 app_env_restore() {
   local name known line session

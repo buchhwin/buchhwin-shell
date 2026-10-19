@@ -380,6 +380,54 @@ ColumnLayout {
                 onToggled: value => SettingsService.set("dock.magnification", value)
             }
         }
+        // A click on the app in front: its next window, as the dock always
+        // did, or minimize it (the Taskbar preset's; DockLogic.clickPlan).
+        SettingRow {
+            label: "Click on the app in front"
+            hint: "Minimize: as on a Windows or KDE taskbar - the next click brings the window back. Next window: its other windows in turn."
+            SegmentedControl {
+                focusOnTab: true
+                enabledState: page.enabled
+                Layout.fillWidth: true
+                accessibleName: "Click on the app in front"
+                current: SettingsService.value("dock.activeClick") === "minimize" ? "minimize" : "cycle"
+                options: [{ value: "cycle", label: "Next window" }, { value: "minimize", label: "Minimize" }]
+                onSelected: value => SettingsService.set("dock.activeClick", value)
+            }
+        }
+        SettingRow {
+            labelFills: true
+            label: "Unread counts"
+            hint: "On an app's icon: a web app's own count from its window title - Teams writes (3) -, else its notifications that came while the notification center was closed."
+            ShellToggle {
+                focusOnTab: true
+                enabledState: page.enabled
+                checked: SettingsService.value("dock.badges") === true
+                onToggled: value => SettingsService.set("dock.badges", value)
+            }
+        }
+        SettingRow {
+            labelFills: true
+            label: "Window previews"
+            hint: "The pointer resting on a running app shows its windows instead of its name. A click brings one to the front, a middle-click closes it."
+            ShellToggle {
+                focusOnTab: true
+                enabledState: page.enabled
+                checked: SettingsService.value("dock.previews") === true
+                onToggled: value => SettingsService.set("dock.previews", value)
+            }
+        }
+        SettingRow {
+            labelFills: true
+            label: "Volume under the wheel"
+            hint: "The wheel over a running app turns its sound up or down. A web app plays through its browser, so over it the wheel turns the browser's sound."
+            ShellToggle {
+                focusOnTab: true
+                enabledState: page.enabled
+                checked: SettingsService.value("dock.wheelVolume") === true
+                onToggled: value => SettingsService.set("dock.wheelVolume", value)
+            }
+        }
         // Only for a dock that has the button; on one without it the choice
         // did nothing, and nothing said so.
         SettingRow {
@@ -494,6 +542,26 @@ ColumnLayout {
             row: true
             icon: Icons.pin
             title: "Nothing pinned to the dock"
+        }
+    }
+
+    // Minimized windows (services/MinimizeService.qml) are not the dock's
+    // alone: the overview and Alt+Tab list them too, so this works with the
+    // dock off.
+    SettingsSection {
+        Layout.fillWidth: true
+        title: "Minimize"
+        description: ShortcutService.keyHint("SUPER + H", true) + " minimizes the window in front, " + ShortcutService.keyHint("SUPER + SHIFT + H", true) + " brings back the one minimized last. Minimized windows stay on the dock (a hollow dot), in the overview (" + ShortcutService.keyHint("SUPER + W", true) + ") and in Alt+Tab, and every start of the shell brings them back to their workspaces."
+
+        SettingRow {
+            labelFills: true
+            label: "Minimize buttons in apps"
+            hint: "An app's own minimize button - VS Code's title bar, the Citrix toolbar - minimizes its window. Only for the app in front: a game that minimizes itself when it loses the focus stays where it is."
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("windows.minimizeRequests") !== false
+                onToggled: value => SettingsService.set("windows.minimizeRequests", value)
+            }
         }
     }
 

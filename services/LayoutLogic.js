@@ -170,7 +170,7 @@ function sanitizeMode(mode) {
     const groupIds = groups.map(group => group.id)
     for (const widget of widgets)
         if (widget.group.length && groupIds.indexOf(widget.group) < 0) widget.group = ""
-    return {
+    const result = {
         widgets: widgets,
         groups: groups,
         screens: (Array.isArray(source.screens) ? source.screens : []).map(String),
@@ -187,6 +187,11 @@ function sanitizeMode(mode) {
         launcher: sanitizeLauncher(source.launcher),
         appearance: sanitizeAppearance(source.appearance)
     }
+    // Whether entering it turns Do Not Disturb on (modeDnd), once the mode
+    // has a choice of its own: a mode without one keeps its template's, and
+    // a file from before the choice reads back exactly as it was.
+    if (typeof source.dnd === "boolean") result.dnd = source.dnd
+    return result
 }
 
 // `previous` is this profile in the config the caller started from, already
@@ -414,7 +419,9 @@ function undoTarget(step, config) {
 // screen stayed: the next time the mode was entered, the user's change was
 // gone. Only a mode in both configs; one the step's own change replaced
 // (`owned`, { profile: [mode, ...] } - a Reset) keeps the step's, which is
-// what undoing it is for. Shares every other part with `config`.
+// what undoing it is for. Shares every other part with `config`. A mode's
+// Do Not Disturb choice (`dnd`, modeDnd) is set the same way, without a step,
+// and is kept the same way.
 function withCurrentAppearance(config, current, owned) {
     const mine = owned && typeof owned === "object" ? owned : {}
     const profiles = config && config.profiles ? config.profiles : {}
@@ -427,9 +434,13 @@ function withCurrentAppearance(config, current, owned) {
         for (const mode of Object.keys(modes)) {
             if (!now[mode] || skip.indexOf(mode) >= 0) continue
             const appearance = now[mode].appearance || {}
-            if (keep(appearance, modes[mode].appearance) === appearance) continue
+            const sameLook = keep(appearance, modes[mode].appearance) === appearance
+            if (sameLook && now[mode].dnd === modes[mode].dnd) continue
             if (!nextModes) nextModes = Object.assign({}, modes)
-            nextModes[mode] = Object.assign({}, modes[mode], { appearance: appearance })
+            const kept = Object.assign({}, modes[mode], { appearance: sameLook ? modes[mode].appearance : appearance })
+            if (typeof now[mode].dnd === "boolean") kept.dnd = now[mode].dnd
+            else delete kept.dnd
+            nextModes[mode] = kept
         }
         if (!nextModes) continue
         if (!nextProfiles) nextProfiles = Object.assign({}, profiles)
@@ -495,6 +506,47 @@ function dndOnModeChange(by, active, from, to, toEffects) {
 // switching modes does not start the session's notification server.
 function turnsDndOn(effects) {
     return !!(effects && typeof effects.dnd === "string" && effects.dnd.length && effects.dnd !== "off")
+}
+
+// The Do Not Disturb a mode turns on as it is entered, "" for none: its
+// template's (gaming's "manual", nothing for the other four), unless the mode
+// has a choice of its own (`dnd`, Settings > Profiles "Do Not Disturb in this
+// mode") - on takes the template's kind or else "manual", off is none.
+function modeDnd(mode, effects) {
+    const shipped = turnsDndOn(effects) ? effects.dnd : ""
+    if (!mode || typeof mode.dnd !== "boolean") return shipped
+    return mode.dnd ? (shipped.length ? shipped : "manual") : ""
+}
+
+// A mode's effects as dndOnModeChange and FocusLogic.dndOnFocus read them,
+// with the mode's own choice in them.
+function modeDndEffects(mode, effects) {
+    return Object.assign({}, effects || {}, { dnd: modeDnd(mode, effects) || "off" })
+}
+
+// Whether a mode of this name can own Do Not Disturb: its template turns it
+// on, or a profile's mode of that name chose to. Between two modes that
+// cannot there is nothing to ask (turnsDndOn's reason). Every profile counts,
+// not only the one in use: a profile switch keeps the mode, and with it a
+// Do Not Disturb that mode owns.
+function modeMayOwnDnd(config, name, effects) {
+    if (turnsDndOn(effects)) return true
+    const profiles = config && config.profiles ? config.profiles : {}
+    return Object.keys(profiles).some(profile => {
+        const mode = (profiles[profile].modes || {})[String(name)]
+        return !!mode && mode.dnd === true
+    })
+}
+
+// Do Not Disturb when the mode in use changes its choice (`wanted`, from
+// modeDnd): turned on, as entering the mode would - on and the mode's,
+// unless it is on already; turned off, the mode's own goes, and one the user
+// set stays. null leaves it; else `{ mode, by }` as dndOnModeChange.
+function dndOnModeChoice(by, active, mode, wanted) {
+    const owner = typeof by === "string" ? by : ""
+    const name = String(mode || "")
+    if (String(wanted || "").length) return active ? null : { mode: String(wanted), by: name }
+    return active && owner.length && owner === name ? { mode: "off", by: "" } : null
 }
 
 // What the profile in use gets once per start (LayoutService.settleActiveState):
@@ -1719,7 +1771,7 @@ function dockPinned(dock, pin) {
 
 // Dock presets (config/dock-presets/*.json): its options in settings.json
 // (dock.*) and its layout here, applied together as one step.
-const DOCK_PRESET_OPTIONS = ["visibility", "position", "span", "iconSize", "margin", "showRunning", "magnification"]
+const DOCK_PRESET_OPTIONS = ["visibility", "position", "span", "iconSize", "margin", "showRunning", "magnification", "activeClick"]
 
 // The dock a preset makes of the one there is: the preset's zones, and its
 // pins only where the pins are still the defaults or none at all. Apps the

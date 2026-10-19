@@ -104,6 +104,11 @@ static const struct named_key named[] = {
   {"PERIOD", KEY_DOT, NULL},                 {"SPACE", KEY_SPACE, NULL},
   {"UP", KEY_UP, NULL},                      {"DOWN", KEY_DOWN, NULL},
   {"LEFT", KEY_LEFT, NULL},                  {"RIGHT", KEY_RIGHT, NULL},
+  // The neighbouring workspace, the zoom and the drop-down terminal's key
+  // (the one left of 1, bound by its place as code:49).
+  {"PAGEUP", KEY_PAGEUP, NULL},              {"PAGEDOWN", KEY_PAGEDOWN, NULL},
+  {"MINUS", KEY_MINUS, NULL},                {"EQUAL", KEY_EQUAL, NULL},
+  {"GRAVE", KEY_GRAVE, NULL},
 };
 
 static int key_code(const char *name, const char **mod) {

@@ -59,7 +59,16 @@ Singleton {
             // "locale" follows the language above; "24" and "12" override it.
             // The shell could only ever show 24 hours before this, whatever
             // the locale said - the date followed it, the time did not.
-            "clockFormat": "locale"
+            "clockFormat": "locale",
+            // The order of day and month in every date (DateFormat.js): "locale"
+            // as the language writes it, or "dayMonth" / "monthDay" with the
+            // language's words. Short dates in numbers ("Mon 19.10.") where a
+            // date has little room.
+            "dateOrder": "locale",
+            "shortDateNumbers": false,
+            // What "auto" follows: "clock" (dark from 19:00 to 07:00) or "sun"
+            // (sunset to sunrise at the weather place, SunService).
+            "autoTheme": "clock"
         },
         // Own opacity per window group (PanelStyleService); -1 uses appearance.panelOpacity.
         "panelOpacity": {
@@ -83,6 +92,12 @@ Singleton {
             "clockIndicators": true,
             "osd": true,
             "autoProfile": false,
+            // Where "Choose the mode automatically" goes (AutoModeLogic.js): at
+            // the desk, on the road, and on the road off the charger ("" = as
+            // on the road). Shipped as the switching always behaved.
+            "autoModeDesk": "docked",
+            "autoModeRoad": "laptop",
+            "autoModeBattery": "",
             // The control center's tiles became a grid; this remembers that an
             // existing panel was given the sizes its tiles start at, so it
             // happens once and never undoes a size the user then chose.
@@ -104,7 +119,16 @@ Singleton {
             // The launcher's own size, pulled from the grip on its corner.
             // 0 means "never dragged" and it takes the width it is designed at.
             "launcherWidth": 0,
-            "launcherHeight": 0
+            "launcherHeight": 0,
+            // The dashboard's world clock (shell/dashboard/WorldClockCard.qml):
+            // its places as tz names, one comma-string ("Europe/London,
+            // Asia/Tokyo") because the file cannot hold a list. The machine's
+            // (ProfileLogic.GLOBAL_SETTINGS), like the weather's place.
+            "worldClocks": "",
+            // Bars that move with the music in the open media popup (cava,
+            // VisualizerLogic). Off: a surface redrawn on every frame is a
+            // look, not a fix, and the user turns it on.
+            "mediaVisualizer": false
         },
         // Desktop mode "notch" (shell/notch): exclusive zone, fullscreen and hover.
         "notch": {
@@ -210,7 +234,12 @@ Singleton {
             // folder, the favourites, or a list the user picks. It replaced a
             // boolean that made favourites do two jobs at once.
             "slideshowSource": "all",
-            "slideshowFolder": ""
+            "slideshowFolder": "",
+            // A wallpaper for each theme (WallpaperLogic.themePath): off, and a
+            // side without a picture shows `path`.
+            "themePair": false,
+            "lightPath": "",
+            "darkPath": ""
         },
         "login": {
             // Which wallpaper the greeter shows. Empty means "whatever the
@@ -226,10 +255,34 @@ Singleton {
             "popupTimeoutMs": 6000,
             "suppressFullscreen": true,
             "suppressGames": true,
+            // While a screen, a window or a region is shared through the
+            // portal (NotificationService.screenShares): popups wait in the
+            // history, an urgent one shows its title without its text.
+            "suppressSharing": true,
+            // Window classes whose fullscreen window lets popups through
+            // (QuietLogic.classList): a Citrix desktop is a workplace.
+            "fullscreenExceptions": "Wfica",
+            // A fullscreen window on the focused screen sends the popups to
+            // a screen without one instead of holding them back.
+            "fullscreenElsewhere": true,
+            // One notice when the quiet ends: how many came meanwhile.
+            "missedSummary": false,
+            // A short sound for a popup that is shown (pw-play, the
+            // freedesktop sound theme).
+            "sounds": false,
+            // The newest 50 kept in a file only the user can read, across a
+            // restart; the machine's (ProfileLogic.GLOBAL_SETTINGS).
+            "keepHistory": false,
             "dndTomorrowHour": 6
         },
         "emoji": {
             "tone": 0
+        },
+        // A timer's or a Focus session's end rings (TimerService: the
+        // freedesktop alarm clock through pw-play), in Do Not Disturb too -
+        // the user started it.
+        "timer": {
+            "sound": true
         },
         // The short tour on the first start; closing it at any point sets this.
         "onboarding": {
@@ -243,7 +296,18 @@ Singleton {
         // Displays).
         "display": {
             "xwaylandSharp": false,
-            "x11Scale": 0
+            "x11Scale": 0,
+            // A color filter over the whole screen (Settings > Appearance,
+            // Super+Ctrl+C; ScreenEffectsService): which one, and whether it
+            // is on. The machine's, with the displays: the eyes in front of
+            // this screen, not a profile's look.
+            "colorFilter": "grayscale",
+            "colorFilterOn": false,
+            // The external monitors' own brightness over DDC/CI (ddcutil):
+            // sliders on Settings > Displays and the brightness keys on the
+            // focused external screen. Asked once per hotplug, and only once
+            // something wants it (BrightnessService).
+            "ddc": true
         },
         "launcher": {
             // Where the app categories go is a layout question now (the
@@ -267,7 +331,20 @@ Singleton {
             // desktop entry ids (see services/launcher/Pinned.js, and the
             // reason this is the only fixed thing on a search surface).
             "pinned": "",
-            "showPinned": true
+            "showPinned": true,
+            // What a typed search lists besides apps and commands
+            // (LauncherService): open windows to switch to, the folders VS
+            // Code opened last and those under ~/git, recently used files
+            // (recently-used.xbel, read when a query asks and let go when
+            // the launcher closes) and conversions through qalc.
+            "windows": true,
+            "codeFolders": true,
+            "recentFiles": true,
+            "conversions": true,
+            // Currency conversions use the rates qalc has; on, it fetches the
+            // day's (the European Central Bank's, over the network) once a
+            // day before one. Off by default: nothing goes out on its own.
+            "exchangeRates": false
         },
         // The dock (shell/dock/Dock.qml): its own block next to the notch,
         // the bar and the widgets, in any desktop mode, and off until it is
@@ -293,11 +370,36 @@ Singleton {
             // Each dock's running apps: those of every screen ("all"), or those
             // with a window on the dock's own screen ("screen": a taskbar per
             // screen). The pins are on every dock either way.
-            "runningOn": "all"
+            "runningOn": "all",
+            // A click on the app in front: "cycle" to its next window (the
+            // dock as it was), or "minimize" it as a Windows or KDE taskbar
+            // does - the Taskbar preset's (DockLogic.clickPlan).
+            "activeClick": "cycle",
+            // Off until Settings > Dock turns them on: unread counts on the
+            // icons (a web app's from its title, else its unread
+            // notifications; dock/BadgeLogic.js), an app's windows under the
+            // pointer (shell/dock/DockPreview.qml), and the wheel over an app
+            // for its volume.
+            "badges": false,
+            "previews": false,
+            "wheelVolume": false
+        },
+        // Minimized windows (services/MinimizeService.qml): an app's own
+        // minimize button (VS Code's title bar, Citrix's toolbar) minimizes
+        // its window - those buttons did nothing under Hyprland. Per profile.
+        "windows": {
+            "minimizeRequests": true
         },
         "autostart": {
             "apps": "",
-            "system": true
+            "system": true,
+            // Settings > Apps (SessionAppsService): the work apps started once
+            // the login's wallet step is over, and the apps of a session that
+            // ended from the shell offered again by a notification at the
+            // next login. Both off: neither is a fix, and the offer is a
+            // notification nobody asked for.
+            "workAtLogin": false,
+            "reopen": false
         },
         "lock": {
             "showAvatar": true,
@@ -366,6 +468,16 @@ Singleton {
             "forgetAtLogout": false,
             "maxAgeHours": 0
         },
+        // The three command widgets ("Command 1" to "Command 3" in the
+        // pickers; Settings > Widgets; services/widgets/CommandLogic.js): a
+        // command whose first line a widget shows, how often it runs in
+        // seconds, a glyph, a name and a command for a click. The machine's,
+        // and kept from `settings get` (a command can hold a token).
+        "commandWidgets": {
+            "one": { "label": "", "icon": "", "command": "", "interval": 60, "click": "" },
+            "two": { "label": "", "icon": "", "command": "", "interval": 60, "click": "" },
+            "three": { "label": "", "icon": "", "command": "", "interval": 60, "click": "" }
+        },
         "recording": {
             "audio": "off",
             "fps": 30,
@@ -373,7 +485,36 @@ Singleton {
         },
         "drives": {
             "notify": true,
-            "autoOpen": false
+            "autoOpen": false,
+            // Settings > Desktop extras "Warn when it is almost full": the root
+            // and /home every 15 minutes (DrivesService), one notice per
+            // filesystem while it stays low.
+            "lowSpace": true
+        },
+        // Captive portals (NetworkService, PortalLogic): one notification per
+        // network that asks to sign in first. The network popup's button is
+        // there either way.
+        "network": {
+            "portalNotify": true
+        },
+        // Low batteries of connected Bluetooth devices (BluetoothService,
+        // DeviceBatteryLogic): a notice at 15 % and again at 5 %.
+        "bluetooth": {
+            "batteryWarning": true
+        },
+        // The microphone key mutes every microphone and, pressed again, turns
+        // back on the ones it muted (AudioService.micKey); false: the default
+        // input only, as before.
+        "audio": {
+            "micKeyAll": true
+        },
+        // Short messages on the OSD for state changes (shell/osd/Osd.qml),
+        // each off unless turned on in Settings > Desktop.
+        "toasts": {
+            "output": false,
+            "charger": false,
+            "vpn": false,
+            "capsLock": false
         },
         "weather": {
             "enabled": true,
@@ -407,7 +548,12 @@ Singleton {
             // line in settings.json.
             "browserScroll": true,
             "tapToClick": true,
-            "disableWhileTyping": true
+            "disableWhileTyping": true,
+            // Every key to a Citrix session in full screen while it has the
+            // focus, back when it leaves full screen or another window comes
+            // to the front (Settings > Shortcuts > Keyboard passthrough;
+            // HyprlandService). Off: Super+Esc hands them over by hand.
+            "passthroughCitrix": false
         },
         // Touchpad gestures (GestureService, services/input/GestureLogic.js).
         "gestures": {
@@ -434,6 +580,12 @@ Singleton {
             "lockBeforeSleep": true,
             "lowBatteryWarning": true,
             "lowBatteryLevel": 20,
+            // How a quick Stay awake ends (IdleService): the last way chosen
+            // from a list, "1h", "unplug" or "manual".
+            "stayAwakeLimit": "1h",
+            // "Charge to 100% once" is under way: the limit comes back when the
+            // battery is full or the charger is unplugged (PowerService).
+            "chargeOnce": false,
             // Per power source (services/power/PowerSourceLogic.js); files
             // from before the split are migrated when they load.
             "battery": {
@@ -444,7 +596,10 @@ Singleton {
                 "suspendMinutes": 15,
                 "dimBeforeScreenOff": true,
                 "lidAction": "suspend",
-                "profile": "powerSaver"
+                "profile": "powerSaver",
+                // "light": no blur and reduced motion while this set applies
+                // (services/power/EffectsLogic.js); off until measured.
+                "effects": "keep"
             },
             "ac": {
                 "screenOffMinutes": 10,
@@ -453,7 +608,8 @@ Singleton {
                 "suspendMinutes": 0,
                 "dimBeforeScreenOff": true,
                 "lidAction": "suspend",
-                "profile": "balanced"
+                "profile": "balanced",
+                "effects": "keep"
             }
         },
         "calendar": {
@@ -471,7 +627,31 @@ Singleton {
             // The shell's own update, installed by the automatic check when it
             // finds the checkout behind its remote and clean. Off: an update
             // restarts the shell, and that is not a thing to do unasked.
-            "shellAuto": false
+            "shellAuto": false,
+            // What the first start after a Quickshell or Hyprland update says
+            // (scripts/updates-after-start.py reads it from this file): "off",
+            // "problems" (only when its first minute found some) or "always".
+            "coreCheck": "problems",
+            // One quiet notice with the commit subjects when the shell starts
+            // from a newer checkout. Off: a notice nobody asked for.
+            "whatsNew": false
+        },
+        // The assistant panel (services/AssistantService.qml): Ollama on this
+        // computer - an address anywhere else is refused before curl starts
+        // (AssistantLogic.endpoint) -, the model ("" for the first Ollama
+        // lists) and the conversation in a file of the user's own only with
+        // keepHistory, which is off: nothing is kept unasked.
+        "assistant": {
+            "url": "http://127.0.0.1:11434",
+            "model": "",
+            "keepHistory": false
+        },
+        // The shell's share picker for xdg-desktop-portal-hyprland
+        // (scripts/share-picker.sh). It is used once the portal's own
+        // configuration names the script, which is the user's step; off, the
+        // portal's own picker opens every time.
+        "sharePicker": {
+            "enabled": true
         }
     })
 
@@ -483,6 +663,12 @@ Singleton {
     readonly property string fontFamily: value("appearance.fontFamily")
     readonly property string monoFontFamily: value("appearance.monoFontFamily")
     readonly property string animationMode: value("appearance.animationMode")
+    // Lighter effects on battery (Settings > Power): PowerService sets this
+    // while the power source's set asks for them, and Animations and
+    // AppearanceService run reduced motion and no blur for it
+    // (services/power/EffectsLogic.js). A value of the running shell, never
+    // written to the file: animationMode and blurStrength stay the user's.
+    property bool lightEffects: false
     // Named here rather than read through `value()` at the point of use,
     // because `AppearanceService` pushes Hyprland's options on the *signals*
     // of these properties: a setting with no property of its own changes
@@ -520,10 +706,19 @@ Singleton {
         if (mode === "24") return false
         return /a/i.test(locale.timeFormat(Locale.ShortFormat))
     }
+    // The date's order and its short form, passed to DateFormat.date by every
+    // caller beside `locale` (strings and a bool: an equal value notifies no one).
+    readonly property string dateOrder: value("appearance.dateOrder")
+    readonly property bool shortDateNumbers: value("appearance.shortDateNumbers") === true
 
     readonly property var allowed: ({
         "appearance.theme": ["dark", "light", "auto"],
         "appearance.clockFormat": ["locale", "24", "12"],
+        "appearance.dateOrder": ["locale", "dayMonth", "monthDay"],
+        "appearance.autoTheme": ["clock", "sun"],
+        "desktop.autoModeDesk": ["minimal", "work", "gaming", "laptop", "docked"],
+        "desktop.autoModeRoad": ["minimal", "work", "gaming", "laptop", "docked"],
+        "desktop.autoModeBattery": ["", "minimal", "work", "gaming", "laptop", "docked"],
         "appearance.animationMode": ["full", "reduced", "off"],
         "appearance.statusColors": ["status", "accent"],
         "wallpaper.order": ["sequential", "random"],
@@ -535,7 +730,12 @@ Singleton {
         "dock.margin": [0, 4, 8, 16],
         "dock.startOpens": ["startMenu", "launcher"],
         "dock.runningOn": ["all", "screen"],
+        "dock.activeClick": ["cycle", "minimize"],
         "clipboard.maxAgeHours": [0, 1, 8, 24, 168],
+        // CommandLogic.INTERVALS.
+        "commandWidgets.one.interval": [5, 10, 30, 60, 300, 900, 3600],
+        "commandWidgets.two.interval": [5, 10, 30, 60, 300, 900, 3600],
+        "commandWidgets.three.interval": [5, 10, 30, 60, 300, 900, 3600],
         "notch.shape": ["notch", "pill"],
         "notch.clickAction": ["dashboard", "expand"],
         "notch.osdStyle": ["ring", "bar"],
@@ -557,9 +757,13 @@ Singleton {
         "power.ac.lidAction": ["suspend", "lock", "screenOff", "nothing"],
         "power.battery.profile": ["keep", "powerSaver", "balanced", "performance"],
         "power.ac.profile": ["keep", "powerSaver", "balanced", "performance"],
+        "power.battery.effects": ["keep", "light"],
+        "power.ac.effects": ["keep", "light"],
+        "power.stayAwakeLimit": ["1h", "unplug", "manual"],
         "power.lowBatteryLevel": [10, 15, 20, 25],
         "calendar.eventColor": ["accent", "calendar"],
         "updates.checkHours": [0, 6, 12, 24],
+        "updates.coreCheck": ["off", "problems", "always"],
         "recording.audio": ["off", "desktop", "desktop+mic"],
         "recording.fps": [30, 60],
         "input.accelProfile": ["adaptive", "flat"],
@@ -578,7 +782,8 @@ Singleton {
         "terminal.cursorTrail": ["off", "short", "long"],
         "launcher.searchEngine": ["duckduckgo", "google", "startpage", "wikipedia", "custom"],
         "nightLight.mode": ["off", "manual", "schedule", "sun"],
-        "nightLight.lastMode": ["manual", "schedule", "sun"]
+        "nightLight.lastMode": ["manual", "schedule", "sun"],
+        "display.colorFilter": ["grayscale", "deuteranopia", "protanopia", "tritanopia", "invert"]
     })
 
     function expandHome(path) {
@@ -689,6 +894,9 @@ Singleton {
     property string pendingText: ""
     function scheduleWrite(next) {
         if (readOnly) return
+        // The day's snapshot of the whole setup before its first write
+        // (SnapshotService: once a day, the file as it was handed on stdin).
+        SnapshotService.beforeWrite()
         pendingText = JSON.stringify(next, null, 2) + "\n"
         writeTimer.restart()
     }

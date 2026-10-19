@@ -5,7 +5,7 @@ import "../../services/settings/SettingsNavLogic.js" as N
 
 ShellRoot {
     Component.onCompleted: {
-        T.eq(N.PAGES.length, 27, "all pages listed")
+        T.eq(N.PAGES.length, 28, "all pages listed")
         T.ok(N.PAGES.every(page => typeof page.subtitle === "string" && page.subtitle.length > 0), "every page carries its own subtitle")
         T.ok(N.PAGES.every(page => !/\.$/.test(page.subtitle)), "a subtitle is a label, not a sentence")
         T.eq(N.ungroupedPages(), [], "every page is in exactly one group")
@@ -25,7 +25,9 @@ ShellRoot {
         const wifi = N.rows("wifi")
         T.eq(wifi.map(row => row.kind === "heading" ? "#" + row.key : row.id), ["#connectivity", "network"], "search hides empty groups")
         T.eq(N.rows("  WiFi ").length, 2, "search ignores case and outer spaces")
-        T.eq(N.pageIds(N.rows("akku")), ["kdeConnect", "power"], "keywords from different groups")
+        // The battery: the laptop's (Power), a phone's (KDE Connect), a headset's
+        // (Bluetooth) and the automatic mode's target on battery (Profiles).
+        T.eq(N.pageIds(N.rows("akku")), ["profiles", "bluetooth", "kdeConnect", "power"], "keywords from different groups")
         T.eq(N.pageIds(N.rows("konten")), ["accounts"], "German keyword finds the accounts page")
         T.eq(N.rows("#connectivity").length, 0, "no match gives no rows")
         T.eq(N.pageIds(N.rows("personalization")), ["appearance", "wallpaper", "lockScreen", "login"], "group title matches its pages")
@@ -55,11 +57,13 @@ ShellRoot {
         T.eq(N.pageIds(N.rows("dashboard")), ["weather", "calendar"], "the old group name still finds weather and calendar")
         // The launcher's pins are the start menu's Pinned grid too; the dock
         // keeps its own (and its Start button setting).
-        T.eq(N.pageIds(N.rows("pinned")), ["dock", "launcher"], "pinned finds both lists of pins")
+        T.eq(N.pageIds(N.rows("pinned")), ["dock", "desktop", "launcher"], "pinned finds the three lists of pins: the dock's, the clipboard's, the launcher's")
         T.eq(N.pageIds(N.rows("start menu")), ["dock", "launcher"], "the start menu: its button on the dock, its pins in the launcher")
-        T.eq(N.pageIds(N.rows("angeheftet")), ["dock", "launcher"], "German too")
-        T.eq(N.pageIds(N.rows("anheften")), ["launcher"], "the launcher's German word for pinning")
+        T.eq(N.pageIds(N.rows("angeheftet")), ["dock", "desktop", "launcher"], "German too")
+        T.eq(N.pageIds(N.rows("anheften")), ["desktop", "launcher"], "the launcher's and the clipboard's German word for pinning")
         T.eq(N.pageIds(N.rows("alacritty")), ["terminal"], "Alacritty's one process is on the Terminal page")
+        T.eq([N.pageIds(N.rows("workspace floating")), N.pageIds(N.rows("reopen")), N.pageIds(N.rows("work apps"))],
+             [["apps"], ["apps"], ["apps"]], "Settings > Apps by its sections' words")
         const sidebar = N.rows("")
         const firstOfDesktop = sidebar.findIndex(row => row.kind === "heading" && row.key === "desktop")
         T.eq([N.headingIndex(sidebar, "profiles"), N.headingIndex(sidebar, "shortcuts")], [firstOfDesktop, firstOfDesktop],

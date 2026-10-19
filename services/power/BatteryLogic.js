@@ -62,15 +62,42 @@ function message(kind, percent, remaining) {
 var TITLES = ["Battery low", "Battery very low", "Battery critically low"]
 
 // The battery's state in words (PowerService.stateLabel).
-// state: { hasBattery, full, charging, onBattery, pendingCharge }
+// state: { hasBattery, full, charging, onBattery, pendingCharge, percent,
+//          limit }
 // `charging` is UPower's Charging alone. PendingCharge on the charger is a
 // battery held at its charge threshold, which BAT0 itself reports as "Not
-// charging" - and so does Plasma.
-function stateLabel(state) {
+// charging" - and so does Plasma. With the limit known (`limit`, from
+// ChargeLimitLogic.state) it says which threshold holds it: at the top the
+// limit is reached, a little below it the battery waits for the lower one.
+// `brief` for a tile's header, where the battery's name and its percentage
+// stand beside it: "Held at 80%" for "Charge limit 80% reached", which was
+// cut to "Charge limit 80% r…" there.
+function stateLabel(state, brief) {
     const s = state || {}
     if (!s.hasBattery) return "AC power"
     if (s.full) return "Fully charged"
     if (s.charging) return "Charging"
     if (s.onBattery) return "On battery"
-    return s.pendingCharge ? "Not charging" : "Plugged in"
+    if (!s.pendingCharge) return "Plugged in"
+    const limit = s.limit || {}
+    const held = limitHold(s)
+    if (held === "reached") return brief === true ? "Held at " + limit.end + "%" : "Charge limit " + limit.end + "% reached"
+    if (held === "waiting") return (brief === true ? "Charges below " : "Charges again below ") + limit.start + "%"
+    return "Not charging"
+}
+
+// Which threshold holds a battery that waits on the charger: "reached" at
+// the limit, "waiting" between the two thresholds, "" for neither. A
+// percentage or so under the limit is the limit: the reading is rounded and
+// settles a little below the threshold it stopped at. The battery popup
+// leaves its own "Charge limit" line out while the state says it.
+function limitHold(state) {
+    const s = state || {}
+    if (!s.hasBattery || s.full || s.charging || s.onBattery || !s.pendingCharge) return ""
+    const limit = s.limit || {}
+    const percent = Number(s.percent)
+    if (limit.active !== true || !isFinite(percent)) return ""
+    if (percent >= limit.end - 1) return "reached"
+    if (limit.start > 0 && limit.start < limit.end && percent >= limit.start) return "waiting"
+    return ""
 }

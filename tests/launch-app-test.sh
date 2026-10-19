@@ -311,12 +311,15 @@ fi
 rm -f "$bin/chromium"
 stub chromium-browser
 stub xdg-settings 'echo com.brave.Browser.desktop'
+# The handler's entry is looked up (a web app's runs the browser itself,
+# below): in no data directory of the host's, which may or may not have
+# KMail's and Kate's.
 : > "$calls"
-xdg-open mailto:someone@example.org
+XDG_DATA_HOME="$sandbox/no-data" XDG_DATA_DIRS="$sandbox/no-data" xdg-open mailto:someone@example.org
 check 'grep -qE "unit=app-buchhwin-org\.kde\.kmail2-[0-9]+\.scope -- " "$calls"' "another scheme takes its own handler's name"
 printf 'x\n' > "$sandbox/doc.txt"
 : > "$calls"
-xdg-open "$sandbox/doc.txt"
+XDG_DATA_HOME="$sandbox/no-data" XDG_DATA_DIRS="$sandbox/no-data" xdg-open "$sandbox/doc.txt"
 check 'grep -qE "unit=app-buchhwin-org\.kde\.kate-[0-9]+\.scope -- " "$calls"' "a file takes the handler of its type"
 : > "$calls"
 xdg-open "$sandbox/does-not-exist"

@@ -10,9 +10,10 @@ import qs.shell.components
 import "../../services/switcher/SwitcherLogic.js" as Logic
 
 // Alt+Tab: a centred strip of windows in most-recently-used order with live
-// previews. Hyprland drives it through `switcher next/previous/confirm`; keys
-// that reach the overlay itself (Tab, arrows, Enter, Escape, releasing Alt)
-// do the same, and a click focuses a card.
+// previews, the minimized ones last and faded. Hyprland drives it through
+// `switcher next/previous/confirm`; keys that reach the overlay itself (Tab,
+// arrows, Enter, Escape, releasing Alt) do the same, and a click focuses a
+// card.
 PanelWindow {
     id: window
     readonly property bool wanted: PanelService.active === "switcher" && SwitcherService.active
@@ -201,6 +202,9 @@ PanelWindow {
                         anchors.margins: Metrics.borderWidth
                         radius: Math.max(0, frame.radius - Metrics.borderWidth)
                         color: "transparent"
+                        // A minimized window, faded: its badge says
+                        // "Minimized", and choosing it brings it back.
+                        opacity: card.modelData.minimized === true ? Effects.mutedOpacity : 1
 
                         ScreencopyView {
                             id: preview

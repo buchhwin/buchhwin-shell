@@ -3,11 +3,14 @@ import Quickshell
 import Quickshell.Io
 import QtQuick
 import "display/DisplayLogic.js" as DisplayLogic
+import "profile/AutoModeLogic.js" as AutoMode
 import "adaptive/FocusLogic.js" as FocusLogic
+import "timer/TimerLogic.js" as TimerLogic
 
-// Adaptive behaviour: accent colour from the wallpaper, automatic Laptop /
-// Docked mode when external monitors come and go, and a focus mode that
-// silences notifications and hides desktop widgets except the clock.
+// Adaptive behaviour: accent colour from the wallpaper, the automatic mode
+// when external monitors (or the charger) come and go, and a focus mode that
+// silences notifications and hides desktop widgets except the clock - open
+// ended, or as a session that ends by itself (`focusFor`).
 //
 // It switches the **mode**, never the profile: the profile is what the user
 // chose and nothing changes it on its own.
@@ -68,6 +71,15 @@ Singleton {
 
     // ---- automatic mode ----------------------------------------------------
     readonly property bool autoProfile: SettingsService.value("desktop.autoProfile")
+    // Where it goes (Settings > Profiles): at the desk, on the road, on
+    // battery - shipped Docked, Laptop, none (AutoModeLogic.js). Checked
+    // against the profile's modes only while the switching is on; off, the
+    // shipped five do, and nothing here makes LayoutService (a service test
+    // that reaches this one gets no profile laid over its settings).
+    readonly property var autoTargets: AutoMode.targets(path => SettingsService.value(path),
+                                                        autoProfile ? LayoutService.modeNames : [])
+    // The modes it picks, for the mode key's rule (ProfileLogic.cycleMode).
+    readonly property var autoOwned: AutoMode.owned(autoTargets)
     readonly property var screenNames: Quickshell.screens.map(screen => screen.name)
     // The panel counts while the lid has it switched off, too: docked with
     // the lid shut it is not among the screens, and judged by those alone
@@ -76,7 +88,11 @@ Singleton {
     readonly property bool hasInternal: DisplayLogic.hasInternalPanel(screenNames, DisplayService.internalName)
     readonly property int externalCount: DisplayLogic.externalCount(screenNames, DisplayService.internalName)
     // Only laptops switch; desktops without an internal panel keep their mode.
-    readonly property string suggestedMode: DisplayLogic.suggestedMode(screenNames, DisplayService.internalName)
+    // The power state is read only with a battery target: without one the
+    // switching never asks.
+    readonly property string suggestedMode: AutoMode.suggested(DisplayLogic.suggestedMode(screenNames, DisplayService.internalName),
+                                                               AutoMode.watchesBattery(autoTargets) && PowerService.onBattery,
+                                                               autoTargets)
 
     onSuggestedModeChanged: modeDelay.restart()
     onAutoProfileChanged: if (autoProfile) modeDelay.restart()
@@ -99,8 +115,13 @@ Singleton {
     property bool focusActive: false
 
     function setFocus(active) {
+        // Ending Focus by hand ends its session too: the countdown would
+        // ring for a Focus that is over.
+        if (!active) TimerService.cancel("focus")
         if (active === focusActive) return
-        const effects = (LayoutService.templates[LayoutService.activeMode] || {}).effects || {}
+        // The mode's effects with its own Do Not Disturb choice in them: Focus
+        // hands it back to a mode that turns it on (LayoutService.modeDnd).
+        const effects = LayoutService.modeDndEffects(LayoutService.activeMode)
         const change = FocusLogic.dndOnFocus(active, NotificationService.dndBy, NotificationService.dndActive,
                                              LayoutService.activeMode, effects)
         if (change) NotificationService.setDnd(change.mode, change.by)
@@ -122,7 +143,56 @@ Singleton {
     function restoreFocus() {
         if (!restoresFocus || focusChecked || !NotificationService.stateLoaded) return
         focusChecked = true
-        if (FocusLogic.focusRestored(NotificationService.dndBy, NotificationService.dndActive)) focusActive = true
+        const step = FocusLogic.restartStep(NotificationService.dndBy, NotificationService.dndActive, sessionEnded)
+        sessionEnded = false
+        if (step !== "off") focusActive = true
+        if (step === "end") setFocus(false)
+        checkSession()
+    }
+
+    // ---- a Focus session ----------------------------------------------------------
+    // Focus for a while (FocusLogic): Focus on, and a countdown of its own
+    // beside any timer - TimerService's "focus" run - whose end turns Focus
+    // off and rings. From the launcher ("Focus: 25 minutes") or IPC
+    // (`buchhwin focus start 25m`). Stopping the countdown (the chip, `timer
+    // stop`) ends Focus; ending Focus drops the countdown. A Focus already on
+    // gets the end; a session already running a new one.
+    readonly property real focusEndsAt: focusActive ? TimerService.endOf("focus") : 0
+    readonly property bool focusSession: focusEndsAt > 0
+    readonly property string focusLabel: FocusLogic.focusLabel(focusActive, focusEndsAt, SettingsService.twelveHourClock)
+
+    function focusFor(seconds) {
+        const s = Math.round(Number(seconds) || 0)
+        if (s <= 0 || s > TimerLogic.MAX_SECONDS) return false
+        setFocus(true)
+        return TimerService.start(s, "focus")
+    }
+    // A typed duration ("25m", "1h", "45"), as the launcher and IPC take it.
+    function focusForText(text) { return focusFor(TimerLogic.parseDuration(text)) }
+
+    // A session that ran out before Focus was read back after a restart
+    // (TimerService rings an overdue run as it starts): `restoreFocus` ends
+    // that Focus instead of bringing it back for good.
+    property bool sessionEnded: false
+    function sessionRanOut() {
+        if (restoresFocus && !focusChecked) {
+            sessionEnded = true
+            return
+        }
+        setFocus(false)
+    }
+    // A countdown restored from timer.json whose Focus did not come back
+    // (its Do Not Disturb was changed before the restart) is dropped; asked
+    // once both are known.
+    function checkSession() {
+        if ((restoresFocus && !focusChecked) || !TimerService.loaded) return
+        if (FocusLogic.sessionAfterRestart(focusActive, TimerService.has("focus")) === "drop") TimerService.cancel("focus")
+    }
+    Connections {
+        target: TimerService
+        function onEnded(kind) { if (kind === "focus") root.sessionRanOut() }
+        function onStopped(kind) { if (kind === "focus") root.setFocus(false) }
+        function onLoadedChanged() { root.checkSession() }
     }
     Connections {
         target: root.restoresFocus ? NotificationService : null

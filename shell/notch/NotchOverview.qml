@@ -82,6 +82,7 @@ Item {
         network: { icon: NetworkService.icon, connected: NetworkService.connected },
         bluetooth: { available: BluetoothService.available, icon: BluetoothService.icon, connected: BluetoothService.connected.length > 0 },
         dnd: NotificationService.dndActive,
+        stayAwake: { on: IdleService.stayAwake, icon: IdleService.stayAwakeIcon },
         volume: { icon: AudioService.volumeIcon(AudioService.volume, AudioService.muted), muted: AudioService.muted }
     })
 
@@ -292,7 +293,7 @@ Item {
                 Layout.alignment: Qt.AlignVCenter
                 visible: !clockBlock.oneRow || clockBlock.header
                 text: DateFormat.date(root.now, SettingsService.locale,
-                    clockBlock.columns >= 2 && !clockBlock.header ? "long" : "short")
+                    clockBlock.columns >= 2 && !clockBlock.header ? "long" : "short", SettingsService.dateOrder, SettingsService.shortDateNumbers)
                 muted: true
                 font.pixelSize: Typography.smallSize
             }
@@ -510,7 +511,7 @@ Item {
                     id: recordingRow
                     anchors.centerIn: parent
                     spacing: Metrics.spaceXs
-                    NotchGlyph { text: stopMouse.containsMouse ? "󰓛" : "󰑊"; size: Metrics.iconXs; color: Colors.recordingText }
+                    NotchGlyph { text: stopMouse.containsMouse ? Icons.stop : "󰑊"; size: Metrics.iconXs; color: Colors.recordingText }
                     NotchText {
                         text: RecordingService.busy === "stopping" ? "Saving …" : RecordingService.elapsedText
                         color: Colors.recordingText

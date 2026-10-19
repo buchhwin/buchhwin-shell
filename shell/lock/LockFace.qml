@@ -367,7 +367,7 @@ Item {
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight
-                text: DateFormat.date(clock.date, SettingsService.locale, gridW >= 2 ? "long" : "short")
+                text: DateFormat.date(clock.date, SettingsService.locale, gridW >= 2 ? "long" : "short", SettingsService.dateOrder, SettingsService.shortDateNumbers)
                 font.pixelSize: Typography.lockDateSize
                 font.weight: Typography.semibold
             }

@@ -75,6 +75,8 @@ ShellRoot {
         T.ok(E.refuse("noBindings").message.indexOf("Akonadi Python bindings") >= 0
              && E.refuse("noBindings").message.indexOf("Merkuro") >= 0,
              "the missing bindings say what is missing and where to edit instead")
+        T.eq(E.refuse("noBindings").message.indexOf("package"), -1,
+             "without saying the distribution does not package them: Fedora does, they are only missing there")
 
         T.eq(E.previewMatch({ title: "Lunch break", start: at(10, 12), sampleLocation: "Cafeteria" }).location,
              "Cafeteria", "preview sample")

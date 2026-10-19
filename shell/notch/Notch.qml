@@ -107,8 +107,16 @@ Variants {
             : null
         function dayPage(now) {
             const next = CalendarService.remainingToday(now).find(event => !event.allDay)
-            return { title: DateFormat.date(now, SettingsService.locale, "long"),
-                     subtitle: next ? next.title + " \u00b7 " + CalendarService.formatRange(next) : "Nothing else today" }
+            // A meeting about to start or running (MeetingLogic.soonJoin): the
+            // page says Join, and a click on it joins (below).
+            const meeting = CalendarService.nextJoin(now)
+            const found = meeting ? CalendarService.meetingFor(meeting) : null
+            const page = { title: DateFormat.date(now, SettingsService.locale, "long", SettingsService.dateOrder, SettingsService.shortDateNumbers),
+                           subtitle: found ? found.label + " \u00b7 " + meeting.title + " \u00b7 " + CalendarService.formatRange(meeting)
+                               : next ? next.title + " \u00b7 " + CalendarService.formatRange(next) : "Nothing else today",
+                           join: meeting }
+            if (found) page.icon = Icons.join
+            return page
         }
         SystemClock { id: pageClock; precision: SystemClock.Minutes; enabled: window.page < 0 && WallClock.ticking }
         readonly property CalendarDemand calendarDemand: CalendarDemand { active: window.page < 0 }
@@ -623,6 +631,9 @@ Variants {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: mouse => {
                     if (mouse.button === Qt.LeftButton && window.showingNotification) window.toggleDisplay()
+                    else if (mouse.button === Qt.LeftButton && window.paging && window.page < 0
+                             && window.pageContent && window.pageContent.join)
+                        CalendarService.join(window.pageContent.join)
                     else if (mouse.button === Qt.LeftButton && window.paging)
                         window.openPanel(window.page > 0 ? "mediaPopup" : "dashboard")
                     // A notification in the notch goes on a right or middle

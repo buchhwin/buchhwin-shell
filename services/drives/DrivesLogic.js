@@ -458,3 +458,110 @@ function autoOpenAction(autoOpen, openable, screenLocked) {
     if (!autoOpen || !openable) return "none"
     return screenLocked ? "wait" : "open"
 }
+
+// ---- the system disk filling up ------------------------------------------------------
+// Snapshots, caches and recordings fill a disk without a word, and btrfs (the
+// root and /home here) misbehaves near full. DrivesService asks `df` for the
+// root and /home every quarter of an hour (spaceCommand) and warns once per
+// filesystem while it stays low. One process every 15 minutes rather than a
+// resident helper: drives.py is no longer resident, and statvfs needs one.
+// btrfs's own df under-reports what snapshots hold, so this is a warning and
+// never more.
+var SPACE_INTERVAL_MS = 15 * 60000
+// The first look a few minutes after the start, not in the start's rush.
+var SPACE_FIRST_MS = 3 * 60000
+var GIB = 1024 * 1024 * 1024
+// Low below a tenth of the disk, but never more than 20 GiB (a tenth of a
+// 2 TB disk is still a lot of room) and never less than 5 GiB (a tenth of a
+// small root is a few updates) - nor more than a quarter of a tiny one.
+var SPACE_FRACTION = 0.10
+var SPACE_MAX = 20 * GIB
+var SPACE_MIN = 5 * GIB
+// Warned once, it warns again only after the space has come back past the
+// limit by this much: a disk that hovers around the line says so once.
+var SPACE_REARM = 1.2
+var SPACE_MOUNTS = ["/", "/home"]
+
+// One df for both; with --output its columns are fixed, and every number is
+// in bytes (-B1). A mount that is not there (no /home of its own) is the
+// filesystem it lives on, which the dedupe in parseSpace folds away.
+function spaceCommand() {
+    return ["df", "-B1", "--output=source,target,avail,size"].concat(SPACE_MOUNTS)
+}
+
+// df's lines → [{ source, mounts: [...], free, size }], one entry per
+// filesystem (/ and /home on one btrfs device are one disk, warned once).
+// The header and anything that is not four columns ending in numbers are
+// skipped; a mount point with spaces keeps them (source and the numbers are
+// the outer columns).
+function parseSpace(text) {
+    const result = []
+    for (const line of String(text || "").split("\n")) {
+        const match = /^(\S+)\s+(.+?)\s+(\d+)\s+(\d+)\s*$/.exec(line)
+        if (!match) continue
+        const free = Number(match[3])
+        const size = Number(match[4])
+        if (!isFinite(free) || !isFinite(size) || size <= 0) continue
+        const known = result.find(item => item.source === match[1])
+        if (known) {
+            if (known.mounts.indexOf(match[2]) < 0) known.mounts.push(match[2])
+            continue
+        }
+        result.push({ source: match[1], mounts: [match[2]], free: free, size: size })
+    }
+    return result
+}
+
+// The free bytes below which a filesystem of this size is low.
+function spaceLimit(size) {
+    const value = Number(size) || 0
+    if (value <= 0) return 0
+    return Math.min(Math.max(Math.min(value * SPACE_FRACTION, SPACE_MAX), SPACE_MIN), value * 0.25)
+}
+
+function spaceLow(entry) {
+    return !!entry && entry.free < spaceLimit(entry.size)
+}
+
+// One look → { warn: [entries to tell about now], warned: { source: true } }.
+// A filesystem already told about stays quiet until it has room again
+// (SPACE_REARM above the limit), then the next drop is news again.
+function spaceStep(entries, warned) {
+    const next = {}
+    const warn = []
+    for (const entry of entries || []) {
+        const was = !!(warned && warned[entry.source])
+        if (spaceLow(entry)) {
+            next[entry.source] = true
+            if (!was) warn.push(entry)
+        } else if (was && entry.free < spaceLimit(entry.size) * SPACE_REARM) {
+            next[entry.source] = true
+        }
+    }
+    return { warn: warn, warned: next }
+}
+
+function spacePercent(entry) {
+    if (!entry || !(entry.size > 0)) return 0
+    return Math.max(0, Math.min(100, Math.round(entry.free / entry.size * 100)))
+}
+
+// "/" and "/home" on one disk: "/ and /home".
+function mountsText(mounts) {
+    const list = (mounts || []).filter(item => typeof item === "string" && item.length)
+    if (list.length <= 1) return list[0] || ""
+    return list.slice(0, -1).join(", ") + " and " + list[list.length - 1]
+}
+
+function spaceTitle(entry) {
+    return entry && entry.free < GIB ? "Disk full" : "Disk almost full"
+}
+
+// "Only 4.2 GB left on / and /home (2%). Snapshots, caches and recordings
+// are the usual places to look."
+function spaceBody(entry) {
+    if (!entry) return ""
+    const left = formatSize(entry.free) || "0 B"
+    return "Only " + left + " left on " + mountsText(entry.mounts) + " (" + spacePercent(entry) + "%). "
+        + "Snapshots, caches and recordings are the usual places to look."
+}

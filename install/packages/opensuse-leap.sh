@@ -31,6 +31,8 @@ packages=(
   kitty zsh starship fastfetch
   # the backends the shell drives
   brightnessctl wireplumber pipewire-tools playerctl NetworkManager
+  # the alarm clock a timer rings with, and the notification sounds (pw-play)
+  sound-theme-freedesktop
   plocate jq curl grim slurp swappy wl-clipboard gammastep
   # xclip: reads what an X11 program (Citrix) copied, for the clipboard
   # bridge (scripts/x11-clipboard-bridge.py); in Leap 16.0's repo-oss

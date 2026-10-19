@@ -43,6 +43,9 @@ Singleton {
         releaseWorkspaceRule: Commands.releaseWorkspaceRule, keepWorkspaceRule: Commands.keepWorkspaceRule,
         withDispatch: Commands.withDispatch, releaseRules: Commands.releaseRules,
         moveWorkspaceToMonitor: Commands.moveWorkspaceToMonitor,
+        moveActive: Commands.moveActive, toggleFloating: Commands.toggleFloating, togglePin: Commands.togglePin,
+        resizeExact: Commands.resizeExact, moveExact: Commands.moveExact, toggleSpecial: Commands.toggleSpecial,
+        submap: Commands.submap,
         closeWindow: Commands.closeWindow, dpms: Commands.dpms, exit: Commands.exit,
         bindExec: Commands.bindExec, unbind: Commands.unbind, gestures: Commands.gestures
     })

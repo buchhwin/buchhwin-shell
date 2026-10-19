@@ -15,8 +15,8 @@
 // a profile does carry - a file name says something about whose machine it is.
 // The login screen's picture is one of those paths, as profile-export.py
 // treats it: `settings get login` handed it out whole.
-var PRIVATE_SETTINGS = ["wallpaper.path", "wallpaper.folder", "wallpaper.slideshowFolder",
-                        "recording.folder", "launcher.searchUrl", "login.wallpaper"]
+var PRIVATE_SETTINGS = ["wallpaper.path", "wallpaper.lightPath", "wallpaper.darkPath", "wallpaper.folder",
+                        "wallpaper.slideshowFolder", "recording.folder", "launcher.searchUrl", "login.wallpaper"]
 
 // Whether `settings get` keeps a path to itself: one of those settings, a
 // key inside one, or a group that holds one ("weather" holds the place, ""

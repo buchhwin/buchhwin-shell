@@ -160,6 +160,8 @@ printf '== Session actions\n'
 "$project_dir/tests/shell-update-test.sh"
 "$project_dir/tests/updates-check-test.sh"
 "$project_dir/tests/screenshot-test.sh"
+"$project_dir/tests/share-picker-test.sh"
+"$project_dir/tests/restore-minimized-test.sh"
 "$project_dir/tests/record-test.sh"
 
 printf '== Lid installers\n'

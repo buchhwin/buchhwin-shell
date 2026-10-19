@@ -7,6 +7,8 @@ import "network/WireguardLogic.js" as WireguardLogic
 import "network/ScanLogic.js" as ScanLogic
 import "network/SignalLogic.js" as Signal
 import "network/VpnLogic.js" as VpnLogic
+import "network/PortalLogic.js" as Portal
+import "network/ShareLogic.js" as Share
 
 // Wi-Fi through Quickshell.Networking (NetworkManager). VPN connections and
 // addresses come from nmcli, refreshed only when `nmcli monitor` reports a
@@ -35,6 +37,9 @@ Singleton {
     readonly property bool connected: current !== null || wiredConnected
     property bool wiredConnected: false
     property var connections: []       // [{ name, uuid, type, active, device }]
+    // Whether nmcli's list has been read once: before, an empty list is not
+    // "no VPN" (the OSD's VPN message waits for it).
+    property bool connectionsRead: false
     readonly property var vpns: connections.filter(item => item.type === "vpn" || item.type === "wireguard")
     readonly property var activeVpns: vpns.filter(item => item.active)
     property string address: ""
@@ -58,7 +63,8 @@ Singleton {
     readonly property bool limitedNow: connected && Signal.limited(connectivity)
     property real limitedSince: -1
     property bool limited: false
-    readonly property string note: limited ? Signal.note(connectivity) : ""
+    // A portal's preview (IPC) says what a real one says.
+    readonly property string note: portalPreview ? Signal.note("portal") : limited ? Signal.note(connectivity) : ""
     function settleLimited() {
         const now = Date.now()
         // A clock set back counts from now.
@@ -107,6 +113,151 @@ Singleton {
     readonly property string icon: !wifiUsable && !wiredConnected ? "󰤮"
         : wiredConnected && !current ? "󰈀"
         : wifiIcon
+
+    // ---- captive portals (PortalLogic) ---------------------------------------
+    // A hotel's, a train's or a guest network's sign-in page. The way there is
+    // a plain http address the portal answers in its place - NetworkManager's
+    // own check address, which is how it found the portal - opened in the
+    // default browser on a click; the shell fetches nothing itself, and no
+    // window opens without one. `portalPreview` shows the button and the
+    // line without a portal (IPC `network previewPortal`, screenshots); a
+    // click then opens nothing.
+    property bool portalPreview: false
+    readonly property bool signInNeeded: portalPreview || Portal.signInNeeded(connectivity, limited)
+    readonly property string portalName: portalPreview ? "Example network"
+        : Portal.networkName(current ? current.name : "", wiredConnected)
+
+    function openPortal() {
+        PanelService.close()
+        if (portalPreview) {
+            console.info("buchhwin-shell: network: sign-in page (preview, nothing opened)")
+            return
+        }
+        if (!portalUri.running) portalUri.running = true
+    }
+    // The check address is asked for at the click, not kept: it is
+    // NetworkManager's setting, read once per sign-in. Without an answer (no
+    // check configured, busctl missing) the fallback page opens.
+    Process {
+        id: portalUri
+        stderr: ErrorLog { label: "NetworkService.portalUri" }
+        command: ["busctl", "--system", "--auto-start=no", "get-property", "org.freedesktop.NetworkManager",
+                  "/org/freedesktop/NetworkManager", "org.freedesktop.NetworkManager", "ConnectivityCheckUri"]
+        stdout: StdioCollector {
+            onStreamFinished: Quickshell.execDetached([Paths.script("launch-default.sh"), "browser",
+                                                       Portal.signInUrl(Portal.parseUri(text))])
+        }
+    }
+
+    // One notification per network, once its portal has held for the settle
+    // time; again only after the network reached the internet in between
+    // (signed in, and the portal back the next day) and the cooldown has
+    // passed, so a flap of the check or of the Wi-Fi never notifies twice
+    // (PortalLogic.notifyStep). Its "Sign in" does what the button does.
+    // Only in the real session: a nested shell's notify-send reaches the
+    // host's notification server.
+    readonly property bool notifyAllowed: AppearanceService.realSession && Quickshell.env("BUCHHWIN_NESTED") !== "1"
+    readonly property bool portalNotify: SettingsService.value("network.portalNotify") !== false
+    property var portalState: ({ notified: {} })
+    // The title of the notice that is out, so it can go once the internet
+    // is back.
+    property string portalNoticeTitle: ""
+    readonly property string portalInput: [Portal.connectionKey(current ? current.name : "", wiredConnected),
+                                           Portal.signInNeeded(connectivity, limited), connectivity, portalNotify].join("|")
+    onPortalInputChanged: portalCheck.restart()
+    Timer { id: portalCheck; interval: 500; onTriggered: root.checkPortal() }
+    function checkPortal() {
+        const step = Portal.notifyStep(portalState, {
+            key: Portal.connectionKey(current ? current.name : "", wiredConnected),
+            portal: Portal.signInNeeded(connectivity, limited), full: connectivity === "full",
+            now: Date.now(), enabled: portalNotify && notifyAllowed
+        })
+        portalState = step.state
+        if (step.dismiss) dismissPortalNotice()
+        if (!step.notify) return
+        const text = Portal.notice(Portal.networkName(current ? current.name : "", wiredConnected))
+        dismissPortalNotice()
+        portalNoticeTitle = text.title
+        portalNotice.createObject(root, {
+            command: Paths.bound(["timeout", "10m", "notify-send", "--app-name=Network", "--icon=" + text.icon,
+                                  "--action=signin=Sign in", "--", text.title, text.body])
+        })
+    }
+    function dismissPortalNotice() {
+        if (!portalNoticeTitle.length) return
+        const title = portalNoticeTitle
+        portalNoticeTitle = ""
+        const list = NotificationService.history
+        for (let i = list.length - 1; i >= 0; --i) {
+            const item = list[i]
+            if (item && item.appName === "Network" && item.summary === title) item.dismiss()
+        }
+    }
+    // notify-send waits for the answer until its notice closes; ten minutes
+    // is time enough to click, and the shell's history keeps the notice
+    // after that with its button doing nothing (DrivesService's way).
+    Component {
+        id: portalNotice
+        Process {
+            id: noticeRun
+            running: true
+            stderr: ErrorLog { label: "NetworkService.portalNotice" }
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    if (text.trim() === "signin") root.openPortal()
+                    noticeRun.destroy()
+                }
+            }
+        }
+    }
+
+    // ---- network drives (ShareLogic) -------------------------------------------
+    // The automount points and the mounted network shares, for the VPN popup:
+    // read from /proc/self/mountinfo and from nothing else. A path under an
+    // automount is never listed, tested or opened by the shell while no VPN is
+    // up - touching one with its server out of reach starts a mount that hangs
+    // the caller, and a few such tries leave the automount failed until an
+    // administrator resets it. Read when a view opens and on each
+    // NetworkManager change while one is open; nothing otherwise.
+    property var shares: []
+    property bool sharesRead: false
+    property int shareViewers: 0
+    readonly property bool vpnUp: activeVpns.length > 0
+    readonly property var sharesSummary: Share.summary(shares, vpnUp)
+    function watchShares(enabled) {
+        shareViewers = ScanLogic.scanViewers(shareViewers, enabled)
+        if (enabled) readShares()
+    }
+    function readShares() {
+        if (sharesProc.running) sharesQueued = true
+        else sharesProc.running = true
+    }
+    property bool sharesQueued: false
+    function shareStatus(share) { return Share.status(share) }
+    function shareOpenable(share) { return Share.openable(share, vpnUp) }
+    // The file manager at the drive, which mounts it: only with a VPN up.
+    function openShare(share) {
+        if (!Share.openable(share, vpnUp)) return
+        Quickshell.execDetached([Paths.script("launch-default.sh"), "files", share.point])
+        PanelService.close()
+    }
+    Process {
+        id: sharesProc
+        stderr: ErrorLog { label: "NetworkService.sharesProc" }
+        command: ["cat", "/proc/self/mountinfo"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const next = Share.shares(Share.parseMountinfo(text))
+                if (JSON.stringify(next) !== JSON.stringify(root.shares)) root.shares = next
+                root.sharesRead = true
+            }
+        }
+        onExited: {
+            if (!root.sharesQueued) return
+            root.sharesQueued = false
+            Qt.callLater(root.readShares)
+        }
+    }
 
     // ---- secured networks and hotspot (scripts/network-helper.py) -----------
     // Secrets go to the helper on stdin, never as process arguments.
@@ -495,6 +646,10 @@ Singleton {
                     root.connections = parsed.connections
                 root.hotspotActive = parsed.hotspot
                 root.wiredConnected = parsed.wired
+                root.connectionsRead = true
+                // A tunnel up or down changes what the drives' list says
+                // and, mounted or unmounted after it, what it lists.
+                if (root.shareViewers > 0) root.readShares()
                 // The address only for a view that shows it; the device is
                 // kept for the next one that opens (setScanning).
                 if (root.viewOpen) root.readAddress(parsed.device)

@@ -17,10 +17,20 @@
 // enum, which a pragma library cannot reach.
 //
 // The forms:
-//   "long"  Monday, October 19
-//   "short" Mon, Oct 19
-//   "day"   October 19 (no weekday)
-//   "year"  Monday, October 19, 2026 (the locale's long date as it is)
+//   "long"    Monday, October 19
+//   "short"   Mon, Oct 19
+//   "day"     October 19 (no weekday)
+//   "year"    Monday, October 19, 2026 (the locale's long date as it is)
+//   "numeric" 10/19, 19/10 or 19.10. (a cell with no room for a month's name)
+//
+// Settings > Desktop extras > "Date order" can put the day first or the
+// month first whatever the language says (SettingsService.dateOrder): a
+// German reader on an English desktop wants "19 October" and English words.
+// The locale's own pattern serves wherever its order is the one asked for -
+// de_DE keeps "19." and its full stop -, and the other order is one of the
+// two English patterns, in the locale's words. "Short dates in numbers"
+// (SettingsService.shortDateNumbers) writes the short form as the weekday and
+// the numeric date, "Mon 19.10.".
 
 // A pattern as runs of one pattern letter ({ text, letter }: "dddd" is
 // { "dddd", "d" }) and of literal text between them (letter ""), quoted
@@ -102,15 +112,53 @@ function dayFirst(format) {
     return day >= 0 && month >= 0 && day < month
 }
 
-// The pattern for `form`, from the locale's long date pattern.
-function pattern(longFormat, form) {
+// The orders Settings offers ("locale" is the language's own).
+var ORDERS = ["locale", "dayMonth", "monthDay"]
+
+// Whether the day comes first: as `order` says, or as the locale's long date
+// does for "locale" and for anything this file does not know.
+function wantsDayFirst(order, longFormat) {
+    if (order === "dayMonth") return true
+    if (order === "monthDay") return false
+    return dayFirst(longFormat)
+}
+
+// The numbers alone, without the year: the locale's short date where its
+// order is the one asked for (en_GB 19/10, en_US 10/19, de_DE 19.10.), else
+// the German or the American way. One digit where one is enough - a cell
+// reads "9.10.", not "09.10." - and the full stop German writes after the
+// month, which went with the year.
+function numericPattern(shortFormat, first) {
+    const short = String(shortFormat || "")
+    if (short.length && dayFirst(short) === first) {
+        const list = withoutYear(runs(short))
+        if (usable(list)) {
+            const text = joined(list.map(run => run.letter === "d" || run.letter === "M"
+                                                ? { text: run.letter, letter: run.letter } : run))
+            return text === "d.M" ? "d.M." : text
+        }
+    }
+    return first ? "d.M." : "M/d"
+}
+
+// The pattern for `form`, from the locale's long date pattern. `order` and
+// `numbers` as Settings has them (left out: the locale's order, words);
+// `shortFormat` is the locale's short date, which only "numeric" and the
+// numbered short form read.
+function pattern(longFormat, form, order, shortFormat, numbers) {
     const full = String(longFormat || "")
+    const first = wantsDayFirst(order, full)
+    // The locale's own pattern, where its order is the one asked for.
+    const own = dayFirst(full) === first
+    if (form === "numeric") return numericPattern(shortFormat, first)
+    if (form === "short" && numbers === true) return "ddd " + numericPattern(shortFormat, first)
+    if (form === "year" && !own) return first ? "dddd, d MMMM yyyy" : "dddd, MMMM d, yyyy"
     if (form === "year" && full.length) return full
-    let list = withoutYear(runs(full))
-    if (!usable(list)) list = runs(dayFirst(full) ? "dddd, d MMMM" : "dddd, MMMM d")
+    let list = own ? withoutYear(runs(full)) : null
+    if (!usable(list)) list = runs(first ? "dddd, d MMMM" : "dddd, MMMM d")
     if (form === "day") {
         const bare = withoutWeekday(list)
-        list = usable(bare) ? bare : runs(dayFirst(full) ? "d MMMM" : "MMMM d")
+        list = usable(bare) ? bare : runs(first ? "d MMMM" : "MMMM d")
     }
     if (form === "short")
         list = list.map(run => isWeekday(run) ? { text: "ddd", letter: "d" }
@@ -118,9 +166,14 @@ function pattern(longFormat, form) {
     return joined(list)
 }
 
-// The date as words in the locale's order. `form` as above; "long" when
-// left out.
-function date(value, locale, form) {
+// The date in the locale's words and in the order asked for. `form` as
+// above, "long" when left out; `order` and `numbers` from
+// SettingsService.dateOrder and shortDateNumbers - left out, the locale's
+// order in words, as before there was a choice.
+function date(value, locale, form, order, numbers) {
     if (!value || !locale) return ""
-    return locale.toString(value, pattern(locale.dateFormat(), form || "long"))
+    const kind = form || "long"
+    // Locale.ShortFormat is 1: the enum is out of reach here (see above).
+    const short = kind === "numeric" || (kind === "short" && numbers === true) ? locale.dateFormat(1) : ""
+    return locale.toString(value, pattern(locale.dateFormat(), kind, order, short, numbers))
 }

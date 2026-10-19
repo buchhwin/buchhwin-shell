@@ -9,6 +9,9 @@ are in the page's keywords as well. Typing "night light", "refresh rate",
 a row on a page. This reads every settings page, takes each SettingsSection
 `title:` and SettingRow `label:` that is a plain string, and fails when one
 of its words is not in that page's haystack, so the keywords follow the pages.
+A section kept in a file of its own beside the pages (AssistantSection on
+Desktop extras, CommandWidgetsSection on Widgets) is read as part of every
+page that places it.
 """
 
 import pathlib
@@ -91,6 +94,17 @@ def labels(path):
     return found
 
 
+def sections(path):
+    """The files of their own a page places (`AssistantSection {`): QML
+    files beside the pages that are not pages themselves."""
+    found = []
+    for name in re.findall(r"^\s*([A-Z]\w*)\s*\{", path.read_text(encoding="utf-8"), re.M):
+        part = PAGES / (name + ".qml")
+        if not name.endswith("Page") and part.exists() and part not in found:
+            found.append(part)
+    return found
+
+
 def words(label):
     return [word for word in re.findall(r"[0-9a-zäöüß][0-9a-zäöüß+-]*", label.lower())
             if word not in FILLER and len(word) > 1]
@@ -106,12 +120,13 @@ def main():
             failures.append("%s: no page file %s" % (page_id, path.relative_to(ROOT)))
             continue
         hay = haystack(page)
-        for number, label in labels(path):
-            checked += 1
-            missing = [word for word in words(label) if word not in hay]
-            if missing:
-                failures.append("%s:%d: \"%s\" - not in the %s page's keywords: %s"
-                                % (path.relative_to(ROOT), number, label, page_id, " ".join(missing)))
+        for part in [path] + sections(path):
+            for number, label in labels(part):
+                checked += 1
+                missing = [word for word in words(label) if word not in hay]
+                if missing:
+                    failures.append("%s:%d: \"%s\" - not in the %s page's keywords: %s"
+                                    % (part.relative_to(ROOT), number, label, page_id, " ".join(missing)))
     if checked < 100:
         failures.append("only %d labels found on the settings pages - did the pattern go stale?" % checked)
     if failures:

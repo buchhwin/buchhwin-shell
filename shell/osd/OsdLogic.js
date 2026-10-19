@@ -56,3 +56,62 @@ function sideMargin(origin, screenWidth, margin, barEnd) {
     if (isFinite(end) && end >= 0) clear = Math.min(clear, end)
     return Math.max(0, clear)
 }
+
+// ---- short messages for state changes (Settings > Desktop) ------------------
+// Each one a setting of its own and off unless turned on: the output that
+// plays now after a headset is plugged in or connects, the charger plugged
+// in or out with the level, a VPN coming up or going, and Caps Lock. They
+// use the message box the mode key's OSD uses, so they cost no surface.
+
+// The output after the default one changed: its name, once, and not again
+// for the same name - a Bluetooth headset switching between its music and
+// its call profile changes the default output back and forth under one name.
+function outputToast(lastLabel, label) {
+    const text = String(label || "").trim()
+    return text.length && text !== String(lastLabel || "").trim() ? "Output: " + text : ""
+}
+
+// The charger, from what was last said (`before`) to now (`after`), each
+// { hasBattery, onBattery, charging, percent }: "Charging · 54%" or "Plugged
+// in · 80%" (a battery held at its charge limit) when it came, "On battery
+// · 54%" when it went, "" when neither - a machine without a battery, or a
+// change that came back within the settle time.
+function chargerToast(before, after) {
+    if (!before || !after || after.hasBattery !== true || before.hasBattery !== true) return ""
+    const level = Math.round(Number(after.percent) || 0) + "%"
+    if (before.onBattery === true && after.onBattery !== true)
+        return (after.charging === true ? "Charging" : "Plugged in") + " · " + level
+    if (before.onBattery !== true && after.onBattery === true) return "On battery · " + level
+    return ""
+}
+
+// The VPNs that are up, before and after ([{ uuid, name }]): the one that
+// came up ("VPN connected: Uni"), or "VPN disconnected" once the last one
+// has gone; "" for nothing new, and for one tunnel going while another
+// stays.
+function vpnToast(before, after) {
+    const was = (before || []).map(item => item.uuid)
+    const now = (after || []).map(item => item.uuid)
+    const added = (after || []).filter(item => was.indexOf(item.uuid) < 0)
+    if (added.length) return "VPN connected: " + String(added[0].name || "tunnel")
+    if (!now.length && was.length) return "VPN disconnected"
+    return ""
+}
+
+function capsToast(on) {
+    return on === true ? "Caps Lock on" : "Caps Lock off"
+}
+
+// The sample of each message, for screenshots (IPC `osd previewToast`), or
+// null for a kind there is none of.
+function previewToast(kind) {
+    const samples = {
+        output: { text: outputToast("", "Headphones"), icon: "󰋋" },
+        charger: { text: chargerToast({ hasBattery: true, onBattery: true }, { hasBattery: true, onBattery: false, charging: true, percent: 54 }),
+                   icon: "󰂈" },
+        vpn: { text: vpnToast([], [{ uuid: "sample", name: "Example" }]), icon: "󰖂" },
+        capsLock: { text: capsToast(true), icon: "󰘲" },
+        mics: { text: "All microphones muted", icon: "󰍭" }
+    }
+    return samples[String(kind || "")] || null
+}

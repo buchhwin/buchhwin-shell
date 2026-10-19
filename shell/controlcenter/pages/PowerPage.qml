@@ -4,9 +4,12 @@ import Quickshell.Services.UPower
 import qs.theme
 import qs.services
 import qs.shell.components
+import qs.shell.power
 
 ColumnLayout {
     spacing: Metrics.pageGap
+    // The charge limit is read when the page is built, which is each visit.
+    Component.onCompleted: PowerService.refreshChargeLimit()
 
     ShellCard {
         Layout.fillWidth: true
@@ -44,8 +47,19 @@ ColumnLayout {
                 text: PowerService.device ? "Battery health " + Math.round(PowerService.device.healthPercentage) + "%" : ""
                 role: "small"; muted: true
             }
+            // The limit while it is not what the state line already says
+            // ("Charge limit 80% reached" on the charger): charging towards
+            // it, or running down from it.
+            ShellText {
+                visible: (PowerService.chargeLimit.active && !PowerService.pendingCharge) || PowerService.chargeOnceActive
+                text: PowerService.chargeOnceActive ? "Charging to 100% this once" : PowerService.chargeLimitLabel
+                role: "small"; muted: true
+            }
         }
     }
+
+    // How long the screen stays on, lock and sleep held off (IdleService).
+    StayAwakeList { Layout.fillWidth: true }
 
     // The title inside the card, as on every other page of the control center
     // (Audio's "Output", the Network and Bluetooth lists): an upper-case
@@ -68,7 +82,7 @@ ColumnLayout {
     ShellText {
         Layout.fillWidth: true
         Layout.leftMargin: Metrics.spaceSm
-        text: "Screen off, lock and sleep timeouts and what happens when the lid closes are in the power settings."
+        text: "Screen off, lock and sleep timeouts, the charge limit and what happens when the lid closes are in the power settings."
         role: "caption"
         wrapMode: Text.Wrap
     }

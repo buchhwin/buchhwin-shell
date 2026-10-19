@@ -205,6 +205,8 @@ Singleton {
 
     function notificationAction(driveId, action) {
         if (action !== "open") return
+        // The disk-space notice opens the System popup, where the disk's meter is.
+        if (driveId.indexOf("space:") === 0) { PanelService.open("systemPopup"); return }
         const drive = find(driveId)
         if (drive) { openDrive(drive); return }
         const phone = findPhone(driveId)
@@ -249,6 +251,78 @@ Singleton {
                     notifier.destroy()
                 }
             }
+        }
+    }
+
+    // ---- the system disk filling up ---------------------------------------------
+    // The root and /home, every quarter of an hour, while Settings > Desktop
+    // extras > System disk "Warn when it is almost full" is on (DrivesLogic,
+    // "the system disk filling up"): one `df`, no resident helper. A
+    // filesystem is told about once while it stays low, with a button to the
+    // System popup; the notice goes once it has room again. Only in the real
+    // session - a nested one shares the host's disks and the host's
+    // notifications.
+    readonly property bool lowSpaceEnabled: SettingsService.value("drives.lowSpace") === true
+    // [{ source, mounts, free, size }] from the last look; mount points only,
+    // no device contents.
+    property var spaceEntries: []
+    property var spaceWarned: ({})
+    readonly property var lowSpaceEntries: spaceEntries.filter(entry => Logic.spaceLow(entry))
+
+    function checkSpace() {
+        if (!spaceProc.running) spaceProc.running = true
+    }
+
+    function applySpace(text) {
+        const entries = Logic.parseSpace(text)
+        spaceEntries = entries
+        // A look that tells nothing (the setting off, a nested session, IPC)
+        // remembers nothing either: turned on, the first look tells about a
+        // disk that is low already.
+        if (!realSession || !lowSpaceEnabled) return
+        const step = Logic.spaceStep(entries, spaceWarned)
+        // Room again: its notice has nothing left to say.
+        for (const source in spaceWarned) if (!step.warned[source]) dismissNotifications("space:" + source)
+        spaceWarned = step.warned
+        for (const entry of step.warn) notifySpace(entry)
+    }
+
+    function notifySpace(entry) {
+        const id = "space:" + entry.source
+        const body = Logic.spaceBody(entry)
+        rememberNotice(id, body)
+        notifyComponent.createObject(root, {
+            driveId: id,
+            command: noticeCommand(["notify-send", "--app-name=Drives", "--icon=drive-harddisk",
+                      "--action=open=Open", "--", Logic.spaceTitle(entry), body])
+        })
+    }
+
+    // IPC `drives previewSpace FREE SIZE`: what a filesystem of that size
+    // with that much free would be told, worked out and never sent.
+    function previewSpace(free, size) {
+        const entry = { source: "preview", mounts: ["/"], free: Number(free) || 0, size: Number(size) || 0 }
+        return Logic.spaceLow(entry) ? Logic.spaceTitle(entry) + ": " + Logic.spaceBody(entry)
+            : "Not low: the limit for this size is " + Logic.formatSize(Logic.spaceLimit(entry.size))
+    }
+
+    Process {
+        id: spaceProc
+        command: Logic.spaceCommand()
+        stderr: ErrorLog { label: "DrivesService.spaceProc" }
+        stdout: StdioCollector { onStreamFinished: root.applySpace(text) }
+    }
+    // The first look a few minutes into the session, then every quarter of
+    // an hour; nothing at all while the setting is off.
+    Timer {
+        id: spaceTimer
+        interval: Logic.SPACE_FIRST_MS
+        repeat: true
+        running: root.realSession && root.lowSpaceEnabled
+        onRunningChanged: if (!running) interval = Logic.SPACE_FIRST_MS
+        onTriggered: {
+            interval = Logic.SPACE_INTERVAL_MS
+            root.checkSpace()
         }
     }
 

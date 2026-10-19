@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import qs.shell.network
 
 // Network pill/widget: Wi-Fi switch, current connection and address, nearby
 // networks and VPNs. Scans only while open; the password dialog returns here.
@@ -11,7 +12,11 @@ PopupPanel {
     id: root
     panelId: "networkPopup"
     heading: "Wi-Fi"
-    detail: NetworkService.summary + (NetworkService.connected && NetworkService.address.length ? " · " + NetworkService.address : "")
+    // Without the address while a sign-in is asked for: the line already
+    // says "Sign-in required", the card below says it again with the way
+    // there, and the address cut the line off before its point.
+    detail: NetworkService.summary + (NetworkService.connected && NetworkService.address.length && !NetworkService.signInNeeded
+                                      ? " · " + NetworkService.address : "")
     // Wi-Fi's own glyph under a "Wi-Fi" heading, as on the control center's
     // tile: the wire is in the line beside it and in its own card below.
     glyph: NetworkService.wifiIcon
@@ -37,6 +42,10 @@ PopupPanel {
         spacing: Metrics.pageGap
         Component.onCompleted: NetworkService.setScanning(true)
         Component.onDestruction: NetworkService.setScanning(false)
+
+        // A network that asks to sign in first (a hotel's, a train's): the
+        // click to its page, at the top, where the "Sign-in required" line is.
+        PortalCard { Layout.fillWidth: true }
 
         CardSection {
             Layout.fillWidth: true

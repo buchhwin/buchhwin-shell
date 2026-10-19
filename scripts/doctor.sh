@@ -2,6 +2,41 @@
 set -u
 
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+# --json: one JSON object per finding instead of the report, for Settings >
+# About's Health (services/HealthService.qml) - {"level": "missing"|"note",
+# "id", "text", "command"} for each miss and each note with a step, and
+# {"kind": "result", "status"} last. What is there is not listed.
+json=0
+if [[ ${1:-} == --json ]]; then
+  json=1
+  exec 3>&1 1>/dev/null
+fi
+json_string() {
+  local text=$1
+  text=${text//\\/\\\\}
+  text=${text//\"/\\\"}
+  text=${text//$'\n'/\\n}
+  text=${text//$'\r'/}
+  text=${text//$'\t'/ }
+  printf '"%s"' "$text"
+}
+# The step a miss's hint names, as a line to copy: a sudo command, an AUR
+# helper's, or one of this checkout's installers (named relative in the text).
+step_of() {
+  local text=$1 step
+  if [[ $text =~ (sudo [^\)\;]*[^\)\;[:space:]]) ]]; then
+    # "sudo pacman -S bluez, then sudo systemctl enable --now bluetooth"
+    step=${BASH_REMATCH[1]}
+    printf '%s' "${step//, then / && }"
+  elif [[ $text =~ (paru -S [^[:space:]\)]+) ]]; then printf '%s' "${BASH_REMATCH[1]}"
+  elif [[ $text =~ (install/[a-z-]+\.sh --apply) ]]; then printf '%s/%s' "$project_dir" "${BASH_REMATCH[1]}"
+  fi
+}
+finding() {
+  (( json )) || return 0
+  printf '{"level":%s,"id":%s,"text":%s,"command":%s}\n' "$(json_string "$1")" "$(json_string "$2")" \
+    "$(json_string "$3")" "$(json_string "$4")" >&3
+}
 # shellcheck source=install/lib/distro.sh
 . "$project_dir/install/lib/distro.sh"
 # The family, not the installers' strict answer: an Arch derivative is Arch
@@ -34,6 +69,7 @@ strict=${BUCHHWIN_DOCTOR_STRICT:-0}
 allowed=" ${BUCHHWIN_DOCTOR_ALLOW:-} "
 # missing ID TEXT [required]
 missing() {
+  finding missing "$1" "$2" "$(step_of "$2")"
   printf 'missing  %s\n' "$2"
   if [[ ${3:-} == required ]] || [[ $strict == 1 && $allowed != *" $1 "* ]]; then status=1; fi
 }
@@ -91,6 +127,16 @@ for command_name in brave-browser dolphin; do
     missing "$command_name" "$command_name (optional; $(distro_install_hint "$distro" "$package"))"
   fi
 done
+# The assistant panel talks to a model Ollama runs on this computer, and to
+# nothing else; without it the panel says how to get it. A note rather than
+# a miss: no package list installs it, and most sessions never open it.
+if command -v ollama >/dev/null 2>&1; then
+  printf 'ok       ollama: %s\n' "$(command -v ollama)"
+else
+  ollama_hint=$(distro_install_hint "$distro" ollama)
+  finding note ollama "ollama is not installed: the assistant panel needs it ($ollama_hint)" "$(step_of "$ollama_hint")"
+  printf 'note     ollama is not installed: the assistant panel needs it (%s)\n' "$ollama_hint"
+fi
 
 printf '\nVersions\n'
 Hyprland --version 2>/dev/null | sed -n '1p' || true
@@ -99,6 +145,7 @@ quickshell --version 2>/dev/null || true
 # 0.2.1 snapshot (which CI's Fedora job runs) still works with differences.
 qs_line=$(quickshell --version 2>/dev/null) || qs_line=""
 if [[ $qs_line =~ ([0-9]+)\.([0-9]+)\.[0-9]+ ]] && (( BASH_REMATCH[1] == 0 && BASH_REMATCH[2] < 3 )); then
+  finding note quickshell-version "Quickshell ${BASH_REMATCH[0]} is older than 0.3.0, the version the shell is made on; expect differences" ""
   printf 'note     Quickshell %s is older than 0.3.0, the version the shell is made on; expect differences\n' "${BASH_REMATCH[0]}"
 fi
 # Which allocator quickshell links, and so which of start-shell.sh's two
@@ -247,8 +294,9 @@ else
 fi
 # Terminal extras that follow the shell accent (Settings > Terminal writes
 # their configuration): both from Fedora's and Arch's repositories, only cava
-# from Leap's. And xclip, which the clipboard bridge needs to read what an
-# X11 program copied - in every distribution's list.
+# from Leap's. cava also draws the media popup's visualizer (Settings >
+# Desktop extras > Media player). And xclip, which the clipboard bridge needs
+# to read what an X11 program copied - in every distribution's list.
 for extra in cmatrix cava xclip; do
   if command -v "$extra" >/dev/null 2>&1; then
     printf 'ok       %s: %s\n' "$extra" "$(command -v "$extra")"
@@ -256,6 +304,22 @@ for extra in cmatrix cava xclip; do
     missing "$extra" "$extra (optional; $(distro_install_hint "$distro" "$extra"))"
   fi
 done
+# The external monitors' brightness (Settings > Displays) needs ddcutil and
+# its udev rule's access to the display buses: a note, not a miss - without it
+# the monitors keep their own buttons.
+if command -v ddcutil >/dev/null 2>&1; then
+  printf 'ok       ddcutil: %s\n' "$(command -v ddcutil)"
+else
+  printf 'note     ddcutil is not installed, so external monitors have no brightness slider (%s)\n' "$(distro_install_hint "$distro" ddcutil)"
+fi
+# A timer's alarm (on by default) and the notification sounds (off by
+# default) play the freedesktop theme through pw-play: a note, not a miss -
+# without it they stay silent and nothing else changes.
+if [[ ! -r /usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga \
+      || ! -r /usr/share/sounds/freedesktop/stereo/message-new-instant.oga ]]; then
+  printf 'note     no freedesktop sound theme, so a timer'"'"'s alarm and notification sounds stay silent (%s)\n' \
+    "$(distro_install_hint "$distro" sound-theme-freedesktop)"
+fi
 if [[ -r "$project_dir/zsh/.zshrc" ]]; then
   printf 'ok       session zshrc: %s\n' "$project_dir/zsh/.zshrc"
 else
@@ -271,6 +335,26 @@ if [[ -r "$fastfetch_config" ]]; then
   fi
 else
   printf 'absent   %s (run install/install.sh --apply to copy it)\n' "$fastfetch_config"
+fi
+
+# The launcher's conversions ("10 km to mi") ask qalc, and the screenshots'
+# text mode (Super+Alt+T) reads with tesseract and its English or German
+# data - Arch's tesseract brings only "osd". Optional: without them those two
+# say so and nothing else changes.
+printf '\nLauncher and screenshots (optional)\n'
+if command -v qalc >/dev/null 2>&1; then
+  printf 'ok       qalc: %s\n' "$(command -v qalc)"
+else
+  missing qalc "qalc (conversions in the launcher; $(distro_install_hint "$distro" "$(package_for libqalculate libqalculate qalculate)"))"
+fi
+ocr_data=$(package_for "tesseract-data-eng tesseract-data-deu" "tesseract-langpack-eng tesseract-langpack-deu" \
+  "tesseract-ocr-traineddata-english tesseract-ocr-traineddata-german")
+if ! command -v tesseract >/dev/null 2>&1; then
+  missing tesseract "tesseract (text from the screen; $(distro_install_hint "$distro" "$(package_for tesseract tesseract tesseract-ocr) $ocr_data"))"
+elif tesseract_langs=$(tesseract --list-langs 2>/dev/null) && grep -qxE 'eng|deu' <<<"$tesseract_langs"; then
+  printf 'ok       tesseract: %s\n' "$(command -v tesseract)"
+else
+  missing tesseract-data "tesseract's English or German data (text from the screen; $(distro_install_hint "$distro" "$ocr_data"))"
 fi
 
 # The launcher's file search (/report, /png) asks plocate's index for what is
@@ -290,10 +374,14 @@ if command -v plocate >/dev/null 2>&1; then
     home_fs=$(findmnt -no FSTYPE --target "$HOME" 2>/dev/null) || home_fs=""
     if [[ -r $updatedb_conf ]] && grep -qE '^[[:space:]]*PRUNE_BIND_MOUNTS[[:space:]]*=[[:space:]]*"?(yes|1)"?' "$updatedb_conf" \
         && [[ $home_fs == btrfs ]]; then
+      finding note plocate-home "plocate has nothing under $HOME, so the launcher finds no files: $HOME is a btrfs subvolume, which updatedb skips as a bind mount" \
+        "sudo sed -i -e 's/^PRUNE_BIND_MOUNTS *= *.*/PRUNE_BIND_MOUNTS = \"no\"/' -e '/^PRUNENAMES/{/\\.snapshots/!s/\"\$/ .snapshots\"/}' $updatedb_conf && sudo systemctl start plocate-updatedb.service"
       printf '         (%s is a btrfs subvolume, which updatedb skips as a bind mount):\n' "$HOME"
       printf "         sudo sed -i -e 's/^PRUNE_BIND_MOUNTS *= *.*/PRUNE_BIND_MOUNTS = \"no\"/' -e '/^PRUNENAMES/{/\\.snapshots/!s/\"\$/ .snapshots\"/}' %s\n" "$updatedb_conf"
       printf '         sudo systemctl start plocate-updatedb.service\n'
     else
+      finding note plocate-home "plocate has nothing under $HOME, so the launcher finds no files (the index may be new or empty)" \
+        "sudo systemctl start plocate-updatedb.service"
       printf '         (the index may be new or empty): sudo systemctl start plocate-updatedb.service\n'
     fi
   fi
@@ -319,6 +407,8 @@ done
 if (( ${#icon_dirs[@]} )); then
   printf '\nIcons\n'
   for theme_dir in "${icon_dirs[@]}"; do
+    finding note icon-cache "$theme_dir has icons but no current icon-theme.cache, so the first lookup of each icon checks every folder of the theme" \
+      "gtk-update-icon-cache -f -t $theme_dir"
     printf 'note     %s has icons but no current icon-theme.cache, so the first lookup of each icon checks every folder of the theme:\n' "$theme_dir"
     printf '         gtk-update-icon-cache -f -t %s\n' "$theme_dir"
   done
@@ -331,8 +421,10 @@ fi
 thp=/sys/kernel/mm/transparent_hugepage/enabled
 if [[ -r $thp ]] && grep -q '\[always\]' "$thp"; then
   printf '\nMemory\n'
+  finding note thp 'transparent huge pages are "always"; "madvise" halves the shell'"'"'s memory' "echo madvise | sudo tee $thp"
   printf 'note     transparent huge pages are "always"; "madvise" halves the shell'"'"'s memory:\n'
   printf '         echo madvise | sudo tee %s\n' "$thp"
 fi
 
+if (( json )); then printf '{"kind":"result","status":%d}\n' "$status" >&3; fi
 exit "$status"

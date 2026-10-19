@@ -112,6 +112,13 @@ Variants {
         readonly property bool hasRecordingPill: ["left", "center", "right"].some(zone =>
             bar[zone].some(pill => pill.items.some(item => item.type === "recording")))
         readonly property var recordingPill: ({ id: "recording-auto", items: [{ type: "recording", display: "full", options: {} }] })
+        // And while a timer or a Focus session runs, its countdown, as the
+        // notch's strip leads with its chip (TimerService): in a bar mode a
+        // running timer was nowhere to be seen until it rang. Not when the
+        // user placed the timer item in a pill already.
+        readonly property bool hasTimerPill: ["left", "center", "right"].some(zone =>
+            bar[zone].some(pill => pill.items.some(item => item.type === "timer")))
+        readonly property var timerPill: ({ id: "timer-auto", items: [{ type: "timer", display: "full", options: {} }] })
         // The zones' pills, each keyed by all of itself and by the bar's
         // options a pill is drawn with. `bar` is a new object on every write
         // of the layout, and a Repeater on its plain arrays rebuilt every
@@ -508,8 +515,8 @@ Variants {
             onYChanged: Qt.callLater(window.reportZones)
             onWidthChanged: Qt.callLater(window.reportZones)
             onHeightChanged: Qt.callLater(window.reportZones)
-            // The automatic recording pill leads the end zone.
-            readonly property var flags: window.separatorsFor([recordingAuto].concat(Array.from({ length: rightRepeater.count }, (_, i) => rightRepeater.itemAt(i))))
+            // The automatic recording and timer pills lead the end zone.
+            readonly property var flags: window.separatorsFor([recordingAuto, timerAuto].concat(Array.from({ length: rightRepeater.count }, (_, i) => rightRepeater.itemAt(i))))
             rows: window.vertical ? -1 : 1
             columns: window.vertical ? 1 : -1
             x: window.vertical ? window.zoneAcross(width)
@@ -526,6 +533,16 @@ Variants {
                 reportOrigin: window.reportOrigin
                 visible: hasContent && !window.hasRecordingPill
             }
+            Pill {
+                id: timerAuto
+                pill: window.timerPill
+                screenName: window.modelData.name
+                scaleFactor: window.scaleFactor
+                flat: window.flat; barRadius: window.barRadius; vertical: window.vertical; barThickness: window.barSpan
+                reportOrigin: window.reportOrigin
+                separator: rightZone.flags[1] === true
+                visible: hasContent && !window.hasTimerPill
+            }
             Repeater {
                 id: rightRepeater
                 model: ScriptModel { values: window.keptPills("right", window.pillKeys(window.shownPills(window.bar.right))); objectProp: "pillKey" }
@@ -535,7 +552,7 @@ Variants {
                     pill: modelData; screenName: window.modelData.name; scaleFactor: window.scaleFactor
                     flat: window.flat; barRadius: window.barRadius; vertical: window.vertical; barThickness: window.barSpan
                     reportOrigin: window.reportOrigin
-                    separator: rightZone.flags[index + 1] === true
+                    separator: rightZone.flags[index + 2] === true
                     wiggleIndex: index + 4
                 }
             }

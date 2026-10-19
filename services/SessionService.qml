@@ -13,8 +13,13 @@ Singleton {
         // The clipboard history goes first when the user asked for that
         // (clipboard.forgetAtLogout); the wipe is detached and takes
         // milliseconds.
-        if (["logout", "reboot", "poweroff"].indexOf(actionId) >= 0) ClipboardService.sessionEnding()
-        Quickshell.execDetached([Paths.script("session-action.sh"), actionId])
+        const ending = ["logout", "reboot", "poweroff"].indexOf(actionId) >= 0
+        if (ending) ClipboardService.sessionEnding()
+        // With "Offer to reopen apps" on (Settings > Apps) the session's apps
+        // are kept first, in the same detached command: three seconds at
+        // most, and the action follows whatever the snapshot does.
+        const kept = ending ? SessionAppsService.endCommand(actionId) : null
+        Quickshell.execDetached(kept || [Paths.script("session-action.sh"), actionId])
         return true
     }
 

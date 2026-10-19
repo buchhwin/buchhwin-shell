@@ -22,6 +22,10 @@ set -uo pipefail
 #                     (on Arch the old versions checkupdates names)
 #   @flatpak-system / @flatpak-user   remote-ls --updates (+ -stderr, -cached)
 #   @flatpak-installed                flatpak list with the installation
+#   @news             Arch: the AUR helper's -Pw, the Arch news newer than the
+#                     installed packages (online checks only)
+#   @pacnew           Arch: pacdiff -o, the .pacnew/.pacsave files upgrades
+#                     left beside the system's configuration (local, read-only)
 #   @end
 refresh=0
 cache_only=0
@@ -152,6 +156,28 @@ pacman_updates() {
   return "$code"
 }
 
+# Arch, after the package list: the news an upgrade may need a manual step
+# for, read before the upgrade rather than after it broke something, and the
+# configuration files earlier upgrades left as .pacnew. The news is the AUR
+# helper's -Pw (newer than the installed packages, so it goes once they are
+# upgraded) and asks archlinux.org: only for an online check that worked, never
+# for --cache-only (nested sessions). pacdiff -o only lists, from pacman's
+# local database - nothing is merged or removed here.
+arch_extras() {
+  local helper="" candidate
+  if (( ${1:-1} == 0 && !cache_only )); then
+    for candidate in paru yay; do
+      command -v "$candidate" >/dev/null 2>&1 && { helper=$candidate; break; }
+    done
+    # "No new news" exits 1 with paru; only the lines count.
+    [[ -n $helper ]] && section news 30 "$helper" -Pw --color=never
+  fi
+  if command -v pacdiff >/dev/null 2>&1; then
+    section pacnew 30 pacdiff -o
+  fi
+  return 0
+}
+
 # Arch, or a derivative of it, by its os-release - not by which package
 # managers happen to be on PATH: Arch's extra packages dnf5 and zypper too,
 # and with either installed the check asked a package manager that manages
@@ -181,6 +207,7 @@ else
 fi
 if (( pacman_only )); then
   pacman_updates
+  arch_extras $?
 elif (( zypper_only )); then
   zypper_updates
   (( $? == 0 )) && cp -- "$tmp/out" "$tmp/dnf.json"

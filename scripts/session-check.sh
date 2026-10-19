@@ -4,6 +4,17 @@ set -uo pipefail
 # Check a running buchhwin-shell login session and print a short report.
 # Read-only: it changes nothing. Run it from a terminal inside the session:
 #   ~/.local/share/buchhwin-shell/scripts/session-check.sh
+# --json prints one JSON object per check instead, for Settings > About's
+# Health (services/HealthService.qml): {"level": "ok"|"warn"|"error",
+# "section", "text", "command", "action"} - `command` a line to copy (the
+# sudo steps are the user's to run), `action` one the shell offers as a
+# button - and {"kind": "result", "errors", "warnings"} last.
+json=0
+if [[ ${1:-} == --json ]]; then
+  json=1
+  # Everything the report prints goes nowhere; the checks speak on fd 3.
+  exec 3>&1 1>/dev/null
+fi
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
 # shellcheck source=lib/hypr.sh
 source "$project_dir/scripts/lib/hypr.sh"
@@ -18,10 +29,42 @@ shell_path=${BUCHHWIN_SHELL_PATH:-$HOME/.local/share/buchhwin-shell}
 failures=0
 warnings=0
 
-ok() { printf '  \033[32mok\033[0m      %s\n' "$*"; }
-warn() { printf '  \033[33mwarn\033[0m    %s\n' "$*"; warnings=$((warnings + 1)); }
-fail() { printf '  \033[31merror\033[0m   %s\n' "$*"; failures=$((failures + 1)); }
-section() { printf '\n%s\n' "$*"; }
+# A check's fix for --json, set right before its warn or fail: a command to
+# copy (fix_command) or a shell action (fix_action: restartShell). Taken by
+# the next line reported, whatever it is.
+fix_command=""
+fix_action=""
+current_section=""
+json_string() {
+  local text=$1
+  text=${text//\\/\\\\}
+  text=${text//\"/\\\"}
+  text=${text//$'\n'/\\n}
+  text=${text//$'\r'/}
+  text=${text//$'\t'/ }
+  text=${text//$'\e'/}
+  printf '"%s"' "$text"
+}
+report() {
+  if (( json )); then
+    printf '{"level":%s,"section":%s,"text":%s,"command":%s,"action":%s}\n' "$(json_string "$1")" \
+      "$(json_string "$current_section")" "$(json_string "$2")" "$(json_string "$fix_command")" "$(json_string "$fix_action")" >&3
+  fi
+  fix_command=""
+  fix_action=""
+}
+# A distribution hint that is a command (distro_install_hint also says
+# "not packaged for ..." and "package NAME").
+install_fix() {
+  local hint
+  hint=$(distro_install_hint "$distro" "$1")
+  [[ $hint == sudo\ * ]] && fix_command=$hint
+  return 0
+}
+ok() { report ok "$*"; printf '  \033[32mok\033[0m      %s\n' "$*"; }
+warn() { report warn "$*"; printf '  \033[33mwarn\033[0m    %s\n' "$*"; warnings=$((warnings + 1)); }
+fail() { report error "$*"; printf '  \033[31merror\033[0m   %s\n' "$*"; failures=$((failures + 1)); }
+section() { current_section=$*; printf '\n%s\n' "$*"; }
 setting() { jq -r "$1" "$settings" 2>/dev/null; }
 # running NAME PATTERN: a process with executable NAME whose command line
 # matches PATTERN (exact names avoid matching shells that mention the text).
@@ -84,7 +127,10 @@ lid_report() {
     ok "lid ($source_label): $label (logind inhibited)"
     return
   fi
-  [[ -e $dropin ]] || hint="; sudo install/system-install.sh --logind-lid keeps logind off the lid even then"
+  if [[ ! -e $dropin ]]; then
+    hint="; sudo install/system-install.sh --logind-lid keeps logind off the lid even then"
+    fix_command="sudo ${project_dir:-.}/install/system-install.sh --logind-lid"
+  fi
   fail "lid ($source_label): '$lid' without the shell's logind inhibitor - logind acts on the lid by itself, and a lid shut in passing suspends at once$hint"
 }
 
@@ -98,7 +144,7 @@ elif [[ ${BUCHHWIN_HYPR_CONFIG_FALLBACK:-0} == 1 ]]; then
 else
   ok "configuration: hyprland.conf"
 fi
-command -v hyprland-dialog >/dev/null 2>&1 && ok "hyprland-guiutils installed" || warn "hyprland-guiutils is missing (Hyprland dialogs; $(distro_install_hint "$distro" hyprland-guiutils))"
+command -v hyprland-dialog >/dev/null 2>&1 && ok "hyprland-guiutils installed" || { install_fix hyprland-guiutils; warn "hyprland-guiutils is missing (Hyprland dialogs; $(distro_install_hint "$distro" hyprland-guiutils))"; }
 errors=$(hyprctl configerrors 2>/dev/null | grep -v '^$' || true)
 [[ -z $errors ]] && ok "no Hyprland configuration errors" || fail "Hyprland reports: $errors"
 
@@ -106,6 +152,7 @@ section "Shell"
 if quickshell ipc --path "$shell_path" show >/dev/null 2>&1; then
   ok "Quickshell responds ($(quickshell ipc --path "$shell_path" show | grep -c '^target') IPC targets)"
 else
+  fix_action=restartShell
   fail "Quickshell is not running or not responding (Super+Ctrl+R restarts it)"
 fi
 # The shell is made on Quickshell 0.3; Fedora packages a 0.2.1 snapshot.
@@ -125,6 +172,7 @@ fi
 # this file already had to learn once.
 if shell_log=$(quickshell log --path "$shell_path" 2>/dev/null) && [[ -n $shell_log ]]; then
   if grep -q 'HYPRLAND_INSTANCE_SIGNATURE is unset' <<<"$shell_log"; then
+    fix_action=restartShell
     fail "the shell has no Hyprland connection (started outside the session; Super+Ctrl+R restarts it)"
   else
     ok "shell is connected to Hyprland"
@@ -138,8 +186,12 @@ fi
 # the whole session and nothing says so.
 dialect=$(quickshell ipc --path "$shell_path" call displays get 2>/dev/null \
   | python3 -c 'import json,sys; print(json.load(sys.stdin).get("dialect",""))' 2>/dev/null || true)
+# What the compositor runs is asked the way the shell asks it (HyprCompat):
+# only a Lua config manager answers `eval`. The checkout's hypr/ always has
+# both files, so hyprland.lua being there said nothing - a session started
+# from hyprland.conf (a nested test session) read as Lua and failed here.
 config_is_lua=false
-[[ -e $shell_path/hypr/hyprland.lua ]] && config_is_lua=true
+[[ $(hyprctl eval 'return 1' 2>/dev/null) == ok ]] && config_is_lua=true
 case "$dialect" in
   lua)     $config_is_lua && ok "shell speaks the Lua dialect, like the configuration" \
              || warn "shell speaks Lua but the session started from hyprland.conf" ;;
@@ -252,7 +304,7 @@ running nm-applet && ok "NetworkManager secret agent (nm-applet) is running" || 
 
 section "Power and hardware"
 if [[ $(setting '.power.lockBeforeSleep') != false ]]; then
-  running swayidle 'before-sleep' && ok "lock before sleep is active" || fail "swayidle (lock before sleep) is not running"
+  running swayidle 'before-sleep' && ok "lock before sleep is active" || { fix_action=restartShell; fail "swayidle (lock before sleep) is not running"; }
 fi
 # Installed is not enough: the files include the distribution's stack
 # (system-auth on Fedora and Arch, common-auth on openSUSE, password-auth on
@@ -263,9 +315,11 @@ fi
 # missing file there is a warning, not an error.
 for pam_service in buchhwin-lock buchhwin-lock-password; do
   if [[ ! -r /etc/pam.d/$pam_service && $pam_service == buchhwin-lock-password ]]; then
+    fix_command="sudo $project_dir/install/system-install.sh"
     warn "/etc/pam.d/$pam_service is missing: the lock keeps buchhwin-lock, where a password is checked only after the fingerprint reader gives up (sudo install/system-install.sh)"
     continue
   elif [[ ! -r /etc/pam.d/$pam_service ]]; then
+    fix_command="sudo $project_dir/install/system-install.sh"
     fail "/etc/pam.d/$pam_service is missing (sudo install/system-install.sh)"
     continue
   fi
@@ -285,6 +339,7 @@ if faillock_stack=$(faillock_gap /etc/pam.d/buchhwin-lock-password /etc/pam.d/bu
   else
     faillock_fix="add pam_faillock preauth/authfail/authsucc around pam_unix, as session/pam/buchhwin-lock-password.arch does"
   fi
+  [[ $faillock_fix == sudo\ * ]] && fix_command=$faillock_fix
   warn "/etc/pam.d/buchhwin-lock-password does not count wrong passwords like $faillock_stack (pam_faillock): with the lid closed or the reader off, guesses at the lock screen are not limited ($faillock_fix)"
 elif grep -qE '^[[:space:]]*auth[[:space:]].*pam_faillock\.so[[:space:]]+authfail' /etc/pam.d/buchhwin-lock-password 2>/dev/null; then
   ok "the password-only lock service counts wrong passwords (pam_faillock)"
@@ -318,7 +373,7 @@ if [[ $night == manual ]]; then pgrep -u "$(id -u)" -x gammastep >/dev/null && o
 
 section "Tools"
 if [[ $(setting '.clipboard.history') != false ]]; then
-  running wl-paste "cliphist -db-path ${XDG_CACHE_HOME:-$HOME/.cache}/buchhwin-shell/cliphist.db" && ok "clipboard history is recording" || fail "clipboard history is not running"
+  running wl-paste "cliphist -db-path ${XDG_CACHE_HOME:-$HOME/.cache}/buchhwin-shell/cliphist.db" && ok "clipboard history is recording" || { fix_action=restartShell; fail "clipboard history is not running"; }
 fi
 if [[ $(setting '.autostart.system') != false ]]; then
   systemctl --user is-active --quiet xdg-desktop-autostart.target && ok "standard autostart is active" || warn "xdg-desktop-autostart.target is not active"
@@ -338,11 +393,16 @@ if [[ $(setting '.autostart.system') != false ]]; then
     done
     (( entry_found )) || continue
     [[ $(systemctl --user is-enabled "$unit" 2>/dev/null) == masked-runtime ]] \
-      || warn "autostart entry not skipped: $unit (install/install.sh --apply adds the drop-in that skips it)"
+      || { fix_command="$project_dir/install/install.sh --apply"; warn "autostart entry not skipped: $unit (install/install.sh --apply adds the drop-in that skips it)"; }
   done
 fi
 for tool in grim slurp wl-copy cliphist swappy gammastep curl; do
-  command -v "$tool" >/dev/null 2>&1 || warn "$tool is missing"
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    package=$tool
+    [[ $tool == wl-copy ]] && package=wl-clipboard
+    install_fix "$package"
+    warn "$tool is missing"
+  fi
 done
 if command -v wf-recorder >/dev/null 2>&1; then
   ok "screen recorder: wf-recorder"
@@ -351,6 +411,7 @@ elif command -v gpu-screen-recorder >/dev/null 2>&1; then
 elif flatpak info com.dec05eba.gpu_screen_recorder >/dev/null 2>&1; then
   ok "screen recorder: gpu-screen-recorder (Flatpak)"
 else
+  install_fix wf-recorder
   warn "no screen recorder ($(distro_install_hint "$distro" wf-recorder))"
 fi
 
@@ -360,4 +421,5 @@ if (( failures == 0 )); then
 else
   printf 'Result: %d error(s), %d warning(s).\n' "$failures" "$warnings"
 fi
+if (( json )); then printf '{"kind":"result","errors":%d,"warnings":%d}\n' "$failures" "$warnings" >&3; fi
 exit $(( failures > 0 ))

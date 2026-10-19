@@ -4,6 +4,7 @@ import Quickshell.Services.UPower
 import qs.theme
 import qs.services
 import qs.shell.components
+import "../../../services/power/StayAwakeLogic.js" as StayAwakeLogic
 
 ColumnLayout {
     id: page
@@ -17,8 +18,12 @@ ColumnLayout {
     readonly property string sourceLabel: source === "battery" ? "On battery" : "Plugged in"
     function sourceValue(key) { return PowerService.sourceValue(source, key) }
     function setSourceValue(key, value) { PowerService.setSourceValue(source, key, value) }
-    // The page opens on the active source again next time.
-    PageActivity { onClosed: PowerService.pageSource = "" }
+    // The page opens on the active source again next time. The charge limit
+    // is read each time the page is shown, and only then.
+    PageActivity {
+        onOpened: PowerService.refreshChargeLimit()
+        onClosed: PowerService.pageSource = ""
+    }
 
     SettingsSection {
         Layout.fillWidth: true
@@ -44,6 +49,54 @@ ColumnLayout {
                 text: PowerService.device ? "Health " + Math.round(PowerService.device.healthPercentage) + "%" : ""
                 role: "small"; muted: true
             }
+        }
+
+        // The charge limit, shown from the kernel and changed through UPower
+        // (PowerService, ChargeLimitLogic). A limit UPower cannot change -
+        // set in the firmware or by another tool on an older UPower - is
+        // still named, so "Not charging" at 80% has its reason.
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            visible: PowerService.hasBattery && PowerService.chargeLimit.supported
+            label: "Limit charging"
+            hint: PowerService.chargeLimitHint
+            ShellToggle {
+                focusOnTab: true
+                checked: PowerService.chargeLimit.active && !PowerService.chargeOnceActive
+                enabledState: PowerService.chargeWritable && !PowerService.chargeBusy
+                onToggled: value => PowerService.setChargeLimit(value)
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            visible: PowerService.hasBattery && PowerService.chargeLimit.supported
+                && (PowerService.chargeLimit.active || PowerService.chargeOnceActive)
+            label: "Charge to 100% once"
+            hint: PowerService.chargeOnceHint
+            ShellButton {
+                focusOnTab: true
+                compact: true
+                // The verb, not the label beside it again.
+                text: PowerService.chargeOnceActive ? "Keep the limit" : "Charge once"
+                enabledState: PowerService.chargeWritable && !PowerService.chargeBusy
+                onClicked: PowerService.chargeOnceActive ? PowerService.cancelChargeOnce() : PowerService.chargeOnce()
+            }
+        }
+        ShellText {
+            Layout.fillWidth: true
+            visible: text.length > 0
+            wrapMode: Text.Wrap
+            role: "small"
+            color: PowerService.chargeLimitError.length ? Colors.warning : Colors.mutedText
+            text: !PowerService.hasBattery ? ""
+                : PowerService.chargeLimitError.length ? "UPower refused the change: " + PowerService.chargeLimitError
+                : PowerService.chargeOnceActive ? "Charging to 100% once. The limit is set again when the battery is full or the charger is unplugged."
+                : PowerService.chargeLimit.active && !PowerService.chargeLimit.supported
+                    ? PowerService.chargeLimitLabel + ", set outside the shell (UPower cannot change it here)"
+                : PowerService.chargeLimit.supported && !PowerService.chargeWritable ? "A test session leaves the battery's limit alone"
+                : ""
         }
 
         // What every good state in the shell wears (Colors.positive): the
@@ -119,12 +172,28 @@ ColumnLayout {
         scope: "power"
         description: PowerService.hasBattery ? "These apply on battery and when plugged in" : ""
 
+        // How long, as on the control center's Power page; the battery
+        // popup's switch and the control center's tile start the last choice
+        // made here or there again.
         SettingRow {
-            Layout.fillWidth: true
-            labelFills: true
             label: "Stay awake"
-            hint: "Pauses screen off, lock and sleep until the shell restarts"
-            ShellToggle { focusOnTab: true; checked: IdleService.stayAwake; onToggled: value => IdleService.stayAwake = value }
+            hint: "Pauses screen off, lock and sleep. The switch in the battery popup starts the last choice again; a restart of the shell ends it"
+            SegmentedControl {
+                focusOnTab: true
+                Layout.fillWidth: true
+                current: IdleService.stayAwakeMode
+                // The control center's words (StayAwakeLogic.title).
+                options: StayAwakeLogic.MODES.filter(mode => mode === "off" || mode === "1h" || mode === "manual"
+                                                     || IdleService.stayAwakeMode === mode || IdleService.stayAwakeOffered(mode))
+                    .map(mode => ({ value: mode, label: StayAwakeLogic.title(mode) }))
+                onSelected: value => IdleService.chooseStayAwake(value)
+            }
+        }
+        ShellText {
+            Layout.fillWidth: true
+            visible: IdleService.stayAwakeMode === "1h"
+            text: IdleService.stayAwakeSubtitle
+            role: "small"; muted: true
         }
         SettingRow {
             Layout.fillWidth: true
@@ -247,6 +316,22 @@ ColumnLayout {
                           { value: "balanced", label: "Balanced" }]
                     .concat(PowerService.hasPerformance || page.sourceValue("profile") === "performance" ? [{ value: "performance", label: "Performance" }] : [])
                 onSelected: value => page.setSourceValue("profile", value)
+            }
+        }
+        // Off by default, and meant to be measured before it is kept: the
+        // blur and the animations cost the GPU something on battery, how
+        // much on this laptop is BAT0's power_now with and without.
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            visible: PowerService.hasBattery && SettingsService.defaultOf("power.battery.effects") !== undefined
+            label: "Lighter effects"
+            hint: (page.source === "battery" ? "On battery" : "Plugged in")
+                + ", the blur is off and Full motion runs as Reduced. Settings > Appearance keeps your own choice for the rest of the time"
+            ShellToggle {
+                focusOnTab: true
+                checked: page.sourceValue("effects") === "light"
+                onToggled: value => page.setSourceValue("effects", value ? "light" : "keep")
             }
         }
     }

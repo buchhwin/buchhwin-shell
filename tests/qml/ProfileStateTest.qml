@@ -56,9 +56,10 @@ ShellRoot {
         T.eq(["clipboard.history", "clipboard.maxItems", "input.tapToClick", "input.touchpadNaturalScroll",
               "input.mouseNaturalScroll", "input.sensitivity", "input.accelProfile", "input.touchpadScrollFactor",
               "input.disableWhileTyping", "autostart.apps", "autostart.system", "updates.checkHours",
-              "updates.shellAuto", "drives.autoOpen", "terminal.alacrittyDaemon", "notch.screens"].filter(P.isProfileSetting), [],
-             "the clipboard history, the pointer, what the login starts, updates, drives, how Alacritty runs "
-             + "and the notch's screens are the machine's")
+              "updates.shellAuto", "drives.autoOpen", "terminal.alacrittyDaemon", "notch.screens",
+              "desktop.worldClocks", "commandWidgets.one.command", "commandWidgets.three.interval"].filter(P.isProfileSetting), [],
+             "the clipboard history, the pointer, what the login starts, updates, drives, how Alacritty runs, "
+             + "the notch's screens, the world clock's places and the command widgets are the machine's")
         T.ok(P.isProfileSetting("input.repeatRate") && P.isProfileSetting("input.repeatDelay")
              && P.isProfileSetting("input.browserScroll") && P.isProfileSetting("terminal.fontSize"),
              "the keys' repeat, the shell's own scrolling and the rest of the terminal stay a profile's")
@@ -80,26 +81,32 @@ ShellRoot {
         // A mode's? ProfileLogic.MODE_SCOPED.
         const profileOwned = {
             appearance: ["accent", "accentFromWallpaper", "appsAccent", "appsFollowTheme", "appsRestoreOnLogout",
-                         "clockFormat", "cursorSize", "cursorTheme", "fontFamily", "fontScale", "locale",
-                         "monoFontFamily", "panelColor", "panelScrim", "screenCorners", "statusColors", "theme"],
+                         "autoTheme", "clockFormat", "cursorSize", "cursorTheme", "dateOrder", "fontFamily", "fontScale",
+                         "locale", "monoFontFamily", "panelColor", "panelScrim", "screenCorners", "shortDateNumbers",
+                         "statusColors", "theme"],
+            audio: ["micKeyAll"],
+            bluetooth: ["batteryWarning"],
             calendar: ["enabled", "eventColor", "eventHint", "hintMinutes"],
-            desktop: ["autoProfile", "clockIndicators", "dashboardHeight", "dashboardWidth", "launcherHeight",
-                      "launcherWidth", "osd", "quickHeight", "quickWidth"],
-            dock: ["enabled", "iconSize", "magnification", "margin", "position", "runningOn", "showRunning", "span",
-                   "startOpens", "visibility"],
+            desktop: ["autoModeBattery", "autoModeDesk", "autoModeRoad", "autoProfile", "clockIndicators", "dashboardHeight", "dashboardWidth", "launcherHeight",
+                      "launcherWidth", "mediaVisualizer", "osd", "quickHeight", "quickWidth"],
+            dock: ["activeClick", "badges", "enabled", "iconSize", "magnification", "margin", "position", "previews",
+                   "runningOn", "showRunning", "span", "startOpens", "visibility", "wheelVolume"],
             emoji: ["tone"],
             gestures: ["createNew", "enabled", "fourDown", "fourHorizontal", "fourUp", "naturalSwipe", "pinchIn",
                        "pinchOut", "threeDown", "threeHorizontal", "threeUp"],
-            input: ["browserScroll", "repeatDelay", "repeatRate"],
-            launcher: ["categories", "fileSearch", "modeOrder", "pinned", "searchEngine", "searchUrl", "showPinned"],
+            input: ["browserScroll", "passthroughCitrix", "repeatDelay", "repeatRate"],
+            launcher: ["categories", "codeFolders", "conversions", "exchangeRates", "fileSearch", "modeOrder", "pinned",
+                       "recentFiles", "searchEngine", "searchUrl", "showPinned", "windows"],
             lock: ["showAvatar", "showMedia", "showPowerButtons", "showStatus"],
             login: ["accent", "blur", "dateFormat", "font", "wallpaper"],
+            network: ["portalNotify"],
             nightLight: ["end", "lastMode", "mode", "start", "temperature"],
             notch: ["accentGlyphs", "bodyHeight", "bodyPadding", "bodyRadius", "clickAction", "closeDelay",
                     "collapsedWidth", "displayMedia", "displayNotifications", "displayOsd", "dockDuplicates",
                     "eventCount", "expandedHeight", "expandedWidth", "fullscreen", "hoverMode", "middleAction",
                     "openDelay", "osdStyle", "panelOrigin", "reserve", "rightAction", "shape", "swipe"],
-            notifications: ["dndTomorrowHour", "popupTimeoutMs", "suppressFullscreen", "suppressGames"],
+            notifications: ["dndTomorrowHour", "fullscreenElsewhere", "fullscreenExceptions", "missedSummary",
+                            "popupTimeoutMs", "sounds", "suppressFullscreen", "suppressGames", "suppressSharing"],
             panelOpacity: ["clipboard", "controlCenter", "dashboard", "dock", "launcher", "notificationCenter",
                            "notificationPopups", "osd", "overview", "pillBar", "popups", "sessionMenu", "settings",
                            "switcher", "widgets"],
@@ -109,8 +116,12 @@ ShellRoot {
                        "fontFamily", "fontSize", "git", "gitStatus", "gitSymbol", "hostname", "imageSize", "jobs",
                        "newline", "nodejs", "opacity", "padding", "personalShell", "previewGit", "promptColor",
                        "python", "symbol", "time", "timeFormat", "twoLine", "username"],
-            wallpaper: ["folder", "intervalMinutes", "order", "path", "slideshow", "slideshowFolder", "slideshowSource"],
+            timer: ["sound"],
+            toasts: ["capsLock", "charger", "output", "vpn"],
+            wallpaper: ["darkPath", "folder", "intervalMinutes", "lightPath", "order", "path", "slideshow", "slideshowFolder",
+                        "slideshowSource", "themePair"],
             weather: ["enabled", "refreshMinutes", "unit"],
+            windows: ["minimizeRequests"],
             workspaces: ["count", "keepEmpty", "mode", "perMonitor", "style"]
         }
         const listed = []

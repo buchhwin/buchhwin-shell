@@ -187,14 +187,15 @@ ColumnLayout {
 
         // The copy button beside the command, as a code block has it: the
         // installer's absolute path wraps the line, and a button in a row of
-        // its own under it ended below the card's edge.
+        // its own under it ended below the card's edge. The line breaks at a
+        // folder of the path (LoginLogic.shown); the button copies it whole.
         RowLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceSm
             ShellText {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignVCenter
-                text: root.command
+                text: LoginLogic.shown(root.command)
                 font.family: Typography.monoFamily
                 wrapMode: Text.Wrap
             }
@@ -222,7 +223,7 @@ ColumnLayout {
             ShellText {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignVCenter
-                text: root.removeCommand
+                text: LoginLogic.shown(root.removeCommand)
                 font.family: Typography.monoFamily
                 wrapMode: Text.Wrap
             }

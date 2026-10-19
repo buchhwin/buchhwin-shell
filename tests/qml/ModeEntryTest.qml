@@ -20,7 +20,7 @@ import "../../services/LayoutLogic.js" as L
 // must still take its template's desktop mode and bar when it is entered; it
 // showed widgets for good (pitfall 119's placeholders, outside a nested
 // sandbox too). Then Do Not Disturb across switches by hand, automatic and
-// undone; then a profile switch: one write of the settings, the default
+// undone, and a mode's own choice to turn it on or not; then a profile switch: one write of the settings, the default
 // recording folder kept as it is, a state from before a migration migrated,
 // and a value this version refuses set to its default rather than kept from
 // the profile left.
@@ -118,6 +118,57 @@ ShellRoot {
             T.eq(NotificationService.dndActive, false, "and one out of it off")
             LayoutService.setActiveMode("docked", true)
             T.eq(NotificationService.dndActive, false, "a switch between two others leaves it alone")
+            choice.start()
+        }
+    }
+
+    // ---- a mode's own Do Not Disturb choice (Settings > Profiles) -------------
+    Timer {
+        id: choice
+        interval: 50
+        onTriggered: {
+            const profile = LayoutService.activeProfile
+            const stored = name => L.modeConfig(LayoutService.config, profile, name).dnd
+            T.eq(["minimal", "work", "gaming", "laptop", "docked"].map(name => LayoutService.modeDnd(name)),
+                 [false, false, true, false, false], "without a choice each mode does as it ships: gaming on, the rest off")
+            T.eq(LayoutService.setModeDnd(false), true, "docked switched off, as it is")
+            T.eq(stored("docked"), undefined, "is no choice stored: it stays its template's")
+
+            T.eq(LayoutService.setModeDnd(true), true, "docked switched on")
+            T.eq([stored("docked"), NotificationService.dndActive, NotificationService.dndBy], [true, true, "docked"],
+                 "turns Do Not Disturb on at once, as docked's")
+            LayoutService.setActiveMode("work")
+            T.eq(NotificationService.dndActive, false, "leaving docked turns it off")
+            LayoutService.setActiveMode("docked")
+            T.eq(NotificationService.dndBy, "docked", "entering it turns it on again")
+            T.eq(LayoutService.setModeDnd(false), true, "switched off in docked")
+            T.eq([stored("docked"), NotificationService.dndActive], [false, false], "ends docked's own at once")
+            NotificationService.setDnd("manual")
+            LayoutService.setModeDnd(true)
+            LayoutService.setModeDnd(false)
+            T.eq([NotificationService.dndActive, NotificationService.dndBy], [true, ""], "one the user set stays through both")
+            NotificationService.setDnd("off")
+
+            // An undo keeps the choice, as it keeps a mode's appearance.
+            LayoutService.setActiveMode("laptop")
+            LayoutService.setModeDnd(true)
+            T.eq(NotificationService.dndBy, "laptop", "laptop switched on after the switch into it")
+            LayoutService.undo()
+            T.eq([LayoutService.activeMode, stored("laptop"), NotificationService.dndActive], ["docked", true, false],
+                 "undoing the switch goes back to docked, ends laptop's own and keeps laptop's choice")
+
+            LayoutService.setActiveMode("gaming")
+            T.eq(NotificationService.dndBy, "gaming", "gaming as it ships")
+            LayoutService.setModeDnd(false)
+            T.eq([stored("gaming"), NotificationService.dndActive], [false, false], "switched off, it ends its own")
+            LayoutService.setActiveMode("work")
+            LayoutService.setActiveMode("gaming")
+            T.eq(NotificationService.dndActive, false, "and no longer turns it on")
+            LayoutService.setModeDnd(true)
+            T.eq(NotificationService.dndBy, "gaming", "switched on again, it does")
+            LayoutService.setActiveMode("docked")
+            T.eq(NotificationService.dndActive, false, "and ends it as it is left")
+            NotificationService.setDnd("off")
             profiles.start()
         }
     }

@@ -16,6 +16,8 @@ PopupPanel {
     glyphActive: PowerService.charging || PowerService.full
     footerText: "Power settings"
     onFooterClicked: PanelService.open("settings", { page: "power" })
+    // The charge limit is read when the popup opens, and only then.
+    onShownChanged: if (shown) PowerService.refreshChargeLimit()
 
     body: ColumnLayout {
         spacing: Metrics.pageGap
@@ -77,6 +79,20 @@ PopupPanel {
                     font.features: { "tnum": 1 }
                 }
             }
+            // Beside the health, the other number that says how this battery
+            // is kept: why it stops at 80% on the charger, or that it is on
+            // its way to 100% this once. Not while the header says "Charge
+            // limit 80% reached" already.
+            RowLayout {
+                visible: (PowerService.chargeLimit.active || PowerService.chargeOnceActive) && !PowerService.limitReached
+                Layout.fillWidth: true
+                ShellText { Layout.fillWidth: true; text: "Charge limit"; role: "small"; muted: true }
+                ShellText {
+                    text: PowerService.chargeOnceActive ? "100% this once" : PowerService.chargeLimit.end + "%"
+                    role: "small"
+                    font.features: { "tnum": 1 }
+                }
+            }
             RowLayout {
                 Layout.fillWidth: true
                 visible: PowerService.device !== null && PowerService.device.changeRate > 0
@@ -106,6 +122,33 @@ PopupPanel {
                     { value: String(PowerProfile.Balanced), label: "Balanced", icon: "󰾅" }
                 ].concat(PowerService.hasPerformance ? [{ value: String(PowerProfile.Performance), label: "Performance", icon: "󰓅" }] : [])
                 onSelected: value => PowerService.setProfile(parseInt(value))
+            }
+        }
+
+        // Where the battery applets of other desktops keep "block sleep":
+        // one switch, and how long it holds while it runs. On, it starts the
+        // way the last chosen hold ended (an hour until one was chosen);
+        // the other ways are on the control center's Power page and in
+        // Settings > Power.
+        CardSection {
+            Layout.fillWidth: true
+            spacing: Metrics.spaceXs
+            SettingRow {
+                Layout.fillWidth: true
+                labelFills: true
+                label: "Stay awake"
+                hint: "Pauses screen off, lock and sleep"
+                ShellToggle {
+                    focusOnTab: true
+                    checked: IdleService.stayAwake
+                    onToggled: value => { if (value !== IdleService.stayAwake) IdleService.toggleStayAwake() }
+                }
+            }
+            ShellText {
+                Layout.fillWidth: true
+                visible: IdleService.stayAwake
+                text: IdleService.stayAwakeSubtitle
+                role: "small"; muted: true
             }
         }
     }

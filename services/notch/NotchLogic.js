@@ -75,6 +75,9 @@ function statusItems(state) {
     if (s.bluetooth && s.bluetooth.available)
         items.push({ id: "bluetooth", icon: s.bluetooth.icon, text: "", dim: !s.bluetooth.connected })
     if (s.dnd) items.push({ id: "dnd", icon: "󰂛", text: "", dim: false })
+    // Stay awake while it holds: { on, icon } (IdleService).
+    if (s.stayAwake && s.stayAwake.on === true)
+        items.push({ id: "stayAwake", icon: String(s.stayAwake.icon || ""), text: "", dim: false })
     if (s.volume) items.push({ id: "volume", icon: s.volume.icon, text: "", dim: s.volume.muted === true })
     if (s.battery && s.battery.present) {
         const charging = s.battery.charging === true

@@ -109,19 +109,39 @@ def ipc_action_of(command):
     return re.sub(r"\s+", " ", match.group(1).split("||", 1)[0]).strip()
 
 
+SUBMAP_LINE = re.compile(r"^\s*submap\s*=\s*(\S+)\s*$")
+
+
+def global_action_of(argument):
+    """`global, buchhwin:audio.talk` (a conf bind on the shell's global
+    shortcut) -> "audio talk", the action as ShellShortcuts names it."""
+    match = re.fullmatch(r"\s*buchhwin:(\S+)\s*", argument or "")
+    return match.group(1).replace(".", " ") if match else None
+
+
 def conf_binds():
     """[(namespace, combo, action, where)] for every bind in hypr/*.conf."""
     found = []
     for conf in sorted((ROOT / "hypr").glob("*.conf")):
+        # A bind between `submap = NAME` and `submap = reset` is that
+        # submap's, a key of its own: the keyboard passthrough's way out is
+        # the key that leads into it.
+        submap = ""
         for number, line in enumerate(conf.read_text().splitlines(), 1):
-            bind = conf_bind(line.split("#", 1)[0])
+            code = line.split("#", 1)[0]
+            entered = SUBMAP_LINE.match(code)
+            if entered:
+                submap = "" if entered.group(1) == "reset" else entered.group(1)
+                continue
+            bind = conf_bind(code)
             if bind is None:
                 continue
             flags, mods, key, dispatcher, argument = bind
             combo = normalize_combo(mods, key)
             # Mouse bindings (bindm) live in a separate namespace from key presses.
-            namespace = ("mouse" if "m" in flags else "key",) + combo
-            action = ipc_action_of(argument) if dispatcher == "exec" else None
+            namespace = ("mouse" if "m" in flags else "key",) + combo + ((submap,) if submap else ())
+            action = (ipc_action_of(argument) if dispatcher == "exec"
+                      else global_action_of(argument) if dispatcher == "global" else None)
             found.append((namespace, combo, action, f"{conf.name}:{number}"))
     return found
 
@@ -210,6 +230,12 @@ def lua_binds(text):
     source = _strip_lua_comments(text)
     loops = [(match.start(4), match.end(4), match.group(1), int(match.group(2)), int(match.group(3)))
              for match in LUA_FOR.finditer(source)]
+    # The binds made inside `hl.define_submap("NAME", function() ... end)`
+    # are that submap's, as in the conf dialect.
+    submaps = []
+    for match in re.finditer(r"\bhl\.define_submap\s*\(\s*\"([^\"]+)\"", source):
+        start = source.index("(", match.start())
+        submaps.append((match.start(), start + len(_lua_call_args(source, start)) + 2, match.group(1)))
     found = []
     for match in re.finditer(r"\bhl\.bind\s*\(", source):
         args = _lua_split_args(_lua_call_args(source, match.end() - 1))
@@ -230,6 +256,7 @@ def lua_binds(text):
         for start, end, name, low, high in loops:
             if start <= match.start() < end:
                 rounds = [{name: value} for value in range(low, high + 1)]
+        submap = next((name for start, end, name in submaps if start <= match.start() < end), "")
         for names in rounds:
             combo = _lua_concat(combo_text, dict(names, ipc=LUA_IPC_PREFIX))
             if combo is None:
@@ -240,7 +267,7 @@ def lua_binds(text):
             if exec_call:
                 command = _lua_concat(exec_call.group(1), dict(names, ipc=LUA_IPC_PREFIX))
                 action = ipc_action_of(command) if command is not None else None
-            found.append(((kind,) + normalized, normalized, action, where))
+            found.append(((kind,) + normalized + ((submap,) if submap else ()), normalized, action, where))
     return found
 
 
@@ -266,7 +293,7 @@ def _bind_problems(binds):
 # Keys the Lua dialect sends to the shell while the conf dialect runs the
 # backend itself: an IPC client per repeat would cost more there than the
 # backend (wpctl), so the two differ on purpose.
-CONF_RUNS_BACKEND = {"audio up", "audio down", "audio mute", "audio micMute"}
+CONF_RUNS_BACKEND = {"audio up", "audio down", "audio mute"}
 
 
 def bind_drift(conf, lua):
@@ -316,11 +343,34 @@ def ipc_functions():
     return found
 
 
+def ipc_handler_ids():
+    """{target: id} of shell.qml's IpcHandlers that have an id."""
+    text = (ROOT / "shell.qml").read_text()
+    found = {}
+    for block in re.split(r"\n    IpcHandler \{", text)[1:]:
+        head = block.split("\n    }", 1)[0]
+        target = re.search(r'target: "(\w+)"', head)
+        ident = re.search(r"^\s*id: (\w+)$", head, re.M)
+        if target and ident:
+            found[target.group(1)] = ident.group(1)
+    return found
+
+
+def shortcut_targets():
+    """{target: handler id} of shell.qml's `shortcutTargets`: where a global
+    shortcut (`buchhwin:<target>.<function>`) finds the IpcHandler it runs."""
+    text = (ROOT / "shell.qml").read_text()
+    block = re.search(r"shortcutTargets: \(\{(.*?)\}\)", text, re.S)
+    return dict(re.findall(r"(\w+): (\w+)", block.group(1))) if block else {}
+
+
 def shortcut_problems(lua_text):
     """`shell(…)` binds the shell does not register, or cannot run."""
     problems = []
     registered = registered_shortcuts()
     functions = ipc_functions()
+    ids = ipc_handler_ids()
+    targets = shortcut_targets()
     code = _strip_lua_comments(lua_text)
     for match in re.finditer(r'\b(?:shell|shellOr)\s*\(\s*"([^"]+)"', code):
         action = match.group(1)
@@ -330,6 +380,13 @@ def shortcut_problems(lua_text):
         parts = action.split()
         if len(parts) < 2 or parts[1] not in functions.get(parts[0], set()):
             problems.append(f"hyprland.lua:{line}: shell(\"{action}\") names no IpcHandler function in shell.qml")
+        # The Lua dialect's key reaches the shell as a global shortcut, which
+        # shell.qml answers through `shortcutTargets`: a handler that is not
+        # in it logs "unknown shortcut" and the key does nothing, while the
+        # conf dialect's `ipc call` of the same key works.
+        elif parts[0] not in ids or targets.get(parts[0]) != ids[parts[0]]:
+            problems.append(f"hyprland.lua:{line}: shell(\"{action}\"): the IpcHandler \"{parts[0]}\" is not in "
+                            "shell.qml's shortcutTargets under its id")
     return problems
 
 

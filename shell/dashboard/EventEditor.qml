@@ -263,11 +263,11 @@ ShellPanel {
             subtitle: {
                 if (root.details && !root.editing) {
                     const event = root.event
-                    const day = DateFormat.date(event.start, SettingsService.locale, "long")
+                    const day = DateFormat.date(event.start, SettingsService.locale, "long", SettingsService.dateOrder)
                     return day + " · " + CalendarService.formatRange(event)
                 }
                 const date = Draft.parseDate(root.draft.date)
-                return date ? DateFormat.date(date, SettingsService.locale, "year") : "Choose a date"
+                return date ? DateFormat.date(date, SettingsService.locale, "year", SettingsService.dateOrder) : "Choose a date"
             }
         }
 
@@ -278,6 +278,14 @@ ShellPanel {
             Layout.fillWidth: true
             visible: root.details && !root.editing
             spacing: Metrics.spaceMd
+            // The meeting's way in, above its text: an invitation's text is
+            // mostly the link and its boilerplate.
+            MeetingJoinButton {
+                focusOnTab: true
+                event: root.event
+                // Read anew for each event opened (the panel is kept).
+                now: { const unused = root.event; return new Date() }
+            }
             ShellText {
                 Layout.fillWidth: true
                 visible: text.length > 0
