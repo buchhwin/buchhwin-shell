@@ -118,6 +118,15 @@ ShellRoot {
         T.eq([N.dndActive("off", seven, evening), N.dndAfter("off", seven, evening)], [false, "off"], "off stays off")
         T.eq(N.dndActive("bogus", seven, evening), false, "an unknown mode is not on")
 
+        // Whose it is: a mode's name while it is on (gaming turned it on and
+        // turns it off when left), "" for the user's own.
+        T.eq(N.dndOwner("manual", "gaming"), "gaming", "a mode's own Do Not Disturb names the mode")
+        T.eq(N.dndOwner("off", "gaming"), "", "one that is off has no owner")
+        T.eq([N.dndOwner("manual", undefined), N.dndOwner("manual", "")], ["", ""], "a change without one is the user's")
+        T.eq([N.dndOwner("manual", 3), N.dndOwner("manual", "Gaming!"), N.dndOwner("manual", "x".repeat(33))], ["", "", ""],
+             "only a plain mode name is read back from state.json")
+        T.eq([N.dndOwnerTitle("gaming"), N.dndOwnerTitle("")], ["Gaming", ""], "the label names the mode as its template does")
+
         T.finish("NotificationPopupTest")
     }
 }

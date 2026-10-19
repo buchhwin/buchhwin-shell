@@ -70,16 +70,25 @@ ShellRoot {
         T.eq(L.modeAfterUndo(intoGaming, "gaming"), "laptop", "a switch whose mode is still in use switches back")
         T.eq(L.modeAfterUndo(intoGaming, "docked"), "docked", "one the machine switched away from since keeps its mode")
 
-        // ---- Do Not Disturb -------------------------------------------------
-        // Gaming turned it on from off: undone, it goes off again.
-        const fromOff = { dnd: "manual" }
-        T.eq(L.dndAfterUndo(fromOff, "manual", {}), "off", "a switch that turned it on, undone, turns it off")
-        T.eq(L.dndAfterUndo(fromOff, "1h", {}), "", "not once it was changed since")
-        T.eq(L.dndAfterUndo(fromOff, "off", {}), "", "nor when it is off already")
-        T.eq(L.dndAfterUndo(fromOff, "manual", { dnd: "manual" }), "",
-             "nor when the mode undone to turns it on itself")
-        T.eq(L.dndAfterUndo({ dnd: "" }, "manual", {}), "", "a switch that found it on, or set nothing, leaves it")
-        T.eq(L.dndAfterUndo(undefined, "manual", undefined), "", "and so does a step that is no switch")
+        // ---- Do Not Disturb across a mode switch -----------------------------
+        // By hand, automatic or undone: gaming turns it on when it finds it
+        // off, and it ends with the mode - unless the user changed it since.
+        const gaming = { dnd: "manual", animationMode: "reduced" }
+        T.eq(L.dndOnModeChange("", false, "work", "gaming", gaming), { mode: "manual", by: "gaming" },
+             "entering gaming with it off turns it on, as gaming's")
+        T.eq(L.dndOnModeChange("", true, "work", "gaming", gaming), null,
+             "entering with it on already changes nothing - a running hour stays an hour")
+        T.eq(L.dndOnModeChange("gaming", true, "gaming", "work", {}), { mode: "off", by: "" },
+             "leaving gaming turns its own off")
+        T.eq(L.dndOnModeChange("", true, "gaming", "work", {}), null,
+             "one the user set (or set again in gaming) stays after leaving")
+        T.eq(L.dndOnModeChange("gaming", false, "gaming", "work", {}), null, "one that is off already stays off")
+        T.eq(L.dndOnModeChange("gaming", true, "gaming", "focus", { dnd: "manual" }), { mode: "manual", by: "focus" },
+             "a mode entered that turns it on too takes it over")
+        T.eq(L.dndOnModeChange("laptop", true, "gaming", "work", {}), null, "another mode's is not gaming's to end")
+        T.eq(L.dndOnModeChange("gaming", true, "gaming", "gaming", gaming), null, "staying in the mode changes nothing")
+        T.eq(L.dndOnModeChange("", false, "gaming", "work", undefined), null, "a mode without effects leaves it")
+        T.eq(L.dndOnModeChange(undefined, false, "work", "laptop", { dnd: "off" }), null, "\"off\" is no wish to turn it on")
 
         // ---- the settings a step puts back -----------------------------------
         // Every step carries the notch's options (undoKeys); a dock preset's

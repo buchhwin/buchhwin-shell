@@ -31,6 +31,10 @@ Singleton {
     property int unread: 0
     property string dndMode: "off"
     property real dndUntil: 0
+    // Whose Do Not Disturb this is: the name of the mode that turned it on
+    // (gaming; LayoutLogic.dndOnModeChange), which turns it off again when it
+    // is left. "" for the user's own - any change made anywhere else.
+    property string dndBy: ""
     // Per-app rules ({ "<app key>": "mute" | "critical" }). They live in
     // state.json beside DND rather than in settings.json, which holds only
     // primitives per key.
@@ -43,10 +47,14 @@ Singleton {
     readonly property bool suppressed: dndActive || autoSuppressed
 
     readonly property string dndLabel: !dndActive ? "Off"
+        : dndMode === "manual" && dndBy.length ? "Until you leave " + Logic.dndOwnerTitle(dndBy)
         : dndMode === "manual" ? "Until turned off"
         : "Until " + Qt.formatTime(new Date(dndUntil), "HH:mm") + (dndMode === "tomorrow" ? " (tomorrow)" : "")
 
-    function setDnd(mode) {
+    // `by` only from a mode switch (LayoutService.modeDndTransition); every
+    // other caller - the tiles, the launcher, IPC, the focus mode - leaves it
+    // out, and the Do Not Disturb set is the user's.
+    function setDnd(mode, by) {
         const current = new Date()
         let until = 0
         if (mode === "1h") until = current.getTime() + 3600000
@@ -56,6 +64,7 @@ Singleton {
         } else if (mode !== "manual") mode = "off"
         dndMode = mode
         dndUntil = until
+        dndBy = Logic.dndOwner(mode, by)
         now = Date.now()
         saveState()
         scheduleExpiry()
@@ -118,10 +127,10 @@ Singleton {
     property var earlyState: null
     function saveState() {
         if (!stateLoaded) {
-            earlyState = { mode: dndMode, until: dndUntil, rules: Object.assign({}, appRules) }
+            earlyState = { mode: dndMode, until: dndUntil, by: dndBy, rules: Object.assign({}, appRules) }
             return
         }
-        stateFile.setText(JSON.stringify({ dnd: { mode: dndMode, until: dndUntil, boot: bootId },
+        stateFile.setText(JSON.stringify({ dnd: { mode: dndMode, until: dndUntil, boot: bootId, by: dndBy },
                                            appRules: appRules }, null, 2) + "\n")
     }
 
@@ -152,18 +161,21 @@ Singleton {
             // instead - "until six tomorrow" means six tomorrow whether or not
             // the machine slept in between - so those two are left alone.
             if (dndMode === "manual" && String(dnd.boot || "") !== bootId) dndMode = "off"
+            dndBy = Logic.dndOwner(dndMode, dnd.by)
             const rules = parsed.appRules || {}
             const clean = {}
             for (const key in rules) if (rules[key] === "mute" || rules[key] === "critical") clean[key] = rules[key]
             appRules = clean
         } catch (error) {
             dndMode = "off"
+            dndBy = ""
             appRules = ({})
         }
         stateLoaded = true
         if (earlyState) {
             dndMode = earlyState.mode
             dndUntil = earlyState.until
+            dndBy = earlyState.by || ""
             appRules = Object.assign({}, appRules, earlyState.rules)
             earlyState = null
             // Not from inside the load that is finishing (pitfall 3).
@@ -182,6 +194,7 @@ Singleton {
         const next = Logic.dndAfter(dndMode, dndUntil, now)
         if (next !== dndMode) {
             dndMode = next
+            dndBy = Logic.dndOwner(next, dndBy)
             saveState()
         }
         scheduleExpiry()

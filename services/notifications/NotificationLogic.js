@@ -162,3 +162,15 @@ function dndActive(mode, until, now) {
 function dndAfter(mode, until, now) {
     return TIMED_DND.indexOf(mode) >= 0 && !dndActive(mode, until, now) ? "off" : mode
 }
+
+// Whose Do Not Disturb `mode` is, from what a mode switch (or state.json)
+// says: a mode's plain name while it is on, else "" - the user's. Unit tested.
+function dndOwner(mode, by) {
+    return mode !== "off" && typeof by === "string" && /^[a-z]{1,32}$/.test(by) ? by : ""
+}
+
+// "gaming" -> "Gaming", the templates' own labels.
+function dndOwnerTitle(by) {
+    const name = String(by || "")
+    return name.length ? name.charAt(0).toUpperCase() + name.slice(1) : ""
+}

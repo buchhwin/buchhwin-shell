@@ -304,16 +304,23 @@ function undoSettings(step, keys) {
     return restored
 }
 
-// Do Not Disturb after a mode switch is undone. A mode whose template turns
-// it on (gaming's `effects.dnd`) and found it off says so in its step
-// (`modeSwitch.dnd`, the value it set). Undone, it goes off again - unless it
-// was changed since (it is no longer what the mode set), or the mode undone
-// to sets its own on entering (applyModeSettings does that). "" leaves it.
-function dndAfterUndo(switched, dndNow, restoredEffects) {
-    const set = switched && typeof switched.dnd === "string" ? switched.dnd : ""
-    if (!set.length || dndNow !== set) return ""
-    if (restoredEffects && restoredEffects.dnd) return ""
-    return "off"
+// Do Not Disturb across a switch from mode `from` to mode `to` - by hand,
+// automatic or undone. A mode whose template turns it on (gaming's
+// `effects.dnd`) does so only when it finds it off, and then it is the
+// mode's (`by`, kept by NotificationService): leaving that mode turns it off
+// again, or hands it to the mode entered when that one turns it on too. One
+// the user set, or changed since the mode set it (any other change clears
+// `by`), is theirs and stays; so does one a mode found on. Entering with it
+// on already changes nothing - a running "1 hour" stays an hour. null leaves
+// it as it is; else `{ mode, by }` for NotificationService.setDnd.
+function dndOnModeChange(by, active, from, to, toEffects) {
+    if (from === to) return null
+    const wanted = toEffects && typeof toEffects.dnd === "string" && toEffects.dnd !== "off" ? toEffects.dnd : ""
+    const owner = typeof by === "string" ? by : ""
+    if (active && owner.length && owner === from)
+        return wanted.length ? { mode: wanted, by: to } : { mode: "off", by: "" }
+    if (!active && wanted.length) return { mode: wanted, by: to }
+    return null
 }
 
 // What the profile in use gets once per start (LayoutService.settleActiveState):

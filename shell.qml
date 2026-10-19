@@ -293,6 +293,7 @@ ShellRoot {
                                     popups: NotificationService.popups.length,
                                     unread: NotificationService.unread,
                                     dndMode: NotificationService.dndMode,
+                                    dndBy: NotificationService.dndBy,
                                     dndActive: NotificationService.dndActive,
                                     autoSuppressed: NotificationService.autoSuppressed,
                                     suppressed: NotificationService.suppressed,

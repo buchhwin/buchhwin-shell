@@ -1055,18 +1055,13 @@ Singleton {
         ensureScreens()
         // A switch undone is a switch back, with all that entering the mode
         // does: its widgets on every monitor (above), its appearance (gaps,
-        // blur, animations) and, from its template, Do Not Disturb. Without
-        // it the settings stayed those of the mode undone, and the next
-        // mode-scoped edit was stored in the mode restored.
+        // blur, animations) and Do Not Disturb - off again when the mode
+        // undone turned it on. Without it the settings stayed those of the
+        // mode undone, and the next mode-scoped edit was stored in the mode
+        // restored.
         if (activeMode !== modeBefore) {
             applyModeSettings(activeMode)
-            // The mode undone turned Do Not Disturb on, from off.
-            const switched = step.modeSwitch
-            if (switched && switched.dnd && typeof NotificationService !== "undefined" && NotificationService.setDnd) {
-                const effects = (templates[activeMode] || {}).effects || {}
-                const dnd = Logic.dndAfterUndo(switched, NotificationService.dndMode, effects)
-                if (dnd.length) NotificationService.setDnd(dnd)
-            }
+            modeDndTransition(modeBefore, activeMode)
         }
         const restored = Logic.undoSettings(step, undoKeys)
         if (Object.keys(restored).length) SettingsService.setAll(restored)
@@ -1125,19 +1120,16 @@ Singleton {
     // docking undoes the last edit rather than the dock, and keeps the mode.
     function setActiveMode(name, automatic) {
         if (modeNames.indexOf(name) < 0 || readOnly) return false
-        if (automatic !== true) {
-            // Entering a mode that turns Do Not Disturb on (gaming) from off:
-            // the step says so, so undoing the switch turns it off again. And
-            // the mode it goes to, so an automatic switch since keeps its own.
-            const effects = (templates[name] || {}).effects || {}
-            const dndWasOff = !!effects.dnd && typeof NotificationService !== "undefined" && !NotificationService.dndActive
-            beginChange(null, { dnd: dndWasOff ? String(effects.dnd) : "", to: name })
-        }
+        // The step names the mode it goes to, so an automatic switch since
+        // keeps its own (Logic.modeAfterUndo).
+        if (automatic !== true) beginChange(null, { to: name })
+        const modeBefore = activeMode
         const next = JSON.parse(JSON.stringify(config))
         next.activeMode = name
         config = Logic.sanitize(next)
         ensureScreens()
         applyModeSettings(name)
+        modeDndTransition(modeBefore, name)
         revision++
         save()
         return true
@@ -1170,11 +1162,19 @@ Singleton {
         applyingMode = true
         if (Object.keys(values).length) SettingsService.setAll(values)
         applyingMode = false
-        // Do Not Disturb is not a setting, it is session state, so it is not on
-        // the mode-scoped list and stays where it was: applied from the
-        // template when the mode is entered.
-        if (effects.dnd && typeof NotificationService !== "undefined" && NotificationService.setDnd)
-            NotificationService.setDnd(effects.dnd)
+    }
+
+    // Do Not Disturb is not a setting, it is session state, so it is not on
+    // the mode-scoped list and applyModeSettings leaves it alone: it changes
+    // only when the mode does. A mode whose template turns it on does so
+    // when it finds it off, and turns it off again when it is left - unless
+    // the user changed it in between (Logic.dndOnModeChange; NotificationService
+    // keeps whose it is across shell restarts).
+    function modeDndTransition(from, to) {
+        if (typeof NotificationService === "undefined" || !NotificationService.setDnd) return
+        const effects = (templates[to] || {}).effects || {}
+        const change = Logic.dndOnModeChange(NotificationService.dndBy, NotificationService.dndActive, from, to, effects)
+        if (change) NotificationService.setDnd(change.mode, change.by)
     }
 
     // A setting a mode owns, changed anywhere in the shell, belongs to the mode
