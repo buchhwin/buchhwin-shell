@@ -108,8 +108,8 @@ lock_session() {
     "QT_WAYLAND_DISABLE_WINDOWDECORATION=${QT_WAYLAND_DISABLE_WINDOWDECORATION:-1}")
   local names=(WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME
     BUCHHWIN_NESTED BUCHHWIN_SHELL_PATH)
-  # The lock's test hooks - a PAM fixture in place of the real service, the
-  # lid override - reach it only from a nested session its files confirm
+  # The lock's test hooks - a PAM fixture in place of the real service or of
+  # the security key's, the lid override - reach it only from a nested session its files confirm
   # (nested-guard.sh), never on BUCHHWIN_NESTED=1 alone: a flag left in a
   # terminal can reach a real session's shell, and a lock on test-permit
   # takes any password. Otherwise they are taken out of the unit's
@@ -118,9 +118,9 @@ lock_session() {
   # script waits for.
   unset_args+=(-u BUCHHWIN_LOCK_PREVIEW)
   if (unset BUCHHWIN_NESTED; nested_environment); then
-    names+=(BUCHHWIN_LOCK_PAM_SERVICE BUCHHWIN_LOCK_LID_CLOSED)
+    names+=(BUCHHWIN_LOCK_PAM_SERVICE BUCHHWIN_LOCK_KEY_SERVICE BUCHHWIN_LOCK_LID_CLOSED)
   else
-    unset_args+=(-u BUCHHWIN_LOCK_PAM_SERVICE -u BUCHHWIN_LOCK_LID_CLOSED)
+    unset_args+=(-u BUCHHWIN_LOCK_PAM_SERVICE -u BUCHHWIN_LOCK_KEY_SERVICE -u BUCHHWIN_LOCK_LID_CLOSED)
   fi
   local env_args=()
   local name

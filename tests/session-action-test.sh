@@ -94,7 +94,7 @@ lockdir="$run/buchhwin-shell/lock"
 # later; $elapsed is how long the call took, in milliseconds.
 caller_unset=(-u BUCHHWIN_NESTED -u QT_QPA_PLATFORMTHEME -u MALLOC_ARENA_MAX -u MALLOC_CONF -u mesa_glthread
   -u GALLIUM_THREAD -u QT_WAYLAND_DISABLE_WINDOWDECORATION -u BUCHHWIN_LOCK_PAM_SERVICE -u BUCHHWIN_LOCK_LID_CLOSED
-  -u BUCHHWIN_LOCK_PREVIEW)
+  -u BUCHHWIN_LOCK_PREVIEW -u BUCHHWIN_LOCK_KEY_SERVICE)
 elapsed=0
 lock() {
   : > "$calls"
@@ -240,6 +240,10 @@ check '[[ $run_line == *" -u BUCHHWIN_LOCK_PREVIEW "* && $run_line != *"--setenv
 lock STUB_STATES=inactive BUCHHWIN_LOCK_PAM_SERVICE=test-permit
 check '! grep -q "setenv=BUCHHWIN_LOCK_PAM_SERVICE" "$calls" && grep -q " -u BUCHHWIN_LOCK_PAM_SERVICE " "$calls"' \
   'nor does a real session that has the name'
+# The security key's fixture alike: a real lock never takes test-key.
+lock STUB_STATES=inactive BUCHHWIN_NESTED=1 BUCHHWIN_LOCK_KEY_SERVICE=test-key
+check '! grep -q "setenv=BUCHHWIN_LOCK_KEY_SERVICE" "$calls" && grep -q " -u BUCHHWIN_LOCK_KEY_SERVICE " "$calls"' \
+  'the key fixture stays out of a lock outside a nested session'
 
 # The host is never suspended, rebooted or powered off from a nested session -
 # and a nested session is recognised by its files, not only by BUCHHWIN_NESTED.
@@ -266,6 +270,9 @@ check 'said "unit=buchhwin-shell-lock-nested"' 'the lock from a nested environme
 check 'said "setenv=BUCHHWIN_LOCK_DIR=$run/buchhwin-shell/lock-nested "' 'and the nested lock directory'
 check 'said "setenv=BUCHHWIN_LOCK_PAM_SERVICE=test-permit " && ! said " -u BUCHHWIN_LOCK_PAM_SERVICE "' \
   'a nested session its files confirm hands the PAM fixture on'
+lock STUB_STATES=inactive BUCHHWIN_NESTED_DIR="$nested" WAYLAND_DISPLAY=wayland-9 BUCHHWIN_LOCK_KEY_SERVICE=test-key
+check 'said "setenv=BUCHHWIN_LOCK_KEY_SERVICE=test-key " && ! said " -u BUCHHWIN_LOCK_KEY_SERVICE "' \
+  'and the key fixture'
 # The files of a nested Hyprland that is gone are stale and name nothing: a
 # real session that got the same wayland-N still suspends.
 sh -c 'exit 0' & dead=$!; wait "$dead"

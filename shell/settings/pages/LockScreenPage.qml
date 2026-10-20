@@ -24,8 +24,8 @@ ColumnLayout {
     readonly property bool pamLineMissing: FingerprintLogic.pamLineMissing(DistroService.family, FingerprintService.lockEnabled)
 
     PageActivity {
-        onOpened: FingerprintService.track()
-        onClosed: FingerprintService.untrack()
+        onOpened: { FingerprintService.track(); SecurityKeyService.track() }
+        onClosed: { FingerprintService.untrack(); SecurityKeyService.untrack() }
     }
 
     SettingsSection {
@@ -510,6 +510,96 @@ ColumnLayout {
             visible: FingerprintService.available && FingerprintService.blockedReason.length > 0
             text: FingerprintService.blockedReason + "."
             role: "caption"
+            wrapMode: Text.Wrap
+        }
+    }
+
+    // A YubiKey or another FIDO2 key for the lock screen (pam_u2f in its own
+    // /etc/pam.d/buchhwin-lock-key; SecurityKeyService). Setting up, adding a
+    // key and turning it off happen in a terminal: the key's PIN, a touch and
+    // sudo are the user's to give there.
+    SettingsSection {
+        Layout.fillWidth: true
+        title: "Security key"
+        scope: "lock.securityKey"
+        hint: "Unlock the lock screen with a YubiKey or another FIDO2 key: its PIN, then a touch. While it is plugged in it is asked first, before the fingerprint; Escape or \"Use password instead\" goes to the password. The login screen, sudo and the keyring stay with the password, and other sign-ins on the key, such as Microsoft's, stay as they are."
+            + " Each wrong PIN counts against the key's own tries (8 on a YubiKey); when they run out, its FIDO part has to be reset, which removes those other sign-ins too."
+
+        ListRow {
+            Layout.fillWidth: true
+            interactive: false
+            icon: Icons.securityKey
+            active: SecurityKeyService.setUp
+            title: !SecurityKeyService.known ? "Looking for a security key …"
+                : SecurityKeyService.devices.length ? SecurityKeyService.devices.join(", ")
+                : "No security key plugged in"
+            subtitle: !SecurityKeyService.known ? ""
+                : !SecurityKeyService.installed ? "pam-u2f is not installed yet; Set up installs it"
+                : SecurityKeyService.keys === 0 ? "No key registered"
+                : (SecurityKeyService.keys === 1 ? "1 key registered" : SecurityKeyService.keys + " keys registered")
+                  + (SecurityKeyService.setUp ? "" : " · not on the lock screen")
+            ShellButton {
+                focusOnTab: true
+                icon: Icons.refresh
+                compact: true
+                variant: "ghost"
+                toolTip: "Refresh"
+                onClicked: SecurityKeyService.refresh()
+            }
+        }
+        SettingRow {
+            Layout.fillWidth: true
+            visible: SecurityKeyService.setUp
+            label: "Use security key"
+            hint: "Automatic asks a plugged-in key first. Off leaves it out and keeps everything set up."
+            SegmentedControl {
+                focusOnTab: true
+                Layout.fillWidth: true
+                current: SecurityKeyService.mode
+                options: [
+                    { value: "auto", label: "Automatic", icon: "󰌢" },
+                    { value: "off", label: "Off", icon: Icons.lock }
+                ]
+                onSelected: value => SecurityKeyService.setMode(value)
+            }
+        }
+        RowLayout {
+            spacing: Metrics.spaceSm
+            ShellButton {
+                focusOnTab: true
+                visible: !SecurityKeyService.setUp || SecurityKeyService.outdated
+                icon: Icons.securityKey
+                text: SecurityKeyService.busy ? "In the terminal …" : SecurityKeyService.setUp ? "Update …" : "Set up …"
+                compact: true
+                variant: "accent"
+                enabledState: SecurityKeyService.known && !SecurityKeyService.busy && SecurityKeyService.realSession
+                onClicked: SecurityKeyService.run("setup")
+            }
+            ShellButton {
+                focusOnTab: true
+                visible: SecurityKeyService.setUp
+                icon: Icons.add
+                text: "Add another key …"
+                compact: true
+                enabledState: !SecurityKeyService.busy && SecurityKeyService.realSession
+                onClicked: SecurityKeyService.run("add")
+            }
+            ShellButton {
+                focusOnTab: true
+                visible: SecurityKeyService.state.service === true
+                text: "Turn off …"
+                compact: true
+                variant: "ghost"
+                enabledState: !SecurityKeyService.busy && SecurityKeyService.realSession
+                onClicked: SecurityKeyService.run("off")
+            }
+        }
+        ShellText {
+            Layout.fillWidth: true
+            visible: SecurityKeyService.message.length > 0
+            text: SecurityKeyService.message
+            role: "caption"
+            color: SecurityKeyService.messageError ? Colors.danger : Colors.mutedText
             wrapMode: Text.Wrap
         }
     }

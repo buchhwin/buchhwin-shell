@@ -24,10 +24,14 @@ Scope {
     property bool nested: Quickshell.env("BUCHHWIN_NESTED") === "1"
     property string dir: Quickshell.env("BUCHHWIN_LOCK_DIR") || ""
     property string requestedService: Quickshell.env("BUCHHWIN_LOCK_PAM_SERVICE") || ""
+    property string requestedKeyService: Quickshell.env("BUCHHWIN_LOCK_KEY_SERVICE") || ""
     property string lidHook: Quickshell.env("BUCHHWIN_LOCK_LID_CLOSED") || ""
     property bool previewWanted: Quickshell.env("BUCHHWIN_LOCK_PREVIEW") === "1"
     // false: no session lock, for the test - a test locks nothing.
     property bool surfaces: true
+    // false: the process goes on after an unlock, for a test that unlocks
+    // several screens in turn (LockKeyTest).
+    property bool quitOnUnlock: true
     // The fixtures, the lid override and the preview need a nested session
     // the lock directory confirms (LockLogic.testHooksAllowed).
     readonly property bool testHooks: Logic.testHooksAllowed(nested, dir)
@@ -125,6 +129,36 @@ Scope {
     property bool lidChecked: false
     // The last start decision; false hides the fingerprint retry.
     property bool fingerprintAllowed: true
+
+    // Security key (pam_u2f in /etc/pam.d/buchhwin-lock-key, set up by
+    // scripts/security-key.py; lock.securityKey): asked first, in a
+    // conversation of its own, once per lock - at the first start, and again
+    // only on a click (useKey). A key that is not plugged in ends it at once
+    // and without a word; every end that does not unlock goes on with the
+    // usual start, so the fingerprint (as lock.fingerprint and the lid say)
+    // and the password are untouched by it. `keyStage` while it runs,
+    // `keyPin` while it waits for the PIN, `keyTouch` while the key waits for
+    // a finger on it. What was typed before the PIN prompt is a password and
+    // never goes to the key: each wrong PIN counts against the key's own
+    // tries, and the key's FIDO part locks when they run out.
+    readonly property string keyMode: SettingsService.value("lock.securityKey")
+    property bool keyServiceInstalled: false
+    // The /etc/pam.d/buchhwin-lock-key check has finished (test services need none).
+    property bool keyServiceChecked: mainService !== "buchhwin-lock"
+    readonly property string keyService: Logic.keyService(testHooks, requestedKeyService, keyServiceInstalled, keyMode)
+    property bool keyTurn: true
+    property bool keyStage: false
+    property bool keyPin: false
+    property bool keyTouch: false
+    property bool keyAsked: false
+    property bool keyManual: false
+    // From the key's end until the next conversation begins: PamContext can
+    // report a system error as well as the result, and the second of them
+    // belongs to the key's conversation, not to the one that follows.
+    property bool keyClosing: false
+    // PINs this lock gave the key (the test holds the "never a password" rule to it).
+    property int keyPinsSent: 0
+    readonly property bool keyOffered: keyService.length > 0 && !keyStage && !unlocking && SettingsService.loaded
     // A start waits for the settings, the PAM file check and the lid state.
     property bool startQueued: false
 
@@ -151,7 +185,7 @@ Scope {
         if (busy || unlocking) return
         engage()
         password += text
-        if (!statusIsError && !fingerprintStage) {
+        if (!statusIsError && !fingerprintStage && !keyStage) {
             status = ""
             if (fingerprint === "ended") fingerprint = ""
         }
@@ -162,12 +196,32 @@ Scope {
         password = word ? "" : Array.from(password).slice(0, -1).join("")
     }
     function clear() { if (!busy) password = "" }
+    // Escape: leaves the key's conversation for the password, else clears.
+    function pressEscape() {
+        if (keyStage && !unlocking) leaveKey()
+        else clear()
+    }
 
     function submit() {
         if (busy || unlocking || !password.length) return
-        if (pam.active && pam.responseRequired) {
+        if (pam.active && keyStage && !pam.responseRequired) {
+            // Sent before the key asked for its PIN: a password, never the PIN.
+            submitPending = true
+            busy = true
+            leaveKey()
+        } else if (pam.active && pam.responseRequired) {
             clearStatus()
             busy = true
+            if (keyStage) {
+                // The PIN leaves the buffer at once: the field waits for the
+                // touch, and nothing typed later is added to a PIN.
+                const pin = password
+                password = ""
+                keyPin = false
+                keyPinsSent += 1
+                pam.respond(pin)
+                return
+            }
             pam.respond(password)
         } else if (pam.active && fingerprintStage && passwordService !== mainService) {
             // The reader still blocks the prompt: leave it, check the password alone.
@@ -217,19 +271,89 @@ Scope {
     // force: the watchdog gives up waiting (lid unknown counts as open).
     function tryStart(force) {
         if (!startQueued) return
-        const ready = SettingsService.loaded && passwordServiceChecked && lidChecked
+        const ready = SettingsService.loaded && passwordServiceChecked && keyServiceChecked && lidChecked
         if (!ready && !force) return
         if (!lidChecked) lidClosed = false
         startQueued = false
         startWatchdog.stop()
         if (pam.active || unlocking) return
+        if (Logic.startsWithKey(keyService, keyTurn, submitPending)) {
+            keyTurn = false
+            beginKey(false)
+            return
+        }
         fingerprintAllowed = Logic.fingerprintEnabled(fingerprintMode, lidClosed)
         beginPam(Logic.startPasswordOnly(fingerprintAllowed, mainService, passwordService))
+    }
+
+    // The key's conversation (see keyService). `manual`: asked for by a click.
+    function beginKey(manual) {
+        if (pam.active || unlocking) return
+        root.passwordOnly = false
+        fingerprintStage = false
+        fingerprint = ""
+        keyManual = manual === true
+        keyClosing = false
+        keyAsked = false
+        keyPin = false
+        keyTouch = false
+        keyStage = true
+        pamMessages = []
+        if (!pam.start()) {
+            keyStage = false
+            startPam()
+        }
+    }
+    // The key is left for the password: Escape, a click on "Use password",
+    // or a password typed before the PIN prompt. Synchronous like
+    // passwordNow; a password already sent goes the password-only way.
+    function leaveKey() {
+        if (!keyStage || unlocking) return
+        if (pam.active) pam.abort()
+        // A PIN half typed is no password.
+        if (keyPin) password = ""
+        keyStage = false
+        keyPin = false
+        keyTouch = false
+        busy = submitPending
+        clearStatus()
+        startPam(submitPending)
+    }
+    // "Use security key": the key once more, whatever runs now.
+    function useKey() {
+        if (!keyOffered || busy) return
+        if (pam.active) pam.abort()
+        clearStatus()
+        password = ""
+        submitPending = false
+        beginKey(true)
+    }
+    function keyDone(success) {
+        if (!keyStage) return
+        const next = Logic.afterKey(success, keyAsked, keyManual)
+        keyStage = false
+        keyPin = false
+        keyTouch = false
+        keyClosing = true
+        busy = false
+        if (next.action === "unlock") {
+            unlock()
+            return
+        }
+        status = next.text
+        statusIsError = next.action === "refused"
+        // A refusal stays readable for a moment before the reader speaks;
+        // otherwise the usual start follows a turn later, outside
+        // PamContext's own signal.
+        if (next.action === "refused") restartTimer.restart()
+        else Qt.callLater(() => root.startPam(root.submitPending))
     }
 
     function beginPam(passwordOnly) {
         if (pam.active || unlocking) return
         root.passwordOnly = passwordOnly === true
+        keyStage = false
+        keyClosing = false
         fingerprintStage = false
         pamMessages = []
         if (!pam.start()) {
@@ -295,16 +419,36 @@ Scope {
     function finish() {
         if (dir.length) Quickshell.execDetached(["sh", "-c", "rm -f -- \"$1\"/*.png \"$1\"/locked", "sh", dir])
         if (!preview) lock.locked = false
-        quitTimer.restart()
+        if (quitOnUnlock) quitTimer.restart()
     }
 
     PamContext {
         id: pam
-        config: root.passwordOnly ? root.passwordService : root.mainService
+        config: root.keyStage ? root.keyService : root.passwordOnly ? root.passwordService : root.mainService
         configDirectory: Logic.systemService(config) ? "/etc/pam.d" : Quickshell.shellPath("tests/fixtures/pam")
         user: root.user
 
         onPamMessage: {
+            if (root.keyStage) {
+                const keyEvent = Logic.keyEvent(message, responseRequired)
+                if (keyEvent === "pin") {
+                    // Typed for the password before the key spoke: not its PIN.
+                    if (root.password.length || root.submitPending) {
+                        Qt.callLater(root.leaveKey)
+                        return
+                    }
+                    root.keyAsked = true
+                    root.keyPin = true
+                    root.status = "Then touch the key"
+                    root.statusIsError = false
+                } else if (keyEvent === "touch") {
+                    root.keyPin = false
+                    root.keyTouch = true
+                    root.status = ""
+                    root.statusIsError = false
+                }
+                return
+            }
             const event = Logic.fingerprintEvent(message, messageIsError, responseRequired, root.fingerprintStage)
             if (responseRequired) {
                 // The reader gave up (or was not used): the password is asked now.
@@ -328,6 +472,10 @@ Scope {
             }
         }
         onCompleted: result => {
+            if (root.keyStage || root.keyClosing) {
+                root.keyDone(result === PamResult.Success)
+                return
+            }
             root.busy = false
             root.submitPending = false
             root.fingerprintStage = false
@@ -349,6 +497,10 @@ Scope {
             }
         }
         onError: error => {
+            if (root.keyStage || root.keyClosing) {
+                root.keyDone(false)
+                return
+            }
             root.busy = false
             root.submitPending = false
             root.fingerprintStage = false
@@ -461,6 +613,17 @@ Scope {
                 root.capsLock = state.capsLock
                 root.layout = state.layout
             }
+        }
+    }
+
+    // The security key's PAM service exists only once it was set up.
+    Process {
+        running: root.mainService === "buchhwin-lock"
+        command: ["test", "-r", "/etc/pam.d/buchhwin-lock-key"]
+        onExited: code => {
+            root.keyServiceInstalled = code === 0
+            root.keyServiceChecked = true
+            root.tryStart(false)
         }
     }
 

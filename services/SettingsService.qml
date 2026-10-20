@@ -408,7 +408,10 @@ Singleton {
             "showStatus": false,
             "showPowerButtons": false,
             // Fingerprint unlock: auto (not while the lid is closed) | on | off.
-            "fingerprint": "auto"
+            "fingerprint": "auto",
+            // Security key unlock (pam_u2f, once scripts/security-key.py set it
+            // up): auto (asked first while one is plugged in) | off.
+            "securityKey": "auto"
         },
         "terminal": {
             // The face, spacing and transparency of the Alacritty setup the
@@ -754,6 +757,7 @@ Singleton {
         "workspaces.count": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         "weather.unit": ["celsius", "fahrenheit"],
         "lock.fingerprint": ["auto", "on", "off"],
+        "lock.securityKey": ["auto", "off"],
         "power.battery.lidAction": ["suspend", "lock", "screenOff", "nothing"],
         "power.ac.lidAction": ["suspend", "lock", "screenOff", "nothing"],
         "power.battery.profile": ["keep", "powerSaver", "balanced", "performance"],

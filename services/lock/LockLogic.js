@@ -226,7 +226,56 @@ function startPasswordOnly(fingerprintOn, service, passwordOnlyService) {
 
 // System services live in /etc/pam.d, test services in tests/fixtures/pam.
 function systemService(service) {
-    return service === "buchhwin-lock" || service === "buchhwin-lock-password"
+    return service === "buchhwin-lock" || service === "buchhwin-lock-password" || service === "buchhwin-lock-key"
+}
+
+// Security key unlock (setting lock.securityKey): "auto" asks a plugged-in
+// key first, "off" never. Unknown modes count as "auto".
+var SECURITY_KEY_MODES = ["auto", "off"]
+// The nested fixtures for the key's conversation: test-key asks a PIN
+// ("lock-test-pin") and a touch, test-key-absent ends at once, as pam_u2f
+// does without a key, and test-key-error ends as a system error.
+var KEY_TEST_SERVICES = ["test-key", "test-key-absent", "test-key-error"]
+
+// The key's own service (pam_u2f, session/pam/buchhwin-lock-key) or "": off,
+// not installed by scripts/security-key.py, or a test lock without a key
+// fixture. `requested` counts only with the test hooks.
+function keyService(hooks, requested, installed, mode) {
+    if (mode === "off") return ""
+    if (hooks === true) return KEY_TEST_SERVICES.indexOf(requested) >= 0 ? requested : ""
+    return installed === true ? "buchhwin-lock-key" : ""
+}
+
+// Whether a start begins with the key's conversation: there is one, the lock
+// has not used its turn (the first start, or a click on "Use security key"),
+// and no password is waiting to be checked - a password already sent never
+// meets the key's PIN prompt.
+function startsWithKey(service, turn, pending) {
+    return String(service || "").length > 0 && turn === true && pending !== true
+}
+
+// A message of the key's conversation. pam_u2f asks for the PIN only once it
+// found a key holding one of the user's credentials ("Please enter the PIN:
+// ", the one prompt in that service), then says "Please touch the FIDO
+// authenticator." (cue).
+//   pin   – the PIN is asked
+//   touch – the key waits for a touch
+//   ""    – anything else
+function keyEvent(message, responseRequired) {
+    if (responseRequired === true) return "pin"
+    return /touch|authenticator|security key/i.test(String(message || "")) ? "touch" : ""
+}
+
+// What the end of the key's conversation leads to.
+//   unlock  – the key took
+//   next    – it asked nothing (no key plugged in): the usual start, at once
+//   refused – the PIN was asked and the key said no (a wrong PIN, no touch):
+//             say so, then the usual start a moment later
+// `manual`: the user asked for the key, so "no key" is said in words.
+function afterKey(success, asked, manual) {
+    if (success === true) return { action: "unlock", text: "" }
+    if (asked === true) return { action: "refused", text: "The security key did not unlock. Enter your password." }
+    return { action: "next", text: manual === true ? "No security key found" : "" }
 }
 
 // Classifies a PAM message from pam_fprintd (sent without a response).

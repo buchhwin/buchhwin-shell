@@ -51,7 +51,7 @@ Item {
         lockState.keyActivity()
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) lockState.submit()
         else if (event.key === Qt.Key_Backspace) lockState.erase(event.modifiers & Qt.ControlModifier)
-        else if (event.key === Qt.Key_Escape) lockState.clear()
+        else if (event.key === Qt.Key_Escape) lockState.pressEscape()
         else if (event.text.length && event.text.charCodeAt(0) >= 32) lockState.type(event.text)
         event.accepted = true
     }
@@ -261,6 +261,39 @@ Item {
                     text: root.lockState.status
                     color: root.lockState.statusIsError ? Colors.lockError : Colors.lockMuted
                     role: "small"
+                }
+            }
+            // Security key (LockScreen.keyStage): while the key asks, the way
+            // to the password (Escape does the same); after it, the way back
+            // to the key. Only on a lock that has a key set up.
+            Item {
+                id: keyLink
+                Layout.alignment: Qt.AlignHCenter
+                readonly property bool leaving: root.lockState.keyStage
+                visible: leaving || root.lockState.keyOffered
+                implicitWidth: keyRow.implicitWidth
+                implicitHeight: keyRow.implicitHeight
+                opacity: keyMouse.containsMouse ? 1 : Effects.mutedOpacity
+                RowLayout {
+                    id: keyRow
+                    anchors.centerIn: parent
+                    spacing: Metrics.spaceXs
+                    ShellIcon {
+                        glyph: keyLink.leaving ? Icons.lock : Icons.securityKey
+                        size: Metrics.iconSm
+                        color: Colors.lockText
+                    }
+                    LockLabel {
+                        text: keyLink.leaving ? "Use password instead" : "Use security key"
+                        role: "small"
+                    }
+                }
+                MouseArea {
+                    id: keyMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: keyLink.leaving ? root.lockState.leaveKey() : root.lockState.useKey()
                 }
             }
         }

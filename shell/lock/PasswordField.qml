@@ -51,7 +51,12 @@ Item {
             anchors.leftMargin: Metrics.spaceLg
             anchors.verticalCenter: parent.verticalCenter
             visible: root.length === 0
-            text: root.lockState.busy ? "Checking …" : "Enter password"
+            // The key's conversation says what it waits for (LockScreen.keyStage):
+            // typing the password into a PIN prompt costs one of the key's tries.
+            text: root.lockState.keyTouch ? "Touch your security key"
+                : root.lockState.busy ? "Checking …"
+                : root.lockState.keyPin ? "Security key PIN"
+                : "Enter password"
             color: Colors.lockMuted
         }
 

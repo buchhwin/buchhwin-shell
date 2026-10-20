@@ -1,0 +1,8 @@
+#%PAM-1.0
+# Nested lock screen tests only (BUCHHWIN_NESTED=1, BUCHHWIN_LOCK_KEY_SERVICE)
+# and tests/qml/LockKeyTest.qml: the key's service failing as a system error
+# (pam_exec's own failure, as a pam_u2f.so gone with its PAM file left
+# behind might), on which PamContext reports an error as well as the result.
+# Asks nothing.
+auth     required  pam_exec.so quiet /usr/bin/false
+account  required  pam_permit.so

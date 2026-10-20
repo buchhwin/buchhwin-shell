@@ -127,6 +127,10 @@ Singleton {
     // twin (a phone to unlock).
     readonly property string lock: "󰍁"
     readonly property string unlock: "󰍀"
+    // A security key (a YubiKey, FIDO2): the lock screen's key unlock and its
+    // section in Settings > Lock Screen. The shield with a key, not the bare
+    // key the pairing and drive dialogs draw for a passkey or a passphrase.
+    readonly property string securityKey: "\u{f0bc4}"
     // A crescent drawn in a line, like the padlock, the door and the power
     // ring around it in the session menu; mdi has only a filled moon for
     // sleeping, so this one is Font Awesome's, which the font carries too.

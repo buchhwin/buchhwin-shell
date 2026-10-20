@@ -22,6 +22,7 @@ var MACHINE_LABELS = [
     { entries: ["display"], label: "the displays" },
     { entries: ["power"], label: "power and the lid" },
     { entries: ["lock.fingerprint"], label: "fingerprint unlock" },
+    { entries: ["lock.securityKey"], label: "security key unlock" },
     { entries: ["dock.screens", "notch.screens"], label: "which screens show the dock and the notch" },
     { entries: ["calendar"], label: "the calendars shown" },
     { entries: ["clipboard"], label: "the clipboard history" },

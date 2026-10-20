@@ -1,0 +1,18 @@
+#%PAM-1.0
+# buchhwin-shell lock screen: a security key (a YubiKey or another FIDO2 key)
+# through pam_u2f. Installed only by `scripts/security-key.py setup`
+# (Settings > Lock Screen > Security key) and removed by its `off`, never by
+# the installer. lock.qml runs this service first when lock.securityKey is
+# "auto", and nothing else: a key that is not plugged in ends it at once and
+# without a word, a wrong PIN or no touch end it too, and the lock goes on
+# with buchhwin-lock (the fingerprint as lock.fingerprint says) or
+# buchhwin-lock-password as before.
+# pam_u2f asks for the key's PIN (pinverification=1) only once it has found a
+# plugged key that holds one of the user's credentials
+# (~/.config/Yubico/u2f_keys, read relative to the home directory whatever
+# XDG_CONFIG_HOME says), then for a touch (cue). The origin is fixed rather
+# than the host name, so a renamed machine keeps its keys. No password and no
+# faillock here: the key counts its own wrong PINs.
+auth     sufficient  pam_u2f.so cue pinverification=1 authfile=.config/Yubico/u2f_keys origin=pam://buchhwin-shell appid=pam://buchhwin-shell
+auth     required    pam_deny.so
+account  required    pam_permit.so

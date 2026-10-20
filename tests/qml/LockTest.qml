@@ -21,6 +21,8 @@ ShellRoot {
         property bool busy: false
         property int shakes: 0
         property string inputScreen: ""
+        property bool keyPin: false
+        property bool keyTouch: false
         function noteInput(screenName, gained) { inputScreen = L.inputScreenAfter(inputScreen, screenName, gained) }
         function submit() {}
     }
@@ -204,6 +206,25 @@ ShellRoot {
         T.eq([L.logoMayBePicture({ source: "~/.config/buchhwin-shell/saturn.txt" }),
               L.logoMayBePicture({ type: "auto", source: "/x/LOGO.TXT" })], [false, false], "a .txt file is text")
         T.eq([L.systemService("buchhwin-lock"), L.systemService("buchhwin-lock-password"), L.systemService("test-permit")], [true, true, false], "PAM directories")
+        T.eq([L.systemService("buchhwin-lock-key"), L.systemService("test-key")], [true, false], "the key's service and its fixture")
+
+        // Security key: its own service, asked first and once per lock
+        T.eq([L.keyService(false, "", true, "auto"), L.keyService(false, "", false, "auto"), L.keyService(false, "", true, "off")],
+             ["buchhwin-lock-key", "", ""], "the key's service once set up, unless turned off")
+        T.eq(L.keyService(false, "test-key", true, "auto"), "buchhwin-lock-key", "a fixture is asked for only with the test hooks")
+        T.eq([L.keyService(true, "test-key", false, "auto"), L.keyService(true, "", true, "auto"), L.keyService(true, "test-permit", true, "auto"),
+              L.keyService(true, "test-key", false, "off")], ["test-key", "", "", ""], "a test lock takes a key fixture or none")
+        T.eq(L.keyService(false, "", true, "bogus"), "buchhwin-lock-key", "an unknown mode behaves like automatic")
+        T.eq([L.startsWithKey("buchhwin-lock-key", true, false), L.startsWithKey("buchhwin-lock-key", false, false),
+              L.startsWithKey("", true, false), L.startsWithKey("buchhwin-lock-key", true, true)], [true, false, false, false],
+             "the key goes first on its turn, never with a password already sent")
+        T.eq([L.keyEvent("Please enter the PIN: ", true), L.keyEvent("Password: ", true), L.keyEvent("Please touch the FIDO authenticator.", false),
+              L.keyEvent("something else", false), L.keyEvent("", false)], ["pin", "pin", "touch", "", ""], "the key's prompt and cue")
+        T.eq([L.afterKey(true, true, false).action, L.afterKey(false, true, false).action, L.afterKey(false, false, false).action],
+             ["unlock", "refused", "next"], "what the key's end leads to")
+        T.eq([L.afterKey(false, false, false).text, L.afterKey(false, false, true).text], ["", "No security key found"],
+             "no key is said in words only when it was asked for")
+        T.ok(L.afterKey(false, true, true).text.indexOf("password") >= 0, "a refusal points to the password")
 
         // Fingerprint mode and lid
         T.eq([L.fingerprintEnabled("auto", false), L.fingerprintEnabled("auto", true)], [true, false], "automatic follows the lid")

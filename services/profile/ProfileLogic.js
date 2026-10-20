@@ -224,7 +224,7 @@ var GLOBAL_SETTINGS = ["configVersion", "notch.headerAdopted", "desktop.quickSiz
                        "input.touchpadNaturalScroll", "input.touchpadScrollFactor", "input.tapToClick",
                        "input.disableWhileTyping",
                        "desktop.settingsMoveX", "desktop.settingsMoveY",
-                       "power", "lock.fingerprint", "dock.screens", "notch.screens",
+                       "power", "lock.fingerprint", "lock.securityKey", "dock.screens", "notch.screens",
                        "clipboard", "autostart", "updates", "drives", "terminal.alacrittyDaemon",
                        "notifications.keepHistory", "desktop.worldClocks", "commandWidgets",
                        "assistant", "sharePicker"]
