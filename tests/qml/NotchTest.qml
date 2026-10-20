@@ -346,7 +346,7 @@ ShellRoot {
         // under a resting pointer, the overview opened and the notification
         // jumped out into a popup over it.
         T.eq(N.hoverMayOpen(true, false, false, false), true, "the pointer stayed: the overview opens")
-        T.eq(N.hoverMayOpen(true, false, false, true), false, "not while the notch shows a notification, a level or a track")
+        T.eq(N.hoverMayOpen(true, false, false, true), false, "not while the notch shows a notification or a level")
         T.eq([N.hoverMayOpen(false, false, false, false), N.hoverMayOpen(true, true, false, false), N.hoverMayOpen(true, false, true, false)],
              [false, false, false], "nor once the pointer left, during a swipe, or with a panel up")
         T.eq([N.clickResult("hover", "dashboard"), N.clickResult("hover", "expand"), N.clickResult("hover", "evil"),

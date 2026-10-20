@@ -81,9 +81,15 @@ Variants {
         property bool displayOpen: false
         readonly property bool showingNotification: displaying && NotchService.displayKind === "notification"
         onShowingNotificationChanged: if (!showingNotification) closeDisplay()
-        // The hover waited for the display (Logic.hoverMayOpen); it opens the
-        // overview now if the pointer stayed.
-        onDisplayingChanged: if (!displaying && hover.hovered && NotchService.expandOnHover && !hoverExpanded) openTimer.restart()
+        // A notification or a level on display holds the hover back
+        // (Logic.hoverMayOpen): either would jump out into a surface of its
+        // own the moment the overview took the notch. A track change does
+        // not - it has no surface to jump to, and a browser's tab title
+        // ("(47) …") changes it every few seconds. When the display ends the
+        // hover opens the overview, if the pointer stayed.
+        readonly property bool holdsHover: displaying
+            && (NotchService.displayKind === "notification" || NotchService.displayKind === "osd")
+        onHoldsHoverChanged: if (!holdsHover && hover.hovered && NotchService.expandOnHover && !hoverExpanded) openTimer.restart()
         onDisplayContentChanged: if (displayOpen) closeDisplay()
         function closeDisplay() {
             displayOpen = false
@@ -412,7 +418,7 @@ Variants {
         Timer {
             id: openTimer
             interval: NotchService.openDelay
-            onTriggered: if (Logic.hoverMayOpen(hover.hovered, window.swiped, PanelService.active.length > 0, window.displaying))
+            onTriggered: if (Logic.hoverMayOpen(hover.hovered, window.swiped, PanelService.active.length > 0, window.holdsHover))
                 window.hoverExpanded = true
         }
         Timer {

@@ -20,10 +20,11 @@
 //   * **Hover wins.** While the pointer is on the notch, the notch is the
 //     overview, which the user asked for on purpose. A display that arrives
 //     then goes to its own surface - exactly what it does on a screen that has
-//     no notch at all, which is the rule that was chosen for those. A display
-//     that is already up keeps the notch, though: it widens the notch, and a
-//     pointer the notch grew under has asked for nothing, so the overview
-//     waits until the display has ended (NotchLogic.hoverMayOpen).
+//     no notch at all, which is the rule that was chosen for those. A
+//     notification or a level that is already up keeps the notch, though: it
+//     widens the notch, and a pointer the notch grew under has asked for
+//     nothing, so the overview waits until it has ended
+//     (NotchLogic.hoverMayOpen). A track change does not hold it.
 
 var KINDS = ["osd", "notification", "media"]
 
