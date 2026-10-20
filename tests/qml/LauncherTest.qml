@@ -3,6 +3,7 @@ import QtQuick
 import "Harness.js" as T
 import "../../services/launcher/LaunchLogic.js" as Launch
 import "../../services/launcher/FileSearch.js" as Files
+import "../../services/launcher/WindowClassLogic.js" as WindowClass
 
 // How the launcher starts an entry: always through scripts/launch-app.sh (a
 // unit named after the entry, and the session's environment instead of the
@@ -90,6 +91,12 @@ ShellRoot {
         T.eq(Files.indexCommand("/home/u"), ["plocate", "-c", "--", "/home/u/"], "the index is asked for the home folder")
         T.eq([Files.count("0\n"), Files.count("4636\n"), Files.count(""), Files.count("plocate: no db")], [0, 4636, -1, -1],
              "its count; no answer is not none")
+        // A window whose entry does not name its class: Citrix Workspace's
+        // "selfservice" drew the generic program icon in the dock.
+        T.eq([WindowClass.aliasFor("selfservice"), WindowClass.aliasFor("SelfService "), WindowClass.aliasFor("Wfica"), WindowClass.aliasFor("")],
+             ["citrix-workspace", "citrix-workspace", "", ""], "Citrix Workspace's window is its entry; the session and the rest go the usual way")
+        T.eq(WindowClass.aliasFor("toString"), "", "only the table's own names")
+
         T.finish("LauncherTest")
     }
 }

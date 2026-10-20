@@ -146,7 +146,7 @@ Singleton {
         }
         if (classCache.revision !== LauncherService.entriesRevision) classCache = { revision: LauncherService.entriesRevision, keys: {} }
         if (classCache.keys[low] === undefined) {
-            const entry = low.length ? (DesktopEntries.heuristicLookup(cls) || DesktopEntries.byId(cls) || DesktopEntries.byId(low)) : null
+            const entry = low.length ? LauncherService.entryForClass(cls) : null
             classCache.keys[low] = entry && entry.id ? entry.id : ""
         }
         return Reopen.keyOf(classCache.keys[low], low)

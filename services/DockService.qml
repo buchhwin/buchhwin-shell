@@ -202,8 +202,7 @@ Singleton {
     // (NoDisplay) would be stored and then never shown.
     function pinnable(pin) { return String(pin || "").length > 0 && resolvePin(pin) !== null }
     function lookup(cls) {
-        const entry = DesktopEntries.heuristicLookup(cls) || DesktopEntries.byId(cls)
-            || DesktopEntries.byId(String(cls).toLowerCase())
+        const entry = LauncherService.entryForClass(cls)
         return entry ? pinOf(entry) : null
     }
     // An entry by its exact id, for a window that names one (a Citrix session).

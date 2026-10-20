@@ -21,8 +21,7 @@ WidgetBase {
         LauncherService.entriesRevision
         const id = HyprlandService.activeAppId
         if (!id.length) return null
-        return (typeof DesktopEntries.heuristicLookup === "function" ? DesktopEntries.heuristicLookup(id) : null)
-            || DesktopEntries.byId(id) || DesktopEntries.byId(id.toLowerCase()) || null
+        return LauncherService.entryForClass(id)
     }
     readonly property string appName: {
         const id = HyprlandService.activeAppId

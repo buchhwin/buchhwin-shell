@@ -850,7 +850,7 @@ ShellPanel {
                                     readonly property bool dragging: chipMouse.drag.active
                                     readonly property bool isSelected: !!window.selectedStop && window.selectedStop.kind === "minimized"
                                         && window.selectedStop.key === "m:" + modelData.address
-                                    readonly property var entry: DesktopEntries.heuristicLookup(modelData.appClass)
+                                    readonly property var entry: LauncherService.entryForClass(modelData.appClass)
                                     visible: Logic.matches(modelData, search.text) && !sent
                                     width: Metrics.overviewCardMinWidth
                                     height: Metrics.rowHeight

@@ -167,7 +167,7 @@ PanelWindow {
                 required property int index
                 readonly property bool isSelected: index === SwitcherService.selected
                 readonly property var toplevel: window.shown ? window.toplevelFor(modelData.address) : null
-                readonly property var entry: DesktopEntries.heuristicLookup(modelData.appClass)
+                readonly property var entry: LauncherService.entryForClass(modelData.appClass)
                 // Largest box with the window's aspect ratio inside the preview area.
                 readonly property real aspect: modelData.width > 0 && modelData.height > 0 ? modelData.width / modelData.height : 16 / 10
                 readonly property real boxWidth: Metrics.switcherCardWidth - Metrics.spaceSm * 2

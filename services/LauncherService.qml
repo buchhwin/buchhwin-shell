@@ -11,6 +11,7 @@ import "launcher/WebSearch.js" as Web
 import "launcher/ModeOrder.js" as ModeOrder
 import "launcher/Pinned.js" as Pinned
 import "launcher/LaunchLogic.js" as Launch
+import "launcher/WindowClassLogic.js" as WindowClass
 import "launcher/FileSearch.js" as FileSearch
 import "launcher/ResultsLogic.js" as Results
 import "launcher/ConvertLogic.js" as Convert
@@ -542,7 +543,21 @@ Singleton {
     readonly property bool windowSearch: SettingsService.value("launcher.windows") !== false
 
     function appEntry(appId) {
-        return appId.length ? DesktopEntries.heuristicLookup(appId) : null
+        return entryForClass(appId)
+    }
+
+    // The desktop entry a window's class stands for: a known alias first
+    // (WindowClassLogic - Citrix Workspace's window says "selfservice"), then
+    // Quickshell's heuristic lookup and the id itself. The dock, the overview,
+    // Alt+Tab, the window title widget and the session's apps ask here, so a
+    // window has the same app, and the same icon, everywhere.
+    function entryForClass(cls) {
+        const name = String(cls || "")
+        if (!name.length) return null
+        const alias = WindowClass.aliasFor(name)
+        const aliased = alias.length ? DesktopEntries.byId(alias) : null
+        return aliased || DesktopEntries.heuristicLookup(name) || DesktopEntries.byId(name)
+            || DesktopEntries.byId(name.toLowerCase()) || null
     }
 
     function windowResults(query) {
