@@ -1,6 +1,7 @@
 .pragma library
 .import "../hypr/HiddenWindows.js" as Hidden
 .import "MinimizeLogic.js" as Minimize
+.import "../workspaces/WorkspaceLogic.js" as Workspaces
 
 // The dock (shell/dock/Dock.qml, services/DockService.qml): pinned apps - the
 // dock's own pins (LayoutService.dockLayout.pins) - and the apps that have
@@ -391,7 +392,7 @@ function menuRows(item, actions, pinnedFull, maxWindows, command, options) {
     const shown = Math.max(0, Math.min(windows.length, maxWindows === undefined ? windows.length : maxWindows))
     for (let index = 0; index < shown; ++index) {
         const row = { kind: "window", address: windows[index].address, workspace: windows[index].workspace,
-                      workspaceName: String(windows[index].workspaceName || "") }
+                      workspaceName: String(windows[index].workspaceName || ""), monitor: String(windows[index].monitor || "") }
         if (minimizing && windows[index].minimized === true) row.minimized = true
         rows.push(row)
     }
@@ -421,20 +422,21 @@ function menuRows(item, actions, pinnedFull, maxWindows, command, options) {
     return rows
 }
 
-// Where a window is, for its row in the menu: "Workspace 3", a named
-// workspace by its name, a special one (Hyprland's scratchpads, which have
-// negative ids) by its name without "special:" - the unnamed one is
-// "Scratchpad" -, and nothing for a workspace not known.
-function workspaceLabel(id, name) {
+// Where a window is, for its row in the menu: "Workspace 3" in the number its
+// pip shows (WorkspaceLogic.title: `monitor` the window's, `order` the
+// monitors in their blocks' order, empty without blocks), a named workspace
+// by its name, a special one (Hyprland's scratchpads, which have negative
+// ids) by its name without "special:" - the unnamed one is "Scratchpad" -,
+// and nothing for a workspace not known.
+function workspaceLabel(id, name, monitor, order) {
     const text = String(name || "")
     // A minimized window's own special workspace (MinimizeLogic).
-    if (Minimize.isParked(text)) return Minimize.parkedLabel(text)
+    if (Minimize.isParked(text)) return Minimize.parkedLabel(text, order)
     if (text === "special" || text.indexOf("special:") === 0) {
         const rest = text.slice("special:".length)
         return rest.length && rest !== "special" ? "Scratchpad " + rest : "Scratchpad"
     }
-    if (text.length && text !== String(id)) return "Workspace " + text
-    return Number(id) > 0 ? "Workspace " + Number(id) : ""
+    return Workspaces.title(id, text, monitor, order)
 }
 
 // ---- panels out of the dock -------------------------------------------------------

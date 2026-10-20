@@ -162,7 +162,7 @@ Singleton {
                     }
                 }
                 if (!root.active) return
-                root.windows = data ? Logic.build(data.clients) : []
+                root.windows = data ? Logic.build(data.clients, HyprlandService.blockOrder, HyprlandService.workspaceMonitors()) : []
                 root.activeAddress = data && data.active && data.active.address ? String(data.active.address) : ""
                 root.loading = false
                 root.updateSelection()

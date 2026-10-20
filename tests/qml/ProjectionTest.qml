@@ -179,6 +179,131 @@ ShellRoot {
         T.eq(P.monitorCommand(Object.assign({}, beamer, { disabled: true })).legacy, "keyword monitor HDMI-A-1,disable", "a mirror switched off is off")
         T.throwsError(() => P.monitorCommand(Object.assign({}, beamer, { mirror: "eDP-1; exec x" })), "a source that is no connector name is refused")
 
+        // ---- One request per layout, in each dialect --------------------------
+        const both = P.layoutCommand([live[0], beamer])
+        T.eq(both.legacy, "keyword monitor eDP-1,1920x1200@60.00,0x0,1,transform,0,vrr,0"
+             + " ; r/keyword monitor HDMI-A-1,1920x1080@60.00,auto,1,transform,0,vrr,0,mirror,eDP-1",
+             "conf: one batch, the last keyword with the refresh flag (Hyprland applies monitor rules before its next frame)")
+        T.eq(both.lua.split("\n").length, 2, "Lua: one hl.monitor per monitor, in one eval")
+        T.ok(both.lua.split("\n").every(line => line.indexOf("disabled = false") > 0), "each says it is on")
+        T.eq(both.lua.split("\n")[0].indexOf("mirror = \"\"") > 0, true, "and a screen of its own says it mirrors nothing")
+        T.eq(both.legacyEmpty, [], "nothing to send empty")
+        T.eq(P.confCommand([Object.assign({}, live[0], { disabled: true })]), "r/keyword monitor eDP-1,disable", "one monitor: the flag on it")
+        T.eq(P.luaCommand([Object.assign({}, live[0], { disabled: true })]), "hl.monitor({ output = \"eDP-1\", disabled = true })", "off in Lua")
+        T.eq([P.confCommand([]), P.luaCommand(null)], ["", ""], "nothing to send")
+
+        // ---- The steps Hyprland can take ---------------------------------------
+        const off = (list, name) => D.update(list, name, { disabled: true })
+        const panelOff = off(live, "eDP-1"), beamerOff = off(live, "HDMI-A-1")
+        T.eq(P.steps(live, panelOff), [panelOff], "a screen going off with another staying: one step")
+        T.eq(P.steps(panelOff, live), [live], "a screen coming on beside one that stays: one step")
+        const swap = P.steps(beamerOff, panelOff)
+        T.eq(swap.length, 2, "laptop only to external only: two steps")
+        T.eq(swap[0].map(m => [m.name, m.disabled]), [["HDMI-A-1", false]], "the projector on first, alone")
+        T.eq(swap[1], panelOff, "then the whole layout")
+        const dupFromExternal = P.steps(panelOff, mirrored)
+        T.eq(dupFromExternal.map(part => part.map(m => m.name)), [["eDP-1"], ["eDP-1", "HDMI-A-1"]],
+             "external only to duplicate: the source on before anything mirrors it")
+        T.eq(P.steps(mirrored, panelOff).map(part => part.length), [1, 2], "duplicate to external only: the copy a screen first")
+        T.eq(P.steps(live, mirrored), [mirrored], "a mirror of a screen that is on: one step")
+        T.eq(P.steps(live, D.update(panelOff, "HDMI-A-1", { disabled: true })), [], "every screen off is never sent")
+        const fallback = [{ name: "FALLBACK", width: 1920, height: 1080, refresh: 60, x: 0, y: 0, scale: 1, transform: 0, vrr: 0, disabled: false, mirror: "" }]
+        T.eq(P.steps(panelOff.concat(fallback), off(off(live, "HDMI-A-1"), "eDP-1").concat(fallback)), [],
+             "nor every real screen off beside Hyprland's stand-in")
+        const crowded = P.steps(D.update(beamerOff, "HDMI-A-1", { x: 0 }), D.update(panelOff, "HDMI-A-1", { x: 0 }))
+        T.eq(crowded[0][0].x, 1920, "a screen coming on where one still stands waits at the end of the layout")
+        T.ok(P.cameUp(live, ["HDMI-A-1"]) && !P.cameUp(beamerOff, ["HDMI-A-1"]) && !P.cameUp(mirrored, ["HDMI-A-1"]),
+             "the first step is in once the screens it brought up are on and shown")
+        T.eq(P.leaving(live, mirrored), ["HDMI-A-1"], "the screens a layout makes a mirror")
+        T.eq(P.leaving(mirrored, mirrored), [], "not one that mirrors already")
+        T.eq([P.leaving(live, panelOff), P.leaving(live, beamerOff)], [["eDP-1"], ["HDMI-A-1"]], "and the ones it switches off")
+        T.eq([P.leaving(panelOff, panelOff), P.leaving(panelOff, live), P.leaving(mirrored, live)], [[], [], []],
+             "not one that is off already, nor one that comes on or stops mirroring")
+        T.eq(P.leaving(beamerOff, panelOff), ["eDP-1"], "laptop only to external only: the panel leaves, the projector comes")
+        T.eq([P.leaving(live, null), P.leaving(null, panelOff)], [[], []], "nothing known, nothing leaves")
+        T.eq([P.staying(live, panelOff), P.staying(live, mirrored), P.staying(beamerOff, panelOff), P.staying(panelOff, live)],
+             [["HDMI-A-1"], ["eDP-1"], [], ["HDMI-A-1"]], "the screens that stay on: shown before and after")
+        T.eq([P.staying(live, null), P.staying(null, live)], [[], []], "nothing known, nothing stays")
+
+        // ---- Every switch from every state -------------------------------------
+        //
+        // Hyprland as the steps meet it: a layout in one pass, each monitor
+        // switched as it comes (in any order, so a pass that turns off every
+        // screen on now while another comes on has a moment with none), a
+        // mirror set only where its source is on and shown before the pass
+        // (a source coming on in the same pass is not there yet) and moved
+        // onto its source.
+        const hypr = (before, part) => {
+            const result = before.map(monitor => {
+                const rule = part.find(entry => entry.name === monitor.name)
+                if (!rule) return monitor
+                if (rule.disabled) return Object.assign({}, monitor, { disabled: true, mirror: "" })
+                if (D.isMirror(rule)) {
+                    const source = before.find(other => other.name === rule.mirror)
+                    if (!D.shown(source)) return Object.assign({}, monitor, { disabled: false, mirror: "", lost: true })
+                    return Object.assign({}, monitor, { disabled: false, mirror: rule.mirror, x: source.x, y: source.y })
+                }
+                return Object.assign({}, monitor, { disabled: false, mirror: "", x: rule.x, y: rule.y })
+            })
+            const staying = before.some(monitor => D.shown(monitor) && D.shown(result.find(other => other.name === monitor.name)))
+            const rising = result.some(monitor => D.shown(monitor) && !D.shown(before.find(other => other.name === monitor.name)))
+            return { list: result, gap: (rising && !staying) || !result.some(D.shown), lost: result.some(monitor => monitor.lost === true) }
+        }
+        // DisplayService.setProjection and send: the plan, then its steps,
+        // the second once the first is read back.
+        const context = { internalName: "eDP-1", lidClosed: false, lidKnown: true, focused: "eDP-1" }
+        const choose = (state, mode) => {
+            const plan = P.plan(state.live, null, mode, state, context)
+            if (!plan) return null
+            let now = state.live, gap = state.gap, lost = state.lost
+            if (D.changed(now, plan.target)) {
+                P.steps(now, plan.target).forEach((part, index) => {
+                    if (index > 0 && !D.changed(now, part)) return
+                    const step = hypr(now, part)
+                    now = step.list
+                    gap = gap || step.gap
+                    lost = lost || step.lost
+                })
+            }
+            return { live: now, touched: state.touched.concat(plan.touched.filter(name => state.touched.indexOf(name) < 0)),
+                     places: P.placesOf(state.live, plan.touched, state.places), gap: gap, lost: lost }
+        }
+        const modes = ["internal", "duplicate", "extend", "external"]
+        // The room (panel left, projector right) and a desk (the screen left
+        // of the panel, which Hyprland moves onto the panel while it mirrors).
+        const deskLive = D.parseMonitors(JSON.stringify([Object.assign({}, room[0], { x: 1920 }), Object.assign({}, room[1], { x: 0 })]))
+        for (const setup of [{ name: "room", live: live }, { name: "desk", live: deskLive }]) {
+            const start = { live: setup.live, touched: [], places: {}, gap: false, lost: false }
+            for (const from of modes) {
+                for (const to of modes) {
+                    const there = choose(start, from)
+                    const back = there ? choose(there, to) : null
+                    const label = setup.name + ": " + from + " to " + to
+                    T.ok(back !== null, label + " can be made")
+                    if (!back) continue
+                    T.eq(P.current(back.live, "eDP-1"), to, label + ": the screens do what was chosen")
+                    T.ok(!back.gap, label + ": never a moment without a screen")
+                    T.ok(!back.lost, label + ": never a mirror of a screen that is not on yet")
+                    T.ok(back.live.some(P.real), label + ": a real screen on")
+                    if (to === "extend")
+                        T.eq(back.live.map(m => [m.name, m.x]), setup.live.map(m => [m.name, m.x]),
+                             label + ": every screen back at its place, so the blocks of workspaces stay")
+                }
+            }
+        }
+        // Without the steps, the two switches that brought the trouble.
+        T.ok(hypr(beamerOff, panelOff).gap, "one pass from laptop only to external only has a moment without a screen")
+        T.ok(hypr(panelOff, mirrored).lost, "one pass from external only to duplicate mirrors a source that is not on yet")
+        // The lid shut on "Duplicate": the copy becomes a screen of its own
+        // first, then the panel goes off (DisplayService.setLidClosed).
+        const dupState = choose({ live: live, touched: [], places: {}, gap: false, lost: false }, "duplicate")
+        const shutPlan = P.plan(dupState.live, null, "duplicate", dupState, Object.assign({}, context, { lidClosed: true }))
+        T.eq(shutPlan.target.map(m => [m.name, m.disabled, m.mirror]), [["eDP-1", true, ""], ["HDMI-A-1", false, ""]],
+             "the lid shut: the panel off, the projector a screen of its own")
+        T.eq(P.steps(dupState.live, shutPlan.target).map(part => part.map(m => m.name)), [["HDMI-A-1"], ["eDP-1", "HDMI-A-1"]],
+             "in two steps")
+        T.eq(P.plan(live, null, "", { touched: [], places: {} }, context), null, "no choice, no file, lid open: nothing to apply")
+
         // ---- Which monitors are connected -----------------------------------
         T.eq(P.setKey(live), P.setKey(D.update(live, "eDP-1", { disabled: true })), "on or off is the same set")
         T.ok(P.setKey(live) !== P.setKey([live[0]]), "a monitor taken away is another set")

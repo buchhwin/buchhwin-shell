@@ -47,7 +47,11 @@ Singleton {
     // NetworkManager's connectivity check (Arch: ping.archlinux.org, every
     // few minutes and on each change): whether the connection reaches the
     // internet. "unknown" where no check is configured - never shown.
+    // Quickshell.Networking reads the check since Quickshell 0.3: on
+    // Fedora's 0.2.1 snapshot neither the property nor NetworkConnectivity
+    // exists, and the switch below stopped at a ReferenceError there.
     readonly property string connectivity: {
+        if (typeof NetworkConnectivity === "undefined") return "unknown"
         switch (Networking.connectivity) {
         case NetworkConnectivity.Full: return "full"
         case NetworkConnectivity.Limited: return "limited"

@@ -53,6 +53,9 @@ ShellRoot {
         T.eq(W.subtitle({ appId: "code", workspace: "Minimized" }, appName), "Switch to window · Visual Studio Code · minimized",
              "a minimized window says so, not the workspace it is parked on")
         T.eq(W.entries(undefined), [], "no windows")
+        T.eq(W.entries([{ address: "5a", title: "Mail", wayland: { appId: "thunderbird" }, workspace: { id: 12, name: "12" },
+                          monitor: { name: "DP-2" } }], ["eDP-1", "DP-2"])[0].workspace, "2",
+             "with blocks per monitor a window's workspace by the number of its pip")
 
         // ---- recent files ------------------------------------------------------
         const xbel = '<?xml version="1.0" encoding="UTF-8"?>\n<xbel version="1.0">\n'

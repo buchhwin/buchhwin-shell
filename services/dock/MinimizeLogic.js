@@ -1,6 +1,7 @@
 .pragma library
 .import "../hypr/HiddenWindows.js" as Hidden
 .import "../hypr/HyprCommands.js" as Commands
+.import "../workspaces/WorkspaceLogic.js" as Workspaces
 
 // Minimized windows (services/MinimizeService.qml), as a Windows or KDE
 // taskbar has them: Hyprland has no minimized state, so a minimized window
@@ -45,17 +46,20 @@ function originOf(name) {
 }
 
 // Where a window is, for the dock's menu and the overview: "Minimized", and
-// the workspace it goes back to when that is known.
-function parkedLabel(name) {
+// the workspace it goes back to when that is known - called what its pip
+// calls it (WorkspaceLogic.title; `order` the monitors in their blocks'
+// order, empty without blocks, `monitor` the one that workspace is on, ""
+// when it is not there now).
+function parkedLabel(name, order, monitor) {
     const origin = originOf(name)
-    return origin > 0 ? "Minimized · Workspace " + origin : "Minimized"
+    return origin > 0 ? "Minimized · " + Workspaces.title(origin, "", monitor, order) : "Minimized"
 }
 
 // The same under the overview's "Minimized" row, which says the first half
 // already: the workspace alone, "" when it is not known.
-function originLabel(name) {
+function originLabel(name, order, monitor) {
     const origin = originOf(name)
-    return origin > 0 ? "Workspace " + origin : ""
+    return origin > 0 ? Workspaces.title(origin, "", monitor, order) : ""
 }
 
 // ---- the windows ----------------------------------------------------------------
@@ -171,10 +175,12 @@ function restoreAllPlan(windows, focused) {
 }
 
 // ---- an app's own minimize button ----------------------------------------------------
-// Hyprland passes an app's request on as the event `minimized>>ADDRESS,1`
-// (xdg-shell's set_minimized: VS Code's own title bar; an X11 client's
-// iconify: Citrix's toolbar) and does nothing itself. { address, minimized },
-// or null for anything else.
+// The event `minimized>>ADDRESS,1` (`,0` back), which Hyprland documents for a
+// window's request to change its minimized state; it never minimizes
+// anything itself. Hyprland 0.56.2 posted none for xdg-shell's set_minimized
+// (GTK3, GTK4) nor an X11 iconify (XWayland) in the nested checks
+// (testing.md pitfall 149), so this acts only for what it does report.
+// { address, minimized }, or null for anything else.
 function parseRequest(data) {
     const parts = String(data || "").split(",")
     if (parts.length !== 2) return null

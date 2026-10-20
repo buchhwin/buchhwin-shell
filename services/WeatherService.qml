@@ -25,7 +25,7 @@ Singleton {
     // The lock screen's process only shows what the shell fetched: it reads
     // the shell's cache and follows it while locked, and never fetches or
     // writes itself (testing.md pitfall 86: the lock face reaches no writer).
-    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell)
 
     property int trackers: 0
     property var model: null

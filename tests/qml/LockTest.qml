@@ -96,6 +96,19 @@ ShellRoot {
         // apart by the shell id lock.qml declares, so the two must agree.
         T.eq([L.lockProcess("buchhwin-shell-lock"), L.lockProcess(""), L.lockProcess(undefined), L.lockProcess("buchhwin-shell")],
              [true, false, false, false], "only the lock's shell id is the lock process")
+        // Quickshell 0.2.1 (Fedora) has no `shellId`: there the id is the
+        // last part of the shell's cache directory. An id Quickshell does
+        // name wins, an empty one too.
+        T.eq([L.shellIdOf({ shellId: "buchhwin-shell-lock", cacheDir: "/home/u/.cache/quickshell/by-shell/abc123" }),
+              L.shellIdOf({ cacheDir: "/home/u/.cache/quickshell/by-shell/buchhwin-shell-lock" }),
+              L.shellIdOf({ cacheDir: "/home/u/.cache/quickshell/by-shell/buchhwin-shell-lock/" }),
+              L.shellIdOf({ cacheDir: "/home/u/.cache/elsewhere" }), L.shellIdOf({}), L.shellIdOf("buchhwin-shell")],
+             ["buchhwin-shell-lock", "buchhwin-shell-lock", "buchhwin-shell-lock", "", "", "buchhwin-shell"],
+             "the shell id from Quickshell, or from its cache directory where Quickshell has none")
+        T.eq([L.lockProcess({ cacheDir: "/home/u/.cache/quickshell/by-shell/buchhwin-shell-lock" }),
+              L.lockProcess({ shellId: "", cacheDir: "/home/u/.cache/quickshell/by-shell/buchhwin-shell-lock" }),
+              L.lockProcess({ cacheDir: "/home/u/.cache/quickshell/by-shell/abc123" }), L.lockProcess(Quickshell)],
+             [true, false, false, false], "the lock process on either version; this test is not it")
         T.ok(lockEntry.text().split("\n").indexOf("//@ pragma ShellId " + L.LOCK_SHELL_ID) >= 0,
              "lock.qml declares the shell id LockLogic knows")
 

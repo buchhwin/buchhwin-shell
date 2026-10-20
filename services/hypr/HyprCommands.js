@@ -262,6 +262,21 @@ function withDispatch(config, command) {
     }
 }
 
+// The same with several dispatchers (`dispatchBatch`), in their order after
+// the configuration change: the rules of the blocks of workspaces and the
+// workspaces held open where they are about to be moved, then the moves and
+// what each screen shows (HyprlandService.applyWorkspaceRules).
+function withDispatches(config, list) {
+    const batch = dispatchBatch(list)
+    const legacy = [config.legacy, batch.legacy].filter(text => text.length)
+    const lua = config.lua.length && batch.lua.length ? [config.lua, "hl.exec_scheduled_prop_refresh_immediately()"] : [config.lua]
+    return {
+        legacy: legacy.join(" ; "),
+        legacyEmpty: config.legacyEmpty || [],
+        lua: lua.concat([batch.lua]).filter(text => text.length).join("\n")
+    }
+}
+
 // Dispatchers one after the other, in one request: a `hyprctl` per step
 // (started in a loop by `sh`) cost about 10 ms of CPU and 10 ms of waiting
 // each, and a login at the desk sends eight. Legacy: one `--batch`, which

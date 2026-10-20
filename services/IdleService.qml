@@ -134,7 +134,7 @@ Singleton {
     // The lock screen's process (lock.qml) is never the session: everything
     // below is the shell's, and a second copy there disabled the laptop panel
     // when the lock started with the lid shut (LockLogic.lockProcess).
-    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell)
     readonly property bool realSession: !lockProcess && Quickshell.env("BUCHHWIN_NESTED") !== "1"
         && ((Quickshell.env("XDG_CONFIG_HOME") || "").length === 0
             || Quickshell.env("XDG_CONFIG_HOME") === Quickshell.env("HOME") + "/.config")

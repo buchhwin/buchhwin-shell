@@ -206,6 +206,124 @@ function undo(monitors, touched, places) {
     return placeBack(result, names)
 }
 
+// The layout to apply (DisplayService.layoutTarget): the saved one over the
+// monitors as they would be without the switcher's choice - `held` is what
+// the choices so far touched and where those stood ({ touched, places },
+// `undo`) -, with the choice `mode` laid over it ("" for none) and the lid's
+// adjustment after both (Display.savedTarget). `context` is { internalName,
+// lidClosed, lidKnown, focused }. Display.savedTarget's { base, target, held }
+// with `touched`, the monitors `mode` switches off or makes a mirror; null
+// when there is nothing to apply or the choice cannot be made.
+function plan(live, saved, mode, held, context) {
+    const memory = held || {}
+    const touched = list(memory.touched)
+    const base = touched.length ? undo(live, touched, memory.places) : list(live)
+    const ctx = context || {}
+    let made = []
+    const project = mode ? (monitors => {
+        const result = target(monitors, mode, ctx.internalName, ctx.lidClosed, ctx.focused)
+        made = result ? result.touched : []
+        return result ? result.list : null
+    }) : null
+    const result = Display.savedTarget(base, saved, ctx.internalName, ctx.lidClosed, ctx.lidKnown,
+                                       { project: project, force: touched.length > 0 })
+    return result ? Object.assign({}, result, { touched: made }) : null
+}
+
+// A screen on, with a place of its own, and not FALLBACK - the output
+// Hyprland makes for itself while no real screen is on.
+function real(monitor) {
+    return !!monitor && Display.shown(monitor) && monitor.name !== "FALLBACK"
+}
+
+// A layout in the steps Hyprland can take it in, as a list of one or two
+// lists of monitors to send - [] for a layout with no real screen on, which
+// is never sent. Hyprland applies a layout in one pass over the monitors,
+// in the order it made them, switching each on or off as it comes to it
+// (0.56, MonitorRuleManager.ensureMonitorStatus). So
+//   - where every screen that shows something now goes off or becomes a
+//     mirror, there is a moment with no screen at all: "Laptop only" to
+//     "External only" switched the panel off before the projector came on,
+//     and Hyprland fell back to an output of its own and moved every
+//     workspace there and back;
+//   - a mirror of a screen that is off now mirrors nothing: its source is
+//     not on yet when the mirror is set, and "External only" to "Duplicate"
+//     left both screens side by side.
+// In those two cases the screens that come on (`up`: off or a mirror now, a
+// place of their own in the layout) go first, alone and at their places -
+// at the end of the layout where a screen still on stands there -, and the
+// whole layout once they are read back on (DisplayService.send).
+function steps(live, layout) {
+    const now = list(live)
+    const next = list(layout)
+    if (!next.some(real)) return []
+    const before = name => now.find(monitor => monitor.name === name) || null
+    const up = next.filter(monitor => Display.shown(monitor) && !Display.shown(before(monitor.name)))
+    const stays = next.some(monitor => Display.shown(monitor) && Display.shown(before(monitor.name)))
+    const lateSource = next.some(monitor => !monitor.disabled && Display.isMirror(monitor) && !Display.shown(before(monitor.mirror)))
+    if (!up.length || (stays && !lateSource)) return [next]
+    const names = up.map(monitor => monitor.name)
+    const first = placeBack(now.map(monitor => up.find(item => item.name === monitor.name) || monitor), names)
+    return [first.filter(monitor => names.indexOf(monitor.name) >= 0), next]
+}
+
+// Whether every monitor named is on and shown now: the first step is in.
+function cameUp(monitors, names) {
+    return list(names).every(name => Display.shown(list(monitors).find(monitor => monitor.name === name) || null))
+}
+
+// The screens a layout takes away, by name: shown now, and a mirror of
+// another or off in it - the ones whose workspaces Hyprland hands to the
+// screens left (DisplayService.mirrorViews).
+function leaving(live, layout) {
+    const now = list(live)
+    return list(layout).filter(monitor => !Display.shown(monitor)
+                                   && Display.shown(now.find(item => item.name === monitor.name) || null))
+        .map(monitor => monitor.name)
+}
+
+// The screens that stay on through a layout, by name: shown now and in it
+// (DisplayService.stayViews).
+function staying(live, layout) {
+    const now = list(live)
+    return list(layout).filter(monitor => Display.shown(monitor)
+                                   && Display.shown(now.find(item => item.name === monitor.name) || null))
+        .map(monitor => monitor.name)
+}
+
+// ---- What Hyprland is sent ----------------------------------------------
+//
+// One request per layout, in each dialect, made here and nowhere else: the
+// switcher, the saved layout, the lid, and Settings > Displays' apply and
+// revert all send what `layoutCommand` makes of their monitors.
+//
+// The conf dialect: the monitor keywords in one `hyprctl --batch`. Hyprland
+// takes a monitor keyword at once but applies the rules only before it next
+// draws a frame (0.56: the keyword schedules MonitorRuleManager's reload,
+// which runs from the render's pre-checks). With the laptop panel off and
+// nothing moving on the other screen nothing was drawn, and "External only"
+// then "Extend" or "Laptop only" left the panel off. The last keyword
+// carries hyprctl's refresh flag (`r/`, as `hyprctl -r` does for one
+// command), which redraws every screen after it. The Lua dialect's
+// hl.monitor refreshes the monitors itself.
+function confCommand(entries) {
+    const lines = list(entries).map(entry => monitorCommand(entry).legacy).filter(line => line.length > 0)
+    if (lines.length) lines[lines.length - 1] = "r/" + lines[lines.length - 1]
+    return lines.join(" ; ")
+}
+
+// The Lua dialect: an hl.monitor call per monitor, in one eval. Each says
+// whether it is on and what it mirrors (`monitorCommand`): hl.monitor keeps
+// what an earlier call said and a new one leaves out.
+function luaCommand(entries) {
+    return list(entries).map(entry => monitorCommand(entry).lua).join("\n")
+}
+
+// Both, as HyprCompat.configure takes them.
+function layoutCommand(entries) {
+    return { legacy: confCommand(entries), legacyEmpty: [], lua: luaCommand(entries) }
+}
+
 // The monitors that are connected, as one string: a choice lasts while it
 // stays the same. Names and descriptions, so another screen on the same
 // connector is a change too; on or off is not (the lid's panel is listed

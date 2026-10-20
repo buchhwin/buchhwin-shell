@@ -79,20 +79,14 @@ Singleton {
 
     // The layout to apply: the saved one over the monitors as they would be
     // without the switcher's choice, with the choice laid over it (when there
-    // is one) and the lid's adjustment after both. Null when there is
-    // nothing to apply (Logic.savedTarget). `mode` overrides the choice in
-    // force, for a new one; `touched` receives the monitors it touches.
-    function layoutTarget(mode, touched) {
-        const wanted = mode === undefined ? projection : mode
-        const live = projectionTouched.length ? Projection.undo(monitors, projectionTouched, projectionPlaces) : monitors
-        const focused = focusedName()
-        const project = wanted.length ? (base => {
-            const result = Projection.target(base, wanted, internalName, lidClosed, focused)
-            if (touched) touched.names = result ? result.touched : []
-            return result ? result.list : null
-        }) : null
-        return Logic.savedTarget(live, saved, internalName, lidClosed, lidKnown,
-                                 { project: project, force: projectionTouched.length > 0 })
+    // is one) and the lid's adjustment after both (ProjectionLogic.plan).
+    // Null when there is nothing to apply. `mode` overrides the choice in
+    // force, for a new one; the plan's `touched` names the monitors it
+    // touches.
+    function layoutTarget(mode) {
+        return Projection.plan(monitors, saved, mode === undefined ? projection : mode,
+                               { touched: projectionTouched, places: projectionPlaces },
+                               { internalName: internalName, lidClosed: lidClosed, lidKnown: lidKnown, focused: focusedName() })
     }
 
     // A choice of the switcher (Super+Shift+P, the projector key, IPC
@@ -102,20 +96,116 @@ Singleton {
     function setProjection(mode) {
         if (lockProcess || confirming || !monitors.length) return false
         if (!Projection.available(mode, monitors, internalName, lidClosed)) return false
-        const touched = { names: [] }
-        const plan = layoutTarget(mode, touched)
+        const plan = layoutTarget(mode)
         if (!plan) return false
+        const stays = shownViews(Projection.staying(monitors, plan.target))
+        const changes = Logic.changed(monitors, plan.target)
+        if (changes && !send(plan.target)) return false
+        if (changes) {
+            stayViews = stays
+            stayExpiry.restart()
+        }
         projection = mode
         projectionKey = Projection.setKey(monitors)
         // Kept with what an earlier choice touched until a layout without
         // either has been applied.
-        projectionPlaces = Projection.placesOf(monitors, touched.names, projectionPlaces)
-        projectionTouched = projectionTouched.concat(touched.names.filter(name => projectionTouched.indexOf(name) < 0))
-        if (Logic.changed(monitors, plan.target)) {
-            run(plan.target)
-            refreshSoon.restart()
-        }
+        projectionPlaces = Projection.placesOf(monitors, plan.touched, projectionPlaces)
+        projectionTouched = projectionTouched.concat(plan.touched.filter(name => projectionTouched.indexOf(name) < 0))
         return true
+    }
+
+    // A layout to Hyprland, in the steps it can take it in
+    // (ProjectionLogic.steps): the screens that come on first, the whole
+    // layout once they are read back on (the monitors' read below). False
+    // for a layout with no screen on, which is never sent.
+    property var followUp: null
+    property var followNames: []
+    property string followKey: ""
+    function send(layout) {
+        const parts = Projection.steps(monitors, layout)
+        if (!parts.length) return false
+        keepMirrorViews(layout)
+        followUp = parts.length > 1 ? parts[1] : null
+        followNames = parts.length > 1 ? parts[0].map(entry => entry.name) : []
+        followKey = parts.length > 1 ? Projection.setKey(monitors) : ""
+        if (followUp) followWait.restart()
+        else followWait.stop()
+        run(parts[0])
+        refreshSoon.restart()
+        return true
+    }
+    // The first step that never came in (a mode the screen refused, a
+    // monitor unplugged meanwhile): the rest is not sent - the screens that
+    // are on stay on.
+    Timer {
+        id: followWait
+        interval: 3000
+        onTriggered: { root.followUp = null; root.followNames = []; root.followKey = "" }
+    }
+
+    // The workspace each screen showed when a layout made it a mirror or
+    // switched it off, by name ({ id, mirrored }). Hyprland hands a screen
+    // that stops mirroring the next free number, which the blocks' rules had
+    // all given to the screens left - "Duplicate" then "Extend" brought the
+    // screen back on 21, a block of its own with keepEmpty holding it - and
+    // one switched on again the lowest number free and ruled to it: with
+    // keepEmpty holding its workspaces on the other screen, "Laptop only"
+    // then "Extend" brought it back on an empty 12 instead of its 11.
+    // HyprlandService shows it this one again (WorkspaceLogic.views) and
+    // says so (`mirrorViewsShown`).
+    property var mirrorViews: ({})
+    // The screens back from mirroring or from being off, with that
+    // workspace: read as a mirror or off once and as a screen of their own
+    // since. Not before the read that shows it gone - until then the monitor
+    // list still holds the screen as it was, and the blocks would have sent
+    // it "back" at once.
+    readonly property var mirrorReturns: {
+        const result = {}
+        for (const name of Object.keys(mirrorViews)) {
+            const entry = mirrorViews[name]
+            if (entry.mirrored && Logic.shown(monitors.find(item => item.name === name) || null)) result[name] = entry.id
+        }
+        return result
+    }
+    function keepMirrorViews(layout) {
+        const names = Projection.leaving(monitors, layout)
+        if (!names.length) return
+        const next = Object.assign({}, mirrorViews)
+        const shown = shownViews(names)
+        for (const name of Object.keys(shown)) next[name] = { id: shown[name], mirrored: false }
+        mirrorViews = next
+    }
+    function mirrorViewsShown(names) {
+        const next = Object.assign({}, mirrorViews)
+        for (const name of names) delete next[name]
+        mirrorViews = next
+    }
+    // The workspace each screen that stays on showed when a choice of the
+    // switcher was sent, by name, until the next pass of the blocks of
+    // workspaces (HyprlandService). A screen coming back on takes the
+    // workspaces Hyprland last moved off it - one another screen shows
+    // among them - and that screen is given a new number: "External only",
+    // "Laptop only", then "Extend" took the panel's 1 to the projector and
+    // back, and left the panel on a new, empty 2 that keepEmpty held. Such a
+    // screen is put back (WorkspaceLogic.stayedViews). Only for a choice
+    // that sent something, and never for longer than the layout can take:
+    // kept, a workspace switched to later was taken for one the switch had
+    // made, and the screen was sent back.
+    property var stayViews: ({})
+    function stayViewsShown() {
+        stayExpiry.stop()
+        if (Object.keys(stayViews).length) stayViews = ({})
+    }
+    Timer { id: stayExpiry; interval: 10000; onTriggered: root.stayViewsShown() }
+    // { name: the workspace it shows } for the screens named that show one.
+    function shownViews(names) {
+        const result = {}
+        for (const name of names) {
+            const monitor = Hyprland.monitors.values.find(item => item.name === name) || null
+            const id = monitor && monitor.activeWorkspace ? monitor.activeWorkspace.id : 0
+            if (id > 0) result[name] = id
+        }
+        return result
     }
 
     // The choice ends: the layout without it, at once (the projector
@@ -132,7 +222,7 @@ Singleton {
     // a copy in the lock is never told the lid is shut, so applying the file
     // from there would switch the laptop panel back on behind the shell's
     // back (16.10. review, with the lock's own IdleService).
-    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell)
 
     // Lid "screen off" (Settings > Power): runtime only, never saved - a
     // Keep with the lid shut saves the panel as it is without the lid
@@ -183,6 +273,16 @@ Singleton {
         // choice ends, and the layout without it comes back first.
         if (closed && projection === "internal") {
             dropProjection()
+            applySavedIfNeeded()
+            refreshSoon.restart()
+            return
+        }
+        // A panel the other screens mirror ("Duplicate"): switched off on
+        // its own, it took the copies' picture with it and left Hyprland no
+        // screen to move the workspaces to. The layout with the lid goes in
+        // steps instead (send): the copies become screens of their own
+        // first, then the panel goes off.
+        if (closed && internalName.length && monitors.some(item => !item.disabled && item.mirror === internalName)) {
             applySavedIfNeeded()
             refreshSoon.restart()
             return
@@ -243,7 +343,9 @@ Singleton {
     // or went (`mirrorSettle`): Hyprland sends no event for it, and the
     // blocks planned from a list that still holds the mirror would send
     // workspaces to a screen that cannot show them.
+    // And while the second step of a layout waits for the first (send).
     readonly property bool layoutPending: savedDelay.running || reapplyQueued || refreshSoon.running || mirrorSettle.running
+                                          || followWait.running
     function refresh() {
         if (monitorsProc.running) { refreshQueued = true; return }
         monitorsProc.running = true
@@ -320,19 +422,23 @@ Singleton {
     function mirrorChoices(name) { return Logic.mirrorChoices(draft, name) }
     function discard() { if (!confirming) draft = monitors.slice() }
 
-    // A mirror's rule names its source (ProjectionLogic.monitorCommand).
+    // The monitors' rules in one request (ProjectionLogic.layoutCommand: a
+    // mirror's rule names its source). Everything goes out through `send`,
+    // which takes a layout in steps where Hyprland needs them, but for the
+    // lid's one panel.
     function run(list) {
-        HyprCompat.configure(HyprCompat.commands.combine(list.map(entry => Projection.monitorCommand(entry))))
+        HyprCompat.configure(Projection.layoutCommand(list))
     }
 
     function apply() {
         if (!dirty || !valid || confirming) return false
-        previous = monitors.slice()
-        draft = Logic.normalize(draft)
-        run(draft)
+        const before = monitors.slice()
+        const next = Logic.normalize(draft)
+        if (!send(next)) return false
+        previous = before
+        draft = next
         countdown = confirmSeconds
         countdownTimer.restart()
-        refreshSoon.restart()
         return true
     }
 
@@ -367,9 +473,8 @@ Singleton {
         if (!confirming) return false
         countdown = 0
         countdownTimer.stop()
-        run(previous)
+        send(previous)
         draft = previous.slice()
-        refreshSoon.restart()
         return true
     }
 
@@ -399,8 +504,7 @@ Singleton {
             const switchesOff = target.some(item => item.disabled && monitors.some(other => other.name === item.name && !other.disabled))
             if (reloadFocus.length && switchesOff && target.some(item => item.name === reloadFocus && !item.disabled))
                 focusBack.restart()
-            run(target)
-            refreshSoon.restart()
+            send(target)
         }
         // A file whose positions had to be spread apart is rewritten with the
         // corrected ones, once, so the next login does not start by
@@ -466,6 +570,33 @@ Singleton {
                     Hyprland.refreshWorkspaces()
                     Hyprland.refreshMonitors()
                     mirrorSettle.restart()
+                }
+                // The rest of a layout sent in steps (send), once the screens
+                // the first step brought up are on; with another set of
+                // monitors it is not sent at all.
+                if (root.followUp && Projection.setKey(parsed) !== root.followKey) {
+                    root.followUp = null
+                    followWait.stop()
+                } else if (root.followUp && Projection.cameUp(parsed, root.followNames)) {
+                    const rest = root.followUp
+                    root.followUp = null
+                    followWait.stop()
+                    if (Logic.changed(parsed, rest)) {
+                        root.run(rest)
+                        refreshSoon.restart()
+                    }
+                }
+                // A screen made a mirror or switched off is read as one
+                // (`mirrorReturns`); one unplugged meanwhile has no view to go
+                // back to.
+                const gone = Object.keys(root.mirrorViews).filter(name => !parsed.some(item => item.name === name))
+                if (gone.length) root.mirrorViewsShown(gone)
+                const mirroredNow = Object.keys(root.mirrorViews).filter(name => !root.mirrorViews[name].mirrored
+                    && parsed.some(item => item.name === name && !Logic.shown(item)))
+                if (mirroredNow.length) {
+                    const marked = Object.assign({}, root.mirrorViews)
+                    for (const name of mirroredNow) marked[name] = { id: marked[name].id, mirrored: true }
+                    root.mirrorViews = marked
                 }
                 // Another set of monitors ends a switcher's choice; a monitor
                 // taken away does not bring a saved apply by itself (unless

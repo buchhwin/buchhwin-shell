@@ -564,6 +564,25 @@ if [[ ${1:-} == --nested ]]; then
   walked=$(( walked + 1 ))
   ipc_call displays toggleSwitcher >/dev/null
   [[ -z $(popup_is "") ]] || not_opened+=("displaySwitcher (did not close)")
+  # The lazy panels the walk above does not reach. shell.qml names them by
+  # file, so one is compiled on its first open and a fault in it shows only
+  # then, not at the start: each opens here once, in a way that sends
+  # nothing - the event editor's dry run, the Wi-Fi dialog unanswered, a
+  # sample pairing, the drives' sample volumes.
+  for lazy in shortcutSheet eventEditor wifiPassword pairing driveUnlock; do
+    case $lazy in
+      shortcutSheet) ipc_call shortcuts openSheet >/dev/null ;;
+      eventEditor) ipc_call calendar editorPreview >/dev/null ;;
+      wifiPassword) ipc_call network passwordDialog Example >/dev/null ;;
+      pairing) ipc_call bluetooth previewPairing confirm >/dev/null ;;
+      driveUnlock) ipc_call drives preview >/dev/null; sleep 0.5; ipc_call drives unlock sdd1 >/dev/null ;;
+    esac
+    [[ $(popup_is "$lazy") == "$lazy" ]] || not_opened+=("$lazy")
+    walked=$(( walked + 1 ))
+    ipc_call popup close >/dev/null
+    [[ -z $(popup_is "") ]] || not_opened+=("$lazy (did not close)")
+  done
+  ipc_call drives stopPreview >/dev/null
   ipc_call editor open >/dev/null
   editing=""
   for _ in {1..20}; do

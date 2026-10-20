@@ -83,6 +83,18 @@ Singleton {
         .filter(screen => !!screen && DisplayService.mirrorNames.indexOf(screen.name) < 0)
         .map(screen => ({ name: screen.name, x: screen.x, y: screen.y }))
     readonly property string focusedMonitorName: Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
+    // The monitors in the order their blocks go, empty without blocks: what
+    // a window's row in the dock's menu, the launcher and Alt+Tab need to
+    // call its workspace what its pip calls it (WorkspaceLogic.title).
+    readonly property var blockOrder: perMonitor ? Workspaces.monitorOrder(monitorList) : []
+    // { workspace id: the name of the monitor it is on }, asked for once per
+    // Alt+Tab (whose list comes from `hyprctl -j clients`, with monitor ids).
+    function workspaceMonitors() {
+        const result = {}
+        for (const workspace of Hyprland.workspaces.values)
+            if (workspace && workspace.monitor) result[workspace.id] = workspace.monitor.name
+        return result
+    }
 
     // Which workspace a given screen is showing - not the globally focused one.
     // Three bars comparing against the global focus left two of them with no
@@ -124,14 +136,13 @@ Singleton {
         // them away, cost 0.4 ms of the GUI thread each time at the desk. A
         // config reload forgets them.
         const ruleKey = order.join(",")
+        const rules = []
         if (ruleKey !== appliedRules) {
-            const rules = []
             for (let index = 0; index < order.length; ++index)
                 for (let local = 1; local <= Workspaces.perMonitorBlock; ++local)
                     rules.push(HyprCompat.commands.workspaceRule(Workspaces.globalId(local, index), order[index]))
             appliedRules = ruleKey
             ruledUpTo = Math.max(ruledUpTo, order.length * Workspaces.perMonitorBlock)
-            HyprCompat.configure(HyprCompat.commands.combine(rules))
         }
         // A rule binds a workspace when it is *created*, and the compositor
         // creates one per monitor before the shell is up - so after every
@@ -152,13 +163,48 @@ Singleton {
         const actives = Hyprland.monitors.values
             .filter(monitor => order.indexOf(monitor.name) >= 0)
             .map(monitor => ({ monitor: monitor.name, id: monitor.activeWorkspace ? monitor.activeWorkspace.id : 0 }))
-        const views = Workspaces.views(order, placed, actives, moves)
+        // A screen back from mirroring another or from being off goes back to
+        // the workspace it showed before (DisplayService.mirrorReturns), once;
+        // and so does one a choice of the switcher left on a new, empty
+        // workspace while it stayed on (DisplayService.stayViews).
+        const returns = DisplayService.mirrorReturns
+        const back = Object.assign(Workspaces.stayedViews(order, placed, actives, DisplayService.stayViews), returns)
+        const views = Workspaces.views(order, placed, actives, moves, back)
+        const returned = actives.map(active => active.monitor).filter(name => returns[name] !== undefined)
+        if (returned.length) DisplayService.mirrorViewsShown(returned)
+        DisplayService.stayViewsShown()
         for (const view of views) {
             steps.push(HyprCompat.commands.focusMonitor(view.monitor))
             steps.push(HyprCompat.commands.workspace(view.id))
         }
         if (views.length && focusedMonitorName.length) steps.push(HyprCompat.commands.focusMonitor(focusedMonitorName))
-        HyprCompat.dispatchInOrder(steps)
+        // A held workspace that is moved is held on the monitor it goes to.
+        // Its rule still named the screen it had waited on (keepAll moves a
+        // held one's rule with it), and every workspace rule Hyprland takes
+        // puts each persistent workspace on its rule's monitor (conf: any
+        // `keyword workspace`): after "Duplicate" then "Extend", 13 went back
+        // to the screen it had waited on and left the returning screen on 11.
+        const rehomed = keepsEmpty ? moves.filter(move => keptOn[move.id] !== undefined
+                                                          && keptOn[move.id] !== move.monitor && closing.indexOf(move.id) < 0) : []
+        if (rehomed.length) {
+            const next = Object.assign({}, keptOn)
+            for (const move of rehomed) next[move.id] = move.monitor
+            keptOn = next
+        }
+        // The rules first and the moves and views after them, in one
+        // request: two requests are not promised to arrive in order (conf:
+        // the rules went through `sh`, the dispatchers did not, and came
+        // first), and a workspace shown before its block's rule is in is
+        // made on the monitor the old rule names - a screen back from
+        // mirroring was shown 1, which was made on the other screen, and
+        // that screen lost the 13 it showed.
+        const config = rules.concat(rehomed.map(move => HyprCompat.commands.keepWorkspaceRule(move.id, true, move.monitor)))
+        if (config.length) HyprCompat.configure(HyprCompat.commands.withDispatches(HyprCompat.commands.combine(config), steps))
+        else HyprCompat.dispatchInOrder(steps)
+        // And keepAll only once what was sent here has been heard back:
+        // between this pass and Hyprland's workspace events it would hold a
+        // workspace a screen is only passing through.
+        if (steps.length && keepsEmpty) keepSoon.restart()
     }
     onMonitorListChanged: {
         keepMonitors = Math.max(keepMonitors, monitorList.length)
@@ -499,7 +545,7 @@ Singleton {
     // Quickshell's toplevels carry only after an explicit refresh (pitfall
     // 99) - and sends what WindowToolsLogic makes of it. No process and no
     // timer before that.
-    readonly property bool realSession: !LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool realSession: !LockLogic.lockProcess(Quickshell)
 
     function parseClients(text) {
         try {

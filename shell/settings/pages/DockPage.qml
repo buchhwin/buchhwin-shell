@@ -556,7 +556,11 @@ ColumnLayout {
         SettingRow {
             labelFills: true
             label: "Minimize buttons in apps"
-            hint: "An app's own minimize button - VS Code's title bar, the Citrix toolbar - minimizes its window. Only for the app in front: a game that minimizes itself when it loses the focus stays where it is."
+            // Honest about the compositor: the shell acts on Hyprland's
+            // `minimized` event, and Hyprland 0.56.2 posted none for GTK3 and
+            // GTK4 apps on Wayland or XWayland (testing.md pitfall 149).
+            hint: "Minimizes a window when its app's own minimize button asks, for the apps whose request Hyprland reports. Hyprland 0.56 reports none from GTK apps, on Wayland or X11, so their buttons still do nothing; "
+                + ShortcutService.keyHint("SUPER + H", true) + " and the dock's menu minimize every window. Only for the app in front: a game that minimizes itself when it loses the focus stays where it is."
             ShellToggle {
                 focusOnTab: true
                 checked: SettingsService.value("windows.minimizeRequests") !== false

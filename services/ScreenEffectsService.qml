@@ -19,7 +19,7 @@ import "lock/LockLogic.js" as LockLogic
 Singleton {
     id: root
 
-    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell)
     // Read by shell.qml at the start: `filterOn` alone brings the service up
     // when there is a filter to put back.
     readonly property bool ready: true

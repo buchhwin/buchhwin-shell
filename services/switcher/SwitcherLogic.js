@@ -1,6 +1,7 @@
 .pragma library
 .import "../hypr/HiddenWindows.js" as Hidden
 .import "../dock/MinimizeLogic.js" as Minimize
+.import "../workspaces/WorkspaceLogic.js" as Workspaces
 
 // Pure helpers for the Alt+Tab window switcher: windows from
 // `hyprctl -j clients` in most-recently-used order and the wrapping selection.
@@ -10,7 +11,11 @@
 // windows (services/dock/MinimizeLogic.js) are listed - Alt+Tab is one of the
 // ways back to them - after all the others, as on Windows: the window just
 // minimized was used last, and a quick Alt+Tab brought it straight back.
-function build(clients) {
+//
+// `order` (the monitors in their blocks' order, empty without blocks) and
+// `monitors` ({ workspace id: the name of the monitor it is on }) let the
+// badge call a workspace what its pip calls it; without them its id.
+function build(clients, order, monitors) {
     return (clients || [])
         .filter(client => client && client.address && client.mapped !== false && client.hidden !== true
                 && !Hidden.isHiddenClient(client))
@@ -20,7 +25,8 @@ function build(clients) {
             return {
                 address: String(client.address), title: String(client.title || ""),
                 appClass: String(client.class || client.initialClass || ""),
-                workspace: Number(workspace.id) || 0, workspaceName: workspaceLabel(workspace),
+                workspace: Number(workspace.id) || 0,
+                workspaceName: workspaceLabel(workspace, (monitors || {})[Number(workspace.id)], order),
                 minimized: Minimize.isParked(workspace.name),
                 focusOrder: Number.isFinite(history) && history >= 0 ? history : Number.MAX_SAFE_INTEGER,
                 width: Array.isArray(client.size) ? Number(client.size[0]) || 0 : 0,
@@ -31,12 +37,16 @@ function build(clients) {
                         || (a.address < b.address ? -1 : a.address > b.address ? 1 : 0))
 }
 
-// Badge text: the workspace name, special workspaces without their prefix, a
-// minimized window's "Minimized".
-function workspaceLabel(workspace) {
+// Badge text: the workspace as its pip calls it (WorkspaceLogic.label: a name
+// somebody chose, the number in its monitor's block; `monitor` the one it is
+// on, `order` as `build` has it), special workspaces by their name without
+// the prefix, a minimized window's "Minimized".
+function workspaceLabel(workspace, monitor, order) {
     const name = String(workspace && workspace.name !== undefined ? workspace.name : workspace && workspace.id !== undefined ? workspace.id : "")
     if (Minimize.isParked(name)) return "Minimized"
-    return name.startsWith("special:") ? name.slice(8) : name
+    if (name.startsWith("special:")) return name.slice(8)
+    const id = workspace && workspace.id !== undefined ? Number(workspace.id) : Number(name)
+    return Workspaces.label(id, name, monitor, order)
 }
 
 function wrap(index, count) {

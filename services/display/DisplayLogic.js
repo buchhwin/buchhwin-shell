@@ -115,7 +115,11 @@ function parseMonitors(json) {
             mirror: mirrorSource(item, list),
             modes: modes
         }
-    }).sort((a, b) => a.x - b.x || a.y - b.y || a.name.localeCompare(b.name))
+    // Left to right, top to bottom. A mirror stands on its source's place
+    // and comes after the screens there, so that order does not hang on the
+    // names alone - localeCompare follows the locale, and "HDMI-A-1" came
+    // before "eDP-1" under C.UTF-8 but after it under en_US.UTF-8.
+    }).sort((a, b) => a.x - b.x || a.y - b.y || (a.mirror !== "") - (b.mirror !== "") || a.name.localeCompare(b.name))
 }
 
 function resolutions(monitor) {

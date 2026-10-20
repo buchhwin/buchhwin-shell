@@ -123,10 +123,9 @@ function build(clients, monitors, workspaces, mode, count, perMonitor) {
         // is sitting on a monitor whose block it does not belong to - then the
         // real number, because two cards called "1" in one overview is worse
         // than a number that looks odd.
-        const named = entry.name !== String(id)
         const home = order.indexOf(entry.monitor)
         const mine = perMonitor && home >= 0 && Workspaces.monitorIndexOf(id) === home
-        entry.label = named ? entry.name : String(mine ? Workspaces.localId(id) : id)
+        entry.label = Workspaces.labelOf(id, entry.name, mine)
         return entry
     })
 }
@@ -213,16 +212,26 @@ function closable(card, row) {
 // The minimized windows (services/dock/MinimizeLogic.js), which `build` leaves
 // out with every other special workspace's: a row of their own under the
 // workspaces, the one used last first. Each: { address, title, appClass,
-// origin (the workspace it goes back to, 0 for none known), label }.
-function minimizedWindows(clients) {
+// origin (the workspace it goes back to, 0 for none known), label }. The
+// label calls that workspace what its card above calls it (`monitors`,
+// `workspaces` and `perMonitor` as `build` has them; without them its id).
+function minimizedWindows(clients, monitors, workspaces, perMonitor) {
+    const order = perMonitor ? Workspaces.monitorOrder((monitors || []).map(logicalMonitor)) : []
+    const monitorOf = id => {
+        const found = (workspaces || []).find(workspace => workspace && Number(workspace.id) === id)
+        return found && found.monitor ? String(found.monitor) : ""
+    }
     return Array.prototype.slice.call(clients || [])
         .filter(client => client && client.workspace && Minimize.isParked(client.workspace.name)
                 && client.mapped !== false && !Hidden.isHiddenClient(client))
-        .map(client => ({ address: String(client.address), title: String(client.title || ""),
-                          appClass: String(client.class || client.initialClass || ""),
-                          origin: Minimize.originOf(client.workspace.name),
-                          label: Minimize.originLabel(client.workspace.name),
-                          focusOrder: Number(client.focusHistoryID) >= 0 ? Number(client.focusHistoryID) : 999 }))
+        .map(client => {
+            const origin = Minimize.originOf(client.workspace.name)
+            return { address: String(client.address), title: String(client.title || ""),
+                     appClass: String(client.class || client.initialClass || ""),
+                     origin: origin,
+                     label: Minimize.originLabel(client.workspace.name, order, monitorOf(origin)),
+                     focusOrder: Number(client.focusHistoryID) >= 0 ? Number(client.focusHistoryID) : 999 }
+        })
         .sort((a, b) => a.focusOrder - b.focusOrder || (a.address < b.address ? -1 : a.address > b.address ? 1 : 0))
 }
 

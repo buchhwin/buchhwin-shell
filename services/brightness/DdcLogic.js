@@ -98,6 +98,70 @@ function externalKey(monitors, internalName) {
         .map(monitor => String(monitor.name) + "\u0001" + String(monitor.description || "")).sort().join("\n")
 }
 
+// A monitor as detection knows it: its connector and its description, so
+// another screen on the same connector is another monitor.
+function monitorKey(monitor) {
+    return String(monitor ? monitor.name : "") + "\u0001" + String(monitor && monitor.description || "")
+}
+
+// The external monitors connected, on or off: the display switcher's
+// "Laptop only" switches them off without unplugging them, and a monitor
+// that is off keeps its connector and the bus behind it.
+function connectedExternals(monitors, internalName) {
+    return list(monitors).filter(monitor => monitor && !Display.isPanel(monitor.name, internalName) && !Display.isInternal(monitor.name))
+}
+
+// What detection found, kept per monitor while it stays connected:
+// `seen` is { monitorKey: bus }, -1 for one that did not answer. Detection
+// runs once per hotplug, in the background (BrightnessService): a monitor
+// switched off and on again, a mirror, a config reload ask nothing again,
+// and a brightness key never waits for it.
+//
+// `seen` without the monitors unplugged since (the same list when none
+// was): one plugged in again is asked again, its bus may be another now.
+function keepConnected(seen, monitors, internalName) {
+    const known = seen && typeof seen === "object" ? seen : {}
+    const here = connectedExternals(monitors, internalName).map(monitorKey)
+    const keys = Object.keys(known)
+    if (keys.every(key => here.indexOf(key) >= 0)) return known
+    const result = {}
+    for (const key of keys) if (here.indexOf(key) >= 0) result[key] = known[key]
+    return result
+}
+
+// The external monitors that are on and have not been asked since they
+// were plugged in: what a detection is for. Empty, nothing runs.
+function unasked(seen, monitors, internalName) {
+    const known = seen && typeof seen === "object" ? seen : {}
+    return externalMonitors(monitors, internalName).filter(monitor => !Object.prototype.hasOwnProperty.call(known, monitorKey(monitor)))
+        .map(monitor => monitor.name)
+}
+
+// `seen` after a detection that asked the monitors `asked` (their keys:
+// the external monitors on when it started) and found `found` (`match`):
+// each that is still on gets the bus it answered on, or -1. One that came
+// on while it ran was not asked, and one that went off is asked when it is
+// on again.
+function remember(seen, asked, found, monitors, internalName) {
+    const result = Object.assign({}, seen && typeof seen === "object" ? seen : {})
+    const on = externalMonitors(monitors, internalName).map(monitorKey)
+    for (const key of list(asked)) {
+        if (on.indexOf(key) < 0) continue
+        const hit = list(found).find(item => monitorKey(item) === key)
+        result[key] = hit ? hit.bus : -1
+    }
+    return result
+}
+
+// The displays a brightness can be set on now: the external monitors that
+// are on and answered, as [{ name, description, bus }].
+function usable(seen, monitors, internalName) {
+    const known = seen && typeof seen === "object" ? seen : {}
+    const busOf = monitor => Object.prototype.hasOwnProperty.call(known, monitorKey(monitor)) ? Number(known[monitorKey(monitor)]) : -1
+    return externalMonitors(monitors, internalName).filter(monitor => busOf(monitor) >= 0)
+        .map(monitor => ({ name: monitor.name, description: String(monitor.description || ""), bus: busOf(monitor) }))
+}
+
 // The detected displays that answered, matched to Hyprland's monitors, as
 // [{ name, description, bus }]: by connector first (ddcutil reads it from the
 // DRM sysfs), then - for a display whose connector ddcutil could not name,

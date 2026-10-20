@@ -101,8 +101,23 @@ function shortLayout(keymap) {
 // services stay inert in this process; the lock only displays.
 var LOCK_SHELL_ID = "buchhwin-shell-lock"
 
-function lockProcess(shellId) {
-    return String(shellId || "") === LOCK_SHELL_ID
+// The shell id of this process: from the Quickshell singleton, or an id as
+// such. `Quickshell.shellId` came with Quickshell 0.3, and Fedora packages a
+// 0.2.1 snapshot: there it is undefined, and the lock's process read as the
+// session's - its services did what they keep to the session, a notification
+// server beside the shell's, settings writes, weather requests. The shell's
+// cache directory names the same id on every version
+// (`…/quickshell/by-shell/<id>`, or what a CacheDir pragma says - lock.qml
+// and shell.qml set none), so 0.2.1 reads it from there.
+function shellIdOf(shell) {
+    if (shell === undefined || shell === null || typeof shell !== "object") return String(shell || "")
+    if (shell.shellId !== undefined) return String(shell.shellId || "")
+    var match = /\/by-shell\/([^/]+)\/*$/.exec(String(shell.cacheDir || ""))
+    return match ? match[1] : ""
+}
+
+function lockProcess(shell) {
+    return shellIdOf(shell) === LOCK_SHELL_ID
 }
 
 // The test hooks - a PAM fixture instead of the real service, the lid

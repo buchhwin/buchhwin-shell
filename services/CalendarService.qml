@@ -179,7 +179,7 @@ Singleton {
     readonly property string writesBlockedReason: writesBlocked ? Edit.refuse("noBindings").message : ""
 
     function checkWriter() {
-        if (writerState.length || !realSession || LockLogic.lockProcess(Quickshell.shellId)) return
+        if (writerState.length || !realSession || LockLogic.lockProcess(Quickshell)) return
         writerState = "checking"
         writerCheck.running = true
     }
@@ -469,7 +469,7 @@ Singleton {
     property int linkGeneration: 0
 
     function refreshLinks() {
-        if (!realSession || LockLogic.lockProcess(Quickshell.shellId) || linkListing) return
+        if (!realSession || LockLogic.lockProcess(Quickshell) || linkListing) return
         linkListing = true
         lister.generation = linkGeneration
         lister.exitCode = -1

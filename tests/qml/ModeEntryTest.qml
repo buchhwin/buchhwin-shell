@@ -5,6 +5,7 @@ import QtQuick
 import qs.services
 import "Harness.js" as T
 import "../../services/LayoutLogic.js" as L
+import "../../services/lock/LockLogic.js" as LockLogic
 
 // Entering modes and profiles, through LayoutService itself.
 //
@@ -64,7 +65,7 @@ ShellRoot {
         id: lostLayout
         interval: 50
         onTriggered: {
-            T.eq(Quickshell.shellId, "buchhwin-shell-lock", "the test runs where no notification server is wanted")
+            T.eq(LockLogic.shellIdOf(Quickshell), "buchhwin-shell-lock", "the test runs where no notification server is wanted")
             T.eq(NotificationService.serverWanted, false, "and NotificationService runs none")
             T.eq([LayoutService.freshDecided, LayoutService.layoutWasEmpty, LayoutService.settingsWereEmpty], [true, true, false],
                  "the layout file was missing beside the user's settings: not a first start")

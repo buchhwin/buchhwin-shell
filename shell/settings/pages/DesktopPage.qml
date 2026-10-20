@@ -90,6 +90,16 @@ ColumnLayout {
                 onToggled: value => SettingsService.set("desktop.clockIndicators", value)
             }
         }
+    }
+
+    // The indicator at the bottom edge (Osd.qml) and the short messages for
+    // state changes it can show (OsdLogic): each message off unless turned
+    // on here, and none while the indicator is off. The indicator's switch
+    // was a row of Clock, the one section it had nothing to do with.
+    SettingsSection {
+        Layout.fillWidth: true
+        title: "Messages on screen"
+        description: "The volume and brightness indicator at the bottom edge, and short messages in its place when something changes. The messages need the indicator."
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
@@ -101,14 +111,6 @@ ColumnLayout {
                 onToggled: value => SettingsService.set("desktop.osd", value)
             }
         }
-    }
-
-    // Short messages for state changes (Osd.qml, OsdLogic): each off unless
-    // turned on here, and none while the indicator above is off.
-    SettingsSection {
-        Layout.fillWidth: true
-        title: "Messages on screen"
-        description: "A short message where the volume indicator shows. Needs the indicator above."
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
@@ -187,26 +189,6 @@ ColumnLayout {
 
     SettingsSection {
         Layout.fillWidth: true
-        title: "Media player"
-        SettingRow {
-            Layout.fillWidth: true
-            labelFills: true
-            label: "Visualizer in the media popup"
-            // cava draws it (in every distribution's package list); a machine
-            // without it is told how to get it rather than given a switch
-            // that does nothing.
-            hint: MprisService.visualizerMissing ? "cava is not installed. " + DistroService.installHint("cava")
-                : "Bars that move with the sound while something plays. Not with reduced motion."
-            ShellToggle {
-                focusOnTab: true
-                checked: SettingsService.value("desktop.mediaVisualizer") === true
-                onToggled: value => SettingsService.set("desktop.mediaVisualizer", value)
-            }
-        }
-    }
-
-    SettingsSection {
-        Layout.fillWidth: true
         title: "Screen recording"
         description: ShortcutService.keyHint("SUPER + SHIFT + R", true) + " records a region, " + ShortcutService.keyHint("SUPER + CTRL + SHIFT + R", true)
             + " the screen. Press it again or click the red indicator to stop."
@@ -268,9 +250,12 @@ ColumnLayout {
     // thing that hands the screen to someone.
     ScreenSharingSection { Layout.fillWidth: true }
 
+    // Removable drives and the system disk in one section: the same service
+    // (DrivesService), the same scope, and a page of nine sections is one
+    // that is scrolled past.
     SettingsSection {
         Layout.fillWidth: true
-        title: "Removable drives"
+        title: "Drives"
         scope: "drives.notify"
         description: "USB sticks, SD cards, external disks, encrypted volumes and MTP phones. Eject them in the control center before unplugging."
         SettingRow {
@@ -292,18 +277,11 @@ ColumnLayout {
             icon: "󰋊"; text: "Show drives"
             onClicked: PanelService.open("controlCenter", { page: "drives" })
         }
-    }
-
-    SettingsSection {
-        Layout.fillWidth: true
-        title: "System disk"
-        scope: "drives.lowSpace"
-        description: "The disk the system and your files are on: / and /home."
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
-            label: "Warn when it is almost full"
-            hint: "Looks every 15 minutes and tells once, with a button to the System popup: below a tenth of the disk, at most 20 GiB and at least 5 GiB free"
+            label: "Warn when the system disk is almost full"
+            hint: "The disk the system and your files are on (/ and /home). Looks every 15 minutes and tells once, with a button to the System popup: below a tenth of the disk, at most 20 GiB and at least 5 GiB free"
             ShellToggle { focusOnTab: true; checked: DrivesService.lowSpaceEnabled; onToggled: value => SettingsService.set("drives.lowSpace", value) }
         }
     }

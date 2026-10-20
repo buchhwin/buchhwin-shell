@@ -247,6 +247,6 @@ ColumnLayout {
 
     ShellButton {
         icon: Icons.settings; text: "Drive settings"; variant: "ghost"; compact: true
-        onClicked: PanelService.open("settings", { page: "desktop", section: "Removable drives" })
+        onClicked: PanelService.open("settings", { page: "desktop", section: "Drives" })
     }
 }

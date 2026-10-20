@@ -1,5 +1,6 @@
 .pragma library
 .import "../hypr/HyprCommands.js" as Hypr
+.import "../display/DisplayLogic.js" as Display
 
 // Where apps open (Settings > Apps > Open on, the dock's "Always open here")
 // and the list of work apps, as services/SessionAppsService.qml keeps them in
@@ -141,9 +142,12 @@ function monitorFor(rule, monitors) {
     return name.length ? list.find(item => item.name === name) || null : null
 }
 
-// "U2723QE (DP-10)", or the description, or the connector alone.
+// "U2723QE (DP-10)", or the description, or the connector alone; the
+// laptop's own panel "Built-in display", as the share picker calls it - its
+// model is a code ("0x41B5 (eDP-1)" said nothing).
 function screenLabel(monitor) {
     if (!monitor) return ""
+    if (Display.isInternal(monitor.name)) return "Built-in display"
     const model = text(monitor.model).trim()
     const description = text(monitor.description).trim()
     const shown = model.length ? model : description

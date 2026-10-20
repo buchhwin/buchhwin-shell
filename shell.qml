@@ -120,21 +120,30 @@ ShellRoot {
     // without the window). PanelService.open asks for one that is not there
     // and opens it once it has reported in (pitfall 110); each id is in
     // PanelService.lazyPanels.
-    LazyLoader { active: PanelService.demanded.emoji === true; EmojiPanel {} }
+    // Each is named by its file, not by its type: a type named anywhere in
+    // this file is compiled at the start, built or not - taking the nineteen
+    // here out lowered the start's memory by some 3.5 MB (nested, 20.10.).
+    // A file in `source` is read on its first open instead, which adds its
+    // compile to that open once. `active` follows `source`, because
+    // a LazyLoader builds nothing from a file it gets after it was told to be
+    // active. Built from its file, a panel sees the singletons but not the
+    // ids of this file (none of them uses one).
+    LazyLoader { source: PanelService.demanded.emoji === true ? "shell/emoji/EmojiPanel.qml" : ""; active: source.length > 0 }
     // The tour: built for the first start (until it has been seen), or when
     // Settings > About or IPC opens it again - not at every start for a panel
     // shown once per install (PanelService.lazyPanels). Opened once, it stays
     // for the session, so marking itself completed does not unload it.
     LazyLoader {
-        active: PanelService.demanded.welcome === true
+        source: PanelService.demanded.welcome === true
             || (SettingsService.loaded && SettingsService.value("onboarding.completed") !== true)
-        WelcomePanel {}
+            ? "shell/welcome/WelcomePanel.qml" : ""
+        active: source.length > 0
     }
     ControlCenter {}
     NotificationPopupStack {}
-    LazyLoader { active: PanelService.demanded.notifications === true; NotificationCenter {} }
-    LazyLoader { active: PanelService.demanded.powerMenu === true; PowerMenu {} }
-    LazyLoader { active: PanelService.demanded.shortcutSheet === true; ShortcutSheet {} }
+    LazyLoader { source: PanelService.demanded.notifications === true ? "shell/notifications/NotificationCenter.qml" : ""; active: source.length > 0 }
+    LazyLoader { source: PanelService.demanded.powerMenu === true ? "shell/powermenu/PowerMenu.qml" : ""; active: source.length > 0 }
+    LazyLoader { source: PanelService.demanded.shortcutSheet === true ? "shell/shortcuts/ShortcutSheet.qml" : ""; active: source.length > 0 }
 
     IpcHandler {
         id: desktopIpc
@@ -1557,25 +1566,32 @@ ShellRoot {
     DashboardPanel {}
     // The event editor keeps an unsaved draft in itself, one more reason it
     // stays once built.
-    LazyLoader { active: PanelService.demanded.eventEditor === true; EventEditor {} }
-    LazyLoader { active: PanelService.demanded.wifiPassword === true; WifiDialog {} }
-    LazyLoader { active: PanelService.demanded.pairing === true; PairingDialog {} }
-    LazyLoader { active: PanelService.demanded.driveUnlock === true; UnlockDialog {} }
+    LazyLoader { source: PanelService.demanded.eventEditor === true ? "shell/dashboard/EventEditor.qml" : ""; active: source.length > 0 }
+    LazyLoader { source: PanelService.demanded.wifiPassword === true ? "shell/network/WifiDialog.qml" : ""; active: source.length > 0 }
+    LazyLoader { source: PanelService.demanded.pairing === true ? "shell/bluetooth/PairingDialog.qml" : ""; active: source.length > 0 }
+    LazyLoader { source: PanelService.demanded.driveUnlock === true ? "shell/drives/UnlockDialog.qml" : ""; active: source.length > 0 }
     Osd { id: osd }
     // While the keys go to a window (the keyboard passthrough): the chip that
-    // says so. No surface the rest of the time.
-    LazyLoader { active: HyprlandService.passthrough; PassthroughChip {} }
-    LazyLoader { active: PanelService.demanded.clipboard === true; ClipboardPanel {} }
-    LazyLoader { active: PanelService.demanded.wallpaperPicker === true; WallpaperPicker {} }
+    // says so. No surface the rest of the time; its file is read the first
+    // time and kept, as the panels' are.
+    LazyLoader {
+        readonly property bool passing: HyprlandService.passthrough
+        property bool seen: false
+        onPassingChanged: if (passing) seen = true
+        source: seen || passing ? "shell/shortcuts/PassthroughChip.qml" : ""
+        active: passing && source.length > 0
+    }
+    LazyLoader { source: PanelService.demanded.clipboard === true ? "shell/clipboard/ClipboardPanel.qml" : ""; active: source.length > 0 }
+    LazyLoader { source: PanelService.demanded.wallpaperPicker === true ? "shell/wallpaper/WallpaperPicker.qml" : ""; active: source.length > 0 }
     Overview {}
     Switcher {}
-    LazyLoader { active: PanelService.demanded.settings === true; SettingsPanel {} }
+    LazyLoader { source: PanelService.demanded.settings === true ? "shell/settings/SettingsPanel.qml" : ""; active: source.length > 0 }
     // The assistant (a model Ollama runs on this computer) and the share
     // picker (xdg-desktop-portal-hyprland's custom picker,
     // scripts/share-picker.sh): built on their first open and nothing before
     // (PanelService.lazyPanels).
-    LazyLoader { active: PanelService.demanded.assistant === true; AssistantPanel {} }
-    LazyLoader { active: PanelService.demanded.sharePicker === true; SharePickerPanel {} }
+    LazyLoader { source: PanelService.demanded.assistant === true ? "shell/assistant/AssistantPanel.qml" : ""; active: source.length > 0 }
+    LazyLoader { source: PanelService.demanded.sharePicker === true ? "shell/sharepicker/SharePickerPanel.qml" : ""; active: source.length > 0 }
     NetworkPopup {}
     VpnPopup {}
     BluetoothPopup {}
@@ -1589,10 +1605,10 @@ ShellRoot {
     ProfilePopup {}
     // The display switcher (Super+Shift+P, the projector key): built on its
     // first open - most sessions never meet a projector (PanelService.lazyPanels).
-    LazyLoader { active: PanelService.demanded.displaySwitcher === true; DisplaySwitcher {} }
+    LazyLoader { source: PanelService.demanded.displaySwitcher === true ? "shell/displays/DisplaySwitcher.qml" : ""; active: source.length > 0 }
     // A tray widget's menu, out of the icon it was opened from: built the
     // first time a menu opens (a right click on a tray widget's icon).
-    LazyLoader { active: PanelService.demanded.trayMenu === true; TrayMenuPopup {} }
+    LazyLoader { source: PanelService.demanded.trayMenu === true ? "shell/popups/TrayMenuPopup.qml" : ""; active: source.length > 0 }
     // Built on their first open, not at the start: a panel is built whether it
     // opens or not (testing.md pitfall 101; 5-10 MB nested), and these may
     // never open. PanelService asks for them (`demanded`) and opens them once
@@ -1601,8 +1617,8 @@ ShellRoot {
     LazyLoader {
         readonly property bool feature: SettingsService.value("dock.enabled") === true
         onFeatureChanged: if (!feature) PanelService.release("dockMenu")
-        active: feature && PanelService.demanded.dockMenu === true
-        DockMenu {}
+        source: feature && PanelService.demanded.dockMenu === true ? "shell/dock/DockMenu.qml" : ""
+        active: source.length > 0
     }
     // The start menu: opened by a dock's start button (Settings > Dock >
     // Start button) or by IPC, which works without a dock too (centred then).
@@ -1612,8 +1628,8 @@ ShellRoot {
         readonly property bool feature: SettingsService.value("dock.enabled") === true && LayoutService.dockHasStart
             && SettingsService.value("dock.startOpens") !== "launcher"
         onFeatureChanged: if (!feature) PanelService.release("startMenu")
-        active: PanelService.demanded.startMenu === true
-        StartMenu {}
+        source: PanelService.demanded.startMenu === true ? "shell/startmenu/StartMenu.qml" : ""
+        active: source.length > 0
     }
     // Out of the dock's start button when there is one on that screen, a gap
     // off the dock's body as a click on it does (Pill.qml), in the middle of

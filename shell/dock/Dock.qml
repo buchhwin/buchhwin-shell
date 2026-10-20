@@ -535,9 +535,14 @@ Scope {
     // An app's windows under the pointer (Settings > Dock > Window previews):
     // a surface of its own, made while a strip is up and let go after its
     // fade (DockService.previewScreen). Never asked with the dock off.
+    // Named by its file, so that nothing of it is compiled until the first
+    // strip (as shell.qml's panels); the file is kept after that.
     LazyLoader {
-        active: SettingsService.loaded && SettingsService.value("dock.enabled") === true
+        readonly property bool wanted: SettingsService.loaded && SettingsService.value("dock.enabled") === true
             && SettingsService.value("dock.previews") === true && DockService.previewScreen.length > 0
-        DockPreview {}
+        property bool seen: false
+        onWantedChanged: if (wanted) seen = true
+        source: seen || wanted ? "DockPreview.qml" : ""
+        active: wanted && source.length > 0
     }
 }

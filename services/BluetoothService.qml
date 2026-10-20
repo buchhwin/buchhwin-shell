@@ -286,7 +286,7 @@ Singleton {
     // battery of a connected device that reports one, which BlueZ updates
     // every few minutes; checked 2 s after a change, so a device that comes
     // with its level is one step.
-    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell)
     readonly property bool batteryWarning: SettingsService.value("bluetooth.batteryWarning") !== false
     readonly property bool warningsAllowed: !lockProcess && Quickshell.env("BUCHHWIN_NESTED") !== "1"
     readonly property var batteryLevels: warningsAllowed ? connected.filter(device => device.batteryAvailable).map(device => ({

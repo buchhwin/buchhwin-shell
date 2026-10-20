@@ -123,7 +123,7 @@ ShellPanel {
     }
     // A section asked for by its title (`{ page, section }`: the assistant's
     // Settings button): scrolled to the top of the page's view once the page
-    // has laid it out. Desktop extras has nine sections, and a link to the
+    // has laid it out. Desktop extras has seven sections, and a link to the
     // last one landed at the first. Tried for a moment while the page loads
     // and lays out; a title the page does not have is let go.
     property string askedSection: ""

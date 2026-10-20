@@ -14,8 +14,10 @@ var LIMIT = 4
 // Quickshell's HyprlandToplevel objects as plain ones, without the session's
 // hidden helpers (services/hypr/HiddenWindows.js: their class, or the
 // special workspace the window rules put them on). Address with its "0x",
-// the way HyprCommands wants it (Quickshell hands it over without).
-function entries(toplevels) {
+// the way HyprCommands wants it (Quickshell hands it over without). The
+// workspace is called what its pip calls it (SwitcherLogic.workspaceLabel;
+// `order` the monitors in their blocks' order, empty without blocks).
+function entries(toplevels, order) {
     const list = []
     for (const toplevel of toplevels || []) {
         if (!toplevel) continue
@@ -28,8 +30,9 @@ function entries(toplevels) {
         const workspaceName = workspace ? String(workspace.name !== undefined ? workspace.name : workspace.id) : ""
         if (Hidden.isHiddenClass(appId) || workspaceName === Hidden.workspace) continue
         const title = String(toplevel.title || (wayland && wayland.title) || "")
+        const monitor = toplevel.monitor ? toplevel.monitor.name : workspace && workspace.monitor ? workspace.monitor.name : ""
         list.push({ address: "0x" + bare, title: title, appId: appId,
-                    workspace: Switcher.workspaceLabel(workspace || {}) })
+                    workspace: Switcher.workspaceLabel(workspace || {}, monitor, order) })
     }
     return list
 }

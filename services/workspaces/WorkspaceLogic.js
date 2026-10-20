@@ -166,7 +166,7 @@ function entries(mode, count, workspaces, screen, activeId, offset, focusedId, b
             return {
                 id: id,
                 name: name,
-                label: named ? name : String(mine ? localId(id) : id),
+                label: labelOf(id, name, mine),
                 stray: !named && !mine,
                 active: id === active || (placeholder && !(active > 0)),
                 focused: id === focused,
@@ -253,6 +253,41 @@ function offsetFor(monitors, name) {
     return monitorIndex(monitors, name) * perMonitorBlock
 }
 
+// What a workspace is called, on its pip and wherever else the shell names
+// one - the overview's cards, a window's row in the dock's menu, the
+// launcher, Alt+Tab, where a minimized window goes back to: a name somebody
+// chose; else, in its own monitor's block (`mine`), the number of its pip
+// there - the one Super+N goes to -; else its real id. The pips and the
+// overview called the second screen's first workspace "1" while the dock's
+// menu, the launcher and the overview's Minimized row called it "11",
+// Hyprland's id, which nothing else on the screen shows.
+function labelOf(id, name, mine) {
+    const value = Math.round(Number(id))
+    const text = name === undefined || name === null ? "" : String(name)
+    if (text.length && text !== String(value)) return text
+    if (!isFinite(value) || value < 1) return text
+    return String(mine === true ? localId(value) : value)
+}
+
+// The same from where the workspace is: `monitor` the name of the monitor it
+// is on, "" for one that does not exist now (a minimized window's way back),
+// which the blocks' rules create on its own block's monitor; `order` the
+// monitors in their blocks' order (`monitorOrder`), empty without blocks.
+function label(id, name, monitor, order) {
+    const value = Math.round(Number(id))
+    const blocks = Array.isArray(order) ? order.map(String) : []
+    const slot = isFinite(value) && value > 0 ? monitorIndexOf(value) : -1
+    const where = monitor === undefined || monitor === null ? "" : String(monitor)
+    const mine = slot >= 0 && slot < blocks.length && (!where.length || blocks.indexOf(where) === slot)
+    return labelOf(value, name, mine)
+}
+
+// "Workspace 3", a named one by its name, "" for none known.
+function title(id, name, monitor, order) {
+    const text = label(id, name, monitor, order)
+    return text.length ? "Workspace " + text : ""
+}
+
 // The workspaces that sit on a monitor other than the one their block names,
 // as `[{ id, monitor }]` moves - the rule only binds a workspace *when it is
 // created*, and Hyprland creates one per monitor before the shell has said a
@@ -305,7 +340,24 @@ function misplaced(order, workspaces) {
 // `entries` draws to be visited, and sending the screen home sent it away
 // 400 ms after the next workspace came or went - leaving an emptied one is
 // enough - so the undocked monitor's windows could not be stayed with.
-function views(order, placed, actives, moves) {
+// Not an empty one on a screen its own workspaces are moved to, though:
+// that is the number Hyprland gave a screen coming back on. "External
+// only" ruled every block to the other screen, so the panel came back on
+// 21 after "Extend", stayed there while its 1 was moved back to it, and
+// keepEmpty held the 21 for good.
+//
+// Except on a screen back from mirroring another (`back`, optional: { name:
+// the workspace it showed before, DisplayService.mirrorReturns }). Hyprland
+// gives such a screen the next free number, and the blocks' rules had given
+// every one up to the last block to the screens left while it mirrored - it
+// came back on 21, beyond the blocks, and keepEmpty held that for good. The
+// same for a screen back from being switched off ("Laptop only", then
+// "Extend"): its workspaces had gone to the other screen, and keepEmpty held
+// them there, so Hyprland made it a new one - an empty 12 instead of the 11
+// it showed. It shows the one it showed before where that is one of its
+// own, else as a screen whose view went away.
+function views(order, placed, actives, moves, back) {
+    const returning = back && typeof back === "object" ? back : {}
     const monitors = Array.isArray(order) ? order : []
     const moving = (Array.isArray(moves) ? moves : []).filter(move => move && typeof move.monitor === "string")
     const movedIds = moving.map(move => Math.round(Number(move.id)))
@@ -326,11 +378,18 @@ function views(order, placed, actives, moves) {
         const id = Math.round(Number(active.id))
         const valid = isFinite(id) && id >= 1 && movedIds.indexOf(id) < 0
         const own = ids.filter(other => monitorIndexOf(other) === index).sort((a, b) => a - b)
+        if (Object.prototype.hasOwnProperty.call(returning, name)) {
+            const before = Math.round(Number(returning[name]))
+            const seen = own.filter(other => shown.indexOf(other) >= 0)
+            result.push({ monitor: name, id: isFinite(before) && before >= 1 && monitorIndexOf(before) === index ? before
+                                         : seen.length ? seen[0] : own.length ? own[0] : globalId(1, index) })
+            continue
+        }
         if (moving.some(move => move.monitor === name)) {
             const arriving = movedIds.filter(other => monitorIndexOf(other) === index
                                              && shown.indexOf(other) >= 0 && windowsOf(other) > 0)
             if (arriving.length) { result.push({ monitor: name, id: Math.min.apply(null, arriving) }); continue }
-            if (valid && (monitorIndexOf(id) === index || monitorIndexOf(id) >= monitors.length)) {
+            if (valid && (monitorIndexOf(id) === index || (monitorIndexOf(id) >= monitors.length && windowsOf(id) > 0))) {
                 result.push({ monitor: name, id: id })
                 continue
             }
@@ -339,6 +398,36 @@ function views(order, placed, actives, moves) {
         }
         const seen = own.filter(other => shown.indexOf(other) >= 0)
         result.push({ monitor: name, id: seen.length ? seen[0] : own.length ? own[0] : globalId(1, index) })
+    }
+    return result
+}
+
+// The screens that stayed on through a choice of the display switcher and
+// were left on a new, empty workspace, with the one each showed before, as
+// `views`' `back` ({ name: id }). `stays` is { name: the workspace it
+// showed } (DisplayService.stayViews). Hyprland gives a screen coming back
+// on the workspaces last moved off it, and one of them can be the one
+// another screen shows - that screen is given a new number. Only where the
+// one it showed is of its own block and still there, and the one it shows
+// now has no window: a workspace with windows is never left for an empty
+// one.
+function stayedViews(order, placed, actives, stays) {
+    const before = stays && typeof stays === "object" ? stays : {}
+    const monitors = Array.isArray(order) ? order : []
+    const workspaces = (Array.isArray(placed) ? placed : []).filter(Boolean)
+    const find = id => workspaces.find(item => Math.round(Number(item.id)) === id) || null
+    const result = {}
+    for (const active of (Array.isArray(actives) ? actives : [])) {
+        if (!active) continue
+        const name = String(active.monitor || "")
+        if (!Object.prototype.hasOwnProperty.call(before, name)) continue
+        const was = Math.round(Number(before[name]))
+        const now = Math.round(Number(active.id))
+        const index = monitors.indexOf(name)
+        if (index < 0 || !isFinite(was) || was < 1 || was === now || monitorIndexOf(was) !== index || !find(was)) continue
+        const shown = find(now)
+        if (shown && Number(shown.windows) > 0) continue
+        result[name] = was
     }
     return result
 }

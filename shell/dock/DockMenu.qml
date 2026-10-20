@@ -118,7 +118,8 @@ ShellPanel {
                             : modelData.kind === "unpin" ? "Unpin"
                             : modelData.kind === "close" ? (modelData.count > 1 ? "Close " + modelData.count + " windows" : "Close window")
                             : ""
-                        subtitle: modelData.kind === "window" ? Logic.workspaceLabel(modelData.workspace, modelData.workspaceName)
+                        subtitle: modelData.kind === "window" ? Logic.workspaceLabel(modelData.workspace, modelData.workspaceName,
+                                                                                     modelData.monitor, HyprlandService.blockOrder)
                             : modelData.kind === "here" ? (column.here ? column.here.text : "")
                             : modelData.kind === "pin" && modelData.reason === "hidden" ? "Not shown in the app list"
                             : modelData.kind === "pin" && modelData.enabled === false ? "At most " + LayoutService.dockPinLimit + " apps on the dock" : ""

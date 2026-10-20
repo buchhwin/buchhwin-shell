@@ -233,6 +233,23 @@ ShellRoot {
         T.eq([W.offsetFor(screens, "DP-3"), W.offsetFor(screens, "DP-1"), W.offsetFor(screens, "DP-2")],
              [0, 10, 20], "where each block starts")
 
+        // What a workspace is called outside the row of pips: the number of
+        // its pip, whoever names it (the dock's menu, the launcher, Alt+Tab,
+        // a minimized window's way back).
+        const blocks = W.monitorOrder(screens)
+        T.eq([W.label(11, "11", "DP-1", blocks), W.label(3, "3", "DP-3", blocks), W.label(23, "23", "DP-2", blocks)],
+             ["1", "3", "3"], "with blocks: the number in its monitor's block")
+        T.eq(W.label(11, "11", "DP-3", blocks), "11", "on a monitor whose block it is not: its real id, as its stray pip")
+        T.eq([W.label(11, "", "", blocks), W.label(41, "", "", blocks)], ["1", "41"],
+             "one that is not there now: its own block's number, while that monitor is there")
+        T.eq([W.label(11, "11", "DP-1", []), W.label(11, "11", "DP-1")], ["11", "11"], "without blocks: its id")
+        T.eq([W.label(12, "web", "DP-1", blocks), W.label(-98, "special:term", "", blocks), W.label(0, "", "", blocks)],
+             ["web", "special:term", ""], "a name somebody chose stays; nothing for none")
+        T.eq([W.title(11, "11", "DP-1", blocks), W.title(4, "", "", []), W.title(-1, "", "", blocks)],
+             ["Workspace 1", "Workspace 4", ""], "and in words")
+        T.eq([W.labelOf(13, "13", true), W.labelOf(13, "13", false), W.labelOf(13, "mail", true)], ["3", "13", "mail"],
+             "the one rule the pips, the overview and the rest share")
+
         // `fixed` inside a block: the second monitor shows its own 1-4, which
         // are 11-14 in the compositor, and the labels stay 1-4.
         const perMon = [{ id: 1, name: "1", windows: 1, screen: "DP-3" },
@@ -347,6 +364,56 @@ ShellRoot {
              [{ monitor: "B", id: 11 }], "a screen on a gone monitor's workspace stays; the one 11 moves to shows it")
         T.eq([W.views(null, null, null, null), W.views(["A"], [], [null, { monitor: "Z", id: 1 }], [null])], [[], []],
              "nothing known, nothing to do")
+        // "Duplicate", then "Extend": B mirrored A and comes back on 21,
+        // the next number Hyprland had free - every one up to 20 was ruled
+        // to A while B mirrored. It goes back to what it showed before.
+        const mirrorPlaced = [{ id: 1, monitor: "A", windows: 1 }, { id: 11, monitor: "A", windows: 0 }, { id: 13, monitor: "A", windows: 2 },
+                              { id: 21, monitor: "B", windows: 0 }]
+        const mirrorActives = [{ monitor: "A", id: 1 }, { monitor: "B", id: 21 }]
+        const mirrorMoves = W.misplaced(["A", "B"], mirrorPlaced)
+        T.eq(mirrorMoves, [{ id: 11, monitor: "B" }, { id: 13, monitor: "B" }], "its own go back to it")
+        T.eq(W.views(["A", "B"], mirrorPlaced, mirrorActives, mirrorMoves), [{ monitor: "B", id: 11 }],
+             "without knowing, an empty 21 is left for its own lowest, not kept as a block of its own")
+        T.eq(W.views(["A", "B"], mirrorPlaced, mirrorActives, mirrorMoves, { B: 13 }), [{ monitor: "B", id: 13 }],
+             "back from the mirror: the workspace it showed before")
+        T.eq(W.views(["A", "B"], mirrorPlaced, mirrorActives, mirrorMoves, { B: 3 }), [{ monitor: "B", id: 11 }],
+             "one that is not its own any more: its lowest own")
+        T.eq(W.views(["A", "B"], [{ id: 1, monitor: "A" }, { id: 21, monitor: "B" }], mirrorActives, [], { B: 0 }), [{ monitor: "B", id: 11 }],
+             "nothing known of it: its first")
+        T.eq(W.views(["A", "B"], mirrorPlaced, mirrorActives, mirrorMoves, { C: 13 }), [{ monitor: "B", id: 11 }],
+             "a screen not in the blocks (still a mirror) is left for later")
+        // "External only", then "Extend": the panel A comes back on 21 - every
+        // block was ruled to B - and its 1 is moved back to it.
+        const backOn = (windows) => W.views(["A", "B"], [{ id: 1, monitor: "B", windows: 0 }, { id: 11, monitor: "B", windows: 0 },
+                                                         { id: 21, monitor: "A", windows: windows }],
+                                            [{ monitor: "B", id: 11 }, { monitor: "A", id: 21 }], [{ id: 1, monitor: "A" }])
+        T.eq(backOn(0), [{ monitor: "A", id: 1 }], "a screen given an empty 21 goes to its own when they come back to it")
+        T.eq(backOn(2), [{ monitor: "A", id: 21 }], "one with windows beyond the blocks is still stayed with")
+        T.eq(W.views(["A", "B"], [{ id: 1, monitor: "A", windows: 0 }, { id: 21, monitor: "A", windows: 0 }, { id: 11, monitor: "B", windows: 0 }],
+                     [{ monitor: "A", id: 21 }, { monitor: "B", id: 11 }], []), [],
+             "with nothing coming to it, a screen on an empty one beyond the blocks is left alone (a visited stray)")
+        // "Laptop only", then "Extend": B comes back on a new 12, its 11 held
+        // on A meanwhile; told what it showed, it shows 11 again.
+        const offAndOn = [{ id: 1, monitor: "A", windows: 0 }, { id: 11, monitor: "A", windows: 0 }, { id: 12, monitor: "B", windows: 0 }]
+        const offAndOnActives = [{ monitor: "A", id: 1 }, { monitor: "B", id: 12 }]
+        T.eq(W.views(["A", "B"], offAndOn, offAndOnActives, W.misplaced(["A", "B"], offAndOn)), [{ monitor: "B", id: 12 }],
+             "not told, it stays on the new one (its own)")
+        T.eq(W.views(["A", "B"], offAndOn, offAndOnActives, W.misplaced(["A", "B"], offAndOn), { B: 11 }), [{ monitor: "B", id: 11 }],
+             "told, the one it showed before")
+        // "External only", "Laptop only", then "Extend": B coming back took
+        // A's 1 (the workspaces last moved off it) and A was given a new 2.
+        const yanked = [{ id: 1, monitor: "A", windows: 0 }, { id: 2, monitor: "A", windows: 0 }, { id: 11, monitor: "B", windows: 0 }]
+        const yankedActives = [{ monitor: "A", id: 2 }, { monitor: "B", id: 11 }]
+        T.eq(W.stayedViews(["A", "B"], yanked, yankedActives, { A: 1, B: 11 }), { A: 1 }, "the screen left on a new, empty one: back to the one it showed")
+        T.eq(W.views(["A", "B"], yanked, yankedActives, [], W.stayedViews(["A", "B"], yanked, yankedActives, { A: 1, B: 11 })),
+             [{ monitor: "A", id: 1 }], "and shown it")
+        T.eq(W.stayedViews(["A", "B"], yanked.map(item => item.id === 2 ? Object.assign({}, item, { windows: 3 }) : item), yankedActives, { A: 1 }), {},
+             "never away from one with windows")
+        T.eq([W.stayedViews(["A", "B"], yanked, yankedActives, { A: 13 }), W.stayedViews(["A", "B"], yanked, yankedActives, { A: 3 }),
+              W.stayedViews(["A", "B"], yanked, yankedActives, { C: 1 }), W.stayedViews(["A", "B"], yanked, [{ monitor: "A", id: 1 }], { A: 1 })],
+             [{}, {}, {}, {}], "not to another block's, not to one that is gone, not for a screen without a block, nothing where nothing changed")
+        T.eq([W.stayedViews(null, null, null, null), W.stayedViews(["A"], yanked, [null, { monitor: "A", id: 2 }], { A: "x" })], [{}, {}],
+             "nothing known, nothing to put back")
 
         // ---- held open: which ones count ----------------------------------
 

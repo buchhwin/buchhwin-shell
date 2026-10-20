@@ -31,7 +31,7 @@ import "lock/LockLogic.js" as LockLogic
 Singleton {
     id: root
 
-    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell)
     readonly property bool active: !lockProcess
     readonly property bool nested: Quickshell.env("BUCHHWIN_NESTED") === "1"
     // What happens by itself (the login's work apps, the offer) only here.
@@ -488,9 +488,14 @@ Singleton {
     // one KWallet prompt and not under it.
     readonly property string loginMarker: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/buchhwin-shell-session-apps-"
         + (Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") || "none")
+    // Asked once: loginChecked is the handler's own guard, not part of
+    // loginReady, because a handler that writes what its property's binding
+    // reads re-runs that binding inside its own change - "Binding loop
+    // detected for property loginReady" at every start of the real session
+    // (testing.md pitfall 138).
     property bool loginChecked: false
-    readonly property bool loginReady: realSession && SettingsService.loaded && storeLoaded && !loginChecked
-    onLoginReadyChanged: if (loginReady) { loginChecked = true; markerFile.path = loginMarker }
+    readonly property bool loginReady: realSession && SettingsService.loaded && storeLoaded
+    onLoginReadyChanged: if (loginReady && !loginChecked) { loginChecked = true; markerFile.path = loginMarker }
     FileView {
         id: markerFile
         printErrors: false

@@ -317,7 +317,10 @@ ShellPanel {
                                                       boxHeight - Metrics.spaceSm * 2)
         implicitHeight: frame.height + Metrics.spaceXs + caption.implicitHeight
         Component.onCompleted: root.register(choiceKey, card, true)
-        Component.onDestruction: root.register(choiceKey, card, false)
+        // At the shell's exit the panel can be gone before its cards: built
+        // from its file (shell.qml), its own context goes with it, and a card
+        // then finds no `root` to take its record back from.
+        Component.onDestruction: if (root) root.register(choiceKey, card, false)
         Accessible.role: Accessible.Button
         Accessible.name: label
         Accessible.onPressAction: root.share(choiceKey)

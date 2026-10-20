@@ -23,10 +23,12 @@ import "lock/LockLogic.js" as LockLogic
 Singleton {
     id: root
 
-    readonly property bool realSession: !LockLogic.lockProcess(Quickshell.shellId)
-    // Settings > Dock > Minimize: an app's own minimize button (VS Code's
-    // title bar, Citrix's toolbar) minimizes its window. On by default: those
-    // buttons did nothing under Hyprland.
+    readonly property bool realSession: !LockLogic.lockProcess(Quickshell)
+    // Settings > Dock > Minimize: an app's own minimize button minimizes its
+    // window, when Hyprland reports the request (`minimized>>`). On by
+    // default; it costs nothing while nothing is reported - and Hyprland
+    // 0.56.2 reported nothing for GTK3, GTK4 and XWayland apps nested
+    // (testing.md pitfall 149), so those buttons still do nothing there.
     readonly property bool honoursRequests: realSession && SettingsService.value("windows.minimizeRequests") !== false
 
     // When the shell minimized each window, by address, for Super+Shift+H

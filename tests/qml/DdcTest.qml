@@ -82,6 +82,37 @@ ShellRoot {
         T.ok(Ddc.externalKey(monitors, "eDP-1") !== Ddc.externalKey(monitors.slice(0, 3), "eDP-1"), "a monitor unplugged is a change")
         T.eq(Ddc.externalKey([{ name: "eDP-1", description: "x" }], ""), "", "a panel by its connector name even unnamed")
 
+        // What detection found, kept while a monitor stays connected: asked
+        // once per hotplug, in the background, never again for a screen
+        // switched off and on.
+        const keyOf = name => Ddc.monitorKey(monitors.find(m => m.name === name))
+        T.eq(Ddc.monitorKey(monitors[1]), "DP-8\u0001Sample Inc. Sample 4K A SN0001", "a monitor by connector and description")
+        T.eq(Ddc.connectedExternals(monitors.map(m => m.name === "DP-8" ? Object.assign({}, m, { disabled: true }) : m), "eDP-1").map(m => m.name),
+             ["DP-8", "DP-10", "DP-13"], "connected: on or off, never the panel")
+        T.eq(Ddc.unasked({}, monitors, "eDP-1"), ["DP-8", "DP-10", "DP-13"], "plugged in: every external screen on is to be asked")
+        T.eq(Ddc.unasked({}, [monitors[0]], "eDP-1"), [], "the laptop alone: nothing to ask")
+        const asked = [keyOf("DP-8"), keyOf("DP-10"), keyOf("DP-13")]
+        const seen = Ddc.remember({}, asked, Ddc.match(found, monitors, "eDP-1"), monitors, "eDP-1")
+        T.eq(seen, { [keyOf("DP-8")]: 10, [keyOf("DP-10")]: 11, [keyOf("DP-13")]: -1 }, "each asked: its bus, or -1 for no answer")
+        T.eq(Ddc.unasked(seen, monitors, "eDP-1"), [], "then nothing is asked again")
+        T.eq(Ddc.usable(seen, monitors, "eDP-1"), [
+            { name: "DP-8", description: "Sample Inc. Sample 4K A SN0001", bus: 10 },
+            { name: "DP-10", description: "Sample Inc. Sample 4K B SN0002", bus: 11 }], "the displays: the ones that answered")
+        const dp8Off = monitors.map(m => m.name === "DP-8" ? Object.assign({}, m, { disabled: true }) : m)
+        T.ok(Ddc.keepConnected(seen, dp8Off, "eDP-1") === seen, "a screen switched off is still connected: the same answers")
+        T.eq(Ddc.usable(seen, dp8Off, "eDP-1").map(d => d.name), ["DP-10"], "and has no level while off")
+        T.eq(Ddc.unasked(seen, monitors, "eDP-1"), [], "switched on again: nothing to ask")
+        const unplugged = Ddc.keepConnected(seen, monitors.filter(m => m.name !== "DP-8"), "eDP-1")
+        T.eq(Object.keys(unplugged).length, 2, "unplugged: its answer is gone")
+        T.eq(Ddc.unasked(unplugged, monitors, "eDP-1"), ["DP-8"], "plugged in again: asked again, its bus may be another")
+        const swapped = monitors.map(m => m.name === "DP-8" ? Object.assign({}, m, { description: "Sample Other" }) : m)
+        T.eq(Ddc.unasked(Ddc.keepConnected(seen, swapped, "eDP-1"), swapped, "eDP-1"), ["DP-8"], "another screen on the same connector is asked")
+        T.eq(Ddc.remember(seen, [keyOf("DP-8")], [], dp8Off, "eDP-1"), seen, "one that went off while it ran is not marked")
+        T.eq(Ddc.remember({}, [keyOf("DP-8")], Ddc.match(found, monitors, "eDP-1"), monitors, "eDP-1"), { [keyOf("DP-8")]: 10 },
+             "only the monitors it asked: one that came on meanwhile is asked next")
+        T.eq(Ddc.usable({ [keyOf("DP-8")]: -1 }, monitors, "eDP-1"), [], "one marked as not answering has no level")
+        T.eq([Ddc.unasked(null, null, ""), Ddc.usable(null, null, ""), Ddc.keepConnected(null, [], "")], [[], [], {}], "nothing known")
+
         // The commands: bounded, the bus by number.
         T.eq(Ddc.detectCommand("ddcutil"), ["timeout", "30", "ddcutil", "detect", "--brief"], "detect")
         T.eq(Ddc.readCommand("ddcutil", 10), ["timeout", "8", "ddcutil", "getvcp", "10", "--brief", "--bus", "10"], "read")

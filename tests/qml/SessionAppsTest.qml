@@ -62,7 +62,9 @@ ShellRoot {
              "a description that is not here falls back to the connector")
         T.eq(P.monitorFor({ screen: "Example Display 99", screenName: "" }, monitors), null, "not connected")
         T.eq([P.screenLabel(desk), P.screenLabel(portrait), P.screenLabel(laptop), P.screenLabel(null)],
-             ["Display 27 (DP-10)", "Example Display 24 0002 (DP-13)", "eDP-1", ""], "screens in words")
+             ["Display 27 (DP-10)", "Example Display 24 0002 (DP-13)", "Built-in display", ""], "screens in words")
+        T.eq(P.screenLabel({ name: "eDP-1", description: "Example Panel 0x1234", model: "0x1234" }), "Built-in display",
+             "the laptop's panel by what it is, not by its model's code")
 
         T.eq(P.ruleTarget(store.placement[0], monitors, offsets), { monitor: "DP-10", workspace: 3, float: false },
              "the first block's third")

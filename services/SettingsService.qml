@@ -385,8 +385,9 @@ Singleton {
             "wheelVolume": false
         },
         // Minimized windows (services/MinimizeService.qml): an app's own
-        // minimize button (VS Code's title bar, Citrix's toolbar) minimizes
-        // its window - those buttons did nothing under Hyprland. Per profile.
+        // minimize button minimizes its window when Hyprland reports the
+        // request - 0.56.2 reports none from GTK or XWayland apps (testing.md
+        // pitfall 149). Per profile.
         "windows": {
             "minimizeRequests": true
         },
@@ -486,9 +487,9 @@ Singleton {
         "drives": {
             "notify": true,
             "autoOpen": false,
-            // Settings > Desktop extras "Warn when it is almost full": the root
-            // and /home every 15 minutes (DrivesService), one notice per
-            // filesystem while it stays low.
+            // Settings > Desktop extras "Warn when the system disk is almost
+            // full": the root and /home every 15 minutes (DrivesService), one
+            // notice per filesystem while it stays low.
             "lowSpace": true
         },
         // Captive portals (NetworkService, PortalLogic): one notification per
@@ -1055,7 +1056,7 @@ Singleton {
     property bool privateRead: false
     property bool privateWritten: false
     function keepPrivate(written) {
-        if (LockLogic.lockProcess(Quickshell.shellId) || (written ? privateWritten : privateRead)) return
+        if (LockLogic.lockProcess(Quickshell) || (written ? privateWritten : privateRead)) return
         if (written) privateWritten = true
         else privateRead = true
         Quickshell.execDetached(["chmod", "600", "--", settingsFile.path])
@@ -1072,7 +1073,7 @@ Singleton {
     // them: the lock runs as the user, and the login theme's installer runs
     // as root and copies what it shows. Not from the lock process, as above.
     Component.onCompleted: {
-        if (LockLogic.lockProcess(Quickshell.shellId)) return
+        if (LockLogic.lockProcess(Quickshell)) return
         Quickshell.execDetached(["install", "-d", "-m", "700", "--", Paths.configDir, Paths.stateDir, Paths.cacheDir])
     }
 

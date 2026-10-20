@@ -26,7 +26,7 @@ import "lock/LockLogic.js" as LockLogic
 Singleton {
     id: root
 
-    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell)
     readonly property bool automatic: !lockProcess && (Quickshell.env("BUCHHWIN_SHELL_PATH") || "").length > 0
 
     property var snapshots: []

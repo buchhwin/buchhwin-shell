@@ -108,7 +108,7 @@ Singleton {
     // started a second one in the lock process, lid handling included
     // (LockLogic.lockProcess). `lockProcess` comes first so that IdleService
     // is never even created there.
-    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell)
 
     function checkBattery() {
         if (lockProcess || !IdleService.realSession || device === null || !device.ready) return

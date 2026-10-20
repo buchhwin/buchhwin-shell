@@ -48,18 +48,22 @@ ShellRoot {
         view.destroy()
         return text
     }
-    // Where each panel shell.qml builds on demand is.
-    readonly property var panelFiles: ({
-        EmojiPanel: "shell/emoji/EmojiPanel.qml", NotificationCenter: "shell/notifications/NotificationCenter.qml",
-        PowerMenu: "shell/powermenu/PowerMenu.qml", ShortcutSheet: "shell/shortcuts/ShortcutSheet.qml",
-        EventEditor: "shell/dashboard/EventEditor.qml", WifiDialog: "shell/network/WifiDialog.qml",
-        PairingDialog: "shell/bluetooth/PairingDialog.qml", UnlockDialog: "shell/drives/UnlockDialog.qml",
-        ClipboardPanel: "shell/clipboard/ClipboardPanel.qml", WallpaperPicker: "shell/wallpaper/WallpaperPicker.qml",
-        SettingsPanel: "shell/settings/SettingsPanel.qml", WelcomePanel: "shell/welcome/WelcomePanel.qml",
-        DockMenu: "shell/dock/DockMenu.qml", StartMenu: "shell/startmenu/StartMenu.qml",
-        AssistantPanel: "shell/assistant/AssistantPanel.qml", SharePickerPanel: "shell/sharepicker/SharePickerPanel.qml",
-        TrayMenuPopup: "shell/popups/TrayMenuPopup.qml", DisplaySwitcher: "shell/displays/DisplaySwitcher.qml"
-    })
+    // Each `LazyLoader { ... }` of a file, to its closing brace.
+    function loaderBlocks(text) {
+        const blocks = []
+        let from = text.indexOf("LazyLoader {")
+        while (from >= 0) {
+            let depth = 0
+            let end = from
+            for (; end < text.length; end++) {
+                if (text[end] === "{") depth += 1
+                else if (text[end] === "}" && --depth === 0) break
+            }
+            blocks.push(text.slice(from, end + 1))
+            from = text.indexOf("LazyLoader {", end)
+        }
+        return blocks
+    }
     function shellLoaders() {
         const text = read("shell.qml")
         const demanded = []
@@ -70,18 +74,21 @@ ShellRoot {
         T.eq(demanded.filter(id => PanelService.lazyPanels.indexOf(id) < 0), [],
              "every loader on demanded is a lazy panel (pitfall 110: an open while it is not there)")
         T.eq(PanelService.lazyPanels.filter(id => demanded.indexOf(id) < 0), [], "and every lazy panel has its loader")
-        // `LazyLoader { ... demanded.<id> ... <Panel> {} }`, up to the panel.
+        // `LazyLoader { ... demanded.<id> ... "<file>" ... }`, up to the file:
+        // shell.qml names each lazy panel by its file, so that nothing of it is
+        // compiled before its first open.
         const built = {}
-        for (const block of text.split("LazyLoader {").slice(1)) {
+        const typed = []
+        for (const block of loaderBlocks(text)) {
             const id = (block.match(/PanelService\.demanded\.(\w+)/) || [])[1]
-            const panel = (block.match(/\b([A-Z]\w+) \{\s*\}/) || [])[1]
-            if (id && panel) built[id] = panel
+            const file = (block.match(/"(shell\/[\w\/]+\.qml)"/) || [])[1]
+            const panel = (block.match(/[{;\n]\s*([A-Z]\w+) \{\s*\}/) || [])[1]
+            if (id && file) built[id] = file
+            if (panel) typed.push(panel)
         }
-        T.eq(Object.keys(built).sort(), PanelService.lazyPanels.slice().sort(), "each loader names its panel")
-        const wrong = Object.keys(built).filter(id => {
-            const file = root.panelFiles[built[id]]
-            return !file || read(file).indexOf('panelId: "' + id + '"') < 0
-        })
+        T.eq(Object.keys(built).sort(), PanelService.lazyPanels.slice().sort(), "each loader names its panel's file")
+        T.eq(typed, [], "and none names a type, which would be compiled at the start")
+        const wrong = Object.keys(built).filter(id => read(built[id]).indexOf('panelId: "' + id + '"') < 0)
         T.eq(wrong, [], "and builds the panel of that id")
     }
 

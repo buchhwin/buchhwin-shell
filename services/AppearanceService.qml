@@ -28,7 +28,7 @@ Singleton {
     // its face shows. It applies nothing from there: the compositor options,
     // the cursor and the X11 scale are the shell's, and the X11 scale would
     // also create DisplayService in the lock.
-    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell)
     readonly property bool macCursorInstalled: cursorThemes.some(theme => theme.name.toLowerCase().startsWith("macos"))
 
     function label(name) {

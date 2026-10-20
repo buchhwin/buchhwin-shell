@@ -63,6 +63,17 @@ for panel in panels:
     check(handler and "function open()" in handler.group(1) and "function close()" in handler.group(1),
           f"IPC target {panel} has open() and close()")
 
+# The lazy panels the walk opens by their own IPC calls: each is one
+# PanelService builds on demand (shell.qml names it by file).
+panel_service = (ROOT / "services" / "PanelService.qml").read_text()
+lazy_list = re.search(r"readonly property var lazyPanels: \[(.*?)\]", panel_service, re.S)
+lazy_ids = re.findall(r'"(\w+)"', lazy_list.group(1)) if lazy_list else []
+lazies = loop_names("lazy")
+check(lazies, "the smoke test walks the lazy panels the panel loop leaves out")
+for lazy in lazies:
+    check(lazy in lazy_ids, f"{lazy} is one of PanelService.lazyPanels")
+    check(re.search(r"^\s*%s\) ipc_call " % re.escape(lazy), smoke, re.M), f"the smoke test says how {lazy} opens")
+
 
 def filtered(line, *args):
     """Whether the smoke test's known_warnings (as set up for ARGS) drop LINE."""
@@ -88,4 +99,4 @@ if failures:
     print(f"TESTS FAILED smoke_steps ({len(failures)} failed)")
     sys.exit(1)
 print(f"TESTS PASSED smoke_steps ({len(pages)} pages, {len(cc_pages)} control center pages, "
-      f"{len(popups)} popups, {len(panels)} panels)")
+      f"{len(popups)} popups, {len(panels)} panels, {len(lazies)} lazy panels)")

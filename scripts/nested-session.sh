@@ -51,6 +51,18 @@ sandbox_pids() {
   done
   return 0
 }
+# Whether the process still runs. One that has ended but was not reaped yet
+# (a zombie) holds no lock and no file any more, but its /proc entry stays
+# and `kill -0` still succeeds - for good under an init that never reaps,
+# like a CI container's `tail -f /dev/null`: the stop waited out its three
+# seconds there and then kept the instance directories of a compositor and
+# shells that were long gone.
+process_running() {
+  local stat
+  { stat=$(<"/proc/$1/stat"); } 2>/dev/null || return 1
+  stat=${stat##*) }
+  [[ ${stat%% *} != [ZX] ]]
+}
 # The instance directories Quickshell keeps in the runtime directory (tmpfs,
 # so memory) for each of the given pids, by its by-pid link: a nested shell
 # killed with its compositor never removes its own, and each one held 0.3-0.8
@@ -68,7 +80,7 @@ quickshell_dirs() {
 remove_quickshell_dirs() {
   local pid dir link root=${XDG_RUNTIME_DIR:-}/quickshell
   while read -r pid dir; do
-    [[ -n $pid && ! -d /proc/$pid ]] || continue
+    [[ -n $pid ]] && ! process_running "$pid" || continue
     rm -rf -- "$dir"
     rm -f -- "$root/by-pid/$pid"
     for link in "$root"/by-shell/*/"${dir##*/}"; do
@@ -98,10 +110,10 @@ stop_nested() {
       # shellcheck disable=SC2046 # one pid per word
       shells=$(quickshell_dirs $(sandbox_pids))
       kill "$pid" 2>/dev/null || true
-      for _ in {1..60}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.05; done
+      for _ in {1..60}; do process_running "$pid" || break; sleep 0.05; done
       # Gone, and so is its lock file: its log is kept in the sandbox, the
       # rest goes. rmdir leaves a directory that holds anything else.
-      if [[ -n $hypr_dir && ! -d /proc/$pid && ! -e $hypr_dir/hyprland.lock ]]; then
+      if [[ -n $hypr_dir ]] && ! process_running "$pid" && [[ ! -e $hypr_dir/hyprland.lock ]]; then
         if [[ -f $hypr_dir/hyprland.log ]]; then cp -f -- "$hypr_dir/hyprland.log" "$base/hyprland-instance.log" 2>/dev/null || true; fi
         rm -f -- "$hypr_dir/hyprland.log" "$hypr_dir/.socket.sock" "$hypr_dir/.socket2.sock"
         rmdir -- "$hypr_dir" 2>/dev/null || true

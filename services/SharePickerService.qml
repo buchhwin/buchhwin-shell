@@ -24,7 +24,7 @@ Singleton {
     // refused and the script opens the portal's own picker.
     readonly property bool enabled: SettingsService.value("sharePicker.enabled") !== false
     // The lock process never shows a picker (testing.md pitfall 86).
-    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell)
     // How long a request waits for a choice before it is answered "cancel":
     // the script's own limit (120 s) and a little more, so the script, which
     // also closes the picker at its limit, is normally the one that ends it.

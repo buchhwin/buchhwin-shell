@@ -476,9 +476,13 @@ ShellRoot {
              "the unnamed one")
         T.eq(D.workspaceLabel(-1337, "music"), "Workspace music", "a named workspace by its name")
         T.eq([D.workspaceLabel(-1, ""), D.workspaceLabel(4, "")], ["", "Workspace 4"], "not known: nothing; no name: its number")
+        T.eq([D.workspaceLabel(11, "11", "DP-2", ["DP-1", "DP-2"]), D.workspaceLabel(11, "11", "DP-1", ["DP-1", "DP-2"])],
+             ["Workspace 1", "Workspace 11"], "with blocks per monitor the number of its pip, as the overview calls it")
+        T.eq(D.workspaceLabel(-97, "special:buchhwin-minimized-12", "", ["DP-1", "DP-2"]), "Minimized · Workspace 2",
+             "where a minimized window goes back to, the same way")
         const special = D.build([], [win("0x5", "c", 5, { workspace: -98, workspaceName: "special:term" })], look)[0]
-        T.eq(D.menuRows(special, [], false)[0], { kind: "window", address: "0x5", workspace: -98, workspaceName: "special:term" },
-             "the window rows carry the workspace's name")
+        T.eq(D.menuRows(special, [], false)[0], { kind: "window", address: "0x5", workspace: -98, workspaceName: "special:term", monitor: "DP-1" },
+             "the window rows carry the workspace's name and the window's monitor")
 
         // ---- the resolver -------------------------------------------------------------
         let asked = 0

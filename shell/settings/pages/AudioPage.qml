@@ -195,6 +195,28 @@ ColumnLayout {
         }
     }
 
+    // What the media popup draws of the sound. Here beside the apps that
+    // play it rather than as a section of its own on Desktop extras.
+    SettingsSection {
+        Layout.fillWidth: true
+        title: "Media player"
+        SettingRow {
+            Layout.fillWidth: true
+            labelFills: true
+            label: "Visualizer in the media popup"
+            // cava draws it (in every distribution's package list); a machine
+            // without it is told how to get it rather than given a switch
+            // that does nothing.
+            hint: MprisService.visualizerMissing ? "cava is not installed. " + DistroService.installHint("cava")
+                : "Bars that move with the sound while something plays. Not with reduced motion."
+            ShellToggle {
+                focusOnTab: true
+                checked: SettingsService.value("desktop.mediaVisualizer") === true
+                onToggled: value => SettingsService.set("desktop.mediaVisualizer", value)
+            }
+        }
+    }
+
     SettingsSection {
         Layout.fillWidth: true
         title: "Details"

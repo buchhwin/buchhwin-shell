@@ -144,12 +144,21 @@ ColumnLayout {
                     }
                     ShellText { Layout.fillWidth: true; text: eventRow.modelData.title }
                 }
-                // An online meeting's way in (MeetingJoinButton shows itself
-                // only for an event with a meeting link, until it ends).
-                MeetingJoinButton {
-                    focusOnTab: eventRow.focusOnTab
-                    event: eventRow.modelData
-                    now: clock.date
+                // An online meeting's way in, for an event with a meeting link
+                // until it ends - built only then: a hidden button in every
+                // row was some twenty objects each at every start. The
+                // condition is the button's own (MeetingJoinButton.visible,
+                // which a list asks without `soon`); hidden while inactive,
+                // the Loader takes no gap in the row.
+                Loader {
+                    active: CalendarService.meetingFor(eventRow.modelData) !== null
+                        && CalendarService.listJoin(eventRow.modelData, clock.date)
+                    visible: active
+                    sourceComponent: MeetingJoinButton {
+                        focusOnTab: eventRow.focusOnTab
+                        event: eventRow.modelData
+                        now: clock.date
+                    }
                 }
                 ShellIcon {
                     glyph: Icons.forward

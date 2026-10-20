@@ -194,6 +194,29 @@ ShellRoot {
         T.eq(batch.lua, "hl.dispatch(hl.dsp.workspace.move({ workspace = 2, monitor = \"DP-1\" }))\n"
              + "hl.dispatch(hl.dsp.focus({ monitor = \"DP-1\" }))\nhl.dispatch(hl.dsp.focus({ workspace = 1 }))", "one eval, in order, Lua")
         T.eq(H.dispatchBatch([]), { legacy: "", lua: "" }, "nothing to send")
+        // Held open where they go, then moved and shown, in one request.
+        const heldThenMoved = H.withDispatches(H.combine([H.keepWorkspaceRule(13, true, "DP-2")]),
+                                               [H.moveWorkspaceToMonitor(13, "DP-2"), H.focusMonitor("DP-2"), H.workspace(13)])
+        T.eq(heldThenMoved.legacy, "keyword workspace 13,monitor:DP-2,persistent:true ; dispatch moveworkspacetomonitor 13 DP-2"
+             + " ; dispatch focusmonitor DP-2 ; dispatch workspace 13", "held, then moved and shown, one legacy batch")
+        T.eq(heldThenMoved.lua.split("\n"), [
+            "hl.workspace_rule({ workspace = \"13\", monitor = \"DP-2\", persistent = true })",
+            "hl.exec_scheduled_prop_refresh_immediately()",
+            "hl.dispatch(hl.dsp.workspace.move({ workspace = 13, monitor = \"DP-2\" }))",
+            "hl.dispatch(hl.dsp.focus({ monitor = \"DP-2\" }))",
+            "hl.dispatch(hl.dsp.focus({ workspace = 13 }))"], "the rule applied at once, then the dispatchers, one Lua eval")
+        T.eq(heldThenMoved.legacyEmpty, [], "nothing to send empty")
+        const blocksFirst = H.withDispatches(H.combine([H.workspaceRule(1, "DP-1"), H.workspaceRule(11, "DP-2"), H.keepWorkspaceRule(13, true, "DP-2")]),
+                                             [H.focusMonitor("DP-1"), H.workspace(1)])
+        T.eq(blocksFirst.legacy.split(" ; "), ["keyword workspace 1,monitor:DP-1", "keyword workspace 11,monitor:DP-2",
+             "keyword workspace 13,monitor:DP-2,persistent:true", "dispatch focusmonitor DP-1", "dispatch workspace 1"],
+             "the blocks' rules and the holds before a workspace is shown, so it is made where its new rule says")
+        T.eq([H.withDispatches(H.combine([]), [H.workspace(2)]).legacy, H.withDispatches(H.combine([]), [H.workspace(2)]).lua],
+             ["dispatch workspace 2", "hl.dispatch(hl.dsp.focus({ workspace = 2 }))"], "without a rule only the dispatchers")
+        T.eq([H.withDispatches(H.keepWorkspaceRule(3, true, "DP-1"), []).legacy, H.withDispatches(H.keepWorkspaceRule(3, true, "DP-1"), null).lua],
+             ["keyword workspace 3,monitor:DP-1,persistent:true", "hl.workspace_rule({ workspace = \"3\", monitor = \"DP-1\", persistent = true })"],
+             "without a dispatcher only the rule")
+        T.throwsError(() => H.withDispatches(H.combine([]), [{ legacy: "workspace 1 ; exit", lua: "" }]), "nor here")
         T.throwsError(() => H.dispatchBatch([{ legacy: "workspace 1 ; exit", lua: "" }]), "a separator cannot split the batch")
 
         // And the move a rule cannot make: a workspace that already exists.

@@ -38,8 +38,9 @@ ColumnLayout {
     property var frozen: null          // layout box frozen while dragging
 
     // Monitors may have come or gone since the page was last on screen. And
-    // the external screens are asked for their brightness (DDC/CI) once,
-    // here: the sliders below are what it is for.
+    // an external screen not asked for its brightness (DDC/CI) yet is asked
+    // now rather than after the pause that follows a hotplug: the sliders
+    // below are what it is for.
     PageActivity {
         onOpened: {
             DisplayService.refresh()

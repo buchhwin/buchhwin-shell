@@ -219,7 +219,7 @@ Singleton {
         { title: "Color filter: red-green", keywords: "color filter colorblind deuteranopia protanopia red green farbfilter farbenblind rot grün", icon: "󰌁", run: () => ScreenEffectsService.setFilter("deuteranopia") },
         { title: "Color filter: blue-yellow", keywords: "color filter colorblind tritanopia blue yellow farbfilter farbenblind blau gelb", icon: "󰌁", run: () => ScreenEffectsService.setFilter("tritanopia") },
         { title: "Color filter: inverted", keywords: "color filter invert inverted negative farbfilter invertiert umkehren", icon: "󰌁", run: () => ScreenEffectsService.setFilter("invert") },
-        { title: "Keep window on top", keywords: "keep on top always above pin float window immer im vordergrund anheften fenster", icon: Icons.pin, run: () => { PanelService.close(); HyprlandService.keepOnTop("") } },
+        { title: "Keep window on top", keywords: "keep on top always above pin float window immer im vordergrund anheften fenster", icon: Icons.keepOnTop, run: () => { PanelService.close(); HyprlandService.keepOnTop("") } },
         { title: "Drop-down terminal", keywords: "terminal dropdown drop down quake yakuake guake scratchpad alacritty konsole", icon: "󰆍", run: () => { PanelService.close(); HyprlandService.toggleDropdown() } },
         { title: "Keys to the window", keywords: "keyboard passthrough citrix remote desktop vm virtual machine windows key tastatur durchreichen fernzugriff", icon: "󰌌", run: () => { PanelService.close(); HyprlandService.setPassthrough(true) } },
         { title: "Citrix over the screens", keywords: "citrix span spread multi monitor screens desktop viewer both bildschirme beide verteilen", icon: "󰍺", run: () => { PanelService.close(); HyprlandService.spanCitrix() } },
@@ -555,7 +555,11 @@ Singleton {
             }
             return names[appId]
         }
-        return Windows.matches(Windows.entries(Hyprland.toplevels.values), query, score, appName).map(window => ({
+        // The blocks' order only with a window to name: a search with none
+        // open makes no compositor service (a unit test's would start
+        // HyprCompat's probes against no compositor).
+        const toplevels = Hyprland.toplevels.values
+        return Windows.matches(Windows.entries(toplevels, toplevels.length ? HyprlandService.blockOrder : []), query, score, appName).map(window => ({
             kind: "window", key: "window:" + window.address, title: window.title || appName(window.appId),
             subtitle: Windows.subtitle(window, appName), icon: Icons.window,
             get iconSource() {

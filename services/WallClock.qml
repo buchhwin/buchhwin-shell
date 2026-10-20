@@ -27,7 +27,7 @@ Singleton {
     property bool ticking: true
     signal jumped()
 
-    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell)
     // The wall clock at the last tick (or kick), in ms.
     property double lastWall: Date.now()
 

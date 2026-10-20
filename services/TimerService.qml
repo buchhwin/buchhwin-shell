@@ -32,7 +32,7 @@ Singleton {
     // The lock screen's process never keeps, ends or announces a countdown
     // (testing.md pitfall 86): nothing there reaches this service today, and
     // a second writer of timer.json must never come of it.
-    readonly property bool sessionSide: !LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool sessionSide: !LockLogic.lockProcess(Quickshell)
 
     // A run ran out (AdaptiveService ends a Focus session on it), or was
     // stopped by hand - the chip, `timer stop`. `cancel` says nothing: that

@@ -166,8 +166,13 @@ Singleton {
         return { id: entry.id, name: entry.name, icon: entry.icon, startupClass: entry.startupClass }
     }
     // The desktops subscribed in Citrix Workspace (DockLogic.isCitrixEntry), for
-    // the sessions' windows: read once per scan of the desktop entries.
-    readonly property var citrixEntries: enabled && entriesRevision >= 0
+    // the sessions' windows: read once per scan of the desktop entries, and
+    // only while a session's window is open. Read always, it went through
+    // every desktop entry's categories at each step of the start's scan -
+    // 3 to 4.5 MB of JavaScript garbage in the first seconds, which the
+    // script heap grows by (nested, 20.10.).
+    readonly property bool citrixSession: enabled && Hyprland.toplevels.values.some(toplevel => Logic.isCitrixSession(classOf(toplevel)))
+    readonly property var citrixEntries: citrixSession && entriesRevision >= 0
         ? DesktopEntries.applications.values.filter(entry => !entry.noDisplay && Logic.isCitrixEntry(entry.categories)).map(pinOf)
         : []
     // The session's default apps, for @files/@terminal/@browser: read once

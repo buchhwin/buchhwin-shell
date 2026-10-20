@@ -256,12 +256,12 @@ Singleton {
 
     // ---- the system disk filling up ---------------------------------------------
     // The root and /home, every quarter of an hour, while Settings > Desktop
-    // extras > System disk "Warn when it is almost full" is on (DrivesLogic,
-    // "the system disk filling up"): one `df`, no resident helper. A
-    // filesystem is told about once while it stays low, with a button to the
-    // System popup; the notice goes once it has room again. Only in the real
-    // session - a nested one shares the host's disks and the host's
-    // notifications.
+    // extras > Drives "Warn when the system disk is almost full" is on
+    // (DrivesLogic, "the system disk filling up"): one `df`, no resident
+    // helper. A filesystem is told about once while it stays low, with a
+    // button to the System popup; the notice goes once it has room again.
+    // Only in the real session - a nested one shares the host's disks and the
+    // host's notifications.
     readonly property bool lowSpaceEnabled: SettingsService.value("drives.lowSpace") === true
     // [{ source, mounts, free, size }] from the last look; mount points only,
     // no device contents.

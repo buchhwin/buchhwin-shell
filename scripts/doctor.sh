@@ -295,7 +295,7 @@ fi
 # Terminal extras that follow the shell accent (Settings > Terminal writes
 # their configuration): both from Fedora's and Arch's repositories, only cava
 # from Leap's. cava also draws the media popup's visualizer (Settings >
-# Desktop extras > Media player). And xclip, which the clipboard bridge needs
+# Audio > Media player). And xclip, which the clipboard bridge needs
 # to read what an X11 program copied - in every distribution's list.
 for extra in cmatrix cava xclip; do
   if command -v "$extra" >/dev/null 2>&1; then

@@ -233,7 +233,7 @@ ShellPanel {
                     if (JSON.stringify(monitors) !== JSON.stringify(window.monitors)) window.monitors = monitors
                     if (JSON.stringify(workspaces) !== JSON.stringify(window.workspaces))
                         window.workspaces = Keyed.keep(window.workspaces, workspaces, "id", { windows: "address" })
-                    const minimized = Logic.minimizedWindows(data.clients)
+                    const minimized = Logic.minimizedWindows(data.clients, data.monitors, data.workspaces, HyprlandService.perMonitor)
                     if (JSON.stringify(minimized) !== JSON.stringify(window.minimized))
                         window.minimized = Keyed.keep(window.minimized, minimized, "address")
                 } catch (error) {

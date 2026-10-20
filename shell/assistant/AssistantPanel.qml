@@ -240,7 +240,10 @@ ShellPanel {
                     }
                 }
             }
+            // Tab reaches it too: Enter asks from the field, but stopping an
+            // answer on its way had no key.
             ShellButton {
+                focusOnTab: true
                 icon: AssistantService.busy ? Icons.stop : Icons.send
                 toolTip: AssistantService.busy ? "Stop" : "Ask"
                 variant: AssistantService.busy ? "surface" : "accent"

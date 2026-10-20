@@ -172,6 +172,17 @@ ShellRoot {
         const minimized = O.minimizedWindows(clients)
         T.eq(minimized.map(w => [w.address, w.origin, w.label]), [["0xb", 3, "Workspace 3"], ["0xc", 0, ""]],
              "the overview lists the minimized windows, used last first - not the helpers, not a scratchpad")
+        // With blocks per monitor the chip calls the workspace what its card
+        // calls it: 13 is the second screen's 3.
+        const twoScreens = [{ id: 0, name: "DP-1", x: 0, y: 0, width: 1920, height: 1080, scale: 1, transform: 0 },
+                            { id: 1, name: "DP-2", x: 1920, y: 0, width: 1920, height: 1080, scale: 1, transform: 0 }]
+        const parkedOn13 = [Object.assign({}, clients[1], { workspace: { id: -95, name: "special:buchhwin-minimized-13" } })]
+        T.eq(O.minimizedWindows(parkedOn13, twoScreens, [{ id: 13, name: "13", monitor: "DP-2" }], true)[0].label, "Workspace 3",
+             "the second screen's third workspace by its pip")
+        T.eq(O.minimizedWindows(parkedOn13, twoScreens, [], true)[0].label, "Workspace 3", "and while it is not there")
+        T.eq(O.minimizedWindows(parkedOn13, twoScreens, [{ id: 13, name: "13", monitor: "DP-1" }], true)[0].label, "Workspace 13",
+             "on a screen whose block it is not, by its id, as its card there")
+        T.eq(O.minimizedWindows(parkedOn13, twoScreens, [], false)[0].label, "Workspace 13", "without blocks, its id")
         T.eq(O.build(clients, monitors, [{ id: 2, name: "2", monitorID: 0 }], "open", 5, false).map(w => w.id), [2],
              "and no card for their special workspaces")
         const rows = O.groups(O.build(clients, monitors, [{ id: 2, name: "2", monitorID: 0 }], "open", 5, false), monitors, false)
@@ -185,6 +196,8 @@ ShellRoot {
         T.eq(switcher.map(w => w.address), ["0xa", "0xe", "0xb", "0xc"], "Alt+Tab lists them last: a quick Alt+Tab does not bring back what was just minimized")
         T.eq(switcher.map(w => [w.minimized, w.workspaceName]), [[false, "2"], [false, "scratch"], [true, "Minimized"], [true, "Minimized"]],
              "with a badge that says so")
+        T.eq(S.build([Object.assign({}, clients[0], { workspace: { id: 12, name: "12" } })], ["eDP-1", "DP-2"], { 12: "DP-2" })[0].workspaceName,
+             "2", "a badge calls the workspace what its pip calls it")
         T.eq(S.openIndex(switcher, "0xa", 1), 1, "the first Alt+Tab still goes to the window used before")
 
         T.finish("MinimizeTest")

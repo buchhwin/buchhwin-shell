@@ -462,7 +462,9 @@ start_after_check() {
 # helpers were not ended - or, within 10 s of a start, does not restart it
 # and exits without a signal, which ended this script too: no shell, no
 # notice, and the reporter left under PID 1 (nested, 19.10.). The core dump
-# is the system's either way (coredumpctl). An exported value wins.
+# is the system's either way (coredumpctl). An exported value wins. A
+# Quickshell older than 0.3 (Fedora's 0.2.1 snapshot) knows no such variable:
+# built with its crash reporter, it does all of the above whatever is set here.
 restart_window=60
 restart_limit=5
 restarts=0

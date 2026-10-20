@@ -24,7 +24,7 @@ Singleton {
     // waits in the bus queue there and takes the name - and the notifications
     // with it, into a process that shows none - whenever the shell restarts
     // while the screen is locked (LockLogic.lockProcess).
-    readonly property bool serverWanted: !LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool serverWanted: !LockLogic.lockProcess(Quickshell)
         && (Quickshell.env("BUCHHWIN_NESTED") !== "1" || Quickshell.env("BUCHHWIN_NESTED_NOTIFICATIONS") === "1")
     readonly property var server: serverLoader.item
     readonly property int maxPopups: 3
@@ -82,7 +82,7 @@ Singleton {
     // The popups are this process's: the session's, and a nested shell's own
     // notices (IPC `notifications notice`). The lock screen's process shows
     // none and asks nothing for them.
-    readonly property bool popupsHere: !LockLogic.lockProcess(Quickshell.shellId)
+    readonly property bool popupsHere: !LockLogic.lockProcess(Quickshell)
     // While the screen is shared (Settings > Notifications, on by default): an
     // Outlook preview or a chat popup landed on the shared screen in front of
     // everyone in the call. What a share is, and why not Hyprland's

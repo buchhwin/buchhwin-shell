@@ -11,10 +11,9 @@ import "lock/LockLogic.js" as LockLogic
 // short debounce. Hardware key changes arrive as udev events.
 //
 // And the external monitors' brightness over DDC/CI (ddcutil, DdcLogic): one
-// level per monitor that answers, asked once per hotplug and only once
-// something wants it - Settings > Displays opened, or a brightness key
-// pressed while an external screen has the focus. Nothing runs before, and
-// nothing at all without an external monitor.
+// level per monitor that answers, asked once per hotplug, in the background
+// a moment after it, so a brightness key never waits for the answer.
+// Nothing at all without an external monitor, and nothing is polled.
 Singleton {
     id: root
     property string device: ""
@@ -69,12 +68,12 @@ Singleton {
     //
     // With an external screen focused the keys act on that screen (DDC, see
     // below) when it answers; the laptop panel, a screen that does not
-    // answer and the setting off keep the backlight, as before.
+    // answer, one not asked yet and the setting off keep the backlight, as
+    // before.
     property int queuedSteps: 0
     function step(direction) {
         const steps = direction > 0 ? 1 : -1
         const target = ddcKeyTarget()
-        if (target === "wait") { waitForDetection(steps); return }
         if (target.length) { stepDdc(target, steps); return }
         backlightSteps(steps)
     }
@@ -167,50 +166,91 @@ Singleton {
     // ddcutil, with the seat's access to the display buses that its udev rule
     // gives (no i2c group needed). Never in the lock's process, and in a
     // nested session only with a stand-in named in BUCHHWIN_DDCUTIL: a nested
-    // shell sees the host's monitors and must not change them.
-    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell.shellId)
-    readonly property string ddcProgram: lockProcess ? "" : writable ? "ddcutil" : (Quickshell.env("BUCHHWIN_DDCUTIL") || "")
+    // shell sees the host's monitors and must not change them. Nor outside a
+    // Hyprland session: a unit test that hands DisplayService an external
+    // monitor would have asked the machine's own buses, now that a monitor
+    // is asked without anything asking for it.
+    readonly property bool lockProcess: LockLogic.lockProcess(Quickshell)
+    readonly property string ddcProgram: lockProcess || !(Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") || "").length ? ""
+        : writable ? "ddcutil" : (Quickshell.env("BUCHHWIN_DDCUTIL") || "")
     // Settings > Displays > "Brightness of external displays".
     readonly property bool ddcEnabled: ddcProgram.length > 0 && SettingsService.value("display.ddc") !== false
-    // Something has asked for the levels this session (a page, a key, IPC):
-    // from then on a hotplug detects again. Until then nothing runs.
-    property bool ddcWanted: false
-    // idle (nothing asked or nothing connected), detecting, ready, missing
-    // (no ddcutil).
+    // idle (no external monitor), detecting, ready, missing (no ddcutil).
     property string ddcState: "idle"
     // [{ name, description, bus, value, max, pending, read, failed, keySteps }]
-    // for the monitors that answered, replaced as a whole on every change.
+    // for the external monitors that are on and answered, replaced as a
+    // whole on every change.
     property var ddcDisplays: []
-    // The external monitors `ddcDisplays` were detected for (DdcLogic.externalKey).
-    property string ddcKey: ""
+    // What detection found, per monitor while it stays connected
+    // (DdcLogic.keepConnected): { monitor key: its bus, -1 for one that did
+    // not answer }. A monitor switched off and on again, by the display
+    // switcher or Settings > Displays, is not asked again.
+    property var ddcSeen: ({})
+    // The external monitors on, and the ones connected on or off: a change
+    // of either is a hotplug or a screen switched on or off (ddcSync).
     readonly property string externalKey: ddcEnabled ? Ddc.externalKey(DisplayService.monitors, DisplayService.internalName) : ""
-    readonly property bool ddcCurrent: ddcState === "ready" && ddcKey.length > 0 && ddcKey === externalKey
+    readonly property string connectedKey: ddcEnabled
+        ? Ddc.connectedExternals(DisplayService.monitors, DisplayService.internalName).map(Ddc.monitorKey).sort().join("\n") : ""
     // The last level of each monitor that answered, by description: one
     // plugged in again has its slider at once, before its read.
     property var ddcCache: ({})
 
-    onExternalKeyChanged: {
-        if (!externalKey.length) { ddcForget(); return }
-        // Monitors arrive one by one while a dock settles: one detection
-        // after they have, not one per monitor.
-        if (ddcWanted) hotplugWait.restart()
-    }
+    onExternalKeyChanged: ddcSync()
+    onConnectedKeyChanged: ddcSync()
     onDdcEnabledChanged: if (!ddcEnabled) ddcForget()
-    Timer { id: hotplugWait; interval: 2000; onTriggered: root.ddcDetect() }
+    // A change handler does not run for a binding's first value: monitors
+    // known before this service was made are looked at here.
+    Component.onCompleted: ddcSync()
+    // Monitors arrive one by one while a dock settles: one detection after
+    // they have, not one per monitor.
+    Timer { id: hotplugWait; interval: 2000; onTriggered: root.ddcDetectNew() }
 
-    // Asked for by whatever shows the levels (Settings > Displays) or needs
-    // them (a key): detects when the monitors have not been yet.
-    function ddcDemand() {
-        if (!ddcEnabled) return
-        ddcWanted = true
-        // Without ddcutil the next hotplug asks again, not every open of the
-        // page.
-        if (ddcState === "missing") return
-        if (externalKey.length && !ddcCurrent && ddcState !== "detecting" && !hotplugWait.running) ddcDetect()
+    // The monitors changed: what was found for the ones still connected
+    // stays (DdcLogic.keepConnected), the displays are made from it again,
+    // and a monitor that is on and was not asked yet is asked in the
+    // background a moment later. Until it has answered its keys keep the
+    // backlight.
+    function ddcSync() {
+        if (!ddcEnabled || !Ddc.connectedExternals(DisplayService.monitors, DisplayService.internalName).length) {
+            ddcForget()
+            return
+        }
+        ddcSeen = Ddc.keepConnected(ddcSeen, DisplayService.monitors, DisplayService.internalName)
+        ddcRebuild()
+        if (Ddc.unasked(ddcSeen, DisplayService.monitors, DisplayService.internalName).length) hotplugWait.restart()
+        else hotplugWait.stop()
     }
+    // The displays from what was found: one that stays keeps its level and
+    // what waits for it; a new one starts at its last level (ddcCache) and is
+    // read once.
+    function ddcRebuild() {
+        const usable = Ddc.usable(ddcSeen, DisplayService.monitors, DisplayService.internalName)
+        ddcDisplays = usable.map(item => {
+            const was = ddcDisplays.find(old => old.name === item.name && old.bus === item.bus && old.description === item.description)
+            if (was) return was
+            const known = ddcCache[item.description] || null
+            return Object.assign({}, item, { value: known ? known.value : 0, max: known ? known.max : 0,
+                                             pending: -1, read: false, failed: false, keySteps: 0 })
+        })
+        if (osdName.length && !ddcDisplay(osdName)) osdName = ""
+        ddcPump()
+    }
+
+    // Asked for by whatever shows the levels (Settings > Displays): a
+    // monitor not asked yet is asked now rather than after the pause.
+    // Without ddcutil the next hotplug asks again, not every open of the page.
+    function ddcDemand() {
+        if (!ddcEnabled || ddcState === "missing" || ddcState === "detecting" || hotplugWait.running) return
+        ddcDetectNew()
+    }
+    // The monitors on that were not asked yet, if there are any.
+    function ddcDetectNew() {
+        if (Ddc.unasked(ddcSeen, DisplayService.monitors, DisplayService.internalName).length) ddcDetect()
+    }
+    // Every monitor that is on, asked again (IPC `brightness detect`).
     function ddcDetect() {
         if (!ddcEnabled || !externalKey.length) return
-        ddcWanted = true
+        hotplugWait.stop()
         detectWanted = true
         ddcState = "detecting"
         ddcPump()
@@ -218,21 +258,20 @@ Singleton {
     function ddcForget() {
         hotplugWait.stop()
         detectWanted = false
+        ddcSeen = ({})
         ddcDisplays = []
-        ddcKey = ""
         ddcState = "idle"
         osdName = ""
-        releaseWaitingSteps(false)
     }
 
     function ddcDisplay(name) {
-        return ddcCurrent ? (ddcDisplays.find(item => item.name === name && !item.failed) || null) : null
+        return ddcDisplays.find(item => item.name === name && !item.failed) || null
     }
     // For `brightness get`: each monitor that answered, by connector name,
     // with its level in percent (null until read).
     function ddcSummary() {
-        return ddcCurrent ? ddcDisplays.filter(item => !item.failed)
-            .map(item => ({ name: item.name, level: item.max > 0 ? Math.round(Ddc.toRatio(item.value, item.max) * 100) : null })) : []
+        return ddcDisplays.filter(item => !item.failed)
+            .map(item => ({ name: item.name, level: item.max > 0 ? Math.round(Ddc.toRatio(item.value, item.max) * 100) : null }))
     }
     // A monitor's level as 0-1, for a slider; 0 for one without.
     function ddcLevel(name) {
@@ -249,7 +288,7 @@ Singleton {
         if (ddcState === "missing") return "missing"
         const display = ddcDisplay(name)
         if (display) return display.max > 0 ? "ready" : "checking"
-        return ddcState === "detecting" || hotplugWait.running || !ddcCurrent ? "checking" : "none"
+        return Object.prototype.hasOwnProperty.call(ddcSeen, Ddc.monitorKey(live)) ? "none" : "checking"
     }
 
     function patchDisplay(name, patch) {
@@ -280,55 +319,30 @@ Singleton {
         ddcPump()
     }
 
-    // Where a brightness key goes: "" for the backlight, a monitor's name,
-    // or "wait" while the focused external screen has not been asked yet.
+    // Where a brightness key goes: a monitor's name, or "" for the
+    // backlight - the laptop panel, a screen that did not answer, and one
+    // not asked yet (a key never waits for the detection; it does what it
+    // did before the screen was plugged in).
     function ddcKeyTarget() {
         if (!ddcEnabled) return ""
         const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
         if (!name.length || Display.isPanel(name, DisplayService.internalName) || Display.isInternal(name)) return ""
-        const live = DisplayService.monitors.find(item => item.name === name)
-        if (!live || live.disabled) return ""
-        if (ddcState === "missing") return ""
-        if (ddcCurrent) return ddcDisplay(name) ? name : ""
-        return "wait"
+        return ddcDisplay(name) ? name : ""
     }
-    // The first key on an external screen asks the monitors; the presses
-    // wait for the answer (a few seconds at most) and then go to that screen
-    // or, where it did not answer, to the backlight as before.
-    property string waitingName: ""
-    property int waitingSteps: 0
-    function waitForDetection(steps) {
-        const name = Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : ""
-        if (name !== waitingName) { releaseWaitingSteps(false); waitingName = name }
-        waitingSteps += steps
-        if (!keyWait.running) keyWait.restart()
-        ddcDemand()
-    }
-    function releaseWaitingSteps(toDisplay) {
-        keyWait.stop()
-        const name = waitingName, steps = waitingSteps
-        waitingName = ""
-        waitingSteps = 0
-        if (!steps) return
-        if (toDisplay && ddcDisplay(name)) stepDdc(name, steps)
-        else backlightSteps(steps)
-    }
-    // A dock that hangs DDC must not hold the keys for the whole of
-    // ddcutil's timeout: after this the waiting presses go to the backlight.
-    Timer { id: keyWait; interval: 4000; onTriggered: root.releaseWaitingSteps(false) }
 
     // One ddcutil at a time (DdcLogic.nextJob).
     property bool detectWanted: false
-    property string detectKey: ""
     property var ddcJob: null
     function ddcPump() {
         if (ddcProc.running || !ddcEnabled || !ddcProgram.length) return
-        const next = Ddc.nextJob(detectWanted, ddcCurrent || detectWanted ? ddcDisplays : [])
+        const next = Ddc.nextJob(detectWanted, ddcDisplays)
         if (!next) return
         ddcJob = next
         if (next.kind === "detect") {
             detectWanted = false
-            detectKey = externalKey
+            // The monitors this detection asks: the ones on now.
+            ddcJob = Object.assign({}, next, { asked: Ddc.externalMonitors(DisplayService.monitors, DisplayService.internalName).map(Ddc.monitorKey) })
+            ddcState = "detecting"
             ddcProc.command = Ddc.detectCommand(ddcProgram)
         } else if (next.kind === "write") {
             patchDisplay(next.name, { pending: -1 })
@@ -343,25 +357,22 @@ Singleton {
         ddcJob = null
         if (!done || !ddcEnabled) return
         if (done.kind === "detect") {
+            // Every external monitor went while it ran (ddcForget).
+            if (!connectedKey.length) return
             // `timeout` exits 127 for a program that is not there.
             if (code === 127 || code === 126) {
                 ddcState = "missing"
                 ddcDisplays = []
-                releaseWaitingSteps(false)
                 return
             }
             const found = code === 0 ? Ddc.match(Ddc.parseDetect(ddcOut.text), DisplayService.monitors, DisplayService.internalName) : []
             if (code !== 0) console.warn("buchhwin-shell: BrightnessService: ddcutil detect ended with", code)
-            ddcDisplays = found.map(item => {
-                const known = ddcCache[item.description] || null
-                return Object.assign({}, item, { value: known ? known.value : 0, max: known ? known.max : 0,
-                                                 pending: -1, read: false, failed: false, keySteps: 0 })
-            })
-            ddcKey = detectKey
+            ddcSeen = Ddc.remember(ddcSeen, done.asked, found, DisplayService.monitors, DisplayService.internalName)
             ddcState = "ready"
-            // The monitors changed while it ran: once more for the new set.
-            if (detectKey !== externalKey && externalKey.length) { detectWanted = true; ddcState = "detecting" }
-            else releaseWaitingSteps(true)
+            ddcRebuild()
+            // A monitor that came on while it ran: asked after the pause, as
+            // after a hotplug.
+            if (!detectWanted && Ddc.unasked(ddcSeen, DisplayService.monitors, DisplayService.internalName).length) hotplugWait.restart()
         } else if (done.kind === "read") {
             const level = code === 0 ? Ddc.parseVcp(ddcOut.text) : null
             const display = ddcDisplays.find(item => item.name === done.name) || null
@@ -385,6 +396,11 @@ Singleton {
     // next hotplug, and says so once in the log - the bus number only.
     function giveUp(display, kind, code) {
         patchDisplay(display.name, { failed: true, pending: -1 })
+        // Remembered as a monitor that does not answer, or the next change
+        // of the screens would bring its slider back without asking it.
+        const seen = Object.assign({}, ddcSeen)
+        seen[Ddc.monitorKey(display)] = -1
+        ddcSeen = seen
         if (osdName === display.name) osdName = ""
         console.warn("buchhwin-shell: BrightnessService: DDC " + kind + " on bus " + display.bus + " ended with " + code
                      + "; that display has no brightness control until it is plugged in again")

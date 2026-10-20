@@ -2,6 +2,7 @@ import Quickshell
 import QtQuick
 import qs.services
 import qs.shell.components
+import qs.shell.dashboard
 import "Harness.js" as T
 
 // The Join button and CalendarService's side of it, in the runner's sandbox:
@@ -16,6 +17,10 @@ ShellRoot {
     Component {
         id: buttonComponent
         MeetingJoinButton {}
+    }
+    Component {
+        id: listComponent
+        EventList {}
     }
     // In a window: an item outside every scene keeps the visibility it had
     // once it was hidden.
@@ -82,6 +87,28 @@ ShellRoot {
         T.eq([CalendarService.linkState, CalendarService.linkListing], ["", false], "no helper outside the real session")
         T.eq(CalendarService.removeLink("akonadi_ical_resource_1"), false, "nothing removed here")
         T.eq(CalendarService.removeLink("../etc"), false, "nor anything that is no resource id")
+
+        // The dashboard's list builds a Join button only in a meeting's row:
+        // a hidden one in every row was some twenty objects each at every
+        // start. Tomorrow's events, so the meeting has not ended.
+        const tomorrow = new Date()
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        const on = (hours, minutes) => new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), hours, minutes || 0)
+        CalendarService.previewEvents = [Object.assign({}, meeting, { start: on(10), end: on(10, 30) }),
+                                         Object.assign({}, lunch, { start: on(12), end: on(13) }),
+                                         Object.assign({}, lunch, { title: "Dinner", start: on(19), end: on(20) })]
+        const list = listComponent.createObject(holder, { day: tomorrow, width: 400 })
+        const joins = []
+        const walk = item => {
+            if (item.text === "Join" && item.event !== undefined) joins.push(item)
+            for (const child of item.children || []) walk(child)
+        }
+        walk(list)
+        T.eq(list.events.length, 3, "three rows")
+        T.eq(joins.length, 1, "one Join button, in the meeting's row only")
+        T.eq(joins.length ? [joins[0].visible, joins[0].event.title] : [], [true, "Weekly"], "shown, for the meeting")
+        list.destroy()
+        CalendarService.previewEvents = null
 
         T.finish("MeetingJoinTest")
     }
