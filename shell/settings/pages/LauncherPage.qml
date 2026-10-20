@@ -30,7 +30,12 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Modes"
-        description: "What the switch beside the search field offers, and in which order. Apps leads and does not move: it is the one with no prefix, the mode the launcher opens in."
+        // The categories used to be a switch here. Where they are is a layout
+        // question now - in the sidebar, in the column as a row of chips, or
+        // nowhere at all - and a switch beside the layout that decides the
+        // same thing is two answers to one question, so the hint says where
+        // that layout is changed.
+        hint: "What the switch beside the search field offers, in this order; Apps leads and does not move. App categories and the launcher's other blocks move with \u201cArrange the launcher\u201d in its header; Ctrl+Up and Ctrl+Down walk the categories."
 
         // Keyed by mode id: Earlier and Later reorder LauncherService.modes,
         // a new list, and a Repeater over it built every row again - the
@@ -105,16 +110,6 @@ ColumnLayout {
                 onClicked: SettingsService.set("launcher.modeOrder", "")
             }
         }
-
-        // The categories used to be a switch here. Where they are is a layout
-        // question now - in the sidebar, in the column as a row of chips, or
-        // nowhere at all - and a switch beside the layout that decides the
-        // same thing is two answers to one question.
-        ShellText {
-            Layout.fillWidth: true
-            text: "App categories sit in the sidebar, as a row of chips, or not at all. “Arrange the launcher” in the launcher's own header moves its blocks; Ctrl+Up and Ctrl+Down walk the categories wherever they are."
-            role: "small"; muted: true; wrapMode: Text.Wrap
-        }
     }
 
     SettingsSection {
@@ -125,7 +120,7 @@ ColumnLayout {
         // takes the app off Start as well, so the page says so. In front of
         // the search field they are the one thing on a search surface that
         // does not compete with the results.
-        description: "Shown in front of the search field while nothing is typed. The start menu's Pinned grid shows the same apps; the dock keeps pins of its own (Settings > Dock)."
+        hint: "Shown in front of the search field while nothing is typed. The start menu's Pinned grid shows the same apps; the dock keeps pins of its own (Settings > Dock)."
 
         SettingRow {
             Layout.fillWidth: true
@@ -225,7 +220,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Search results"
-        description: "Besides apps and commands, a search lists what it finds of these, after the best app. Typed after $, a command runs: Enter starts it, Ctrl+Enter in a terminal."
+        hint: "Besides apps and commands, a search lists what it finds of these, after the best app. Typed after $, a command runs: Enter starts it, Ctrl+Enter in a terminal."
 
         SettingRow {
             Layout.fillWidth: true
@@ -301,7 +296,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Web search"
-        description: "Type ? followed by what you are looking for. An address you type is offered as “Open” without a prefix."
+        hint: "Type ? followed by what you are looking for. An address you type is offered as “Open” without a prefix."
 
         SettingRow {
             Layout.fillWidth: true

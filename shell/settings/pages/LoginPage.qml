@@ -50,25 +50,19 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Look"
-        description: "The login screen follows the lock screen's design, and shows whichever wallpaper you choose below."
-
         // Said plainly rather than implied: this screen is a separate
         // application that cannot load the shell's blocks, so it has the
         // clock, the date and the keyboard layout and nothing else. A lock
         // screen arranged with weather and a player shows neither here, and
         // that is not a bug to go looking for.
-        ShellText {
-            Layout.fillWidth: true
-            text: "It follows what you arranged on the lock screen: the clock, the date and the keyboard layout, in that order. The rest of the lock screen's blocks do not exist here."
-            role: "small"; muted: true; wrapMode: Text.Wrap
-        }
+        hint: "Follows the lock screen's design and order: the clock, the date and the keyboard layout. Its other blocks do not exist here."
 
         SettingRow {
             label: "Wallpaper"
             // Until the command runs, the login screen keeps the copy it has,
             // which is why one changed long ago can look as though it cannot
             // be changed at all.
-            hint: "Copied into the installed theme by the command below: the greeter runs as its own user and cannot read your home. Until then the login screen keeps its old copy."
+            hint: "Copied into the installed theme by the command under Apply. Until it runs, the login screen keeps its old copy."
             ShellSelect {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -183,7 +177,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Apply"
-        description: "The greeter runs as the sddm user and cannot read your settings, so they are copied into the installed theme. That needs root, so it stays a step you run yourself."
+        hint: "The greeter cannot read your settings, so the command copies them into its theme, which needs root. The undo brings back the previous theme and display manager; from a TTY, removing /etc/sddm.conf.d/buchhwin-theme.conf undoes it too."
 
         // The copy button beside the command, as a code block has it: the
         // installer's absolute path wraps the line, and a button in a row of
@@ -210,10 +204,11 @@ ColumnLayout {
             }
         }
         // The way back is a command too, copied the same way, rather than a
-        // flag to be typed onto the line above by hand.
+        // flag to be typed onto the line above by hand. Its few words stay
+        // on the page: without them the two commands look alike.
         ShellText {
             Layout.fillWidth: true
-            text: "To undo it, run this; it puts the previous theme and display manager back. From a TTY you can also remove /etc/sddm.conf.d/buchhwin-theme.conf."
+            text: "To undo it, run this:"
             role: "caption"
             wrapMode: Text.Wrap
         }

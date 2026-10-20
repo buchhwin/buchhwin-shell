@@ -136,7 +136,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: !LayoutService.widgetsShown
         title: "Widgets are hidden"
-        description: LayoutService.notchShown
+        hint: LayoutService.notchShown
             ? "The notch shows the time at the top center. Switch to Widgets to place widgets on the wallpaper again; the current widget layout is kept."
             : "The bar replaces the desktop widgets. Switch to Widgets to place them on the wallpaper again; the current widget layout is kept."
         ShellButton {

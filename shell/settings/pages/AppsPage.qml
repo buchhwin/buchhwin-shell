@@ -42,12 +42,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Open on"
-        // Without workspaces per screen a number is the same workspace
-        // wherever it is shown, and the app goes where that one is.
-        description: "An app opens on the screen and workspace you give it, or floating. "
-            + (HyprlandService.perMonitor ? "Workspaces are counted on each screen, as Super+1 to Super+9 count them."
-                                          : "Workspaces are numbered across all screens, as Super+1 to Super+9 number them, and an app goes to its workspace on whichever screen that is.")
-            + " While its screen is not connected, an app opens where you are."
+        hint: "An app opens on the screen and workspace you give it, or floating. While its screen is not connected, it opens where you are."
 
         // Keyed by the apps' ids, strings (pitfall 76).
         Repeater {
@@ -117,8 +112,10 @@ ColumnLayout {
         SettingRow {
             Layout.fillWidth: true
             label: "Workspace"
-            hint: HyprlandService.perMonitor ? "One of the screen's own ten, or the one it shows when the app starts."
-                                             : "One of the ten, or the one the screen shows when the app starts."
+            // Without workspaces per screen a number is the same workspace
+            // wherever it is shown, and the app goes where that one is.
+            hint: HyprlandService.perMonitor ? "One of the screen's own ten, counted as Super+1 to Super+9 count them, or the one it shows when the app starts."
+                                             : "One of the ten, numbered across all screens as Super+1 to Super+9 number them, or the one the screen shows when the app starts. The app goes to its workspace on whichever screen that is."
             ShellSelect {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -178,7 +175,7 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "Work apps"
         scope: "autostart.workAtLogin"
-        description: "Started together, in this order, by Super+Alt+W or the launcher's Start my work apps. An app that is running already is left as it is, and each opens where Open on puts it."
+        hint: "Started together, in this order, by Super+Alt+W or the launcher's Start my work apps. A running app is left as it is; each opens where Open on puts it."
 
         Repeater {
             model: ScriptModel { values: SessionAppsService.workApps }
@@ -254,12 +251,13 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "Reopen after login"
         scope: "autostart.reopen"
-        description: "When you log out, restart or shut down from the shell, it keeps which apps were open and where: the apps and their places, never a window's title, in a file only you can read. At the next login a notification offers to reopen them; nothing starts by itself. Browsers and VS Code bring back their own windows, so they are started once and their windows put back; a Citrix session is put back when Citrix reconnects it."
+        hint: "Logging out, restarting or shutting down from the shell keeps which apps were open and where - never a window's title - in a file only you can read."
 
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
             label: "Offer to reopen apps"
+            hint: "A notification at the next login; nothing starts by itself. Browsers and VS Code start once and get their windows back; a Citrix session is put back when Citrix reconnects it."
             ShellToggle {
                 focusOnTab: true
                 checked: SessionAppsService.reopenOffer

@@ -2,6 +2,9 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Window
 import qs.theme
+import qs.services
+import "../../services/settings/ScopeLogic.js" as Scope
+import "../../services/profile/ProfileLogic.js" as Profile
 
 // Label on the left, control on the right, in the two shapes the shell uses:
 //   labelFills false - the label keeps a fixed column so the controls of a
@@ -23,6 +26,14 @@ GridLayout {
     // overlay and moves nothing. (`hintOnHover` used to switch the first
     // behaviour off and was never set anywhere, so it is gone.)
     property string hint: ""
+    // A setting path whose scope is said in the same bubble after the hint:
+    // "The same in every profile" or the mode's own - the line it used to be
+    // under a control is gone (SettingsSection says it for a whole section).
+    // LayoutService only for a setting a mode owns.
+    property string scope: ""
+    readonly property string scopeNote: !scope.length ? ""
+        : Scope.note(scope, Profile.isModeScoped(scope) ? Profile.label(LayoutService.activeMode, LayoutService.templates) : "")
+    readonly property string hintText: [hint, scopeNote].filter(text => text.length > 0).join("\n\n")
     property real labelWidth: Metrics.settingLabelWidth
     // And the other half of it: the bubble opens under the pointer, which
     // meant fifty-nine explanations no keyboard could ever reach. The answer
@@ -47,7 +58,7 @@ GridLayout {
     }
     // `arm`, not `show`: it waits as long as the pointer does, or tabbing
     // through a page would flash a bubble on every row on the way past.
-    onControlFocusedChanged: if (hint.length) controlFocused ? mark.arm() : mark.hide()
+    onControlFocusedChanged: if (hintText.length) controlFocused ? mark.arm() : mark.hide()
     property bool labelFills: false
     readonly property bool stacked: width > 0
         && slot.implicitWidth + root.labelWidth + Metrics.spaceMd > width
@@ -124,7 +135,7 @@ GridLayout {
         // something feeds nothing back into the layout, so there is no cycle.
         InfoTip {
             id: mark
-            text: root.hint
+            text: root.hintText
             // After the last of the words, and never past the column - a mark
             // that has run out of room sits at the edge rather than under the
             // control next to it.

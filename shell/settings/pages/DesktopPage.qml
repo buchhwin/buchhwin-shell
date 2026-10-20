@@ -99,7 +99,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Messages on screen"
-        description: "The volume and brightness indicator at the bottom edge, and short messages in its place when something changes. The messages need the indicator."
+        hint: "Short messages at the bottom edge when something changes. They need the volume and brightness indicator."
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
@@ -144,11 +144,12 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "Clipboard"
         scope: "clipboard.history"
-        description: "History with " + ShortcutService.keyHint("SUPER + V", true) + ". Entries marked as sensitive by password managers are not saved. Passwords from programs that do not mark them are kept like any text. Ctrl+P in the history pins an entry: pinned entries stay through Clear history and forgetting until you unpin them."
+        hint: "History with " + ShortcutService.keyHint("SUPER + V", true) + ". Ctrl+P in it pins an entry, which stays through Clear history and forgetting until you unpin it."
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
             label: "Save history"
+            hint: "Entries that password managers mark as sensitive are not saved. Passwords from programs that do not mark them are kept like any text."
             ShellToggle { focusOnTab: true; checked: SettingsService.value("clipboard.history"); onToggled: value => SettingsService.set("clipboard.history", value) }
         }
         // Both off by default, which is how the history always behaved
@@ -190,7 +191,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Screen recording"
-        description: ShortcutService.keyHint("SUPER + SHIFT + R", true) + " records a region, " + ShortcutService.keyHint("SUPER + CTRL + SHIFT + R", true)
+        hint: ShortcutService.keyHint("SUPER + SHIFT + R", true) + " records a region, " + ShortcutService.keyHint("SUPER + CTRL + SHIFT + R", true)
             + " the screen. Press it again or click the red indicator to stop."
         PageActivity { onOpened: RecordingService.refreshBackends() }
         ShellText {
@@ -257,7 +258,7 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "Drives"
         scope: "drives.notify"
-        description: "USB sticks, SD cards, external disks, encrypted volumes and MTP phones. Eject them in the control center before unplugging."
+        hint: "USB sticks, SD cards, external disks, encrypted volumes and MTP phones. Eject them in the control center before unplugging."
         SettingRow {
             Layout.fillWidth: true
             labelFills: true

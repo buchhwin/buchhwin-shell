@@ -69,7 +69,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Software updates"
-        description: DistroService.upgradesInTerminal
+        hint: DistroService.upgradesInTerminal
             ? "The shell only looks for updates. Installing system packages needs the administrator password and runs in a terminal window."
             : "The shell only looks for updates. Installing system packages needs the administrator password and runs in Discover."
 
@@ -115,7 +115,10 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "The shell"
-        description: "buchhwin-shell itself, from the git remote its checkout follows. Updating fast-forwards the checkout, re-runs the installer and restarts the shell - open panels close for a moment."
+        // A development checkout says so in its row ("follows no remote");
+        // what moves it forward instead of the button is said here.
+        hint: "buchhwin-shell itself, from its checkout's git remote. Updating fast-forwards the checkout, re-runs the installer and restarts the shell."
+            + (UpdatesService.shell.repo === "local" ? " Here scripts/deploy.sh moves the session forward instead." : "")
 
         ListRow {
             focusOnTab: true
@@ -165,15 +168,8 @@ ColumnLayout {
         }
         ShellText {
             Layout.fillWidth: true
-            visible: UpdatesService.shell.repo === "local"
-            text: "This checkout follows no remote: it is the development machine, where scripts/deploy.sh moves the session forward."
-            role: "caption"
-            wrapMode: Text.Wrap
-        }
-        ShellText {
-            Layout.fillWidth: true
             visible: UpdatesService.shell.repo === "ok" && (UpdatesService.shell.dirty || UpdatesService.shell.ahead > 0)
-            text: "Updating is refused while the checkout has local changes or commits the remote does not have - nothing of yours is ever merged over. Commit or stash them, or push them, and check again."
+            text: "Updating is refused while the checkout has local changes or commits the remote does not have. Commit or stash them, or push them, and check again."
             role: "caption"
             wrapMode: Text.Wrap
         }
@@ -182,7 +178,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "System packages"
-        description: DistroService.packagesDescription
+        hint: DistroService.packagesDescription
 
         // Arch: the news newer than the installed packages, above the
         // button that upgrades them - the ones that ask for a manual step
@@ -343,7 +339,12 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Flatpaks"
-        description: "Apps and runtimes of the system and your user installation."
+        // "Update Flatpaks" named only while the button is there: it shows
+        // when the user installation has updates.
+        hint: "Apps and runtimes of the system and your user installation. "
+            + (UpdatesService.userFlatpakCount > 0
+                ? "Update Flatpaks runs flatpak update for your user installation in a terminal window; system Flatpaks update in Discover."
+                : "System Flatpaks update in Discover.")
 
         ListRow {
             focusOnTab: true
@@ -388,22 +389,15 @@ ColumnLayout {
                 subtitle: UpdatesService.flatpakSubtitle(modelData)
             }
         }
-        ShellText {
-            Layout.fillWidth: true
-            visible: UpdatesService.flatpaks.length > 0
-            text: UpdatesService.userFlatpakCount > 0
-                ? "Update Flatpaks runs flatpak update for your user installation in a terminal window. System Flatpaks update in Discover."
-                : "System Flatpaks update in Discover."
-            role: "caption"
-            wrapMode: Text.Wrap
-        }
     }
 
     SettingsSection {
         Layout.fillWidth: true
         title: "Automatic check"
         scope: "updates"
-        description: "Looks for updates in the background and installs nothing - unless the shell's own updates are handed to it below."
+        hint: "Looks for updates in the background and installs nothing, unless the shell's own updates are handed to it below."
+            + (UpdatesService.realSession ? ""
+                : " Only in the buchhwin-shell session: a test session checks from the cached package data.")
 
         SettingRow {
             label: "Check"
@@ -440,13 +434,6 @@ ColumnLayout {
                 onToggled: value => SettingsService.set("updates.shellAuto", value)
             }
         }
-        ShellText {
-            Layout.fillWidth: true
-            visible: !UpdatesService.realSession
-            text: "Automatic checks and notifications only run in the buchhwin-shell session. Test sessions check from the cached package data."
-            role: "caption"
-            wrapMode: Text.Wrap
-        }
     }
 
     // What the first start after an update says (scripts/updates-after-start.py,
@@ -456,7 +443,7 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "After an update"
         scope: "updates.coreCheck"
-        description: "The first start after Quickshell or Hyprland changed watches the shell for a minute: its log and its IPC targets. The first start after the shell's own checkout moved can name what changed."
+        hint: "The first start after Quickshell or Hyprland changed watches the shell's log and IPC targets for a minute."
 
         SettingRow {
             // One line in the label column: the wrapped label put the

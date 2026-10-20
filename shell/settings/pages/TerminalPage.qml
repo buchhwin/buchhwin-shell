@@ -35,7 +35,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Shell"
-        description: "Which zsh configuration kitty starts with"
+        hint: "Which zsh configuration kitty starts with"
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
@@ -49,7 +49,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Preview"
-        description: "New kitty windows use these settings; open windows update font, transparency and cursor right away."
+        hint: "New kitty windows use these settings; open windows update font, transparency and cursor right away."
 
         // The Starship preview, the Git sample and the greeting are the
         // session's own zsh; with the account's ~/.zshrc they say nothing.
@@ -106,7 +106,11 @@ ColumnLayout {
         SettingRow {
             Layout.fillWidth: true
             label: "Logo"
+            // Where the text logo comes from, and what choosing another does
+            // to it, said only while there is one.
             hint: "The distribution's own ASCII logo, or a picture of your own"
+                + (TerminalService.fastfetchLogo === "text"
+                    ? ". The text logo comes from fastfetch.jsonc: the system logo or an image replaces it there, and its file stays." : "")
             SegmentedControl {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -122,7 +126,8 @@ ColumnLayout {
                 }
             }
         }
-        // The text logo in use, and the question before it goes.
+        // The text logo in use by its file's name, and the question before
+        // it goes.
         RowLayout {
             id: logoRow
             property bool replacing: false
@@ -138,7 +143,7 @@ ColumnLayout {
                     Layout.fillWidth: true
                     text: logoRow.replacing
                         ? "Use the system logo instead? " + logoRow.fileName + " stays where it is, but fastfetch no longer shows it."
-                        : logoRow.fileName + ", from fastfetch.jsonc. The system logo or an image replaces it there; the file itself stays."
+                        : logoRow.fileName
                     color: logoRow.replacing ? Colors.warning : Colors.mutedText
                     role: "caption"
                     wrapMode: Text.Wrap
@@ -209,7 +214,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: TerminalService.fastfetchLogo === "image"
         title: "Fastfetch image size"
-        description: "Width in terminal columns; the image keeps its proportions"
+        hint: "Width in terminal columns; the image keeps its proportions"
 
         SegmentedControl {
             focusOnTab: true
@@ -223,7 +228,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "kitty"
-        description: "Font, transparency, spacing and cursor of kitty windows. Which terminal opens is set in Default apps."
+        hint: "How kitty windows look. Which terminal opens is set in Default apps."
 
         SettingRow {
             label: "Font"
@@ -324,7 +329,7 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "Alacritty"
         scope: "terminal.alacrittyDaemon"
-        description: "Alacritty keeps its own configuration and takes the transparency above."
+        hint: "Alacritty keeps its own configuration and takes the transparency above."
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
@@ -342,7 +347,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: !root.options.personalShell
         title: "Prompt colors"
-        description: "Starship prompt symbol, user and host; errors and Git changes"
+        hint: "Starship prompt symbol, user and host; errors and Git changes"
 
         SectionLabel { text: "Accent" }
         Flow {
@@ -381,7 +386,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: !root.options.personalShell
         title: "Symbols"
-        description: "Applied with Enter or when you leave the field (up to 32 characters)"
+        hint: "Applied with Enter or when you leave the field (up to 32 characters)"
 
         Repeater {
             model: [{ key: "symbol", label: "Prompt" }, { key: "errorSymbol", label: "Error" }, { key: "gitSymbol", label: "Git" }]
@@ -413,7 +418,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: !root.options.personalShell
         title: "Modules"
-        description: "What the prompt shows, in this order"
+        hint: "What the prompt shows, in this order"
 
         GridLayout {
             Layout.fillWidth: true
@@ -461,7 +466,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: !root.options.personalShell
         title: "Clock format"
-        description: "Used when the clock module is on. %H hour, %M minute, %S second, %p AM/PM, %d day, %m month"
+        hint: "Used when the clock module is on"
 
         SegmentedControl {
             focusOnTab: true
@@ -472,6 +477,9 @@ ColumnLayout {
         }
         SettingRow {
             label: "Custom"
+            // The codes beside the field they are typed into, so they also
+            // show when the field takes the focus.
+            hint: "%H hour, %M minute, %S second, %p AM/PM, %d day, %m month"
             StoredTextField {
                 focusOnTab: true
                 id: timeField

@@ -18,7 +18,7 @@ SettingsSection {
     id: section
     title: "Screen sharing"
     scope: "sharePicker.enabled"
-    description: "When an app asks to share the screen - a call, a browser tab - the shell can ask which screen, window or region, with live previews, on the screen you are looking at. On any error the portal's own picker opens instead."
+    hint: "When an app asks to share the screen, the shell asks which screen, window or region, with live previews, on the screen you are looking at. On any error the portal's own picker opens instead."
 
     readonly property string configPath: (Quickshell.env("XDG_CONFIG_HOME") || Paths.home + "/.config") + "/hypr/xdph.conf"
     readonly property string scriptPath: Paths.script("share-picker.sh")
@@ -48,7 +48,7 @@ SettingsSection {
         Layout.fillWidth: true
         labelFills: true
         label: "Use the shell's picker"
-        hint: "Off, the portal's own picker opens every time"
+        hint: "Off, the portal's own picker opens every time. Restarting the portal ends a share that is running."
         ShellToggle {
             focusOnTab: true
             accessibleName: "Use the shell's picker"
@@ -62,7 +62,7 @@ SettingsSection {
         visible: section.configRead
         text: section.usesShell ? "The portal uses the shell's picker."
             : section.configured.length ? "The portal uses another picker (" + section.configured + "). For the shell's, put these lines in " + section.configPath + " instead, then restart the portal:"
-            : "The portal uses its own picker. For the shell's, put these lines in " + section.configPath + ", then restart the portal (a share that is running ends):"
+            : "The portal uses its own picker. For the shell's, put these lines in " + section.configPath + ", then restart the portal:"
         role: "small"
         muted: true
         wrapMode: Text.Wrap

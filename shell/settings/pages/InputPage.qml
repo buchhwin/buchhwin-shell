@@ -22,6 +22,7 @@ ColumnLayout {
 
         SettingRow {
             label: "Layout"
+            scope: "input.kbLayout"
             ShellSelect {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -35,6 +36,7 @@ ColumnLayout {
         }
         SettingRow {
             label: "Variant"
+            scope: "input.kbVariant"
             ShellSelect {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -44,10 +46,8 @@ ColumnLayout {
             }
         }
         // The layout is the machine's; the repeat below is the profile's. The
-        // note sits close under the two rows it is about, and a line parts
-        // them from the repeat: at the rows' own gap it read as the repeat
-        // rate's.
-        ScopeNote { path: "input.kbLayout"; Layout.topMargin: -Metrics.spaceSm }
+        // two rows above say so in their own "i", and a line parts them from
+        // the repeat, which belongs to the profile and says nothing.
         Divider {}
         SettingRow {
             label: "Repeat rate"
@@ -210,7 +210,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: GestureService.touchpadShown
         title: "Touchpad gestures"
-        description: "Swipe with three or four fingers. Switching workspaces follows your fingers; panels open when the swipe ends."
+        hint: "Swipe with three or four fingers. Switching workspaces follows your fingers; panels open when the swipe ends."
         readonly property bool gesturesOn: SettingsService.value("gestures.enabled")
 
         SettingRow {

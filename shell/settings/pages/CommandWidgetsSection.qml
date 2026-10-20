@@ -13,7 +13,7 @@ import "../../../services/widgets/CommandLogic.js" as Logic
 SettingsSection {
     id: section
     title: "Command widgets"
-    description: "Show what a command of your own prints - a VPN check, a build's state, a counter - in the bar, the notch, on the desktop or in the dashboard. Add them as Command 1 to 3 like any widget; a command that fails shows its glyph in the warning colour."
+    hint: "What a command of your own prints - a VPN check, a build's state - in the bar, the notch, on the desktop or in the dashboard. Add it as Command 1 to 3 like any widget; one that fails shows its glyph in the warning colour."
     scope: "commandWidgets.one.command"
 
     readonly property var intervalOptions: Logic.INTERVALS.map(seconds => ({

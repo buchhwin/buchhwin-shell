@@ -60,7 +60,9 @@ ColumnLayout {
             labelFills: true
             visible: PowerService.hasBattery && PowerService.chargeLimit.supported
             label: "Limit charging"
+            // A test session never writes the limit (chargeWritable).
             hint: PowerService.chargeLimitHint
+                + (PowerService.chargeLimit.supported && !PowerService.chargeWritable ? ". A test session leaves the battery's limit alone" : "")
             ShellToggle {
                 focusOnTab: true
                 checked: PowerService.chargeLimit.active && !PowerService.chargeOnceActive
@@ -84,6 +86,9 @@ ColumnLayout {
                 onClicked: PowerService.chargeOnceActive ? PowerService.cancelChargeOnce() : PowerService.chargeOnce()
             }
         }
+        // What the limit is doing that the switches do not show: a refusal,
+        // a charge to full under way, a limit set outside the shell. What
+        // "once" means is in its row's hint.
         ShellText {
             Layout.fillWidth: true
             visible: text.length > 0
@@ -92,10 +97,9 @@ ColumnLayout {
             color: PowerService.chargeLimitError.length ? Colors.warning : Colors.mutedText
             text: !PowerService.hasBattery ? ""
                 : PowerService.chargeLimitError.length ? "UPower refused the change: " + PowerService.chargeLimitError
-                : PowerService.chargeOnceActive ? "Charging to 100% once. The limit is set again when the battery is full or the charger is unplugged."
+                : PowerService.chargeOnceActive ? "Charging to 100% once"
                 : PowerService.chargeLimit.active && !PowerService.chargeLimit.supported
                     ? PowerService.chargeLimitLabel + ", set outside the shell (UPower cannot change it here)"
-                : PowerService.chargeLimit.supported && !PowerService.chargeWritable ? "A test session leaves the battery's limit alone"
                 : ""
         }
 
@@ -123,7 +127,7 @@ ColumnLayout {
         visible: PowerService.hasBattery
         title: "Low battery"
         scope: "power"
-        description: "Warnings while running on battery; below 10% and 5% they stay until you close them"
+        hint: "Warnings while running on battery; below 10% and 5% they stay until you close them"
 
         SettingRow {
             Layout.fillWidth: true
@@ -152,7 +156,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Power profile"
-        description: "Balance performance against battery life and fan noise"
+        hint: "Balance performance against battery life and fan noise"
 
         SegmentedControl {
             focusOnTab: true
@@ -170,7 +174,7 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "Sleep"
         scope: "power"
-        description: PowerService.hasBattery ? "These apply on battery and when plugged in" : ""
+        hint: PowerService.hasBattery ? "These apply on battery and when plugged in" : ""
 
         // How long, as on the control center's Power page; the battery
         // popup's switch and the control center's tile start the last choice
@@ -211,7 +215,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: PowerService.hasBattery
         title: "Battery and charger"
-        description: "The settings below are kept separately for each; plugging in or unplugging switches between them right away."
+        hint: "The settings below are kept separately for each; plugging in or unplugging switches between them right away."
 
         SegmentedControl {
             focusOnTab: true
@@ -229,7 +233,9 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "When idle"
         scope: "power"
-        description: (PowerService.hasBattery ? page.sourceLabel + " · " : "") + "Apps that are playing video prevent this automatically."
+        // Which set the rows edit stays in sight, as on the lid's section.
+        description: PowerService.hasBattery ? page.sourceLabel : ""
+        hint: "Apps that are playing video prevent this automatically."
 
         SettingRow {
             label: "Screen off"

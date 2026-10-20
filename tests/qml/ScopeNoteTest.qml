@@ -23,6 +23,8 @@ ShellRoot {
             SettingsSection { id: machine; width: 600; title: "Lid"; scope: "power" }
             SettingsSection { id: plain; width: 600; title: "Look" }
             SettingsSection { id: profileOwned; width: 600; title: "Search"; scope: "launcher.searchUrl" }
+            SettingsSection { id: explained; width: 600; title: "Low battery"; scope: "power"; hint: "Warnings while running on battery" }
+            SettingRow { id: row; width: 600; label: "Speed"; hint: "Pointer speed"; scope: "input.sensitivity" }
         }
     }
 
@@ -72,13 +74,14 @@ ShellRoot {
         T.eq(S.note("dock.enabled"), "", "the rest of the dock is the profile's, which goes without saying")
         T.eq(S.note(""), "", "no path, no note")
 
-        // A section says it under its description, and only when it has one.
-        const said = root.note(machine)
-        T.ok(said !== null && said.visible && said.text === "The same in every profile", "a section with a machine scope says so")
-        const quiet = root.note(plain)
-        T.ok(quiet !== null && !quiet.visible, "a section without a scope says nothing")
-        const owned = root.note(profileOwned)
-        T.ok(owned !== null && !owned.visible, "nor does one whose setting belongs to the profile")
+        // A section says it in its title's "i", after its own hint, and only
+        // when it has one - never as a line of small print of its own.
+        T.eq(machine.hintText, "The same in every profile", "a section with a machine scope says so")
+        T.eq(root.note(machine), null, "in the bubble, not as a line under the title")
+        T.eq(plain.hintText, "", "a section without a scope says nothing")
+        T.eq(profileOwned.hintText, "", "nor does one whose setting belongs to the profile")
+        T.eq(explained.hintText, "Warnings while running on battery\n\nThe same in every profile", "the section's own hint first")
+        T.eq(row.hintText, "Pointer speed\n\nThe same in every profile", "a row says its setting's scope in its own bubble")
 
         T.finish("ScopeNoteTest")
     }

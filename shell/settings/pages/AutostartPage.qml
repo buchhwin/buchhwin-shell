@@ -18,7 +18,7 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "Apps at login"
         scope: "autostart.apps"
-        description: "Start only in buchhwin-shell, once per login. Plasma stays unchanged."
+        hint: "They start only in buchhwin-shell, once per login. Plasma stays unchanged."
 
         Repeater {
             model: AutostartService.apps
@@ -76,7 +76,7 @@ ColumnLayout {
         scope: "autostart.system"
         // The entries in /etc/xdg/autostart and ~/.config/autostart that
         // apply to this session; the ones marked for Plasma alone stay off.
-        description: "The system's own autostart entries, such as KDE Connect, calendar reminders and screen sharing for X11 apps; Plasma's own stay off. Takes effect at the next login."
+        hint: "The system's own autostart entries, such as KDE Connect, calendar reminders and screen sharing for X11 apps; Plasma's own stay off. Takes effect at the next login."
         SettingRow {
             Layout.fillWidth: true
             labelFills: true

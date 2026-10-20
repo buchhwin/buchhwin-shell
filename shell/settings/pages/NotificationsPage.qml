@@ -149,7 +149,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Apps"
-        description: "Muted apps never pop up. Always urgent ones pop up through everything but a Do Not Disturb you turned on yourself, Never muted ones through that too. Teams and Outlook are apps of their own, not the browser's"
+        hint: "Muted apps never pop up. Always urgent ones pop up through everything but a Do Not Disturb you turned on yourself, Never muted ones through that too. Teams and Outlook are apps of their own, not the browser's."
         EmptyState {
             Layout.fillWidth: true
             row: true

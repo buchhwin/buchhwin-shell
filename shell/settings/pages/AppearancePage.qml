@@ -75,7 +75,7 @@ GridLayout {
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignTop
         title: "Theme"
-        description: "Light, dark or automatic: by the clock or from sunset to sunrise"
+        hint: "Light, dark or automatic: by the clock or from sunset to sunrise"
 
         SegmentedControl {
             focusOnTab: true
@@ -205,7 +205,9 @@ GridLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Night Light"
-        description: "Warmer colors in the evening are easier on the eyes. " + NightLightService.summary
+        // What it is doing now stays in sight; what it is for is behind the "i".
+        hint: "Warmer colors in the evening are easier on the eyes"
+        description: NightLightService.summary
 
         SegmentedControl {
             focusOnTab: true
@@ -251,12 +253,13 @@ GridLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Color filter"
-        description: "Grayscale, colors that stay apart for color-blind eyes, or the colors inverted, over the whole screen. "
-            + ShortcutService.keyHint("SUPER + CTRL + C", true) + " turns it on and off. While it is on, every frame goes through it, which costs the graphics card a little."
+        hint: "Grayscale, colors that stay apart for color-blind eyes, or the colors inverted, over the whole screen. "
+            + ShortcutService.keyHint("SUPER + CTRL + C", true) + " turns it on and off."
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
             label: "On"
+            hint: "Every frame goes through the filter while it is on, which costs the graphics card a little."
             ShellToggle {
                 focusOnTab: true
                 checked: SettingsService.value("display.colorFilterOn") === true
@@ -283,7 +286,7 @@ GridLayout {
         Layout.fillWidth: true
         Layout.columnSpan: root.columns
         title: "Panels"
-        description: "Background color and transparency of panels, popups, pills and widgets. A light color switches to the light theme and a dark one to the dark theme, so the desktop and apps go along."
+        hint: "Background color and transparency of panels, popups, pills and widgets"
 
         readonly property var choice: Colors.panelColorChoices.find(item => item.value === PanelStyleService.color)
         readonly property int ownCount: PanelStyleService.groups.filter(group => PanelStyleService.hasOwnOpacity(group.key)).length
@@ -294,6 +297,7 @@ GridLayout {
             Layout.fillWidth: true
             labelFills: true
             label: "Background color"
+            hint: "A light color switches to the light theme and a dark one to the dark theme, so the desktop and apps go along."
             ShellText {
                 text: PanelStyleService.color === "auto" ? "Theme colors"
                     : panelSection.choice ? panelSection.choice.label : "Custom " + PanelStyleService.color
@@ -388,12 +392,13 @@ GridLayout {
                 : "Default for all windows. A light panel stays at most "
                   + Math.round((1 - PanelStyleService.lightMinOpacity) * 100)
                   + "% transparent, so its text keeps its contrast."
+            // The mode's own, said after the hint in the same bubble.
+            scope: "appearance.panelOpacity"
             opacityValue: PanelStyleService.defaultOpacity
             resettable: false
             onPreview: value => PanelStyleService.setPreview("default", value)
             onCommit: value => PanelStyleService.setDefaultOpacity(value)
         }
-        ScopeNote { path: "appearance.panelOpacity" }
 
         Divider {}
 
@@ -438,6 +443,9 @@ GridLayout {
                     required property var modelData
                     readonly property bool own: PanelStyleService.hasOwnOpacity(modelData.key)
                     label: modelData.label
+                    // What else the catch-all group covers, on its own row.
+                    hint: modelData.key === "popups"
+                        ? "Also the Wi-Fi password and Bluetooth pairing dialogs, and panels without their own entry" : ""
                     caption: own ? "Own value" : "Default"
                     highlighted: own
                     opacityValue: PanelStyleService.opacity(modelData.key)
@@ -447,11 +455,6 @@ GridLayout {
                     onReset: PanelStyleService.useDefaultOpacity(modelData.key)
                 }
             }
-            ShellText {
-                Layout.fillWidth: true
-                text: "Pill popups & dialogs also covers the Wi-Fi password and Bluetooth pairing dialogs and panels without their own entry."
-                role: "caption"; wrapMode: Text.Wrap
-            }
         }
     }
 
@@ -459,7 +462,7 @@ GridLayout {
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignTop
         title: "Windows & effects"
-        description: "Blur, corners, borders, gaps and animations"
+        hint: "Blur, corners, borders, gaps and animations"
         // Most of these are the mode's own; the two that are not say so.
         scope: "appearance.blurStrength"
 
@@ -634,7 +637,7 @@ GridLayout {
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignTop
         title: "Font"
-        description: "Interface font and monospace font of the shell"
+        hint: "Interface font and monospace font of the shell"
 
         SettingRow {
             label: "Interface"
@@ -676,7 +679,7 @@ GridLayout {
         Layout.fillWidth: true
         Layout.alignment: Qt.AlignTop
         title: "Cursor"
-        description: "Applies to Hyprland and apps started afterwards in this session"
+        hint: "Applies to Hyprland and apps started afterwards in this session"
 
         SettingRow {
             label: "Theme"

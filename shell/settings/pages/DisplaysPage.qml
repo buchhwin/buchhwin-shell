@@ -66,7 +66,7 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "Arrangement"
         scope: "display"
-        description: "Drag displays to arrange them. Edges snap together."
+        hint: "Drag displays to arrange them. Edges snap together."
 
         Rectangle {
             id: canvas
@@ -188,7 +188,7 @@ ColumnLayout {
         ShellText {
             Layout.fillWidth: true
             visible: DisplayService.overlapping
-            text: "Displays overlap: Hyprland would keep them there and warn, and the pointer would land on the wrong screen. Drag them apart before applying."
+            text: "Displays overlap, so the pointer would land on the wrong screen. Drag them apart before applying."
             role: "small"; color: Colors.warning; wrapMode: Text.Wrap
         }
     }
@@ -201,7 +201,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: root.monitors.length > 1
         title: "Display"
-        description: "Settings below apply to the display you choose here"
+        hint: "The settings below apply to the display you choose here."
 
         SegmentedControl {
             focusOnTab: true
@@ -226,7 +226,7 @@ ColumnLayout {
         visible: root.monitors.length > 1
         title: "Display switcher"
         // The key as it is now: Settings > Shortcuts can move it.
-        description: "For a projector or a meeting room's screen: until a display is plugged in or out. "
+        hint: "For a projector or a meeting room's screen: until a display is plugged in or out. "
             + ShortcutService.keyHint("SUPER + SHIFT + P", true) + " or the projector key."
 
         SegmentedControl {
@@ -481,7 +481,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: root.monitors.some(monitor => Number(monitor.scale) !== 1)
         title: "X11 applications"
-        description: "Apps that do not speak Wayland are stretched onto a scaled screen, which makes them blurry."
+        hint: "Apps that do not speak Wayland are stretched onto a scaled screen, which makes them blurry."
 
         SettingRow {
             Layout.fillWidth: true

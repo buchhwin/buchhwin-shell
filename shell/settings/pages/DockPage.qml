@@ -90,7 +90,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Presets"
-        description: "A whole dock at once: its layout and how it shows; your pinned apps stay. Change anything afterwards here or in the layout editor."
+        hint: "A whole dock at once: its layout and how it shows. Your pinned apps stay; change anything afterwards here or in the layout editor. Dock gets out of the way as soon as a window touches it; Taskbar is always there, with the status, notifications and the clock on the right."
 
         Repeater {
             model: LayoutService.builtinDockPresets
@@ -187,7 +187,7 @@ ColumnLayout {
             spacing: Metrics.spaceSm
             ShellText {
                 Layout.fillWidth: true
-                text: page.appliedLabel + " applied. Undo puts the dock back as it was."
+                text: page.appliedLabel + " applied"
                 role: "small"
                 muted: true
                 wrapMode: Text.Wrap
@@ -202,9 +202,10 @@ ColumnLayout {
             labelFills: true
             label: "Layout"
             // The keys as they are bound now: a shortcut moved in Settings >
-            // Shortcuts is named here under its new keys.
-            hint: "What the dock holds - its apps, a start button, the clock, status and any other widget the bar can carry - and where: in the layout editor ("
-                + ShortcutService.keyHint("SUPER + ALT + E", true) + ", \"Dock\")."
+            // Shortcuts is named here under its new keys. A dock without a
+            // start button is told here where one comes from.
+            hint: "What the dock holds and where - its apps, a start button, the clock or any other bar widget - in the layout editor ("
+                + ShortcutService.keyHint("SUPER + ALT + E", true) + ", \"Dock\"). The Taskbar preset brings a start button too."
             ShellButton {
                 focusOnTab: true
                 icon: Icons.arrange; text: "Edit in the editor"; compact: true
@@ -222,7 +223,7 @@ ColumnLayout {
         Layout.fillWidth: true
         // Not "Dock" a third time: the page and a preset are called that.
         title: "Behavior"
-        description: "Your pinned apps and the apps that have windows, at the edge of the screen - a dock in the middle or a taskbar along the whole edge. It works next to the notch, the bar or the widgets."
+        hint: "Your pinned and running apps at the screen edge, as a dock in the middle or a taskbar along the whole edge. It works beside the notch, the bar or the widgets."
 
         SettingRow {
             labelFills: true
@@ -312,6 +313,7 @@ ColumnLayout {
             visible: Quickshell.screens.length > 1
             label: "Show on"
             hint: "Which displays have a dock. With all of them ticked a new display gets one too. The last one cannot be unticked: switch the dock off instead."
+            scope: "dock.screens"
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Metrics.spaceSm
@@ -332,14 +334,12 @@ ColumnLayout {
                 }
             }
         }
-        // Hidden with one screen, like the row.
-        ScopeNote { path: Quickshell.screens.length > 1 ? "dock.screens" : "" }
     }
 
     SettingsSection {
         Layout.fillWidth: true
         title: "Apps"
-        description: "Pin and unpin apps on the dock (right-click) or below; drag a pin to move it, a running app among the pins to pin it. Files, terminal and browser follow Settings > Default apps; the start menu's pins are under Settings > Launcher."
+        hint: "Right-click an app on the dock to pin or unpin it; drag a pin to move it, a running app among the pins to pin it. The start menu's pins are under Settings > Launcher."
 
         SettingRow {
             labelFills: true
@@ -429,7 +429,7 @@ ColumnLayout {
             }
         }
         // Only for a dock that has the button; on one without it the choice
-        // did nothing, and nothing said so.
+        // did nothing, and nothing said so. Layout's hint says how to get one.
         SettingRow {
             visible: LayoutService.dockHasStart
             label: "Start button"
@@ -444,17 +444,9 @@ ColumnLayout {
                 onSelected: value => SettingsService.set("dock.startOpens", value)
             }
         }
-        ShellText {
-            Layout.fillWidth: true
-            visible: !LayoutService.dockHasStart
-            text: "There is no start button on the dock. Add one in the layout editor (Layout, above), or apply the Taskbar preset."
-            role: "small"
-            muted: true
-            wrapMode: Text.Wrap
-        }
         SettingRow {
             label: "Pinned apps"
-            hint: "At most " + LayoutService.dockPinLimit + ". An app that is no longer installed still takes a place until it is unpinned here."
+            hint: "At most " + LayoutService.dockPinLimit + ". Files, terminal and browser follow Default apps; an app no longer installed keeps its place until it is unpinned here."
             ShellText {
                 Layout.fillWidth: true
                 text: page.pins.length + " of " + LayoutService.dockPinLimit + " pinned"
@@ -551,7 +543,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Minimize"
-        description: ShortcutService.keyHint("SUPER + H", true) + " minimizes the window in front, " + ShortcutService.keyHint("SUPER + SHIFT + H", true) + " brings back the one minimized last. Minimized windows stay on the dock (a hollow dot), in the overview (" + ShortcutService.keyHint("SUPER + W", true) + ") and in Alt+Tab, and every start of the shell brings them back to their workspaces."
+        hint: ShortcutService.keyHint("SUPER + H", true) + " minimizes the window in front, " + ShortcutService.keyHint("SUPER + SHIFT + H", true) + " brings back the last one. Minimized windows stay on the dock (a hollow dot), in the overview and in Alt+Tab, and go back to their workspaces at every start."
 
         SettingRow {
             labelFills: true
@@ -572,7 +564,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Look"
-        description: "The dock wears the panels' color (Settings > Appearance > Panels) at a transparency of its own."
+        hint: "The panels' color (Settings > Appearance > Panels), at a transparency of its own."
 
         SettingRow {
             id: transparencyRow
@@ -606,6 +598,6 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Keyboard"
-        description: ShortcutService.keyHint("SUPER + SHIFT + D", true) + " shows the dock and gives it the keys: the arrow keys move along it - the apps, the start button and on a taskbar its status, notifications and clock -, Enter starts or raises an app or opens what an item opens, Shift+Enter opens a new window, the menu key opens the app's menu, Esc gives the keys back."
+        hint: ShortcutService.keyHint("SUPER + SHIFT + D", true) + " shows the dock and gives it the keys: the arrow keys move along it, Enter starts or raises an app or opens an item, Shift+Enter opens a new window, the menu key the app's menu. Esc gives the keys back."
     }
 }

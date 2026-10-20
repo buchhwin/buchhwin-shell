@@ -72,7 +72,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: BluetoothService.enabled
         title: "My devices"
-        description: "Paired devices. Connect, disconnect or remove them."
+        hint: "Paired devices. Connect, disconnect or remove them."
 
         EmptyState { Layout.fillWidth: true; visible: root.known.length === 0; row: true; icon: "󰂯"; title: "No paired devices" }
         Repeater {
@@ -122,8 +122,10 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: BluetoothService.enabled
         title: "Nearby devices"
-        description: BluetoothService.discovering ? "Searching … Put the device you want to pair into pairing mode."
-            : "Search to find devices that can be paired."
+        // The search is state and stays in sight while it runs. An empty
+        // list says so itself, so the line is there only above devices.
+        description: BluetoothService.discovering && BluetoothService.nearby.length > 0 ? "Searching …" : ""
+        hint: "Put the device you want to pair into pairing mode, then search for it."
 
         EmptyState {
             Layout.fillWidth: true

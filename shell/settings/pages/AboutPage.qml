@@ -36,7 +36,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "buchhwin-shell"
-        description: "Custom desktop shell on Hyprland and Quickshell, for Fedora, openSUSE Leap and Arch Linux"
+        hint: "A desktop shell on Hyprland and Quickshell, for Fedora, openSUSE Leap and Arch Linux."
 
         SettingRow {
             Layout.fillWidth: true
@@ -81,7 +81,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Health"
-        description: "What this session and its packages still need. The steps with sudo are yours to run in a terminal; nothing here changes the system."
+        hint: "What this session and its packages still need. Steps with sudo are yours to run in a terminal; nothing here changes the system."
 
         ListRow {
             Layout.fillWidth: true
@@ -196,7 +196,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: root.commits.length > 0
         title: "Recent changes"
-        description: "The newest changes of the checkout this shell runs from"
+        hint: "The newest changes of the checkout this shell runs from."
 
         Repeater {
             model: ScriptModel { values: root.commits.map(commit => commit.hash) }

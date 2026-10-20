@@ -13,7 +13,7 @@ SettingsSection {
     id: section
     title: "Assistant"
     scope: "assistant.url"
-    description: "A chat with a language model that runs on this computer, through Ollama. Nothing goes to the internet: no cloud model, no account, no key."
+    hint: "A chat with a language model that runs on this computer, through Ollama. Nothing goes to the internet: no cloud model, no account, no key."
 
     readonly property string status: AssistantService.status
     readonly property var said: Logic.stateText(status, AssistantService.installed, DistroService.installHint("ollama"),

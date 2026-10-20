@@ -96,7 +96,7 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignTop
             title: "Slideshow"
-            description: "Change the wallpaper automatically"
+            hint: "Changes the wallpaper automatically."
 
             SettingRow {
                 Layout.fillWidth: true
@@ -226,13 +226,13 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignTop
             title: "Light and dark"
-            description: "While this is on, the wallpaper you pick is kept for the theme you are in."
 
             SettingRow {
                 Layout.fillWidth: true
                 labelFills: true
                 label: "A wallpaper for each theme"
-                hint: WallpaperService.slideshow ? "Not while the slideshow runs." : ""
+                hint: "While this is on, the wallpaper you pick is kept for the theme you are in."
+                    + (WallpaperService.slideshow ? " Not while the slideshow runs." : "")
                 ShellToggle {
                     focusOnTab: true
                     checked: WallpaperService.themePair
@@ -295,9 +295,11 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Images"
-        description: "All images in the folder · Star marks favorites · Ctrl+F stars the selected one"
-            + (WallpaperService.slideshowSource === "chosen" ? " · Tick picks for the slideshow" : "")
-            + (root.target.length ? " · Selection applies to " + root.target : "")
+        // Which display a click sets is state, and stays in sight; how the
+        // marks work is the hint's.
+        description: root.target.length ? "Selection applies to " + root.target : ""
+        hint: "All images in the folder. The star marks a favorite; Ctrl+F stars the selected one."
+            + (WallpaperService.slideshowSource === "chosen" ? " The tick picks an image for the slideshow." : "")
 
         RowLayout {
             ShellButton { focusOnTab: true; icon: Icons.add; text: "Add images …"; compact: true; onClicked: { PanelService.close(); WallpaperService.importImages() } }

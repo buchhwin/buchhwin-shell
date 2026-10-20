@@ -84,10 +84,10 @@ ColumnLayout {
         // distribution: they are written through KDE's Akonadi Python
         // bindings, which Fedora packages and Arch and openSUSE Leap do not
         // (CalendarService.writerState, asked once when the calendar starts).
-        description: CalendarService.writerReady
+        hint: CalendarService.writerReady
             ? "Reads the KDE calendars, like the Plasma clock, and new events from the dashboard go into them. Google accounts and other calendars are set up in Merkuro (KDE)."
             : CalendarService.writerState === "missing"
-            ? "Reads the KDE calendars, like the Plasma clock. New events are made in Merkuro (KDE): this system does not have KDE's Akonadi Python bindings. Google accounts and other calendars are set up there too."
+            ? "Reads the KDE calendars, like the Plasma clock. This system lacks KDE's Akonadi Python bindings, so new events are made in Merkuro (KDE), where Google accounts and other calendars are set up too."
             : "Reads the KDE calendars, like the Plasma clock. Google accounts and other calendars are set up in Merkuro (KDE)."
 
         ListRow {
@@ -130,7 +130,7 @@ ColumnLayout {
             // Which calendars are shown is the machine's.
             scope: "calendar.hiddenCalendars"
             title: modelData.name
-            description: modelData.id === -1 ? "Calendars on this computer" : "Account"
+            hint: modelData.id === -1 ? "Calendars on this computer" : "The calendars of this account"
 
             Repeater {
                 model: groupSection.modelData.calendars
@@ -164,7 +164,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Calendars from a link"
-        description: "A published calendar, such as Outlook's \"Publish a calendar\" ICS link or a Google calendar's secret address. Read-only and fetched again every " + Links.REFRESH_MINUTES + " minutes. Anyone who has such a link can read the calendar: keep it like a password."
+        hint: "A published calendar, such as Outlook's \"Publish a calendar\" ICS link or a Google calendar's secret address. Read-only and fetched again every " + Links.REFRESH_MINUTES + " minutes."
 
         // Keyed by the resource id: a list read anew keeps its rows, and an
         // armed Remove stays armed (kept_rows_test.py).
@@ -216,6 +216,9 @@ ColumnLayout {
             visible: page.adding
             Layout.fillWidth: true
             label: "Link"
+            // Said where the link is pasted, and shown when the field takes
+            // the focus.
+            hint: "Anyone who has such a link can read the calendar: keep it like a password."
             ShellTextField {
                 id: linkField
                 Layout.fillWidth: true
@@ -284,7 +287,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Event colors"
-        description: "The bar next to an event in the dashboard, the notch and the widgets."
+        hint: "The bar next to an event in the dashboard, the notch and the widgets."
 
         SettingRow {
             label: "Color"
@@ -301,7 +304,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Hint next to the clock"
-        description: "Shows a calendar icon next to the clock shortly before an event (when hints next to the clock are on)."
+        hint: "Shows a calendar icon next to the clock shortly before an event (when hints next to the clock are on)."
 
         SettingRow {
             Layout.fillWidth: true

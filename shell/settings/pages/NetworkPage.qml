@@ -150,7 +150,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Hotspot"
-        description: "Share this computer's internet connection over Wi-Fi. Wi-Fi disconnects from its current network while the hotspot is on."
+        hint: "Shares this computer's internet connection over Wi-Fi. Wi-Fi disconnects from its network while the hotspot is on."
 
         RowLayout {
             ShellIcon { glyph: "󰀂"; size: Metrics.iconMd; color: NetworkService.hotspotActive ? Colors.accentForeground : Colors.mutedText }
@@ -170,7 +170,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "VPN"
-        description: "Turn VPN connections on or off, and add WireGuard tunnels. They are NetworkManager's, so Plasma lists the same ones."
+        hint: "NetworkManager's VPN connections, so Plasma lists the same ones. WireGuard tunnels can be added here."
 
         EmptyState { Layout.fillWidth: true; visible: NetworkService.vpns.length === 0; row: true; icon: "󰖂"; title: "No VPN connections set up yet" }
         Repeater {

@@ -30,7 +30,8 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Output"
-        description: AudioService.ready ? "Speakers and headphones. The selected device plays all sound." : "PipeWire is not ready"
+        description: AudioService.ready ? "" : "PipeWire is not ready"
+        hint: "Speakers and headphones. The selected device plays all sound."
 
         Repeater {
             // Kept rows, not rebuilt ones: AudioService's lists are new
@@ -78,7 +79,9 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Input"
-        description: AudioService.micInUse ? "A microphone is in use right now." : "Microphones. The selected device is used by all apps."
+        description: AudioService.micInUse ? "A microphone is in use right now." : ""
+        hint: "The selected microphone is used by all apps. Push to talk: it is on while you hold "
+            + ShortcutService.keyHint("SUPER + T", true) + "."
 
         Repeater {
             model: ScriptModel { values: AudioService.sources }
@@ -118,6 +121,7 @@ ColumnLayout {
         }
         SettingRow {
             label: "Level"
+            hint: "Listens only while this page is open. Nothing is recorded, and it does not count as an app using the microphone."
             Item {
                 // Same horizontal inset as the slider track above.
                 Layout.fillWidth: true
@@ -160,11 +164,6 @@ ColumnLayout {
                 role: "small"; muted: true
             }
         }
-        ShellText {
-            Layout.fillWidth: true
-            text: "The level bar listens to the input only while this page is open. Nothing is recorded or saved, and it does not count as an app using the microphone."
-            role: "caption"; wrapMode: Text.Wrap
-        }
         SettingRow {
             Layout.fillWidth: true
             labelFills: true
@@ -176,17 +175,12 @@ ColumnLayout {
                 onToggled: value => SettingsService.set("audio.micKeyAll", value)
             }
         }
-        ShellText {
-            Layout.fillWidth: true
-            text: "Push to talk: hold " + ShortcutService.keyHint("SUPER + T", true) + " and the selected microphone is on while the key is down."
-            role: "caption"; wrapMode: Text.Wrap
-        }
     }
 
     SettingsSection {
         Layout.fillWidth: true
         title: "Applications"
-        description: "Volume and output of apps that are playing sound right now. The output is remembered for each app."
+        hint: "Apps that are playing sound right now. The output is remembered for each app."
 
         EmptyState { Layout.fillWidth: true; row: true; visible: AudioService.playbackStreams.length === 0; icon: "󰝛"; title: "No app is playing audio" }
         Repeater {

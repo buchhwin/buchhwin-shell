@@ -2,7 +2,7 @@
   "configVersion": 1,
   "id": "taskbar",
   "label": "Taskbar",
-  "description": "Along the whole bottom edge and always there: the start button, your apps, and on the right the status, notifications and the clock.",
+  "description": "The whole edge: start, apps, status, clock",
   "options": {
     "visibility": "always",
     "position": "bottom",

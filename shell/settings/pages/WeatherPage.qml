@@ -11,7 +11,7 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "Location"
         scope: "weather.locationName"
-        description: "Only the location, rounded to about 1 km, is sent to Open-Meteo, and it is stored only locally. "
+        hint: "Only the location, rounded to about 1 km, is sent to Open-Meteo, and it is stored only locally. "
             + "Detecting it automatically asks ipinfo.io once, which sees this connection's IP address."
 
         ListRow {

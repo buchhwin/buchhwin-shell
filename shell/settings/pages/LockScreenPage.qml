@@ -31,7 +31,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Lock screen"
-        description: "The screen behind the lock is blurred so nothing on it can be read. When to lock automatically is set under Power."
+        hint: "The screen behind the lock is blurred so nothing on it can be read. When to lock automatically is set under Power."
 
         RowLayout {
             ShellIcon { glyph: Icons.lock; size: Metrics.iconLg; color: Colors.accentForeground }
@@ -50,7 +50,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "What the lock screen shows"
-        description: "Drag to arrange, pull a corner to size. Applies the next time the screen locks"
+        hint: "Drag to arrange, pull a corner to size. Applies the next time the screen locks."
 
         LockPreview {
             Layout.fillWidth: true
@@ -92,7 +92,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "The corners"
-        description: "Applies the next time the screen locks"
+        hint: "Applies the next time the screen locks."
 
         Repeater {
             model: [
@@ -120,7 +120,11 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "Fingerprint"
         scope: "lock.fingerprint"
-        description: "Unlock the lock screen with a finger. Typing your password always works too."
+        // While the card for password dialogs offers a command, the hint
+        // says what it changes; the card keeps only the command.
+        hint: "Unlock the lock screen with a finger; typing your password always works too."
+            + (FingerprintService.available && ["on", "off"].indexOf(FingerprintService.polkitState) >= 0
+               ? " A password dialog that takes the finger waits ten seconds for it, then asks for the password; the login screen and sudo stay as they are." : "")
 
         ListRow {
             Layout.fillWidth: true
@@ -150,9 +154,14 @@ ColumnLayout {
         ColumnLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceSm
+            // While one of the two PAM cards below is shown, its why is said
+            // here: the card keeps only the command and its copy button.
             SettingRow {
                 Layout.fillWidth: true
                 label: "Use fingerprint"
+                hint: "Automatic turns it off while the lid is closed, as on a docking station. It applies to this lock screen only."
+                    + (FingerprintService.systemOnly ? " The login screen, sudo and password dialogs go through PAM, where the reader is on system-wide." : "")
+                    + (root.pamLineMissing ? " On Arch the reader goes into the lock screen's own PAM file: in system-auth the login screen and sudo would wait for the finger, and a finger login cannot open the wallet." : "")
                 SegmentedControl {
                     focusOnTab: true
                     Layout.fillWidth: true
@@ -164,12 +173,6 @@ ColumnLayout {
                     ]
                     onSelected: value => FingerprintService.setMode(value)
                 }
-            }
-            ShellText {
-                Layout.fillWidth: true
-                text: "Automatic turns it off while the lid is closed, for example on a docking station. This is the lock screen's setting."
-                role: "caption"
-                wrapMode: Text.Wrap
             }
             // "Off" here and still being asked for a finger is not a broken
             // button: the login screen, sudo and every polkit dialog go
@@ -193,9 +196,7 @@ ColumnLayout {
                     }
                     ShellText {
                         Layout.fillWidth: true
-                        text: "Off applies to this lock screen. The login screen, sudo and password dialogs "
-                            + "authenticate through PAM, where the reader is enabled system-wide, so they keep asking. "
-                            + "To turn it off everywhere, run this once and log in again:"
+                        text: "To turn it off everywhere, run this once and log in again:"
                         role: "caption"
                         wrapMode: Text.Wrap
                     }
@@ -234,9 +235,7 @@ ColumnLayout {
                     }
                     ShellText {
                         Layout.fillWidth: true
-                        text: "On Arch the reader is turned on by hand. Run this once to add it to /etc/pam.d/buchhwin-lock, "
-                            + "then the lock screen offers the finger. Not system-auth: the login screen and sudo would wait "
-                            + "for the finger first, and a finger login cannot open the wallet."
+                        text: "Run this once, then the lock screen offers the finger:"
                         role: "caption"
                         wrapMode: Text.Wrap
                     }
@@ -287,9 +286,7 @@ ColumnLayout {
                     ShellText {
                         Layout.fillWidth: true
                         text: FingerprintLogic.polkitText(polkitNote.answer)
-                            + (polkitNote.answer === "off"
-                               ? " Run this once to let them take the finger as well - an enrollment's own question, a system connection, a drive. "
-                                 + "The login screen and sudo stay as they are. A dialog waits ten seconds for the finger, then asks for the password."
+                            + (polkitNote.answer === "off" ? " Run this once to let them take the finger as well:"
                                : polkitNote.answer === "on" ? " This takes the line out of /etc/pam.d/polkit-1 again:" : "")
                         role: "caption"
                         wrapMode: Text.Wrap
@@ -381,6 +378,7 @@ ColumnLayout {
             SettingRow {
                 Layout.fillWidth: true
                 label: "Finger"
+                hint: "Settings steps aside while the system asks for your password. Place the finger on the reader several times, moving it slightly each time."
                 ShellSelect {
                     focusOnTab: true
                     Layout.fillWidth: true
@@ -388,12 +386,6 @@ ColumnLayout {
                     current: root.enrollFinger
                     onSelected: value => root.enrollFinger = value
                 }
-            }
-            ShellText {
-                Layout.fillWidth: true
-                text: "Settings steps aside while the system asks for your password, and comes back once the reader is ready. Place the finger on the reader several times, moving it slightly each time."
-                role: "caption"
-                wrapMode: Text.Wrap
             }
             RowLayout {
                 spacing: Metrics.spaceSm

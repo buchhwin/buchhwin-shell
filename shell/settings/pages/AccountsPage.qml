@@ -27,6 +27,7 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "KDE PIM"
         description: AccountsService.summary
+        hint: "Accounts are added with KDE's own wizards; their calendars and contacts show in the dashboard. This shell never asks for a password and keeps no tokens."
 
         ListRow {
             interactive: false
@@ -36,14 +37,8 @@ ColumnLayout {
             title: AccountsService.serverRunning ? "KDE PIM is running"
                 : AccountsService.known ? "KDE PIM (Akonadi) is not running" : "Checking …"
             subtitle: AccountsService.serverRunning
-                ? "Calendars, contacts and mail are stored and synchronized by KDE PIM"
-                : "Accounts appear once KDE PIM starts; opening a KDE app starts it"
-        }
-        ShellText {
-            Layout.fillWidth: true
-            text: "Accounts are added with KDE's own wizards. buchhwin-shell only shows them, synchronizes them and opens their settings; it never asks for a password and keeps no tokens."
-            role: "caption"
-            wrapMode: Text.Wrap
+                ? "Keeps calendars, contacts and mail in sync"
+                : "Opening a KDE app starts it"
         }
         Flow {
             Layout.fillWidth: true
@@ -75,7 +70,7 @@ ColumnLayout {
             row: true
             icon: "󰀉"
             title: "No account wizard found"
-            description: "KDE's own wizards add the accounts; none of them is installed on this machine"
+            description: "None of KDE's account wizards is installed"
         }
         EmptyState {
             Layout.fillWidth: true
@@ -83,7 +78,7 @@ ColumnLayout {
             row: true
             icon: "󰀉"
             title: "No accounts yet"
-            description: "Add a Google, Nextcloud, CalDAV, CardDAV, IMAP or iCal account with one of the buttons above; calendars and contacts then show up in the dashboard"
+            description: "Add a Google, Nextcloud, CalDAV, CardDAV, IMAP or iCal account above"
         }
         ShellText {
             Layout.fillWidth: true

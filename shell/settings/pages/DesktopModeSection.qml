@@ -10,7 +10,8 @@ import qs.shell.components
 SettingsSection {
     id: section
     title: "Desktop mode"
-    description: "One at a time: widgets on the wallpaper, a bar along one edge, or a notch at the top center. Applies to the active mode."
+    hint: "One at a time, for the active mode: widgets on the wallpaper, a bar along one edge, or a notch at the top center. "
+        + ShortcutService.keyHint("SUPER + ALT + E", true) + " edits them by hand."
 
     SegmentedControl {
         focusOnTab: true
@@ -30,11 +31,6 @@ SettingsSection {
             onClicked: { PanelService.close(); LayoutService.editMode = true }
         }
         ShellButton { focusOnTab: true; icon: Icons.undo; text: "Undo"; enabledState: LayoutService.undoStack.length > 0; onClicked: LayoutService.undo() }
-        ShellText {
-            Layout.fillWidth: true
-            text: ShortcutService.keyHint("SUPER + ALT + E", true) + " edits widgets, the bar and the notch by hand"
-            role: "small"; muted: true; wrapMode: Text.Wrap
-        }
     }
     ShellText {
         visible: LayoutService.readOnly

@@ -101,7 +101,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Custom shortcuts"
-        description: "Start an app, run a command or open a part of the shell with your own key combination. They are saved in shortcuts.json and applied whenever the shell starts; the Hyprland config files stay unchanged."
+        hint: "Start an app, run a command or open a part of the shell with your own key combination. Saved in shortcuts.json and applied when the shell starts; the Hyprland config files stay unchanged."
 
         Repeater {
             model: ShortcutService.custom
@@ -286,8 +286,8 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Keyboard passthrough"
-        description: "Every key goes to the window in front - Alt+Tab, the Windows key and " + ShortcutService.keyHint("SUPER + L", true)
-            + " reach a Citrix session or a virtual machine instead of this desktop - until the same key again. Volume, brightness, media keys and the lid stay with this desktop; a chip in the corner says the keys are away."
+        hint: "Every key goes to the window in front - Alt+Tab, the Windows key and " + ShortcutService.keyHint("SUPER + L", true)
+            + " reach a Citrix session or a virtual machine - until the same key again. Volume, brightness, media keys and the lid stay here; a chip in the corner says the keys are away."
 
         // The key caps at the right, where every key cap of the list above
         // stands.
@@ -338,7 +338,10 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: GestureService.touchpadShown
         title: "Touchpad gestures"
-        description: GestureService.rows.length ? "Change them in Settings > Input." : "Off. Turn them on in Settings > Input."
+        // Where they are changed is an explanation; with no gestures on, the
+        // line is the card's only content and stays in sight.
+        hint: GestureService.rows.length ? "Change them in Settings > Input." : ""
+        description: GestureService.rows.length ? "" : "Off. Turn them on in Settings > Input."
 
         Repeater {
             model: GestureService.rows
@@ -357,7 +360,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "All shortcuts"
-        description: "Every key binding Hyprland currently knows, including your own."
+        hint: "Every key binding Hyprland currently knows, including your own."
 
         ShellTextField {
             focusOnTab: true

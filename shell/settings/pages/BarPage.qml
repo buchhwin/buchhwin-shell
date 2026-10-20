@@ -66,7 +66,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: LayoutService.widgetsShown
         title: "The bar is hidden"
-        description: "Widgets mode shows the widgets on the wallpaper instead of the bar. The pills below are kept and come back with the Bar mode."
+        hint: "Widgets mode shows the widgets on the wallpaper instead of the bar. The pills are kept and come back with the Bar mode."
         ShellButton {
             focusOnTab: true
             icon: Icons.arrange; text: "Open widgets"
@@ -77,7 +77,11 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Notch"
-        description: "Hover the notch for the time, weather, events, media and status. Hotkey panels open below it. Applies to every mode of this profile."
+        // Which of the notch's displays wins is said once, for the three
+        // switches below that put something in it: the newer one, because a
+        // key you just pressed must show what it did.
+        hint: "Hover the notch for the time, weather, events, media and status; hotkey panels open below it. Applies to every mode of this profile."
+            + "\n\nWhile the overview is open, what would show in the notch appears below it. When two ask at once the newer one wins."
         visible: LayoutService.notchShown
 
         SettingRow {
@@ -196,11 +200,6 @@ ColumnLayout {
             hint: "A new song names itself for a few seconds. It has no other place to appear, so with this off nothing happens at all."
             ShellToggle { focusOnTab: true; checked: SettingsService.value("notch.displayMedia"); onToggled: value => SettingsService.set("notch.displayMedia", value) }
         }
-        ShellText {
-            Layout.fillWidth: true
-            text: "While the overview is open the notch stays the overview, and whatever wanted it appears below instead. When two ask at once the newer one wins - a key you just pressed must show what it did."
-            role: "small"; muted: true; wrapMode: Text.Wrap
-        }
 
         NotchHoverRows { Layout.fillWidth: true }
         // Notch options take an undo step (LayoutService.changeNotch), the
@@ -228,11 +227,13 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Bar"
-        description: "Pills float as separate capsules; the bar joins all items into one continuous bar. Color and transparency follow Appearance > Panels."
+        hint: "Color and transparency follow Settings > Appearance > Panels. "
+            + ShortcutService.keyHint("SUPER + ALT + E", true) + " drags pills between the zones on the desktop itself; the lists below do the same by hand."
         visible: LayoutService.barShown
 
         SettingRow {
             label: "Style"
+            hint: "Pills float as separate capsules; Bar joins all items into one continuous bar."
             SegmentedControl {
                 focusOnTab: true
                 Layout.fillWidth: true
@@ -369,18 +370,13 @@ ColumnLayout {
             Layout.fillWidth: true
             spacing: Metrics.spaceSm
             ShellButton { focusOnTab: true; icon: Icons.reset; text: "Restore default"; onClicked: { page.select("", -1); LayoutService.resetBar() } }
-            ShellText {
-                Layout.fillWidth: true
-                text: ShortcutService.keyHint("SUPER + ALT + E", true) + " drags pills between the zones on the desktop itself; the list below does the same by hand."
-                role: "small"; muted: true; wrapMode: Text.Wrap
-            }
         }
     }
 
     SettingsSection {
         Layout.fillWidth: true
         title: "Workspaces"
-        description: "Which workspaces the workspace pill, the widget and the window overview show. Applies to every mode of this profile."
+        hint: "Which workspaces the workspace pill, the widget and the window overview show. Applies to every mode of this profile."
 
         SettingRow {
             Layout.fillWidth: true

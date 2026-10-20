@@ -28,15 +28,24 @@ ColumnLayout {
         toolTip: page.modeDescription(name)
     }))
     readonly property string activeModeDescription: page.modeDescription(LayoutService.activeMode)
+    // What the mode does as it ships, Do Not Disturb included: a mode switch
+    // is the only place that turns it on by itself. The description is
+    // written to stand alone ("The notch only, …"); after the colon its first
+    // word goes small, unless it is a name in capitals.
+    readonly property string activeModeShips: !activeModeDescription.length ? ""
+        : Profile.label(LayoutService.activeMode, LayoutService.templates) + " as it ships: "
+          + (/^[A-Z](?![A-Z])/.test(activeModeDescription)
+             ? activeModeDescription.charAt(0).toLowerCase() + activeModeDescription.slice(1)
+             : activeModeDescription) + "."
 
     SettingsSection {
         Layout.fillWidth: true
         title: "Profiles"
         // What a built-in profile does the first time, said once for all of
-        // them rather than on every built-in card, where it pushed the
-        // card's own buttons down. The shipped setup is the layouts, the
-        // notch, the settings, the default apps and fastfetch.
-        description: "A profile keeps everything - its five modes' layouts, the notch, panels, colors and all other settings - and switching brings them back. A built-in profile starts from its shipped setup the first time (after a backup) and keeps your changes; Restore settings brings the shipped one back."
+        // them in the section's "i" rather than on every built-in card, where
+        // it pushed the card's own buttons down. The shipped setup is the
+        // layouts, the notch, the settings, the default apps and fastfetch.
+        hint: "A profile keeps everything - its five modes' layouts, the notch, panels, colors and all other settings - and switching brings them back. A built-in profile starts from its shipped setup the first time (after a backup) and keeps your changes; Restore settings brings the shipped one back."
 
         SettingRow {
             Layout.fillWidth: true
@@ -273,7 +282,14 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "This mode"
-        description: "What the active mode of the active profile is set to"
+        // The settings a mode owns, named rather than implied: a user who
+        // changes the blur in Docked and finds Laptop unchanged should be
+        // able to read why here. The machine's settings are pointed to
+        // rather than listed: every one of them says so in its own "i", and
+        // the list grew into seven lines with every feature
+        // (ScopeLogic.machineSettings keeps the words).
+        hint: ["The active mode of the active profile.", page.activeModeShips].filter(text => text.length > 0).join(" ")
+            + "\n\nBlur, panel opacity, animation mode and speed, corner radius, window borders and gaps are each mode's own. Everything else belongs to the profile, except the settings that say \u201cThe same in every profile\u201d."
 
         RowLayout {
             Layout.fillWidth: true
@@ -285,20 +301,6 @@ ColumnLayout {
             }
             ShellButton { focusOnTab: true; icon: Icons.arrange; text: "Widgets"; compact: true; onClicked: PanelService.open("settings", { page: "widgets" }) }
             ShellButton { focusOnTab: true; icon: "󰘔"; text: "Bar & notch"; compact: true; onClicked: PanelService.open("settings", { page: "bar" }) }
-        }
-        // What the mode does as it ships, Do Not Disturb included: a mode
-        // switch is the only place that turns it on by itself.
-        ShellText {
-            Layout.fillWidth: true
-            visible: page.activeModeDescription.length > 0
-            // The description is written to stand alone ("The notch only,
-            // …"); after the colon its first word goes small, unless it is
-            // a name in capitals.
-            text: Profile.label(LayoutService.activeMode, LayoutService.templates) + " as it ships: "
-                + (/^[A-Z](?![A-Z])/.test(page.activeModeDescription)
-                   ? page.activeModeDescription.charAt(0).toLowerCase() + page.activeModeDescription.slice(1)
-                   : page.activeModeDescription)
-            role: "small"; muted: true; wrapMode: Text.Wrap
         }
         // Whether entering this mode turns Do Not Disturb on and leaving it
         // turns it off (LayoutService.modeDnd): as the mode ships - on in
@@ -316,18 +318,6 @@ ColumnLayout {
             }
         }
 
-        // The settings a mode owns, named rather than implied: a user who
-        // changes the blur in Docked and finds Laptop unchanged should be able
-        // to read why here, and a control that has a scope has to say it.
-        // The machine's settings are pointed to rather than listed: every
-        // one of them says so where it is set (ScopeNote), and the list grew
-        // into seven lines with every feature (ScopeLogic.machineSettings
-        // keeps the words).
-        ShellText {
-            Layout.fillWidth: true
-            text: "Blur, panel opacity, animation mode and speed, corner radius, window borders and gaps are the mode's own - each mode keeps its own. Everything else belongs to the profile, except the settings marked \u201cThe same in every profile\u201d."
-            role: "small"; muted: true; wrapMode: Text.Wrap
-        }
         // A page of this panel: the forward chevron, after the word, where
         // it reads as going on.
         ShellButton {
@@ -352,7 +342,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Backups"
-        description: "Once a day, at the first change, a copy of the whole setup is kept for 14 days: every profile with its modes and settings, wallpapers, shortcuts, monitors, the terminal's fastfetch and the notification rules. Restoring one keeps a copy of now first, then the shell restarts."
+        hint: "Once a day, at the first change, a copy of the whole setup is kept for 14 days: every profile with its modes and settings, wallpapers, shortcuts, monitors, fastfetch and the notification rules. Restoring one keeps a copy of now first, then the shell restarts."
 
         EmptyState {
             Layout.fillWidth: true

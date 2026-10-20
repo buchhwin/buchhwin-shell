@@ -46,7 +46,7 @@ ColumnLayout {
     SettingsSection {
         Layout.fillWidth: true
         title: "Default apps"
-        description: "Used when links and files are opened in this session. Plasma keeps its own defaults; reset a row to follow Plasma or the system again."
+        hint: "Used when links and files are opened in this session. Plasma keeps its own defaults; reset a row to follow Plasma or the system again."
 
         ShellText {
             Layout.fillWidth: true

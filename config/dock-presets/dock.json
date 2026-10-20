@@ -2,7 +2,7 @@
   "configVersion": 1,
   "id": "dock",
   "label": "Dock",
-  "description": "Your apps in the middle of the bottom edge, out of the way as soon as a window touches it.",
+  "description": "Your apps in the middle, hidden for windows",
   "options": {
     "visibility": "intellihide",
     "position": "bottom",

@@ -41,6 +41,7 @@ ColumnLayout {
         Layout.fillWidth: true
         title: "KDE Connect"
         description: KdeConnectService.summary
+        hint: "Install the KDE Connect app on your phone (Google Play, F-Droid or the App Store) and open it in the same network. Pairing can start on either device."
 
         ListRow {
             interactive: false
@@ -48,8 +49,8 @@ ColumnLayout {
             icon: "󰄜"
             active: KdeConnectService.running
             title: KdeConnectService.running ? "KDE Connect is running" : KdeConnectService.known ? "KDE Connect is not running" : "Checking …"
-            subtitle: KdeConnectService.running ? "Phones in the same network can find this computer"
-                : "The service starts automatically when you log in"
+            subtitle: KdeConnectService.running ? "Visible to phones in this network"
+                : "Starts by itself when you log in"
             ShellButton {
                 focusOnTab: true
                 visible: KdeConnectService.known && !KdeConnectService.running
@@ -75,12 +76,6 @@ ColumnLayout {
             icon: "󰌢"
             title: root.status.name || "This computer"
             subtitle: "Name shown on your phone"
-        }
-        ShellText {
-            Layout.fillWidth: true
-            text: "Install the KDE Connect app on your phone (Android: Google Play or F-Droid, iPhone: App Store) and open it while the phone is in the same network. Pairing can start on either device."
-            role: "caption"
-            wrapMode: Text.Wrap
         }
         Flow {
             Layout.fillWidth: true
@@ -114,7 +109,10 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: KdeConnectService.requests.length > 0
         title: "Pair requests"
-        description: "Accept only if the key matches the one shown on the phone. Requests also appear as notifications."
+        // Said where the buttons are rather than behind the mark: it is what
+        // to check before pressing Accept.
+        description: "Accept only if the key matches the one on the phone."
+        hint: "Requests also appear as notifications."
 
         Repeater {
             model: ScriptModel { values: KdeConnectService.requests.map(item => item.id) }
@@ -153,7 +151,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: KdeConnectService.running
         title: "My devices"
-        description: "Paired phones and tablets. Actions need the device to be connected."
+        hint: "Paired phones and tablets. Their actions need the device to be connected."
 
         EmptyState { Layout.fillWidth: true; visible: KdeConnectService.paired.length === 0; row: true; icon: "󰄜"; title: "No paired devices" }
         Repeater {
@@ -563,7 +561,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: KdeConnectService.running
         title: "Available devices"
-        description: "Devices in the same network with KDE Connect open that are not paired yet."
+        hint: "Devices in the same network with KDE Connect open that are not paired yet."
 
         EmptyState {
             Layout.fillWidth: true
