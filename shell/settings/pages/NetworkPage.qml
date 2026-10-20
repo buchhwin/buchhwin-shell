@@ -195,10 +195,23 @@ ColumnLayout {
                 // at its origin, the switch on top of the delete button.
                 Row {
                     spacing: Metrics.spaceSm
-                    // A tunnel goes for good, so the button asks twice.
+                    // The form below, on this tunnel (WireguardForm); not
+                    // while the form is open on another or a new one.
                     ShellButton {
                         focusOnTab: true
-                        visible: vpnRow.vpn.type === "wireguard"
+                        visible: vpnRow.vpn.type === "wireguard" && !wireguardForm.active
+                        compact: true
+                        variant: "ghost"
+                        icon: Icons.modify
+                        toolTip: "Edit this tunnel"
+                        enabledState: NetworkService.wgState.length === 0
+                        onClicked: { NetworkService.wgEdit(vpnRow.vpn.uuid); wireguardForm.active = true }
+                    }
+                    // A tunnel goes for good, so the button asks twice; not
+                    // the one open in the form.
+                    ShellButton {
+                        focusOnTab: true
+                        visible: vpnRow.vpn.type === "wireguard" && vpnRow.vpn.uuid !== NetworkService.wgEditUuid
                         compact: true
                         variant: "ghost"
                         icon: Icons.remove
@@ -228,10 +241,11 @@ ColumnLayout {
         Loader {
             id: wireguardForm
             Layout.fillWidth: true
-            // A key generated and not yet used brings the form back with it
-            // when the page is built again (NetworkService.wgPrivate).
+            // A key generated and not yet used, or a tunnel being edited,
+            // brings the form back with it when the page is built again
+            // (NetworkService.wgPrivate, wgEditUuid).
             active: false
-            Component.onCompleted: if (NetworkService.wgPrivate.length) active = true
+            Component.onCompleted: if (NetworkService.wgPrivate.length || NetworkService.wgEditUuid.length) active = true
             visible: active
             sourceComponent: WireguardForm { onDone: wireguardForm.active = false }
         }

@@ -488,7 +488,7 @@ Singleton {
     // the usual order is to generate, send the public key to the server's
     // admin and close Settings to wait, and the page is let go a minute later -
     // the form fills itself from here again.
-    property string wgState: ""          // "", "generating", "adding", "deleting"
+    property string wgState: ""          // "", "generating", "pubkey", "adding", "importing", "reading", "saving", "deleting"
     property string wgError: ""
     property string wgNotice: ""
     property string wgPrivate: ""
@@ -498,7 +498,13 @@ Singleton {
     property string wgPublicFrom: ""
     property string wgRequested: ""
     property string wgPending: ""
-    signal wgAdded()
+    // The tunnel the form edits (the pencil on its row), "" while it adds a
+    // new one. Held like wgPrivate: a form built again reads it again.
+    property string wgEditUuid: ""
+    // A tunnel added or saved: the form closes.
+    signal wgSaved()
+    // The tunnel wgEditUuid names, as the form's fields (wgRead).
+    signal wgShown(var tunnel)
 
     function wgTag(privateKey) { return Qt.md5(String(privateKey || "").trim()) }
     // The public key that belongs to what a form's private-key field holds,
@@ -509,6 +515,7 @@ Singleton {
         wgPrivate = ""
         wgPublic = ""
         wgPublicFrom = ""
+        wgEditUuid = ""
     }
 
     function wgGenerate() {
@@ -534,6 +541,32 @@ Singleton {
         wgState = "adding"
         wgPending = configText
         wgProc.command = [Paths.script("wireguard-helper.py"), "add", "--name=" + name, "--ifname=" + ifname]
+        wgProc.running = true
+        return true
+    }
+    // Editing a tunnel: the helper's show reads it (keys on its stdout, never
+    // in arguments), its update saves the form and keeps what the form does
+    // not show - the interface, autoconnect, routes, search domains.
+    function wgEdit(uuid) {
+        wgError = ""
+        wgNotice = ""
+        wgEditUuid = uuid
+    }
+    function wgRead() {
+        if (wgProc.running || !wgEditUuid.length) return false
+        wgState = "reading"
+        wgPending = ""
+        wgProc.command = [Paths.script("wireguard-helper.py"), "show", "--uuid=" + wgEditUuid]
+        wgProc.running = true
+        return true
+    }
+    function wgSave(name, configText) {
+        if (wgProc.running || !wgEditUuid.length) return false
+        wgError = ""
+        wgNotice = ""
+        wgState = "saving"
+        wgPending = configText
+        wgProc.command = [Paths.script("wireguard-helper.py"), "update", "--uuid=" + wgEditUuid, "--name=" + name]
         wgProc.running = true
         return true
     }
@@ -598,6 +631,8 @@ Singleton {
                 root.wgState = ""
                 if (!answer || !answer.ok) {
                     root.wgError = answer && answer.error ? answer.error : "The helper did not answer"
+                    // A tunnel that cannot be read closes the form again.
+                    if (state === "reading") root.wgEditUuid = ""
                 } else if (state === "generating") {
                     root.wgPrivate = answer["private"]
                     root.wgPublic = answer["public"]
@@ -608,7 +643,22 @@ Singleton {
                 } else if (state === "adding" || state === "importing") {
                     root.wgNotice = answer.warning || "Added. It is in Plasma's network list too."
                     root.wgForget()
-                    root.wgAdded()
+                    root.wgSaved()
+                } else if (state === "reading") {
+                    // The stored key's public half, unless a generated key
+                    // is waiting to replace it.
+                    if (!root.wgPrivate.length && answer["public"]) {
+                        root.wgPublic = answer["public"]
+                        root.wgPublicFrom = root.wgTag(answer.tunnel.privateKey)
+                    }
+                    root.wgShown(answer.tunnel)
+                } else if (state === "saving") {
+                    // NetworkManager does not apply a change to a tunnel that is up.
+                    const item = root.vpns.find(vpn => vpn.uuid === root.wgEditUuid)
+                    root.wgNotice = answer.warning
+                        || (item && item.active ? "Saved. Switch the tunnel off and on to use the changes." : "Saved.")
+                    root.wgForget()
+                    root.wgSaved()
                 }
                 root.wgRequested = ""
                 if (state === "importing") PanelService.open("settings", { page: "network" })

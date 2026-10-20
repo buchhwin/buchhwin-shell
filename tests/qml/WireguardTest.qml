@@ -22,6 +22,13 @@ ShellRoot {
         T.eq(W.config(form), "[Interface]\nPrivateKey = " + key + "\nAddress = 10.0.0.2/32\nDNS = 10.0.0.1\n\n[Peer]\nPublicKey = "
              + key + "\nEndpoint = vpn.example.org:51820\nAllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 25\n",
              "the form as a wg-quick file")
+        // Editing: Save waits for a change; the tunnel read carries more
+        // (its interface) than the form compares.
+        const read = Object.assign({ ifname: "wg-office" }, form)
+        T.eq(W.changed(form, read), false, "the form as read is no change")
+        T.eq(W.changed(Object.assign({}, form, { endpoint: " vpn.example.org:51820 " }), read), false, "nor are spaces around a value")
+        T.eq(W.changed(Object.assign({}, form, { keepalive: "" }), read), true, "an emptied field is one")
+        T.eq(W.changed(Object.assign({}, form, { presharedKey: key }), read), true, "and so is a new key")
         T.eq([W.nameFromPath("/home/x/office-vpn.conf"), W.nameFromPath("")], ["office-vpn", "WireGuard"], "a file's name")
         T.eq(W.nameFromPath("/home/x/home.config"), "home", "a .config file loses its extension too")
         // The public key belongs to the private key it was made from: a

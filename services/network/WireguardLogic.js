@@ -1,6 +1,6 @@
 .pragma library
 
-// The "New WireGuard tunnel" form (Settings > Network): what each field must
+// The WireGuard form (Settings > Network, new or edited): what each field must
 // look like, the interface name a tunnel's name turns into, and the wg-quick
 // configuration the form becomes. scripts/wireguard-helper.py parses that
 // text and checks it again, so a file and the form take one road into
@@ -76,6 +76,14 @@ function config(form) {
     lines.push("Endpoint = " + String(f.endpoint).trim(), "AllowedIPs = " + list(f.allowedIps).join(", "))
     if (String(f.keepalive || "").trim().length) lines.push("PersistentKeepalive = " + String(f.keepalive).trim())
     return lines.join("\n") + "\n"
+}
+
+// Whether the form differs from the tunnel it was filled from (editing one):
+// Save waits for a change. Spaces around a value are no change.
+function changed(form, tunnel) {
+    const f = form || {}
+    const t = tunnel || {}
+    return Object.keys(f).some(key => String(f[key] || "").trim() !== String(t[key] || "").trim())
 }
 
 // A file's name as the tunnel's: "office-vpn.conf" -> "office-vpn".
