@@ -42,7 +42,7 @@ PanelWindow {
                           targetScreen ? targetScreen.width : 0,
                           spot === "widget" ? "end" : spot, Metrics.screenMargin,
                           barEdge, targetScreen ? targetScreen.height : 0)
-    readonly property var notch: LayoutService.notchRect(screenName)
+    readonly property var notch: Origin.notchBody(LayoutService.notchRect(screenName), NotchService.states[screenName])
         || (spot === "widget" ? LayoutService.barItemRect(screenName, "notificationIndicator") : null)
         || barPlace
     // Downwards from a top edge, upwards from a bottom one, sideways from a

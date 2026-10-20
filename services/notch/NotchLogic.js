@@ -398,6 +398,18 @@ function hoverOpens(mode) {
     return hoverMode(mode) === "hover"
 }
 
+// Whether the hover's delay may open the overview now: the pointer still on
+// the notch, no swipe in progress, no panel up - and nothing on display. A
+// notification, a volume level or a track widens the notch, and a pointer
+// resting near the top found the notch grown under it: the overview opened,
+// took the display away from the notch, and the notification jumped out into
+// a popup of its own over the overview. The pointer that was there first did
+// not ask for the overview; it opens once the display has ended, if the
+// pointer is still there. Unit tested.
+function hoverMayOpen(hovered, swiped, panelsOpen, displaying) {
+    return hovered === true && swiped !== true && panelsOpen !== true && displaying !== true
+}
+
 // What a click on the *collapsed* notch does: "expand", "dashboard" or "".
 function clickResult(mode, action) {
     const which = hoverMode(mode)

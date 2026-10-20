@@ -342,6 +342,13 @@ ShellRoot {
              ["clipboard", "playPause", "none", "none"], "the middle and right buttons do nothing unless set")
         T.ok(L.NOTCH_PRESET_OPTIONS.indexOf("middleAction") >= 0 && L.NOTCH_PRESET_OPTIONS.indexOf("rightAction") >= 0,
              "a preset carries what the other two buttons do")
+        // The hover waits for a display: a notification widened the notch
+        // under a resting pointer, the overview opened and the notification
+        // jumped out into a popup over it.
+        T.eq(N.hoverMayOpen(true, false, false, false), true, "the pointer stayed: the overview opens")
+        T.eq(N.hoverMayOpen(true, false, false, true), false, "not while the notch shows a notification, a level or a track")
+        T.eq([N.hoverMayOpen(false, false, false, false), N.hoverMayOpen(true, true, false, false), N.hoverMayOpen(true, false, true, false)],
+             [false, false, false], "nor once the pointer left, during a swipe, or with a panel up")
         T.eq([N.clickResult("hover", "dashboard"), N.clickResult("hover", "expand"), N.clickResult("hover", "evil"),
               N.clickResult("click", "dashboard"), N.clickResult("off", "expand")],
              ["dashboard", "expand", "dashboard", "expand", "dashboard"], "what a click on the collapsed notch does")

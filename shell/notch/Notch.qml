@@ -81,6 +81,9 @@ Variants {
         property bool displayOpen: false
         readonly property bool showingNotification: displaying && NotchService.displayKind === "notification"
         onShowingNotificationChanged: if (!showingNotification) closeDisplay()
+        // The hover waited for the display (Logic.hoverMayOpen); it opens the
+        // overview now if the pointer stayed.
+        onDisplayingChanged: if (!displaying && hover.hovered && NotchService.expandOnHover && !hoverExpanded) openTimer.restart()
         onDisplayContentChanged: if (displayOpen) closeDisplay()
         function closeDisplay() {
             displayOpen = false
@@ -409,7 +412,8 @@ Variants {
         Timer {
             id: openTimer
             interval: NotchService.openDelay
-            onTriggered: if (hover.hovered && !window.swiped && PanelService.active.length === 0) window.hoverExpanded = true
+            onTriggered: if (Logic.hoverMayOpen(hover.hovered, window.swiped, PanelService.active.length > 0, window.displaying))
+                window.hoverExpanded = true
         }
         Timer {
             id: closeTimer

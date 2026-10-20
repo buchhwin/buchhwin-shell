@@ -140,6 +140,16 @@ ShellRoot {
         T.eq(O.barSpot(38, 30, "start", 8, "top", 1080).x, 8,
              "a screen narrower than two margins still starts at the margin")
 
+        // Out from under the notch as it stands: the open overview's foot.
+        const collapsed = { x: 867, y: 0, width: 186, height: 34 }
+        T.eq(O.notchBody(collapsed, { expanded: false, height: 34 }), collapsed, "collapsed: the rectangle the layout knows")
+        T.eq(O.notchBody(collapsed, { expanded: true, height: 172 }), { x: 867, y: 0, width: 186, height: 172 },
+             "open: down to the overview's foot, centred as before")
+        T.eq(O.under(O.notchBody(collapsed, { expanded: true, height: 172 }), 380, 1920, 16, 8).y, 180,
+             "so a popup comes out below the open overview, not over it")
+        T.eq(O.notchBody(collapsed, undefined), collapsed, "a notch that has not reported yet")
+        T.eq(O.notchBody(null, { expanded: true, height: 172 }), null, "no notch on that screen")
+
         T.finish("OriginTest")
     }
 }
