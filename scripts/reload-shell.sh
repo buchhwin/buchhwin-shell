@@ -189,9 +189,14 @@ for name in $(compgen -e); do
       | INVOCATION_ID | JOURNAL_STREAM | SYSTEMD_EXEC_PID | MANAGERPID | NOTIFY_SOCKET)
       caller_only+=(-u "$name") ;;
     # What VS Code's extension host hands its agents and terminals: Copilot's
-    # and the agent's switches, Electron's GTK accessibility switch.
+    # and the agent's switches, Electron's GTK accessibility switch, and
+    # Chromium's own two for itself - EGL_PLATFORM=wayland (its Wayland
+    # backend) and FC_FONTATIONS. The first reached every application the
+    # shell started after a deploy from VS Code, and Citrix's session window,
+    # an X11 program, crashed on its first EGL call: the desktop "loaded" for
+    # two minutes and never came (20.10.).
     COPILOT_* | MCP_CONNECTION_NONBLOCKING | APPLICATION_INSIGHTS_NO_STATSBEAT | MXC_BIN_DIR \
-      | NoDefaultCurrentDirectoryInExePath | NO_AT_BRIDGE)
+      | NoDefaultCurrentDirectoryInExePath | NO_AT_BRIDGE | EGL_PLATFORM | FC_FONTATIONS)
       editor_only+=(-u "$name") ;;
     # Hyprland's own (its token places what it starts) stay whatever their
     # names look like.

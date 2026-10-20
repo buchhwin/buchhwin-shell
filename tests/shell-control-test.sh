@@ -341,10 +341,10 @@ check 'started_with GIT_ASKPASS=/usr/bin/ksshaskpass && started_with "ZDOTDIR=$s
 # corepack setting and the editor's GTK accessibility switch go too, and the
 # extension host's own variables; a session's own values of the same names
 # stay when no agent or editor is the caller.
-reload_env CLAUDECODE=1 VSCODE_PID=9 GIT_EDITOR=true COREPACK_ENABLE_AUTO_PIN=0 NO_AT_BRIDGE=1 \
+reload_env CLAUDECODE=1 VSCODE_PID=9 GIT_EDITOR=true COREPACK_ENABLE_AUTO_PIN=0 NO_AT_BRIDGE=1 EGL_PLATFORM=wayland FC_FONTATIONS=1 \
   COPILOT_OTEL_FILE_EXPORTER_PATH=/dev/null MCP_CONNECTION_NONBLOCKING=true APPLICATION_INSIGHTS_NO_STATSBEAT=true \
   MXC_BIN_DIR=/code/bin NoDefaultCurrentDirectoryInExePath=1
-for name in GIT_EDITOR COREPACK_ENABLE_AUTO_PIN NO_AT_BRIDGE COPILOT_OTEL_FILE_EXPORTER_PATH MCP_CONNECTION_NONBLOCKING \
+for name in GIT_EDITOR COREPACK_ENABLE_AUTO_PIN NO_AT_BRIDGE EGL_PLATFORM FC_FONTATIONS COPILOT_OTEL_FILE_EXPORTER_PATH MCP_CONNECTION_NONBLOCKING \
     APPLICATION_INSIGHTS_NO_STATSBEAT MXC_BIN_DIR NoDefaultCurrentDirectoryInExePath; do
   check 'started_without "$name"' "the shell is started without the agent's or editor's $name"
 done
