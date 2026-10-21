@@ -356,6 +356,9 @@ hl.bind(keyFor("SUPER + CTRL + DOWN"), hl.dsp.window.move({ direction = "down" }
 -- shell knows which monitor that is. `shellOr` falls back to the old, global
 -- behaviour (Hyprland's own dispatcher) while no shell is running.
 -- Moving a window keeps the user on the current workspace.
+-- `dont_inhibit`: these keys reach Hyprland even while a window holds the
+-- keyboard. A VM console (virt-manager, SPICE) asks to inhibit shortcuts, and
+-- Super+1 went to the guest: no way back to a workspace without the mouse.
 --
 -- Written out rather than in a loop, and each with its command spelled out:
 -- these go through `keyFor` like every other bind, so Settings > Shortcuts
@@ -363,24 +366,24 @@ hl.bind(keyFor("SUPER + CTRL + DOWN"), hl.dsp.window.move({ direction = "down" }
 -- as the literal string `keyFor("SUPER + 1")` (ShortcutLogic.parseDefaults),
 -- and scripts/lib/checks.py reads the action out of `shellOr("…")` the same
 -- way, so a helper that built the string would hide it from the drift check.
-hl.bind(keyFor("SUPER + 1"), shellOr("workspaces switchTo 1", hl.dsp.focus({ workspace = 1 })), { description = "Go to workspace 1" })
-hl.bind(keyFor("SUPER + 2"), shellOr("workspaces switchTo 2", hl.dsp.focus({ workspace = 2 })), { description = "Go to workspace 2" })
-hl.bind(keyFor("SUPER + 3"), shellOr("workspaces switchTo 3", hl.dsp.focus({ workspace = 3 })), { description = "Go to workspace 3" })
-hl.bind(keyFor("SUPER + 4"), shellOr("workspaces switchTo 4", hl.dsp.focus({ workspace = 4 })), { description = "Go to workspace 4" })
-hl.bind(keyFor("SUPER + 5"), shellOr("workspaces switchTo 5", hl.dsp.focus({ workspace = 5 })), { description = "Go to workspace 5" })
-hl.bind(keyFor("SUPER + 6"), shellOr("workspaces switchTo 6", hl.dsp.focus({ workspace = 6 })), { description = "Go to workspace 6" })
-hl.bind(keyFor("SUPER + 7"), shellOr("workspaces switchTo 7", hl.dsp.focus({ workspace = 7 })), { description = "Go to workspace 7" })
-hl.bind(keyFor("SUPER + 8"), shellOr("workspaces switchTo 8", hl.dsp.focus({ workspace = 8 })), { description = "Go to workspace 8" })
-hl.bind(keyFor("SUPER + 9"), shellOr("workspaces switchTo 9", hl.dsp.focus({ workspace = 9 })), { description = "Go to workspace 9" })
-hl.bind(keyFor("SUPER + SHIFT + 1"), shellOr("workspaces move 1", hl.dsp.window.move({ workspace = 1, follow = false })), { description = "Move window to workspace 1" })
-hl.bind(keyFor("SUPER + SHIFT + 2"), shellOr("workspaces move 2", hl.dsp.window.move({ workspace = 2, follow = false })), { description = "Move window to workspace 2" })
-hl.bind(keyFor("SUPER + SHIFT + 3"), shellOr("workspaces move 3", hl.dsp.window.move({ workspace = 3, follow = false })), { description = "Move window to workspace 3" })
-hl.bind(keyFor("SUPER + SHIFT + 4"), shellOr("workspaces move 4", hl.dsp.window.move({ workspace = 4, follow = false })), { description = "Move window to workspace 4" })
-hl.bind(keyFor("SUPER + SHIFT + 5"), shellOr("workspaces move 5", hl.dsp.window.move({ workspace = 5, follow = false })), { description = "Move window to workspace 5" })
-hl.bind(keyFor("SUPER + SHIFT + 6"), shellOr("workspaces move 6", hl.dsp.window.move({ workspace = 6, follow = false })), { description = "Move window to workspace 6" })
-hl.bind(keyFor("SUPER + SHIFT + 7"), shellOr("workspaces move 7", hl.dsp.window.move({ workspace = 7, follow = false })), { description = "Move window to workspace 7" })
-hl.bind(keyFor("SUPER + SHIFT + 8"), shellOr("workspaces move 8", hl.dsp.window.move({ workspace = 8, follow = false })), { description = "Move window to workspace 8" })
-hl.bind(keyFor("SUPER + SHIFT + 9"), shellOr("workspaces move 9", hl.dsp.window.move({ workspace = 9, follow = false })), { description = "Move window to workspace 9" })
+hl.bind(keyFor("SUPER + 1"), shellOr("workspaces switchTo 1", hl.dsp.focus({ workspace = 1 })), { dont_inhibit = true, description = "Go to workspace 1" })
+hl.bind(keyFor("SUPER + 2"), shellOr("workspaces switchTo 2", hl.dsp.focus({ workspace = 2 })), { dont_inhibit = true, description = "Go to workspace 2" })
+hl.bind(keyFor("SUPER + 3"), shellOr("workspaces switchTo 3", hl.dsp.focus({ workspace = 3 })), { dont_inhibit = true, description = "Go to workspace 3" })
+hl.bind(keyFor("SUPER + 4"), shellOr("workspaces switchTo 4", hl.dsp.focus({ workspace = 4 })), { dont_inhibit = true, description = "Go to workspace 4" })
+hl.bind(keyFor("SUPER + 5"), shellOr("workspaces switchTo 5", hl.dsp.focus({ workspace = 5 })), { dont_inhibit = true, description = "Go to workspace 5" })
+hl.bind(keyFor("SUPER + 6"), shellOr("workspaces switchTo 6", hl.dsp.focus({ workspace = 6 })), { dont_inhibit = true, description = "Go to workspace 6" })
+hl.bind(keyFor("SUPER + 7"), shellOr("workspaces switchTo 7", hl.dsp.focus({ workspace = 7 })), { dont_inhibit = true, description = "Go to workspace 7" })
+hl.bind(keyFor("SUPER + 8"), shellOr("workspaces switchTo 8", hl.dsp.focus({ workspace = 8 })), { dont_inhibit = true, description = "Go to workspace 8" })
+hl.bind(keyFor("SUPER + 9"), shellOr("workspaces switchTo 9", hl.dsp.focus({ workspace = 9 })), { dont_inhibit = true, description = "Go to workspace 9" })
+hl.bind(keyFor("SUPER + SHIFT + 1"), shellOr("workspaces move 1", hl.dsp.window.move({ workspace = 1, follow = false })), { dont_inhibit = true, description = "Move window to workspace 1" })
+hl.bind(keyFor("SUPER + SHIFT + 2"), shellOr("workspaces move 2", hl.dsp.window.move({ workspace = 2, follow = false })), { dont_inhibit = true, description = "Move window to workspace 2" })
+hl.bind(keyFor("SUPER + SHIFT + 3"), shellOr("workspaces move 3", hl.dsp.window.move({ workspace = 3, follow = false })), { dont_inhibit = true, description = "Move window to workspace 3" })
+hl.bind(keyFor("SUPER + SHIFT + 4"), shellOr("workspaces move 4", hl.dsp.window.move({ workspace = 4, follow = false })), { dont_inhibit = true, description = "Move window to workspace 4" })
+hl.bind(keyFor("SUPER + SHIFT + 5"), shellOr("workspaces move 5", hl.dsp.window.move({ workspace = 5, follow = false })), { dont_inhibit = true, description = "Move window to workspace 5" })
+hl.bind(keyFor("SUPER + SHIFT + 6"), shellOr("workspaces move 6", hl.dsp.window.move({ workspace = 6, follow = false })), { dont_inhibit = true, description = "Move window to workspace 6" })
+hl.bind(keyFor("SUPER + SHIFT + 7"), shellOr("workspaces move 7", hl.dsp.window.move({ workspace = 7, follow = false })), { dont_inhibit = true, description = "Move window to workspace 7" })
+hl.bind(keyFor("SUPER + SHIFT + 8"), shellOr("workspaces move 8", hl.dsp.window.move({ workspace = 8, follow = false })), { dont_inhibit = true, description = "Move window to workspace 8" })
+hl.bind(keyFor("SUPER + SHIFT + 9"), shellOr("workspaces move 9", hl.dsp.window.move({ workspace = 9, follow = false })), { dont_inhibit = true, description = "Move window to workspace 9" })
 
 -- The neighbouring workspace of the monitor under the focus: the next or
 -- previous pip of its row, one new one past the last (WorkspaceLogic.step),
