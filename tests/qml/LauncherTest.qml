@@ -97,6 +97,24 @@ ShellRoot {
              ["citrix-workspace", "citrix-workspace", "", ""], "Citrix Workspace's window is its entry; the session and the rest go the usual way")
         T.eq(WindowClass.aliasFor("toString"), "", "only the table's own names")
 
+        // A window whose class names no entry: the app its process runs as,
+        // from the systemd unit the launcher named after the entry.
+        const cgroup = unit => "0::/user.slice/user-1000.slice/user@1000.service/app.slice/" + unit + "\n"
+        T.eq(WindowClass.unitEntryIds(cgroup("app-flatpak-com.modrinth.ModrinthApp-2745532194.scope")),
+             ["com.modrinth.ModrinthApp", "flatpak-com.modrinth.ModrinthApp"], "a Flatpak's scope names its entry")
+        T.eq(WindowClass.unitEntryIds(cgroup("app-buchhwin-brave\\x2dbrowser-7220.scope"))[0], "brave-browser",
+             "the shell's own scope, the id unescaped")
+        T.eq(WindowClass.unitEntryIds(cgroup("app-org.chromium.Chromium-7220.scope")), ["org.chromium.Chromium"], "a scope without a launcher")
+        T.eq(WindowClass.unitEntryIds("0::/app.slice/app-flatpak-com.modrinth.ModrinthApp-27.scope "), ["com.modrinth.ModrinthApp", "flatpak-com.modrinth.ModrinthApp"],
+             "a line with a space after it")
+        T.eq(WindowClass.unitEntryIds(cgroup("app-org.kde.dolphin@0a1b2c.service")), ["org.kde.dolphin"], "Plasma's service")
+        T.eq(WindowClass.unitEntryIds(cgroup("app-gnome-org.gnome.Nautilus@12.service"))[0], "org.gnome.Nautilus", "a launcher before a service's id")
+        T.eq([WindowClass.unitEntryIds(cgroup("session-3.scope")), WindowClass.unitEntryIds(cgroup("plasma-kwin.service")),
+              WindowClass.unitEntryIds(cgroup("app-.scope")), WindowClass.unitEntryIds(""), WindowClass.unitEntryIds("garbage")],
+             [[], [], [], [], []], "no app's unit, no entry")
+        T.eq([WindowClass.unitEntryUsable(["Game"]), WindowClass.unitEntryUsable(["System", "TerminalEmulator"]), WindowClass.unitEntryUsable(null)],
+             [true, false, true], "a terminal's unit runs every program started in it: never its icon")
+
         T.finish("LauncherTest")
     }
 }

@@ -161,6 +161,13 @@ Singleton {
         enabled: root.enabled
         function onValuesChanged() { Qt.callLater(root.entriesChanged) }
     }
+    // A window's app found by its process (LauncherService.unitEntries): the
+    // resolver kept "no entry" for its class until now.
+    Connections {
+        target: LauncherService
+        enabled: root.enabled
+        function onUnitEntriesChanged() { Qt.callLater(root.entriesChanged) }
+    }
 
     function pinOf(entry) {
         return { id: entry.id, name: entry.name, icon: entry.icon, startupClass: entry.startupClass }

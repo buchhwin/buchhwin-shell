@@ -548,16 +548,125 @@ Singleton {
 
     // The desktop entry a window's class stands for: a known alias first
     // (WindowClassLogic - Citrix Workspace's window says "selfservice"), then
-    // Quickshell's heuristic lookup and the id itself. The dock, the overview,
+    // Quickshell's heuristic lookup and the id itself, and last the entry
+    // the window's process runs as (unitEntries). The dock, the overview,
     // Alt+Tab, the window title widget and the session's apps ask here, so a
     // window has the same app, and the same icon, everywhere.
     function entryForClass(cls) {
         const name = String(cls || "")
         if (!name.length) return null
+        return classEntry(name) || unitEntry(name)
+    }
+    function classEntry(name) {
         const alias = WindowClass.aliasFor(name)
         const aliased = alias.length ? DesktopEntries.byId(alias) : null
         return aliased || DesktopEntries.heuristicLookup(name) || DesktopEntries.byId(name)
             || DesktopEntries.byId(name.toLowerCase()) || null
+    }
+
+    // Windows whose class names no entry - Modrinth's Flatpak says
+    // "modrinth-app-wrapped", the game it starts "Minecraft* 1.21.1" - get
+    // the entry their process runs as: the systemd unit the launcher named
+    // after it (WindowClass.unitEntryIds), read from /proc/<pid>/cgroup.
+    // Lower-case class -> entry id, once found; a process that gave no answer
+    // is not asked again (`unitMisses`, by pid), but the same class from
+    // another process is - started from a terminal first, from the launcher
+    // later. Asked only for such windows, when the windows change.
+    // A terminal's unit is no answer: it runs every program started in it.
+    // A new answer moves `entriesRevision`, which the dock and the session's
+    // apps key their own caches by.
+    property var unitEntries: ({})
+    property var unitMisses: ({})
+    function unitEntry(name) {
+        const id = unitEntries[name.toLowerCase()]
+        return id ? DesktopEntries.byId(id) : null
+    }
+    function resolveWindows() {
+        if (cgroupProc.running) {
+            resolveTimer.restart()
+            return
+        }
+        const asked = {}
+        const args = []
+        let waiting = false
+        for (const toplevel of Hyprland.toplevels.values) {
+            const ipc = toplevel.lastIpcObject || {}
+            const cls = toplevel.wayland && toplevel.wayland.appId ? toplevel.wayland.appId : (ipc.class || ipc.initialClass || "")
+            const key = String(cls || "").toLowerCase()
+            if (!key.length || asked[key] !== undefined || unitEntries[key] || classEntry(cls)) continue
+            // Hyprland's record of a window (lastIpcObject) is filled only
+            // by refreshToplevels(): asked for below, then looked at again.
+            if (!(ipc.pid > 0)) {
+                waiting = true
+                continue
+            }
+            if (unitMisses[String(ipc.pid)]) continue
+            asked[key] = String(ipc.pid)
+            args.push(String(ipc.pid))
+        }
+        if (args.length) {
+            cgroupProc.asked = asked
+            cgroupProc.command = ["sh", "-c", "for p; do printf '%s\\t' \"$p\"; tr '\\n' ' ' < \"/proc/$p/cgroup\" 2>/dev/null; printf '\\n'; done",
+                                  "sh"].concat(args)
+            cgroupProc.running = true
+        }
+        if (waiting && resolveTimer.tries < 5) {
+            resolveTimer.tries += 1
+            Hyprland.refreshToplevels()
+            resolveTimer.restart()
+        }
+    }
+    // One line per process, "<pid>\t<its cgroup>" - empty for one that is
+    // gone, so no window ever gets another process's answer.
+    Process {
+        id: cgroupProc
+        property var asked: ({})
+        stderr: ErrorLog { label: "LauncherService.cgroups" }
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const byPid = {}
+                for (const line of text.split("\n")) {
+                    const tab = line.indexOf("\t")
+                    if (tab > 0) byPid[line.slice(0, tab)] = line.slice(tab + 1)
+                }
+                const found = Object.assign({}, root.unitEntries)
+                let any = false
+                for (const key of Object.keys(cgroupProc.asked)) {
+                    const pid = cgroupProc.asked[key]
+                    let id = ""
+                    for (const candidate of WindowClass.unitEntryIds(byPid[pid] || "")) {
+                        const entry = DesktopEntries.byId(candidate)
+                        if (entry && WindowClass.unitEntryUsable(entry.categories)) {
+                            id = entry.id
+                            break
+                        }
+                    }
+                    // A miss is kept outside any binding: nothing redraws for it.
+                    if (!id.length) {
+                        root.unitMisses[pid] = true
+                        continue
+                    }
+                    found[key] = id
+                    any = true
+                }
+                if (!any) return
+                root.unitEntries = found
+                root.entriesRevision += 1
+            }
+        }
+    }
+    Timer {
+        id: resolveTimer
+        property int tries: 0
+        interval: 400
+        onTriggered: root.resolveWindows()
+    }
+    Connections {
+        target: Hyprland.toplevels
+        function onValuesChanged() {
+            resolveTimer.tries = 0
+            resolveTimer.restart()
+        }
     }
 
     function windowResults(query) {
