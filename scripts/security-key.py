@@ -99,13 +99,42 @@ def devices(listing):
     return names
 
 
-def devices_now():
+def fido2_token(*args):
+    """fido2-token's output, or None when it cannot run."""
     command = os.environ.get("BUCHHWIN_FIDO2_TOKEN", "fido2-token")
     try:
-        result = subprocess.run([command, "-L"], capture_output=True, text=True, timeout=5)
+        result = subprocess.run([command] + list(args), capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return devices(result.stdout) if result.returncode == 0 else []
+    return result.stdout if result.returncode == 0 else ""
+
+
+def devices_now():
+    listing = fido2_token("-L")
+    return None if listing is None else devices(listing)
+
+
+def pin_state(info):
+    """Whether a key has a PIN and how many tries it has left, from
+    `fido2-token -I` (asks the key nothing that needs the PIN):
+    "options: rk, up, noplat, clientPin, ..." and "pin retries: 8"."""
+    state = {"set": None, "retries": None}
+    for line in str(info or "").splitlines():
+        key, _, value = line.partition(":")
+        key = key.strip().lower()
+        if key == "options":
+            options = [option.strip() for option in value.split(",")]
+            state["set"] = True if "clientPin" in options else False if "noclientPin" in options else None
+        elif key == "pin retries" and value.strip().isdigit():
+            state["retries"] = int(value.strip())
+    return state
+
+
+def pins_now():
+    """pin_state of every plugged key, in the order devices_now names them."""
+    listing = fido2_token("-L") or ""
+    paths = [line.split(":", 1)[0].strip() for line in listing.splitlines() if ":" in line]
+    return [pin_state(fido2_token("-I", path)) for path in paths]
 
 
 def family(os_release=None):
@@ -150,7 +179,8 @@ def status():
     return {"ok": True, "module": module_installed(), "tool": bool(tool()),
             "service": installed is not None and "pam_u2f.so" in installed,
             "serviceCurrent": installed is not None and installed == SOURCE.read_text(encoding="utf-8"),
-            "keys": credentials(mapping, user()), "devices": found or [], "fido2Token": found is not None}
+            "keys": credentials(mapping, user()), "devices": found or [], "fido2Token": found is not None,
+            "pins": pins_now() if found else []}
 
 
 def write_mapping(text):

@@ -53,6 +53,13 @@ check(module.devices(listing) == ["Yubico YubiKey OTP+FIDO+CCID", "Nitrokey 3"],
 check(module.devices("") == [], "no device")
 check(module.devices("/dev/hidraw1: vendor=0x1, product=0x2\n") == ["Security key"], "a device without a name")
 
+# ---- fido2-token -I: the PIN's tries, read without the PIN -------------------
+info = "proto: 0x02\noptions: rk, up, noplat, clientPin, credentialMgmtPreview\npin retries: 8\nuv retries: undefined\n"
+check(module.pin_state(info) == {"set": True, "retries": 8}, "a key with a PIN and its tries: %s" % module.pin_state(info))
+check(module.pin_state("options: rk, up, noclientPin\npin retries: 8\n")["set"] is False, "a key without a PIN")
+check(module.pin_state("") == {"set": None, "retries": None}, "nothing known")
+check(module.pin_state("pin retries: undefined\n")["retries"] is None, "a count that is no number is none")
+
 # ---- the distribution ----------------------------------------------------------
 with tempfile.TemporaryDirectory() as tmp:
     def os_release(text):
@@ -83,12 +90,14 @@ with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
     code = module.main(["nonsense"])
 check(code == 2 and "usage" in err.getvalue(), "an unknown command says how to call it")
 module.devices_now = lambda: ["Test key"]
+module.pins_now = lambda: [{"set": True, "retries": 7}]
 out = io.StringIO()
 with contextlib.redirect_stdout(out):
     code = module.main(["status"])
 answer = json.loads(out.getvalue())
 check(code == 0 and answer["ok"] and answer["devices"] == ["Test key"], "status is one JSON object: %s" % answer)
-check(set(answer) == {"ok", "module", "tool", "service", "serviceCurrent", "keys", "devices", "fido2Token"},
+check(answer["pins"] == [{"set": True, "retries": 7}], "with each key's PIN tries")
+check(set(answer) == {"ok", "module", "tool", "service", "serviceCurrent", "keys", "devices", "fido2Token", "pins"},
       "with the fields the shell reads")
 
 if failures:

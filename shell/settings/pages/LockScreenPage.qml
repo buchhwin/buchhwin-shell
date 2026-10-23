@@ -538,6 +538,8 @@ ColumnLayout {
                 : SecurityKeyService.keys === 0 ? "No key registered"
                 : (SecurityKeyService.keys === 1 ? "1 key registered" : SecurityKeyService.keys + " keys registered")
                   + (SecurityKeyService.setUp ? "" : " · not on the lock screen")
+                  + (SecurityKeyService.pinRetries >= 0
+                     ? " · PIN: " + SecurityKeyService.pinRetries + (SecurityKeyService.pinRetries === 1 ? " try left" : " tries left") : "")
             ShellButton {
                 focusOnTab: true
                 icon: Icons.refresh
@@ -593,6 +595,16 @@ ColumnLayout {
                 enabledState: !SecurityKeyService.busy && SecurityKeyService.realSession
                 onClicked: SecurityKeyService.run("off")
             }
+        }
+        // Few tries left: what a wrong PIN now costs.
+        ShellText {
+            Layout.fillWidth: true
+            visible: SecurityKeyService.pinRetries >= 0 && SecurityKeyService.pinRetries <= 3
+            text: "Only " + SecurityKeyService.pinRetries + " PIN " + (SecurityKeyService.pinRetries === 1 ? "try" : "tries")
+                + " left on this key. The right PIN, here or at a sign-in, sets them back; at 0 the key's FIDO part has to be reset, which removes its other sign-ins too."
+            role: "caption"
+            color: Colors.danger
+            wrapMode: Text.Wrap
         }
         ShellText {
             Layout.fillWidth: true

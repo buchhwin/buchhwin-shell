@@ -21,7 +21,7 @@ Singleton {
     property int trackers: 0
     // `scripts/security-key.py status`; `known` once it answered.
     property var state: ({ known: false, module: false, tool: false, service: false, serviceCurrent: false,
-                           keys: 0, devices: [], fido2Token: false })
+                           keys: 0, devices: [], fido2Token: false, pins: [] })
     readonly property bool known: state.known === true
     readonly property bool installed: state.module === true && state.tool === true
     // The lock asks a key: its PAM file is in place and a key is registered.
@@ -30,6 +30,13 @@ Singleton {
     readonly property bool outdated: state.service === true && state.serviceCurrent !== true
     readonly property int keys: state.keys || 0
     readonly property var devices: state.devices || []
+    // The first plugged key's PIN tries, read without the PIN (fido2-token -I);
+    // -1 while unknown or for a key without a PIN. A right PIN sets them back
+    // to 8 on a YubiKey; at 0 its FIDO part has to be reset.
+    readonly property int pinRetries: {
+        const pin = (state.pins || [])[0]
+        return pin && pin.set === true && typeof pin.retries === "number" ? pin.retries : -1
+    }
     readonly property bool busy: job.busy
     property string message: ""
     property bool messageError: false
