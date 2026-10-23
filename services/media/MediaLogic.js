@@ -8,6 +8,28 @@ function normalize(value) {
     return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "")
 }
 
+// The players worth a row of their own. Two repeat another one: playerctld,
+// a proxy for whichever player plays, and a browser's own player (Chrome's
+// "Chrome", org.mpris.MediaPlayer2.chromium.instanceN) while Plasma's
+// browser integration shows the same track - the same video twice in the
+// control center, "Google Chrome" and "Chrome". The integration's row stays:
+// it names the browser's desktop entry, and keeps a row per tab. The two
+// titles differ - Chrome's is the tab's ("(59) Song - YouTube"), the
+// integration's the media session's ("Song") - so one has to hold the other,
+// letters and digits only, and not by a few letters.
+function shownPlayers(players) {
+    const bus = player => String(player && player.dbusName || "")
+    const integration = player => /\.plasma-browser-integration$/.test(bus(player))
+    const list = Array.prototype.slice.call(players || []).filter(player => player && !/\.playerctld$/.test(bus(player)))
+    const title = player => normalize(player.trackTitle)
+    const mirrored = list.filter(integration).map(title).filter(text => text.length >= 6)
+    return list.filter(player => {
+        if (integration(player)) return true
+        const own = title(player)
+        return own.length < 6 || !mirrored.some(text => own.indexOf(text) >= 0 || text.indexOf(own) >= 0)
+    })
+}
+
 // Names an MPRIS player is known by: identity ("Elisa"), desktop entry and
 // its last segment ("org.kde.elisa" → "elisa") and the bus name
 // ("org.mpris.MediaPlayer2.chromium.instance42" → "chromium", pid 42).

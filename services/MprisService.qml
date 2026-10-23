@@ -9,7 +9,8 @@ import "media/VisualizerLogic.js" as Visualizer
 // Media players. The position only refreshes while some UI tracks it.
 Singleton {
     id: root
-    readonly property var players: Mpris.players.values
+    // Without the ones that repeat another (MediaLogic.shownPlayers).
+    readonly property var players: Logic.shownPlayers(Mpris.players.values)
     property string selectedName: ""
     property int trackers: 0
     readonly property var active: players.find(player => player.dbusName === selectedName)

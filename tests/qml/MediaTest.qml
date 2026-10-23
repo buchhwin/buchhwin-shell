@@ -95,6 +95,24 @@ ShellRoot {
         T.ok(later.indexOf("-mtime") < 0 && later.indexOf("chmod") < 0 && later.indexOf("umask 077;") === 0,
              "a later one only fetches, still private")
 
+        // The same video twice in the control center: Chrome's own player and
+        // Plasma's browser integration, plus playerctld's proxy.
+        // As the two report it: the tab's title and the media session's.
+        const chrome = { dbusName: "org.mpris.MediaPlayer2.chromium.instance4628", identity: "Chrome",
+                         trackTitle: "(59) DIE XXL KÜNSTLER FOLGE (CRAFT ATTACK 14 #9) - YouTube" }
+        const pbi = { dbusName: "org.mpris.MediaPlayer2.plasma-browser-integration", identity: "Google Chrome",
+                      trackTitle: "DIE XXL KÜNSTLER FOLGE (CRAFT ATTACK 14 #9)" }
+        const proxy = { dbusName: "org.mpris.MediaPlayer2.playerctld", identity: "Google Chrome", trackTitle: "Live Stream" }
+        const spotify = { dbusName: "org.mpris.MediaPlayer2.spotify", identity: "Spotify", trackTitle: "Song" }
+        T.eq(M.shownPlayers([chrome, pbi, proxy, spotify]).map(player => player.identity), ["Google Chrome", "Spotify"],
+             "the browser's own player gives way to the integration's, the proxy never shows")
+        T.eq(M.shownPlayers([chrome, Object.assign({}, pbi, { trackTitle: "Another tab" })]).length, 2,
+             "a browser playing something else than the integration shows keeps its row")
+        T.eq(M.shownPlayers([Object.assign({}, chrome, { trackTitle: "Song" }), Object.assign({}, pbi, { trackTitle: "A Song For You" })]).length, 2,
+             "a few letters in common are no match")
+        T.eq(M.shownPlayers([chrome, proxy]).map(player => player.identity), ["Chrome"], "without the integration the browser's own stays")
+        T.eq([M.shownPlayers(null), M.shownPlayers([])], [[], []], "no players")
+
         T.finish("MediaTest")
     }
 }
