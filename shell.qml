@@ -1183,6 +1183,9 @@ ShellRoot {
         target: "window"
         function keepOnTop(): void { HyprlandService.keepOnTop("") }
         function keepOnTopAt(address: string): void { HyprlandService.keepOnTop(address) }
+        // Super+C: floating at a size of its own, centred, or back into the
+        // layout (HyprlandService.toggleFloating).
+        function toggleFloating(): void { HyprlandService.toggleFloating("") }
         // Minimize and restore (services/MinimizeService.qml): Super+H, Super+Shift+H,
         // the dock, the overview and Alt+Tab. `minimized` is counts and flags only.
         function minimize(): bool { return MinimizeService.minimizeActive() }

@@ -321,8 +321,10 @@ hl.bind(keyFor("SUPER + Q"), hl.dsp.window.close(), { description = "Close windo
 hl.bind(keyFor("SUPER + F"), hl.dsp.window.fullscreen({ mode = "fullscreen" }), { description = "Fullscreen" })
 -- Floating on and off. There was no binding for this at all until somebody
 -- asked how to do it: `hyprctl binds` found none, while the shortcut sheet has
--- known the title "Toggle floating" since it was written.
-hl.bind(keyFor("SUPER + C"), hl.dsp.window.float(), { description = "Toggle floating" })
+-- known the title "Toggle floating" since it was written. A tiled window
+-- floats at a size of its own, centred (HyprlandService.toggleFloating); the
+-- tile's own size was the whole screen beside no other window.
+hl.bind(keyFor("SUPER + C"), shellOr("window toggleFloating", hl.dsp.window.float()), { description = "Toggle floating" })
 -- Minimize (services/MinimizeService.qml): the window to a special workspace of
 -- its own, listed on the dock, in the overview and in Alt+Tab. Without a shell
 -- to answer, Shift brings every minimized window back

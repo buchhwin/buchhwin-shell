@@ -608,6 +608,32 @@ Singleton {
     }
     Timer { id: dropdownStarting; interval: 3000 }
 
+    // Super+C: the active window floats at a size of its own, centred on its
+    // screen, or goes back into the layout (Tools.floatPlan). Without a shell
+    // the binding falls back to Hyprland's togglefloating.
+    function toggleFloating(address) {
+        if (clientsForFloat.running) return
+        clientsForFloat.address = String(address || "")
+        clientsForFloat.running = true
+    }
+    function floatFrom(clients, address) {
+        const client = Tools.clientAt(clients, address)
+        const plan = Tools.floatPlan(client, screensNow())
+        if (!plan) return
+        const target = String(client.address)
+        HyprCompat.dispatchInOrder(plan.steps.map(step => step.kind === "float"
+            ? HyprCompat.commands.toggleFloating(target)
+            : step.kind === "size" ? HyprCompat.commands.resizeExact(target, step.width, step.height)
+            : HyprCompat.commands.moveExact(target, step.x, step.y)))
+    }
+    Process {
+        id: clientsForFloat
+        property string address: ""
+        command: ["hyprctl", "-j", "clients"]
+        stderr: ErrorLog { label: "HyprlandService.clientsForFloat" }
+        stdout: StdioCollector { onStreamFinished: root.floatFrom(root.parseClients(text), clientsForFloat.address) }
+    }
+
     // A Citrix session over the desk's screens side by side (`citrix span`,
     // the launcher): a floating window the size of the external screens
     // together, which the session fills - Hyprland's full screen is one

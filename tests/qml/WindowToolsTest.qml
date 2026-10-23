@@ -91,6 +91,19 @@ ShellRoot {
              lua: "hl.dsp.window.move({ x = 0, y = 0, relative = false, window = \"address:0xd2\" })" }, "the place")
         T.throwsError(() => H.resizeExact("0xd2", 0, 10), "no window of nothing")
         T.throwsError(() => H.moveExact("0xd2", "x", 0), "a place is numbers")
+        // Super+C: a tiled window floats smaller and centred on its screen.
+        const deskScreens = [{ name: "DP-8", x: 0, y: 120, width: 1920, height: 1080 }, { name: "DP-12", x: 1920, y: 0, width: 1920, height: 1200 }]
+        T.eq(W.floatPlan({ address: "0xb1", floating: false, at: [1932, 40], size: [1896, 1148] }, deskScreens),
+             { steps: [{ kind: "float" }, { kind: "size", width: 1152, height: 780 }, { kind: "move", x: 2304, y: 210 }] },
+             "a full tile on the right screen: 60 % x 65 % of it, in its middle")
+        T.eq(W.floatPlan({ address: "0xb2", floating: false, at: [10, 130], size: [940, 1060] }, deskScreens).steps[2],
+             { kind: "move", x: 384, y: 309 }, "the left screen's tile stays on the left screen")
+        T.eq(W.floatPlan({ address: "0xb3", floating: true, at: [100, 100], size: [800, 600] }, deskScreens), { steps: [{ kind: "float" }] },
+             "a floating window goes back into the layout as it is")
+        T.eq(W.floatPlan({ address: "0xb4", floating: false, at: [0, 0], size: [100, 100] }, []), { steps: [{ kind: "float" }] },
+             "no screen known: floating as Hyprland does it")
+        T.eq([W.floatPlan(null, deskScreens), W.floatPlan({ address: "nope" }, deskScreens)], [null, null], "no window, nothing")
+
         T.finish("WindowToolsTest")
     }
 }

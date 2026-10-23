@@ -14,7 +14,7 @@ ShellRoot {
         T.eq([S.runsOn("launcher.toggle", true), S.runsOn("launcher.toggle", false),
               S.runsOn("switcher.confirm", true), S.runsOn("switcher.confirm", false)],
              [true, false, false, true], "a key acts on press, the confirm on release")
-        T.eq(S.names().length, 78, "53 shell actions, 2 x 9 workspace keys and 7 swipes")
+        T.eq(S.names().length, 79, "54 shell actions, 2 x 9 workspace keys and 7 swipes")
         // The start menu's key (Super+Space) acts only with the taskbar's
         // start button; that action is the one Settings > Shortcuts offers for
         // a key of one's own, not IPC's toggle, which works without a dock.

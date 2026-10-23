@@ -27,6 +27,32 @@ function keepOnTop(client, floated) {
     return { steps: client.floating === true ? ["pin"] : ["float", "pin"], floated: client.floating !== true }
 }
 
+// Super+C: a tiled window floats at a size of its own, centred on its screen;
+// a floating one goes back into the layout as it is. Hyprland's own
+// togglefloating kept the tile's size - beside no other window, the whole
+// screen, so the window floated without looking any different. `screens` in
+// logical pixels ({ x, y, width, height }, HyprlandService.screensNow), the
+// window's screen by its centre. Steps as spanPlan's: float, size, move.
+var FLOAT_SHARE = { width: 0.6, height: 0.65 }
+
+function floatPlan(client, screens) {
+    if (!client || !/^0x[0-9a-fA-F]+$/.test(String(client.address || ""))) return null
+    if (client.floating === true) return { steps: [{ kind: "float" }] }
+    const at = Array.isArray(client.at) ? client.at : [0, 0]
+    const size = Array.isArray(client.size) ? client.size : [0, 0]
+    const cx = Number(at[0]) + Number(size[0]) / 2
+    const cy = Number(at[1]) + Number(size[1]) / 2
+    const list = (Array.isArray(screens) ? screens : []).filter(screen => screen && screen.width > 0 && screen.height > 0)
+    const screen = list.find(item => cx >= item.x && cx < item.x + item.width && cy >= item.y && cy < item.y + item.height) || list[0]
+    if (!screen) return { steps: [{ kind: "float" }] }
+    const width = Math.round(screen.width * FLOAT_SHARE.width)
+    const height = Math.round(screen.height * FLOAT_SHARE.height)
+    return { steps: [{ kind: "float" },
+                     { kind: "size", width: width, height: height },
+                     { kind: "move", x: screen.x + Math.round((screen.width - width) / 2),
+                                     y: screen.y + Math.round((screen.height - height) / 2) }] }
+}
+
 // The window an action without an address means: the one with the keyboard
 // (`focusHistoryID` 0), of the clients a person can see. Not one just
 // minimized: Hyprland can leave focusHistoryID 0 on the last window of a

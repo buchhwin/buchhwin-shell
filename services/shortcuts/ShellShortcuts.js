@@ -25,7 +25,7 @@ var ACTIONS = [
     "workspaces next", "workspaces previous", "workspaces moveNext", "workspaces movePrevious",
     "workspaces scroll down", "workspaces scroll up",
     "zoom increase", "zoom decrease", "zoom reset", "colorFilter toggle",
-    "window keepOnTop", "window minimize", "window restore", "dropdown toggle", "assistant toggle"
+    "window keepOnTop", "window toggleFloating", "window minimize", "window restore", "dropdown toggle", "assistant toggle"
 ].concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "workspaces switchTo " + n))
  .concat([1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => "workspaces move " + n))
 
