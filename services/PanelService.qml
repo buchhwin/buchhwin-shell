@@ -50,6 +50,9 @@ Singleton {
     // to the next panel and the scrim must not see that.
     property bool scrimWanted: false
     property color scrimColor: Colors.scrim
+    // Counted up by every open over a fullscreen window: the scrim maps its
+    // surface anew for it (ScrimLayer, which says why).
+    property int scrimOverFullscreen: 0
     // The panel that is on screen says how deep its scrim is, as it always
     // did; `ShellPanel` pushes it here when it becomes the active one.
     // And whether a click beside it closes it: the scrim's surface is what
@@ -165,6 +168,7 @@ Singleton {
         // it keeps its own placement (anchorX …) during its close animation.
         if (active.length && active !== panelId) active = ""
         args = options || {}
+        if (HyprlandService.fullscreenOn(screen)) scrimOverFullscreen += 1
         active = panelId
         scrimWanted = true
         return true

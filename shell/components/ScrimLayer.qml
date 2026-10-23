@@ -56,7 +56,27 @@ PanelWindow {
     // See `level` below for what that buys and what it costs. With the
     // dimming off it is still mapped while a panel is open, undrawn: it is
     // what a click beside the panel lands on.
-    visible: dimming || catching
+    visible: (dimming || catching) && !remapping
+    // **Over a fullscreen window** (2026-10-23): Hyprland fades the Top
+    // layer's surfaces out when a window goes fullscreen on the workspace,
+    // and the scrim, mapped long before, stayed out - a panel opened over
+    // fullscreen Chrome or a Citrix session had no dimming, "sometimes", by
+    // which monitor and workspace had the focus. A surface mapped after the
+    // fade is drawn (nested: the corner beside the dashboard 255 before, 199
+    // after; the scrim's own move to another screen was the one case that
+    // dimmed). So an open over a fullscreen window (PanelService) maps this
+    // surface anew, one round trip, and still below every panel: the Top
+    // layer is below theirs whenever it maps. Changing the layer instead did
+    // not reach Hyprland (`hyprctl layers` kept it in Top).
+    property bool remapping: false
+    Connections {
+        target: PanelService
+        function onScrimOverFullscreenChanged() {
+            if (!scrim.visible) return
+            scrim.remapping = true
+            Qt.callLater(() => { scrim.remapping = false })
+        }
+    }
     color: "transparent"
     exclusionMode: ExclusionMode.Ignore
     anchors { top: true; bottom: true; left: true; right: true }
