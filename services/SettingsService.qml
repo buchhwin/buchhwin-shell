@@ -359,6 +359,10 @@ Singleton {
             // "fit": as long as what is on it; "full": the whole edge, like a
             // taskbar.
             "span": "fit",
+            // "floating": a panel at its margin from the edge; "attached": on
+            // the edge itself, shaped like the notch (black, concave ears, the
+            // notch's shadow).
+            "shape": "floating",
             "iconSize": 48,
             "margin": 8,
             "screens": "",
@@ -730,6 +734,7 @@ Singleton {
         "dock.visibility": ["always", "intellihide", "hidden"],
         "dock.position": ["bottom", "left", "right"],
         "dock.span": ["fit", "full"],
+        "dock.shape": ["floating", "attached"],
         "dock.iconSize": [40, 48, 56, 64],
         "dock.margin": [0, 4, 8, 16],
         "dock.startOpens": ["startMenu", "launcher"],

@@ -2,6 +2,8 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Hyprland
 import QtQuick
+import QtQuick.Effects
+import QtQuick.Shapes
 import qs.theme
 import qs.services
 import qs.shell.components
@@ -9,6 +11,7 @@ import qs.shell.bar
 import "../../services/dock/DockLogic.js" as Logic
 import "../../services/bar/BarLogic.js" as BarLogic
 import "../../services/model/KeyedLogic.js" as Keyed
+import "../../services/appearance/EdgeShapeLogic.js" as EdgeShape
 
 // The dock: a second bar of its own, next to the notch, the bar and the
 // widgets, in any desktop mode, and off until Settings > Dock or
@@ -436,19 +439,122 @@ Scope {
                 // over its own fill only inside, the outer pixels on what is
                 // behind).
                 readonly property bool flush: window.full && DockService.margin === 0
+
+                // **On the edge** (dock.shape "attached"): the notch's shape on the
+                // dock's edge - its black, its small concave ears where the body
+                // meets the edge, its body's corner radius and its shadow
+                // (EdgeShapeLogic, the top edge's outline mirrored or turned).
+                // Not with the bar on the same edge, where the dock stands
+                // beyond the bar and floats; along the whole edge it is the
+                // flush taskbar in the notch's black, without ears.
+                readonly property bool atEdge: DockService.attached && window.barOn(window.edge) === 0
+                readonly property bool shaped: atEdge && !flush
+                readonly property real edgeRadius: Math.min(NotchService.drawnBodyRadius, window.across / 2)
+                function outlineOf(body) {
+                    return window.vertical
+                        ? EdgeShape.outline(window.edge, body.y, body.y + body.height, window.across, Metrics.notchEar,
+                                            content.edgeRadius, window.width, window.height)
+                        : EdgeShape.outline(window.edge, body.x, body.x + body.width, window.across, Metrics.notchEar,
+                                            content.edgeRadius, window.width, window.height)
+                }
+
+                // The shadow, as the notch casts it: from a plain rectangle that
+                // reaches past the edge by the corner radius, so the square corners
+                // on the edge cast nothing, masked so only what falls outside the
+                // body is drawn. The body at rest, not the one magnification
+                // stretches under the pointer: a layer and a blur per frame of that
+                // is the cost the notch avoids the same way.
+                readonly property var shadowBody: window.restBody
+                readonly property real shadowReach: content.edgeRadius
+                Rectangle {
+                    id: edgeShadowCaster
+                    visible: false
+                    x: window.edge === "left" ? content.shadowBody.x - content.shadowReach : content.shadowBody.x
+                    y: content.shadowBody.y
+                    width: content.shadowBody.width + (window.vertical ? content.shadowReach : 0)
+                    height: content.shadowBody.height + (window.vertical ? 0 : content.shadowReach)
+                    topLeftRadius: window.edge === "bottom" || window.edge === "right" ? content.edgeRadius : 0
+                    topRightRadius: window.edge === "bottom" || window.edge === "left" ? content.edgeRadius : 0
+                    bottomLeftRadius: window.edge === "right" ? content.edgeRadius : 0
+                    bottomRightRadius: window.edge === "left" ? content.edgeRadius : 0
+                    color: Colors.shadow
+                    layer.enabled: content.atEdge
+                }
+                MultiEffect {
+                    visible: content.atEdge
+                    source: edgeShadowCaster
+                    anchors.fill: edgeShadowCaster
+                    shadowEnabled: true
+                    shadowColor: Colors.shadow
+                    blurMax: Effects.elevation2Max
+                    shadowBlur: Effects.elevation2Blur
+                    shadowOpacity: Effects.elevation2Opacity
+                    // Away from the edge, as the notch's falls down from the top.
+                    shadowVerticalOffset: window.edge === "bottom" ? -Effects.elevation2Offset : 0
+                    shadowHorizontalOffset: window.edge === "left" ? Effects.elevation2Offset
+                        : window.edge === "right" ? -Effects.elevation2Offset : 0
+                    maskEnabled: true
+                    maskSource: edgeShadowCaster
+                    maskInverted: true
+                }
+                // The outline is built again whenever the dock shows: a Shape drawn
+                // by the CurveRenderer keeps its last geometry across an unmap of
+                // the surface (Notch.qml has the story).
+                Loader {
+                    active: content.shaped && window.visible && window.contentShown
+                    anchors.fill: parent
+                    sourceComponent: Shape {
+                        preferredRendererType: Shape.CurveRenderer
+                        ShapePath {
+                            id: edgeOutline
+                            readonly property var shape: content.outlineOf(window.body)
+                            readonly property var parts: edgeOutline.shape.segments
+                            fillColor: Colors.notch
+                            strokeWidth: -1
+                            strokeColor: "transparent"
+                            startX: edgeOutline.shape.start.x
+                            startY: edgeOutline.shape.start.y
+                            PathArc {
+                                x: edgeOutline.parts[0].x; y: edgeOutline.parts[0].y
+                                radiusX: edgeOutline.parts[0].radius; radiusY: edgeOutline.parts[0].radius
+                                direction: edgeOutline.parts[0].clockwise ? PathArc.Clockwise : PathArc.Counterclockwise
+                            }
+                            PathLine { x: edgeOutline.parts[1].x; y: edgeOutline.parts[1].y }
+                            PathArc {
+                                x: edgeOutline.parts[2].x; y: edgeOutline.parts[2].y
+                                radiusX: edgeOutline.parts[2].radius; radiusY: edgeOutline.parts[2].radius
+                                direction: edgeOutline.parts[2].clockwise ? PathArc.Clockwise : PathArc.Counterclockwise
+                            }
+                            PathLine { x: edgeOutline.parts[3].x; y: edgeOutline.parts[3].y }
+                            PathArc {
+                                x: edgeOutline.parts[4].x; y: edgeOutline.parts[4].y
+                                radiusX: edgeOutline.parts[4].radius; radiusY: edgeOutline.parts[4].radius
+                                direction: edgeOutline.parts[4].clockwise ? PathArc.Clockwise : PathArc.Counterclockwise
+                            }
+                            PathLine { x: edgeOutline.parts[5].x; y: edgeOutline.parts[5].y }
+                            PathArc {
+                                x: edgeOutline.parts[6].x; y: edgeOutline.parts[6].y
+                                radiusX: edgeOutline.parts[6].radius; radiusY: edgeOutline.parts[6].radius
+                                direction: edgeOutline.parts[6].clockwise ? PathArc.Clockwise : PathArc.Counterclockwise
+                            }
+                        }
+                    }
+                }
+
                 Rectangle {
                     id: bodyRect
+                    visible: !content.shaped
                     x: window.body.x
                     y: window.body.y
                     width: window.body.width
                     height: window.body.height
                     radius: content.flush ? 0 : Math.min(Metrics.radiusPanel, window.across / 2)
-                    color: Colors.panelFor("dock")
-                    border.width: content.flush ? 0 : Metrics.borderWidth
+                    color: content.atEdge ? Colors.notch : Colors.panelFor("dock")
+                    border.width: content.flush || content.atEdge ? 0 : Metrics.borderWidth
                     border.color: Colors.dockBorder
                 }
                 Rectangle {
-                    visible: content.flush
+                    visible: content.flush && !content.atEdge
                     x: window.edge === "left" ? window.body.x + window.body.width - width : window.body.x
                     y: window.body.y
                     width: window.vertical ? Metrics.borderWidth : window.body.width

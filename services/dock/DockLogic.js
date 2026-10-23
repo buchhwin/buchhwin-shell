@@ -11,6 +11,8 @@
 
 var POSITIONS = ["bottom", "left", "right"]
 var SPANS = ["fit", "full"]
+// "attached": on the edge, shaped like the notch (shell/dock/Dock.qml).
+var SHAPES = ["floating", "attached"]
 var VISIBILITY = ["always", "intellihide", "hidden"]
 var ICON_SIZES = [40, 48, 56, 64]
 var MARGINS = [0, 4, 8, 16]
@@ -77,6 +79,7 @@ function optionValue(key, value) {
     case "visibility": return VISIBILITY.indexOf(text) >= 0 ? text : null
     case "position": return POSITIONS.indexOf(text) >= 0 ? text : null
     case "span": return SPANS.indexOf(text) >= 0 ? text : null
+    case "shape": return SHAPES.indexOf(text) >= 0 ? text : null
     case "startOpens": return START_OPENS.indexOf(text) >= 0 ? text : null
     case "runningOn": return RUNNING_ON.indexOf(text) >= 0 ? text : null
     case "activeClick": return ACTIVE_CLICK.indexOf(text) >= 0 ? text : null

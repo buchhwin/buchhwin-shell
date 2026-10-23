@@ -45,7 +45,9 @@ Singleton {
     readonly property string position: SettingsService.value("dock.position")
     readonly property string span: SettingsService.value("dock.span")
     readonly property int iconSize: SettingsService.value("dock.iconSize")
-    readonly property int margin: SettingsService.value("dock.margin")
+    // On the edge (dock.shape "attached"): no margin, the notch's shape.
+    readonly property bool attached: SettingsService.value("dock.shape") === "attached"
+    readonly property int margin: attached ? 0 : SettingsService.value("dock.margin")
     readonly property bool showRunning: SettingsService.value("dock.showRunning") !== false
     // Magnification is movement: Reduced and Off have none.
     readonly property bool magnifies: SettingsService.value("dock.magnification") === true && Animations.motionEnabled

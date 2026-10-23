@@ -90,7 +90,7 @@ ShellRoot {
             desktop: ["autoModeBattery", "autoModeDesk", "autoModeRoad", "autoProfile", "clockIndicators", "dashboardHeight", "dashboardWidth", "launcherHeight",
                       "launcherWidth", "mediaVisualizer", "osd", "quickHeight", "quickWidth"],
             dock: ["activeClick", "badges", "enabled", "iconSize", "magnification", "margin", "position", "previews",
-                   "runningOn", "showRunning", "span", "startOpens", "visibility", "wheelVolume"],
+                   "runningOn", "shape", "showRunning", "span", "startOpens", "visibility", "wheelVolume"],
             emoji: ["tone"],
             gestures: ["createNew", "enabled", "fourDown", "fourHorizontal", "fourUp", "naturalSwipe", "pinchIn",
                        "pinchOut", "threeDown", "threeHorizontal", "threeUp"],

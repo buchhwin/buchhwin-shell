@@ -298,10 +298,23 @@ ColumnLayout {
             }
         }
         SettingRow {
-            label: "Distance from the edge"
+            label: "Shape"
+            hint: "Floating: a panel at a distance from the edge. On the edge: on the screen's edge itself, shaped like the notch - black, rounded into the edge, with its shadow. With the bar on the same edge the dock floats beyond it."
             SegmentedControl {
                 focusOnTab: true
                 enabledState: page.enabled
+                Layout.fillWidth: true
+                accessibleName: "Shape"
+                current: SettingsService.value("dock.shape")
+                options: [{ value: "floating", label: "Floating" }, { value: "attached", label: "On the edge" }]
+                onSelected: value => SettingsService.set("dock.shape", value)
+            }
+        }
+        SettingRow {
+            label: "Distance from the edge"
+            SegmentedControl {
+                focusOnTab: true
+                enabledState: page.enabled && !DockService.attached
                 Layout.fillWidth: true
                 accessibleName: "Distance from the edge"
                 current: String(SettingsService.value("dock.margin"))
