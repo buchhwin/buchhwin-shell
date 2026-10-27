@@ -48,6 +48,12 @@ app_env="${app_env%/*}/lib/app-env.sh"
 if [[ -r $app_env ]] && source "$app_env" && declare -F app_env_restore >/dev/null; then
   app_env_restore || true
 fi
+# Steam's scale while X11 is sharp (scripts/apply-x11-dpi.sh writes it; only
+# Steam reads the variable). A read, not a process.
+if [[ -n ${XDG_RUNTIME_DIR:-} && -r $XDG_RUNTIME_DIR/buchhwin-shell/steam-scale ]]; then
+  read -r steam_scale <"$XDG_RUNTIME_DIR/buchhwin-shell/steam-scale" || steam_scale=""
+  if [[ $steam_scale =~ ^[0-9]+(\.[0-9]+)?$ ]]; then export STEAM_FORCE_DESKTOPUI_SCALING=$steam_scale; fi
+fi
 unit=""
 if [[ ${1:-} == --unit ]]; then
   unit=${2:?usage: launch-app.sh --unit NAME <desktop-id> <command> [args...]}

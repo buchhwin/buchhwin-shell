@@ -53,11 +53,20 @@ printf 'Xcursor.theme:\tmacOS\nXcursor.size:\t24\n' > "$DB"
 bash ./scripts/apply-x11-dpi.sh 144
 check 'grep -q "^Xft.dpi: 144$" "$DB"' 'Xft.dpi 144 reaches the database'
 check '[[ $(grep -c "^Xcursor" "$DB") == 2 ]]' 'the cursor entries stay'
+# Steam reads none of it: its own variable comes through launch-app.sh (no
+# user manager in the sandbox, so the command runs as it is)
+check '[[ $(cat "$XDG_RUNTIME_DIR/buchhwin-shell/steam-scale") == 1.5 ]]' 'Steam'"'"'s scale is left for the launcher'
+check '[[ $(bash ./scripts/launch-app.sh steam sh -c "echo \$STEAM_FORCE_DESKTOPUI_SCALING") == 1.5 ]]' 'and an application started gets it'
+bash ./scripts/apply-x11-dpi.sh 168
+check '[[ $(cat "$XDG_RUNTIME_DIR/buchhwin-shell/steam-scale") == 1.75 ]]' 'at 168 DPI Steam gets 1.75'
+bash ./scripts/apply-x11-dpi.sh 144
 
 # off: the key says 96, and nothing else is touched - a merge, never a
 # snapshot loaded back over what another writer merged meanwhile
 bash ./scripts/apply-x11-dpi.sh reset
 check 'grep -q "^Xft.dpi: 96$" "$DB"' 'reset writes Xft.dpi 96'
+check '[[ ! -e "$XDG_RUNTIME_DIR/buchhwin-shell/steam-scale" ]]' 'and Steam'"'"'s scale goes'
+check '[[ -z $(bash ./scripts/launch-app.sh steam sh -c "echo \$STEAM_FORCE_DESKTOPUI_SCALING") ]]' 'so an application started gets none'
 check '[[ $(grep -c "^Xcursor" "$DB") == 2 ]]' 'and keeps the cursor entries'
 check '! grep -q "load" "$CALLS"' 'and never loads a snapshot'
 
@@ -77,8 +86,10 @@ check '[[ $? == 2 ]]' 'an invalid value is refused'
 check '! grep -q "Xft" "$DB"' 'and nothing was written'
 
 # a nested session never reaches the host's database
+rm -f -- "$XDG_RUNTIME_DIR/buchhwin-shell/steam-scale"
 BUCHHWIN_NESTED=1 bash ./scripts/apply-x11-dpi.sh 144 2>/dev/null
 check '! grep -q "Xft" "$DB"' 'a nested session writes nothing'
+check '[[ ! -e "$XDG_RUNTIME_DIR/buchhwin-shell/steam-scale" ]]' 'not even Steam'"'"'s scale'
 
 # ... and it is recognised by its files, not only by the flag: the testing
 # recipe exports the nested WAYLAND_DISPLAY and never BUCHHWIN_NESTED, and both
