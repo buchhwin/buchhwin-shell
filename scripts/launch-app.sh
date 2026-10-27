@@ -133,7 +133,9 @@ if command -v systemd-run >/dev/null 2>&1 && manager_running; then
   unit_escape "$id"
   # app-buchhwin- (13), -<pid> (8 at most: pid_max is 4194304) and .scope (6).
   unit_shorten $(( 255 - 13 - 8 - 6 ))
-  exec systemd-run --user --scope --quiet --slice=app.slice \
+  # --collect as for the service: a scope whose stop ran into its timeout
+  # (Citrix's, killed at shutdown) would stay listed as failed until a reset.
+  exec systemd-run --user --scope --quiet --collect --slice=app.slice \
     --unit="app-buchhwin-$escaped-$$.scope" -- "$@"
 fi
 if [[ -n $unit ]]; then

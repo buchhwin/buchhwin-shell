@@ -7,8 +7,6 @@
 .import "lock/LockCatalogue.js" as LockCatalogue
 .import "profile/ProfileLogic.js" as Profile
 .import "notch/NotchLogic.js" as NotchLogic
-.import "appearance/AnimationLogic.js" as AnimationLogic
-.import "wallpaper/WallpaperLogic.js" as WallpaperLogic
 .import "power/PowerSourceLogic.js" as PowerSourceLogic
 
 // Pure layout operations shared by LayoutService and the unit tests.
@@ -308,7 +306,7 @@ function withState(config, name, state) {
 // user's choice was gone. Every step passes a tree it has nothing to do with
 // through unchanged.
 function migrateSettings(tree) {
-    return NotchLogic.migrate(AnimationLogic.migrate(WallpaperLogic.migrate(PowerSourceLogic.migrate(tree))))
+    return NotchLogic.migrate(PowerSourceLogic.migrate(tree))
 }
 
 // A state's or a shipped profile's settings as the leaves a switch writes:
@@ -1325,20 +1323,6 @@ function setNotchItemSize(notch, id, w, h) {
     return sanitizeNotch(next)
 }
 
-// The big time and the long date used to be a header the overview always drew,
-// above whatever the list said. They are an item now, so a notch stored before
-// that gets one - once, at the front, where the header was.
-function adoptNotchHeader(notch) {
-    const next = copyNotch(notch)
-    if (notchTypes(next, "expanded").indexOf("clock") >= 0) return next
-    // The strip may already carry a clock of its own; ids are unique across
-    // both zones, so the new one is numbered against everything that is there.
-    const taken = []
-    for (const zone of NOTCH_ZONES) for (const pill of next[zone]) taken.push(pill.id)
-    next.expanded = notchList(["clock"], taken).concat(next.expanded)
-    return sanitizeNotch(next)
-}
-
 // ---- the launcher -----------------------------------------------------------
 // The fourth surface of tiles, and the last to become one. It had stacked
 // blocks with two hand-written pairing rules - the mode switch riding in the
@@ -1569,21 +1553,6 @@ function addTile(kind, surface, type, alsoKnown) {
     return next
 }
 
-// Every tile back to the size its type starts at. The control center's tiles
-// were laid out by their content until it became a grid, and a file written in
-// between carries the smallest cell there is for each of them - which is not
-// what anybody chose, it is what a missing field defaults to. Run once,
-// guarded by a marker in this same file.
-function adoptTileSizes(kind, surface) {
-    const next = copyTiles(kind, surface)
-    for (const pill of next[kind.zone]) {
-        const size = kind.sizeOf(pill.items[0].type)
-        pill.items[0].w = size.w
-        pill.items[0].h = size.h
-    }
-    return sanitizeTiles(kind, next)
-}
-
 // ---- the two surfaces, by name --------------------------------------------
 // Thin wrappers so a call site reads as what it is working on rather than as
 // a descriptor plus a generic verb.
@@ -1618,7 +1587,6 @@ function moveQuickTile(quick, id, delta) { return moveTile(QUICK, quick, id, del
 function moveQuickTileTo(quick, id, index) { return moveTileTo(QUICK, quick, id, index) }
 function removeQuickTile(quick, id) { return removeTile(QUICK, quick, id) }
 function addQuickTile(quick, type, alsoKnown) { return addTile(QUICK, quick, type, alsoKnown) }
-function adoptQuickSizes(quick) { return adoptTileSizes(QUICK, quick) }
 
 function defaultDashboard() { return defaultTiles(DASHBOARD) }
 function sanitizeDashboard(dashboard) { return sanitizeTiles(DASHBOARD, dashboard) }

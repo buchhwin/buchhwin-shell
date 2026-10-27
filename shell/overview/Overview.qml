@@ -163,10 +163,6 @@ ShellPanel {
         interval: Animations.confirmTimeout
         onTriggered: window.armedWorkspace = -1
     }
-    function toplevelFor(address) {
-        const key = Logic.normalizeAddress(address)
-        return Hyprland.toplevels.values.find(item => Logic.normalizeAddress(item.address) === key) || null
-    }
 
     onWantedChanged: {
         armedWorkspace = -1
@@ -643,7 +639,7 @@ ShellPanel {
                                             // stops at the close, so the last frame
                                             // stays; the cards (built while shown) let
                                             // every capture go when the fade ends.
-                                            readonly property var toplevel: window.shown ? window.toplevelFor(modelData.address) : null
+                                            readonly property var toplevel: window.shown ? MinimizeService.toplevelFor(modelData.address) : null
                                             property real homeX: modelData.x * frame.width
                                             property real homeY: modelData.y * frame.height
                                             x: homeX + Metrics.spaceXxs

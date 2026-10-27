@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import qs.shell.editor
 import "../../services/arrange/ArrangeLogic.js" as Arrange
 import "../../services/dashboard/DashboardLogic.js" as Dash
 import "../../services/arrange/FitLogic.js" as Fit
@@ -195,7 +196,7 @@ ShellPanel {
                     // diff as they should, and a slot reads its card by its id.
                     Repeater {
                         model: ScriptModel { values: root.cardsWanted ? LayoutService.dashboardItems.map(item => item.id) : [] }
-                        DashboardSlot {
+                        TileSlot {
                             required property string modelData
                             required property int index
                             // Gone from the table in the same turn as the slot
@@ -203,7 +204,8 @@ ShellPanel {
                             // unloads rather than build a card on its way out.
                             readonly property var card: root.cardById[modelData] || null
                             area: cardArea
-                            cardId: modelData
+                            surface: "dashboard"
+                            itemId: modelData
                             type: card ? card.type : ""
                             slotIndex: index
                             content: card ? root.cardFor(card.type) : null
@@ -344,7 +346,7 @@ ShellPanel {
     // taller than the content is card to its bottom edge instead of a gap of
     // panel under a short card, and the column of cards ends level instead
     // of ragged - and a shorter cell cuts it off at its own edge
-    // (DashboardSlot clips). `shown` is the contract DashboardSlot reads: a
+    // (TileSlot clips). `shown` is the contract TileSlot reads: a
     // card the chosen view has no use for holds no place, the way a quick
     // tile with nothing to show holds none.
     Component {

@@ -433,9 +433,15 @@ function retryDelay(retries) {
 
 // A watcher's line that is its banner, not news. The rest - an object added,
 // a property changed, the daemon gone or back - asks for a read.
+// udisksd's housekeeping refreshes every disk's SMART data every ten minutes
+// (`org.freedesktop.UDisks2.NVMe.Controller` / `.Drive.Ata`: SmartUpdated,
+// SmartTemperature ...); nothing drives.py lists comes from those two
+// interfaces, so neither their header nor their Smart* lines are news.
+var SMART_HEADER = /: org\.freedesktop\.UDisks2\.(NVMe\.Controller|Drive\.Ata): Properties Changed$/
 function watcherNews(line) {
     const text = String(line || "")
-    return text.trim().length > 0 && !/^Monitoring /.test(text)
+    if (!text.trim().length || /^Monitoring /.test(text)) return false
+    return !SMART_HEADER.test(text.trim()) && !/^\s+Smart\w*:/.test(text)
 }
 
 // The pause before a watcher that ended starts again: 5 s, doubling, and -1

@@ -16,7 +16,7 @@ ShellRoot {
 
     component KeyLock: LockScreen {
         nested: true
-        dir: ""
+        dir: Quickshell.env("XDG_RUNTIME_DIR") + "/buchhwin-shell/lock-nested"
         requestedService: "test-password"
         lidHook: "0"
         surfaces: false

@@ -70,6 +70,15 @@ check '[[ -z $(bash ./scripts/launch-app.sh steam sh -c "echo \$STEAM_FORCE_DESK
 check '[[ $(grep -c "^Xcursor" "$DB") == 2 ]]' 'and keeps the cursor entries'
 check '! grep -q "load" "$CALLS"' 'and never loads a snapshot'
 
+# without DISPLAY (or xrdb) there is no database to write, but Steam's scale
+# needs neither: it is still left for the launcher, and a reset still takes it
+: > "$CALLS"
+DISPLAY= bash ./scripts/apply-x11-dpi.sh 144
+check '[[ $(cat "$XDG_RUNTIME_DIR/buchhwin-shell/steam-scale" 2>/dev/null) == 1.5 ]]' 'without DISPLAY Steam'"'"'s scale is still written'
+check '! grep -q "^xrdb" "$CALLS"' 'and xrdb is not asked'
+DISPLAY= bash ./scripts/apply-x11-dpi.sh reset
+check '[[ ! -e "$XDG_RUNTIME_DIR/buchhwin-shell/steam-scale" ]]' 'and a reset without DISPLAY removes it'
+
 # reset on an empty database is not an error
 : > "$DB"
 check 'bash ./scripts/apply-x11-dpi.sh reset' 'reset on an empty database succeeds'

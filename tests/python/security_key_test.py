@@ -89,14 +89,25 @@ out, err = io.StringIO(), io.StringIO()
 with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
     code = module.main(["nonsense"])
 check(code == 2 and "usage" in err.getvalue(), "an unknown command says how to call it")
-module.devices_now = lambda: ["Test key"]
-module.pins_now = lambda: [{"set": True, "retries": 7}]
+# A stand-in fido2-token: the real one would ask the plugged key.
+token_calls = []
+
+
+def fake_token(*args):
+    token_calls.append(args)
+    if args == ("-L",):
+        return "/dev/hidraw9: vendor=0x1, product=0x2 (Test key)\n"
+    return "options: rk, up, clientPin\npin retries: 7\n"
+
+
+module.fido2_token = fake_token
 out = io.StringIO()
 with contextlib.redirect_stdout(out):
     code = module.main(["status"])
 answer = json.loads(out.getvalue())
 check(code == 0 and answer["ok"] and answer["devices"] == ["Test key"], "status is one JSON object: %s" % answer)
 check(answer["pins"] == [{"set": True, "retries": 7}], "with each key's PIN tries")
+check(token_calls == [("-L",), ("-I", "/dev/hidraw9")], "from one listing, then each key's info: %s" % token_calls)
 check(set(answer) == {"ok", "module", "tool", "service", "serviceCurrent", "keys", "devices", "fido2Token", "pins"},
       "with the fields the shell reads")
 

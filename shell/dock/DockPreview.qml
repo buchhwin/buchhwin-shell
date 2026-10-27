@@ -1,13 +1,11 @@
 import Quickshell
 import Quickshell.Wayland
-import Quickshell.Hyprland
 import Quickshell.Widgets as QsWidgets
 import QtQuick
 import qs.theme
 import qs.services
 import qs.shell.components
 import "../../services/dock/PreviewLogic.js" as Preview
-import "../../services/overview/OverviewLogic.js" as Overview
 
 // An app's windows over the dock (Settings > Dock > Window previews): the
 // pointer resting on a running app shows a live capture of each of its
@@ -49,11 +47,6 @@ PanelWindow {
     property bool ready: false
     Component.onCompleted: ready = true
     readonly property bool showing: ready && DockService.previewShown
-
-    function toplevelFor(address) {
-        const key = Overview.normalizeAddress(address)
-        return Hyprland.toplevels.values.find(item => Overview.normalizeAddress(item.address) === key) || null
-    }
 
     screen: target
     visible: target !== null
@@ -110,7 +103,7 @@ PanelWindow {
             delegate: ShellCard {
                 id: cardItem
                 required property var modelData
-                readonly property var toplevel: window.toplevelFor(modelData.address)
+                readonly property var toplevel: MinimizeService.toplevelFor(modelData.address)
                 readonly property string title: DockService.titleOf(modelData.address)
                 readonly property bool minimized: modelData.minimized === true
                 width: Metrics.switcherCardWidth

@@ -39,8 +39,7 @@ var MACHINE_LABELS = [
 // What nobody sets as a choice, so the sentence leaves it out: versions,
 // one-shot markers and the tour, and what the shell remembers by itself (the
 // colours picked, the folders used, where the Settings window was dragged).
-var INTERNAL = ["configVersion", "notch.headerAdopted", "desktop.quickSizesAdopted", "onboarding",
-                "colorPicker.history", "wallpaper.recentFolders", "desktop.settingsMoveX", "desktop.settingsMoveY"]
+var INTERNAL = ["configVersion", "onboarding", "colorPicker.history", "wallpaper.recentFolders", "desktop.settingsMoveX", "desktop.settingsMoveY"]
 
 function covers(entry, path) {
     return path === entry || path.indexOf(entry + ".") === 0

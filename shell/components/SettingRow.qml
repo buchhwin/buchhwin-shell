@@ -3,8 +3,6 @@ import QtQuick.Layouts
 import QtQuick.Window
 import qs.theme
 import qs.services
-import "../../services/settings/ScopeLogic.js" as Scope
-import "../../services/profile/ProfileLogic.js" as Profile
 
 // Label on the left, control on the right, in the two shapes the shell uses:
 //   labelFills false - the label keeps a fixed column so the controls of a
@@ -29,10 +27,8 @@ GridLayout {
     // A setting path whose scope is said in the same bubble after the hint:
     // "The same in every profile" or the mode's own - the line it used to be
     // under a control is gone (SettingsSection says it for a whole section).
-    // LayoutService only for a setting a mode owns.
     property string scope: ""
-    readonly property string scopeNote: !scope.length ? ""
-        : Scope.note(scope, Profile.isModeScoped(scope) ? Profile.label(LayoutService.activeMode, LayoutService.templates) : "")
+    readonly property string scopeNote: !scope.length ? "" : LayoutService.scopeNote(scope)
     readonly property string hintText: [hint, scopeNote].filter(text => text.length > 0).join("\n\n")
     property real labelWidth: Metrics.settingLabelWidth
     // And the other half of it: the bubble opens under the pointer, which

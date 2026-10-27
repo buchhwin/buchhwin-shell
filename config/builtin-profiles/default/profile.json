@@ -1050,7 +1050,6 @@
     },
     "lock": {
       "showAvatar": true,
-      "showMedia": false,
       "showStatus": false,
       "showPowerButtons": true
     },

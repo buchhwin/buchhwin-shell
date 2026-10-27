@@ -6,12 +6,13 @@
                            [--dry-run]
 
 Two questions, both against what the start before this one saw, kept in
-STATE/versions.json ({"version": 1, "quickshell", "hyprland", "head"}):
+STATE/versions.json ({"version": 1, "quickshell", "hyprland", "qt", "head"}):
 
 1. The shell's foundation. Arch is rolling, and the shell leans on quirks of
    Quickshell 0.3.2 and Hyprland 0.56: a -Syu can change them under the user
-   without a word. When `quickshell --version` or the running Hyprland's
-   version differs, the shell is watched for its first minute (--settle): its
+   without a word. When `quickshell --version`, the running Hyprland's
+   version or the Qt the shell runs on differs (a Qt minor upgrade keeps
+   Quickshell's version string), the shell is watched for its first minute (--settle): its
    log (errors, TypeErrors, binding loops, a crash) and whether it answers on
    its IPC targets. updates.coreCheck in settings.json says what is told:
    "problems" (the default: only when the minute found some), "always" (also
@@ -55,6 +56,7 @@ KNOWN = re.compile(r"quickshell\.desktopentry|Could not register notification se
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 VERSION = re.compile(r"(\d+\.\d+(?:\.\d+)?)")
 HEAD = re.compile(r"^[0-9a-f]{7,40}$")
+QT_CORE = re.compile(r"libQt6Core\.so\.(\d+\.\d+\.\d+)")
 MAX_SUBJECTS = 10
 
 
@@ -91,6 +93,16 @@ def hyprland_version(json_text, plain_text=""):
     return parse_version(str(plain_text or "").split("\n", 1)[0])
 
 
+def qt_version(maps_text, libraries=()):
+    """The Qt the shell runs on: the libQt6Core.so.6.X.Y its process maps
+    (/proc/PID/maps), else the one a libQt6Core.so.6 symlink names now."""
+    for text in [maps_text] + [os.path.realpath(path) for path in libraries]:
+        match = QT_CORE.search(str(text or ""))
+        if match:
+            return match.group(1)
+    return ""
+
+
 def read_state(text):
     try:
         data = json.loads(text or "")
@@ -99,7 +111,7 @@ def read_state(text):
     if not isinstance(data, dict) or data.get("version") != STATE_VERSION:
         return None
     clean = {}
-    for key in ("quickshell", "hyprland", "head"):
+    for key in ("quickshell", "hyprland", "qt", "head"):
         value = data.get(key)
         clean[key] = value if isinstance(value, str) and len(value) <= 64 else ""
     return clean
@@ -120,7 +132,7 @@ def settings_of(text):
 def changes(before, now):
     """"Quickshell 0.3.2 → 0.3.3" for each part that changed between two records."""
     found = []
-    for key, label in (("quickshell", "Quickshell"), ("hyprland", "Hyprland")):
+    for key, label in (("quickshell", "Quickshell"), ("hyprland", "Hyprland"), ("qt", "Qt")):
         old, new = before.get(key, ""), now.get(key, "")
         if old and new and old != new:
             found.append("%s %s → %s" % (label, old, new))
@@ -173,11 +185,16 @@ def whats_new_notice(subjects, total):
 
 # ---- the machine ---------------------------------------------------------------
 
-def current_versions(shell_dir):
+def current_versions(shell_dir, pid=None):
     head = run(["git", "-C", str(shell_dir), "rev-parse", "--short=7", "HEAD"]).strip()
+    try:
+        maps = pathlib.Path("/proc/%d/maps" % pid).read_text(errors="replace") if pid is not None else ""
+    except OSError:
+        maps = ""
     return {
         "quickshell": parse_version(run(["quickshell", "--version"])),
         "hyprland": hyprland_version(run(["hyprctl", "version", "-j"]), run(["Hyprland", "--version"])),
+        "qt": qt_version(maps, sorted(str(path) for path in pathlib.Path("/usr").glob("lib*/libQt6Core.so.6"))),
         "head": head if HEAD.match(head) else "",
     }
 
@@ -262,7 +279,7 @@ def main(argv=None):
         before = read_state(state_path.read_text(encoding="utf-8"))
     except OSError:
         before = None
-    now = current_versions(args.shell_dir)
+    now = current_versions(args.shell_dir, args.pid)
     try:
         mode, whats_new = settings_of((pathlib.Path(args.config_dir) / "settings.json").read_text(encoding="utf-8"))
     except OSError:
@@ -290,12 +307,13 @@ def main(argv=None):
     changed = changes(before, now)
     if not changed:
         record.update(quickshell=now["quickshell"] or before.get("quickshell", ""),
-                      hyprland=now["hyprland"] or before.get("hyprland", ""))
+                      hyprland=now["hyprland"] or before.get("hyprland", ""),
+                      qt=now["qt"] or before.get("qt", ""))
         write_state(args.state_dir, record)
         say("unchanged", **now)
         return 0
     if mode == "off":
-        record.update(quickshell=now["quickshell"], hyprland=now["hyprland"])
+        record.update(quickshell=now["quickshell"], hyprland=now["hyprland"], qt=now["qt"])
         write_state(args.state_dir, record)
         say("checkOff", changes=changed)
         return 0
@@ -314,7 +332,7 @@ def main(argv=None):
         say("stopped", changes=changed)
         return 0
     targets = count_targets(run(["quickshell", "ipc", "--path", str(args.shell_dir), "show"]))
-    record.update(quickshell=now["quickshell"], hyprland=now["hyprland"])
+    record.update(quickshell=now["quickshell"], hyprland=now["hyprland"], qt=now["qt"])
     write_state(args.state_dir, record)
     notice = core_notice(changed, found, targets, mode)
     if not notice:

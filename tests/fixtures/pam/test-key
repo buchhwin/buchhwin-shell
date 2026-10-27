@@ -1,10 +1,10 @@
 #%PAM-1.0
 # Nested lock screen tests only (BUCHHWIN_NESTED=1, BUCHHWIN_LOCK_KEY_SERVICE)
-# and tests/qml/LockScreenTest.qml: pam_u2f with a key plugged in
+# and tests/qml/LockKeyTest.qml: pam_u2f with a key plugged in
 # (session/pam/buchhwin-lock-key). pam_exec's password prompt stands in for
 # "Please enter the PIN: "; only "lock-test-pin" passes. Then pam_u2f's cue,
 # and a moment for the touch.
-auth     [success=1 default=ignore]  pam_exec.so expose_authtok quiet /usr/bin/grep -qxzF lock-test-pin
+auth     [success=1 default=ignore]  pam_exec.so expose_authtok quiet quiet_log /usr/bin/grep -qxzF lock-test-pin
 auth     requisite                   pam_deny.so
 auth     optional                    pam_echo.so Please touch the FIDO authenticator.
 auth     optional                    pam_exec.so quiet /usr/bin/sleep 1

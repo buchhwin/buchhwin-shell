@@ -101,9 +101,6 @@ ShellRoot {
         T.eq(L.withAdopted(marked, "quickSizes"), ["quickSizes"], "marking twice marks once")
         T.eq(L.sanitize({ adopted: ["quickSizes", 7, ""] }).adopted, ["quickSizes"],
              "anything that is not a name is dropped")
-        // The reset itself: every tile back to the size its type starts at.
-        const hand = L.setQuickTileSize(L.defaultQuick(), L.quickItems(L.defaultQuick())[0].id, 2, 4)
-        T.eq(L.quickItems(L.adoptQuickSizes(hand))[0].w, 1, "adopting puts a tile back to its own start size")
 
         // A surface takes a desktop widget beside its own tiles, but only one
         // the caller vouches for: the widget registry is a QML singleton and

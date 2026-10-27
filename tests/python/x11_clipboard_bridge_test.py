@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """scripts/x11-clipboard-bridge.py: what one clipboard change leads to."""
 
+import contextlib
 import importlib.util
+import io
+import os
 import pathlib
+import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location("bridge", ROOT / "scripts" / "x11-clipboard-bridge.py")
+SCRIPT = ROOT / "scripts" / "x11-clipboard-bridge.py"
+spec = importlib.util.spec_from_file_location("bridge", SCRIPT)
 bridge = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bridge)
 
@@ -174,8 +179,28 @@ check(bridge.load_library("Xfixes", lambda name: fake_load(name, ()), lambda nam
       "nothing found is no library")
 check(bridge.load_library("Xfixes", lambda name: fake_load(name, ()), fake_find) is None,
       "a looked-up path that does not load either is no library")
-check(bridge.load_library("X11") is not None or bridge.ctypes.util.find_library("X11") is None,
+import ctypes.util  # noqa: E402 - the bridge imports it only for its fallback
+check(bridge.load_library("X11") is not None or ctypes.util.find_library("X11") is None,
       "libX11 loads by its soname wherever it is installed")
+
+# The one flag, as argparse took it, without argparse: the bridge lives all
+# session, and argparse, hashlib (OpenSSL) and shutil cost it ~2 MB for that.
+os.environ["DISPLAY"] = ":7"
+check(bridge.display_of([]) == ":7", "without the flag, $DISPLAY")
+check(bridge.display_of(["--display", ":1"]) == ":1" and bridge.display_of(["--display=:2"]) == ":2", "--display :N and =:N")
+check(bridge.display_of(["--display", ""]) == "", "an empty display is taken (the shell's before XWayland is up)")
+for bad in (["--display"], ["--other"], ["--display", ":1", "extra"]):
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            bridge.display_of(bad)
+        check(False, "%r is refused" % bad)
+    except SystemExit as stop:
+        check(stop.code == 2, "%r is a usage error (exit 2, as argparse)" % bad)
+loaded = subprocess.run([sys.executable, "-I", "-c", "import runpy, sys; runpy.run_path(sys.argv[1]); print(' '.join(sys.modules))",
+                         str(SCRIPT)], capture_output=True, text=True, timeout=30).stdout.split()
+check(loaded and not {"argparse", "hashlib", "_hashlib", "shutil", "ctypes.util"} & set(loaded),
+      "the bridge loads none of argparse, hashlib, shutil, ctypes.util (%s)"
+      % sorted({"argparse", "hashlib", "_hashlib", "shutil", "ctypes.util"} & set(loaded)))
 
 if failures:
     print(f"TESTS FAILED x11-clipboard-bridge ({failures})")

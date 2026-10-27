@@ -26,7 +26,9 @@ ShellRoot {
         const partial = P.migrate({ power: { lidAction: "lock" } })
         T.eq(partial.power, { battery: { profile: "keep", lidAction: "lock" }, ac: { profile: "keep", lidAction: "lock" } },
              "missing old values fall back to the defaults later")
-        T.eq(P.migrate({ weather: {} }).power.ac, { profile: "keep" }, "file without a power section keeps the profile")
+        const unsplit = [{ weather: {} }, { power: {} }, { power: { lowBatteryLevel: 10 } }]
+        T.ok(unsplit.every(tree => P.migrate(tree) === tree),
+             "a file without the old single values is not migrated: its sources keep their defaults, not 'keep'")
         const already = { power: { ac: { screenOffMinutes: 20 }, screenOffMinutes: 3 } }
         T.ok(P.migrate(already) === already, "one migrated source is enough")
         T.eq([P.migrate(null), P.migrate("x"), P.migrate([1])], [null, "x", [1]], "non-objects stay")

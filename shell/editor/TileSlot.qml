@@ -2,10 +2,13 @@ import QtQuick
 import qs.theme
 import qs.services
 import qs.shell.components
-import qs.shell.editor
-import "../../../services/quick/QuickLogic.js" as Quick
+import "../../services/quick/QuickLogic.js" as Quick
+import "../../services/dashboard/DashboardLogic.js" as Dash
 
-// One tile of the control center, and everything editing it needs.
+// One tile of the control center or card of the dashboard, and everything
+// editing it needs: the two surfaces are the same thing, so they behave the
+// same way under the hand. `surface` says whose catalogue and whose layout
+// calls ("quick" or "dashboard").
 //
 // The tiles keep their own files and their own conditions - a tile with
 // nothing to show still hides itself. This only decides where a tile sits,
@@ -17,12 +20,11 @@ import "../../../services/quick/QuickLogic.js" as Quick
 // glide aside to open a gap under the one being dragged.
 ArrangeItem {
     id: slot
-    required property string tileId
+    required property string surface
     required property string type
     required property int slotIndex
     property Component content: null
 
-    itemId: tileId
     readonly property bool editing: area && area.editing
     readonly property bool shown: tile.item !== null && tile.item.shown === true
 
@@ -33,7 +35,8 @@ ArrangeItem {
     // indices the drop maths produces would count a shorter list than the one
     // being moved. `visible` is exactly that rule already.
     contentHeight: visible ? 1 : 0
-    onResized: (w, h) => LayoutService.quickSetSize(slot.tileId, w, h)
+    onResized: (w, h) => slot.surface === "quick" ? LayoutService.quickSetSize(slot.itemId, w, h)
+        : LayoutService.dashboardSetSize(slot.itemId, w, h)
     // In edit mode every tile stays, so the panel does not jump about while it
     // is being arranged - a tile that has nothing to show is dimmed further.
     visible: shown || editing
@@ -103,8 +106,10 @@ ArrangeItem {
         iconSize: Math.round(slot.chrome / 2)
         variant: "danger"
         compact: true
-        toolTip: "Remove " + (Quick.isKnown(slot.type) ? Quick.label(slot.type)
+        toolTip: "Remove " + (slot.surface === "quick" && Quick.isKnown(slot.type) ? Quick.label(slot.type)
+            : slot.surface === "dashboard" && Dash.isKnown(slot.type) ? Dash.label(slot.type)
             : WidgetRegistry.type(slot.type) ? WidgetRegistry.type(slot.type).label : slot.type)
-        onClicked: LayoutService.quickRemove(slot.tileId)
+        onClicked: slot.surface === "quick" ? LayoutService.quickRemove(slot.itemId)
+            : LayoutService.dashboardRemove(slot.itemId)
     }
 }

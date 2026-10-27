@@ -230,21 +230,18 @@ Singleton {
     // at the next login below.
     function sessionEnding() { if (forgetAtLogout) wipe() }
 
-    // The first start of the shell in a login: the runtime directory is
-    // emptied when the login ends, so a mark there that is missing means a
-    // new one (a restarted shell finds it). Named after the database, so a
-    // nested session's history is its own.
-    readonly property string loginMark: Paths.runtimeDir + "/clipboard-" + Qt.md5(dbPath)
+    // The first start of the shell in a login (LoginMark). Named after the
+    // database as well, so a nested session's history is its own.
     property bool loginChecked: false
     function checkLogin() {
         if (loginChecked || !SettingsService.loaded) return
         loginChecked = true
-        loginCheck.running = true
+        loginCheck.check()
     }
-    Process {
+    LoginMark {
         id: loginCheck
-        command: ["sh", "-c", "[ -e \"$1\" ] && exit 0; mkdir -p -m 700 -- \"${1%/*}\" && : > \"$1\"; exit 3", "sh", root.loginMark]
-        onExited: code => { if (code === 3 && root.forgetAtLogout) root.wipe() }
+        name: "clipboard-" + Qt.md5(root.dbPath)
+        onDecided: first => { if (first && root.forgetAtLogout) root.wipe() }
     }
     Connections {
         target: SettingsService

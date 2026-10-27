@@ -2,10 +2,8 @@ pragma Singleton
 import Quickshell
 import Quickshell.Io
 import QtQuick
-import "power/PowerSourceLogic.js" as PowerSourceLogic
-import "wallpaper/WallpaperLogic.js" as WallpaperLogic
 import "appearance/AnimationLogic.js" as AnimationLogic
-import "notch/NotchLogic.js" as NotchLogic
+import "LayoutLogic.js" as LayoutLogic
 import "lock/LockLogic.js" as LockLogic
 
 // User preferences in ~/.config/buchhwin-shell/settings.json. Missing keys fall
@@ -98,10 +96,6 @@ Singleton {
             "autoModeDesk": "docked",
             "autoModeRoad": "laptop",
             "autoModeBattery": "",
-            // The control center's tiles became a grid; this remembers that an
-            // existing panel was given the sizes its tiles start at, so it
-            // happens once and never undoes a size the user then chose.
-            "quickSizesAdopted": false,
             // The control center's own size, dragged from the corner of the
             // panel while its tiles are being arranged. 0 means "not set yet".
             "quickWidth": 0,
@@ -193,9 +187,6 @@ Singleton {
             // A floor, not a ceiling: the overview still grows when what it
             // carries needs more room than this.
             "expandedHeight": 0,
-            // The big time and the long date became an item; this remembers
-            // that an existing notch was given one, so it happens once.
-            "headerAdopted": false,
             // A screen whose dock is a whole-edge taskbar carrying the status
             // or the clock: the notch strip there keeps its own clock, Wi-Fi
             // and battery ("keep") or leaves them to the taskbar ("hide").
@@ -408,7 +399,6 @@ Singleton {
         },
         "lock": {
             "showAvatar": true,
-            "showMedia": false,
             "showStatus": false,
             "showPowerButtons": false,
             // Fingerprint unlock: auto (not while the lid is closed) | on | off.
@@ -1033,10 +1023,8 @@ Singleton {
         fileText = text
         try {
             // The same chain runs on a profile's stored settings and on a
-            // shipped profile's when one is entered (LayoutLogic.
-            // migrateSettings): a new migration goes into both.
-            data = text.trim().length
-                ? NotchLogic.migrate(AnimationLogic.migrate(WallpaperLogic.migrate(PowerSourceLogic.migrate(JSON.parse(text))))) : defaults
+            // shipped profile's when one is entered.
+            data = text.trim().length ? LayoutLogic.migrateSettings(JSON.parse(text)) : defaults
         } catch (error) {
             if (loaded) {
                 console.warn("buchhwin-shell: settings file unreadable, keeping current settings:", error)

@@ -141,11 +141,9 @@ ShellRoot {
         T.ok(L.freshMode(template).bar !== template.bar, "a copy of the template's bar")
 
         // ---- the settings a switch writes -----------------------------------
-        const migrated = L.migrateSettings({ notch: { expandOnHover: false }, wallpaper: { favouritesOnly: true },
-                                             appearance: { animationMode: "fast" } })
-        T.eq([migrated.notch.hoverMode, migrated.notch.expandOnHover, migrated.wallpaper.slideshowSource,
-              migrated.appearance.animationMode],
-             ["click", undefined, "favourites", "full"], "a state from before a migration is migrated like settings.json")
+        const migrated = L.migrateSettings({ notch: { expandOnHover: false }, appearance: { animationMode: "reduced" } })
+        T.eq([migrated.notch.hoverMode, migrated.notch.expandOnHover, migrated.appearance.animationMode],
+             ["click", undefined, "reduced"], "a state from before a migration is migrated like settings.json")
         const defaults = { recording: { folder: "~/Videos/Recordings" }, wallpaper: { path: "", folder: "" },
                            notch: { hoverMode: "hover", openDelay: 120 }, power: { lowBatteryLevel: 10 } }
         const leaves = L.profileLeaves(L.migrateSettings({ recording: { folder: "/home/u/Videos/Recordings" },

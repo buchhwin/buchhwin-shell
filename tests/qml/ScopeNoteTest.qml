@@ -1,5 +1,6 @@
 import Quickshell
 import QtQuick
+import qs.services
 import qs.shell.components
 import "Harness.js" as T
 import "../../shell/settings/pages"
@@ -25,6 +26,8 @@ ShellRoot {
             SettingsSection { id: profileOwned; width: 600; title: "Search"; scope: "launcher.searchUrl" }
             SettingsSection { id: explained; width: 600; title: "Low battery"; scope: "power"; hint: "Warnings while running on battery" }
             SettingRow { id: row; width: 600; label: "Speed"; hint: "Pointer speed"; scope: "input.sensitivity" }
+            SettingRow { id: modeRow; width: 600; label: "Blur"; scope: "appearance.blurStrength" }
+            SettingsSection { id: modeSection; width: 600; title: "Gaps"; scope: "appearance.gapsIn" }
         }
     }
 
@@ -82,6 +85,11 @@ ShellRoot {
         T.eq(profileOwned.hintText, "", "nor does one whose setting belongs to the profile")
         T.eq(explained.hintText, "Warnings while running on battery\n\nThe same in every profile", "the section's own hint first")
         T.eq(row.hintText, "Pointer speed\n\nThe same in every profile", "a row says its setting's scope in its own bubble")
+        // A mode's own setting names the mode in use (LayoutService.scopeNote).
+        const modeNote = S.note("appearance.blurStrength", P.label(LayoutService.activeMode, LayoutService.templates))
+        T.ok(modeNote.indexOf("Kept for this mode") === 0, "the mode's note: " + modeNote)
+        T.eq([modeRow.hintText, modeSection.hintText, LayoutService.scopeNote("power"), LayoutService.scopeNote("")],
+             [modeNote, modeNote, "The same in every profile", ""], "a row and a section name the mode in use")
 
         T.finish("ScopeNoteTest")
     }

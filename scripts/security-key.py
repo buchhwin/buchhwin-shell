@@ -130,10 +130,10 @@ def pin_state(info):
     return state
 
 
-def pins_now():
-    """pin_state of every plugged key, in the order devices_now names them."""
-    listing = fido2_token("-L") or ""
-    paths = [line.split(":", 1)[0].strip() for line in listing.splitlines() if ":" in line]
+def pins_now(listing):
+    """pin_state of every key a `fido2-token -L` listing names, from the same
+    lines and in the same order as devices()."""
+    paths = [line.strip().split(":", 1)[0] for line in str(listing or "").splitlines() if line.strip()]
     return [pin_state(fido2_token("-I", path)) for path in paths]
 
 
@@ -175,12 +175,14 @@ def status():
     except OSError:
         mapping = ""
     installed = service_text()
-    found = devices_now()
+    # One listing for both the names and the PINs.
+    listing = fido2_token("-L")
+    found = None if listing is None else devices(listing)
     return {"ok": True, "module": module_installed(), "tool": bool(tool()),
             "service": installed is not None and "pam_u2f.so" in installed,
             "serviceCurrent": installed is not None and installed == SOURCE.read_text(encoding="utf-8"),
             "keys": credentials(mapping, user()), "devices": found or [], "fido2Token": found is not None,
-            "pins": pins_now() if found else []}
+            "pins": pins_now(listing) if found else []}
 
 
 def write_mapping(text):

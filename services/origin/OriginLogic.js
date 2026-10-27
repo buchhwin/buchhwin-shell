@@ -12,9 +12,6 @@
 // 1920 screen" is a test rather than a screenshot, and so the two callers
 // cannot drift apart.
 
-// Where a box of `width` sits under `origin`: centred on it, `gap` below it,
-// and never closer than `margin` to either edge of the screen. Null when there
-// is nothing to sit under.
 // The notch as it stands, for something that comes out from under it: the
 // collapsed rectangle the layout knows, reaching down to the overview's foot
 // while the overview is open (`state` is the notch's report: `expanded` and
@@ -27,6 +24,9 @@ function notchBody(rect, state) {
     return height > Number(rect.height) ? Object.assign({}, rect, { height: height }) : rect
 }
 
+// Where a box of `width` sits under `origin`: centred on it, `gap` below it,
+// and never closer than `margin` to either edge of the screen. Null when there
+// is nothing to sit under.
 function under(origin, width, screenWidth, margin, gap) {
     const w = Math.max(0, Number(width) || 0)
     const screen = Math.max(0, Number(screenWidth) || 0)

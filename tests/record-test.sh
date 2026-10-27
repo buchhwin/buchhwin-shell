@@ -61,5 +61,15 @@ for _ in {1..50}; do [[ ! -e $sb/state/recording.json ]] && break; sleep 0.1; do
 check '[[ $(cat "$sb/out/env.mp4" 2>/dev/null) == "unset|kde|unset" ]]' \
   "the recorder gets the session's environment back ($(cat "$sb/out/env.mp4" 2>/dev/null))"
 
+# A recorder that fails at once is reported as soon as its supervisor is
+# gone, not after the 3.5 s a slow recorder gets to start.
+t0=$(date +%s%N)
+out=$("$project_dir/scripts/record.sh" --state "$sb/state/recording.json" start --file "$sb/out/fail.mp4" \
+  --mode screen --backend wf-recorder -- false 2>/dev/null)
+ms=$(( ($(date +%s%N) - t0) / 1000000 ))
+for _ in {1..50}; do [[ ! -e $sb/state/recording.json ]] && break; sleep 0.1; done
+check '[[ $out == failed* ]]' "a recorder that ends at once reads as failed ($out)"
+check '(( ms < 2000 ))' "and is reported without waiting out the start time (${ms} ms)"
+
 if (( failures )); then printf 'TESTS FAILED record (%d failed)\n' "$failures"; exit 1; fi
 printf 'TESTS PASSED record\n'

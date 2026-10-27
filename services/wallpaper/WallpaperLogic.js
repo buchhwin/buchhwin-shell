@@ -22,25 +22,6 @@ function source(value) {
     return SOURCES.indexOf(value) >= 0 ? value : "all"
 }
 
-// settings.json: `wallpaper.favouritesOnly` became `wallpaper.slideshowSource`
-// with three values instead of two. Run on the document as it is read, the way
-// the power settings' own migration is, so nothing depends on a write landing
-// first. A document that already has the new key is left alone.
-function migrate(document) {
-    if (!document || typeof document !== "object") return document
-    const wallpaper = document.wallpaper
-    if (!wallpaper || typeof wallpaper !== "object") return document
-    if (wallpaper.favouritesOnly === undefined) return document
-    const next = {}
-    for (const key of Object.keys(wallpaper))
-        if (key !== "favouritesOnly") next[key] = wallpaper[key]
-    if (next.slideshowSource === undefined)
-        next.slideshowSource = wallpaper.favouritesOnly === true ? "favourites" : "all"
-    const result = Object.assign({}, document)
-    result.wallpaper = next
-    return result
-}
-
 function emptyState() {
     return { version: 1, screens: {}, favourites: [], slideshow: [], pickerFilter: "" }
 }

@@ -277,8 +277,8 @@ ShellRoot {
         const leaves = P.settingLeaves({
             configVersion: 1,
             appearance: { accent: "#50e2cb", blurStrength: 0.9, gapsIn: 3, theme: "dark" },
-            notch: { headerAdopted: true, openDelay: 120 },
-            desktop: { quickSizesAdopted: false, dashboardWidth: 900 },
+            notch: { openDelay: 120 },
+            desktop: { dashboardWidth: 900 },
             wallpaper: { path: "~/Pictures/w.webp", folder: "" },
             power: { ac: { lidAction: "nothing" } },
             odd: { list: [1, 2], nothing: null }

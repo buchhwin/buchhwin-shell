@@ -4,5 +4,5 @@
 # (pam_exec's own failure, as a pam_u2f.so gone with its PAM file left
 # behind might), on which PamContext reports an error as well as the result.
 # Asks nothing.
-auth     required  pam_exec.so quiet /usr/bin/false
+auth     required  pam_exec.so quiet quiet_log /usr/bin/false
 account  required  pam_permit.so

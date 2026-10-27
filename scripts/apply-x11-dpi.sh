@@ -34,23 +34,28 @@ if nested_environment; then
 fi
 want=${1:?dpi or reset}
 [[ $want == reset || $want =~ ^[0-9]{2,3}$ ]] || { printf 'invalid dpi: %s\n' "$want" >&2; exit 2; }
-if [[ -z ${DISPLAY:-} ]] || ! command -v xrdb >/dev/null 2>&1; then
-  exit 0
-fi
-# shellcheck source=lib/xrdb.sh
-source "$here/lib/xrdb.sh"
 [[ $want == reset ]] && want=96
-xrdb_merge "Xft.dpi: $want"
 
 # Steam reads neither Xft.dpi nor a toolkit's scale: it asks X11 for the
 # screens, found 3840x2160 at scale 1 with X11 sharp, and drew itself at 1x
 # on a 4K screen (27.10.). Its own STEAM_FORCE_DESKTOPUI_SCALING is read by
 # Steam alone, so unlike GDK_SCALE it doubles nothing in a Wayland client.
 # scripts/launch-app.sh hands it to every application the shell starts from
-# this file, which goes again with the reset.
-steam_file=${XDG_RUNTIME_DIR:-/tmp}/buchhwin-shell/steam-scale
-if (( want > 96 )); then
-  mkdir -p -m 700 -- "${steam_file%/*}" && awk -v d="$want" 'BEGIN { printf "%.3g\n", d / 96 }' > "$steam_file"
-else
-  rm -f -- "$steam_file"
+# this file, which goes again with the reset. It needs neither DISPLAY nor
+# xrdb, so it comes before their check; without a runtime directory there is
+# no file the launcher would read.
+if [[ -n ${XDG_RUNTIME_DIR:-} ]]; then
+  steam_file=$XDG_RUNTIME_DIR/buchhwin-shell/steam-scale
+  if (( want > 96 )); then
+    mkdir -p -m 700 -- "${steam_file%/*}" && awk -v d="$want" 'BEGIN { printf "%.3g\n", d / 96 }' > "$steam_file"
+  else
+    rm -f -- "$steam_file"
+  fi
 fi
+
+if [[ -z ${DISPLAY:-} ]] || ! command -v xrdb >/dev/null 2>&1; then
+  exit 0
+fi
+# shellcheck source=lib/xrdb.sh
+source "$here/lib/xrdb.sh"
+xrdb_merge "Xft.dpi: $want"

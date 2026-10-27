@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import qs.theme
 import qs.services
 import qs.shell.components
+import qs.shell.editor
 import "../../../services/quick/QuickLogic.js" as Quick
 import "../../../services/arrange/ArrangeLogic.js" as Arrange
 import "../../../services/arrange/FitLogic.js" as Fit
@@ -173,11 +174,12 @@ ColumnLayout {
 
         Repeater {
             model: root.tiles
-            QuickSlot {
+            TileSlot {
                 required property var modelData
                 required property int index
                 area: tileArea
-                tileId: modelData.id
+                surface: "quick"
+                itemId: modelData.id
                 type: modelData.items[0].type
                 slotIndex: index
                 content: root.componentFor(modelData.items[0].type)
@@ -419,7 +421,7 @@ ColumnLayout {
                 // fills its cell hands every spare pixel to whichever child is
                 // itself a layout, which pinned the text to the top of a tall
                 // tile and left a growing band under it. A cell too short
-                // overflows instead, and QuickSlot clips it.
+                // overflows instead, and TileSlot clips it.
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
@@ -502,7 +504,7 @@ ColumnLayout {
                 // fills its cell hands every spare pixel to whichever child is
                 // itself a layout, which pinned the text to the top of a tall
                 // tile and left a growing band under it. A cell too short
-                // overflows instead, and QuickSlot clips it.
+                // overflows instead, and TileSlot clips it.
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
@@ -640,7 +642,7 @@ ColumnLayout {
                 // fills its cell hands every spare pixel to whichever child is
                 // itself a layout, which pinned the text to the top of a tall
                 // tile and left a growing band under it. A cell too short
-                // overflows instead, and QuickSlot clips it.
+                // overflows instead, and TileSlot clips it.
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
@@ -716,7 +718,7 @@ ColumnLayout {
                 // fills its cell hands every spare pixel to whichever child is
                 // itself a layout, which pinned the text to the top of a tall
                 // tile and left a growing band under it. A cell too short
-                // overflows instead, and QuickSlot clips it.
+                // overflows instead, and TileSlot clips it.
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter

@@ -35,7 +35,7 @@ ShellCard {
         // whichever child happens to be a layout itself - which is how a tall
         // tile ended up with its text pinned to the top and a growing empty
         // band under it. Centred, a cell that is too short overflows instead,
-        // and QuickSlot clips that to the cell's own edge.
+        // and TileSlot clips that to the cell's own edge.
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter

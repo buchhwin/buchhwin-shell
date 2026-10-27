@@ -124,36 +124,4 @@ function mode(value) {
     return "full"
 }
 
-// The pace that keeps a migrated session looking the way it looked.
-//
-// `factor = modeFactor / speed`, so Normal's 1.25 has to go somewhere when the
-// mode becomes Full and its factor becomes 1: it goes into the speed, divided,
-// because a *larger* speed is a *shorter* animation. Fast was already 1 and
-// keeps its pace untouched.
-//
-// Clamped to the slider's own range, so a migration cannot produce a value the
-// slider could not have produced.
-function speedFor(storedMode, storedSpeed) {
-    const pace = Number(storedSpeed)
-    const base = isFinite(pace) && pace > 0 ? pace : 1
-    const scaled = storedMode === "normal" ? base / 1.25 : base
-    return Math.min(SPEED_MAX, Math.max(SPEED_MIN, Math.round(scaled * 100) / 100))
-}
-
-// settings.json as this version reads it. Total and idempotent: a document
-// that has already been migrated passes through unchanged, because `full`,
-// `reduced` and `off` all map to themselves and their speed is untouched.
-function migrate(document) {
-    if (!document || typeof document !== "object" || Array.isArray(document)) return document
-    const appearance = document.appearance
-    if (!appearance || typeof appearance !== "object" || Array.isArray(appearance)) return document
-    const stored = appearance.animationMode
-    if (stored !== "fast" && stored !== "normal") return document
-    const result = Object.assign({}, document)
-    result.appearance = Object.assign({}, appearance, {
-        animationMode: "full",
-        animationSpeed: speedFor(stored, appearance.animationSpeed)
-    })
-    return result
-}
 

@@ -153,7 +153,8 @@ ShellRoot {
              "dropping a moved occurrence removes the moved copy as well")
         T.eq(E.deleteRequest(E.refuse("notFound"), "single"), null, "an unresolved event cannot be deleted")
 
-        T.eq([E.wroteMessage("delete"), E.wroteMessage("modify")], ["Event deleted.", "Event updated."],
+        T.eq([E.wroteMessage("add"), E.wroteMessage("delete"), E.wroteMessage("exclude"), E.wroteMessage("modify")],
+             ["Event saved.", "Event deleted.", "Event deleted.", "Event updated."],
              "what the panel says after a write")
 
         // ---- the panel copies its arguments ----------------------------------

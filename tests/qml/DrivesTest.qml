@@ -215,6 +215,12 @@ ShellRoot {
         T.ok(D.watcherNews("13:40:56.188: The udisks-daemon is running (name-owner :1.48).")
              && D.watcherNews("Volume added:      'Pixel 7'") && D.watcherNews("  MountPoints:   /run/media/u/X"),
              "the daemon back, a phone's volume, a property line")
+        T.ok(!D.watcherNews("11:03:16.353: /org/freedesktop/UDisks2/drives/Example_SSD_0001: org.freedesktop.UDisks2.NVMe.Controller: Properties Changed")
+             && !D.watcherNews("  SmartTemperature:     310") && !D.watcherNews("  SmartUpdated:         1793095396")
+             && !D.watcherNews("12:00:00.000: /org/freedesktop/UDisks2/drives/Example_HDD: org.freedesktop.UDisks2.Drive.Ata: Properties Changed"),
+             "a disk's SMART refresh every ten minutes is no news")
+        T.ok(D.watcherNews("12:00:00.000: /org/freedesktop/UDisks2/block_devices/sdb1: org.freedesktop.UDisks2.Filesystem: Properties Changed"),
+             "a filesystem's change is")
         T.eq([1, 2, 5, 6].map(D.watcherRestartDelay), [5000, 10000, 80000, -1], "watcher restarts double, five at most")
 
         // "Open automatically" waits behind the lock screen.

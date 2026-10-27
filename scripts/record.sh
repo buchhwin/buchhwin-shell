@@ -110,12 +110,16 @@ start() {
     </dev/null >"$log_file" 2>&1 &
   # The supervisor writes the state as soon as the recorder runs; a recorder
   # that fails at once (no permission, unsupported output) ends within a moment.
-  local i
+  # A supervisor already gone has said all it will: no reason to wait out the
+  # rest. (Without job control setsid is no group leader and does not fork,
+  # so $! is the supervisor itself.)
+  local i supervisor=$!
   for i in {1..30}; do
     [[ -s $state_file ]] && break
+    kill -0 "$supervisor" 2>/dev/null || break
     sleep 0.1
   done
-  sleep 0.5
+  if kill -0 "$supervisor" 2>/dev/null; then sleep 0.5; fi
   if current_state; then
     return 0
   fi

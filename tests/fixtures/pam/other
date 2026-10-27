@@ -1,0 +1,9 @@
+#%PAM-1.0
+# The default libpam reads beside every test service here: without it each
+# start of one wrote "no default config other" into the system journal. A
+# service not named by a file is refused, as /etc/pam.d/other does. (The
+# pam_exec lines that fail on purpose say quiet_log for the same journal.)
+auth     required  pam_deny.so
+account  required  pam_deny.so
+password required  pam_deny.so
+session  required  pam_deny.so

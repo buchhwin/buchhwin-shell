@@ -5,6 +5,7 @@ import QtQuick
 import "LayoutLogic.js" as Logic
 import "launcher/LauncherCatalogue.js" as LauncherCatalogue
 import "profile/ProfileLogic.js" as Profile
+import "settings/ScopeLogic.js" as Scope
 import "bar/BarLogic.js" as BarLogic
 import "../config/migrations/Migrations.js" as Migrations
 
@@ -52,10 +53,9 @@ Singleton {
     readonly property string activeMode: config.activeMode || Logic.MODE_NAMES[0]
     readonly property string activeProfileLabel: Logic.profileLabel(config, activeProfile)
     readonly property string layoutPath: Paths.configDir + "/layout.json"
-    // The bounds every grid cell in a layout file is sanitized against. A
-    // surface that drags a cell to a size clamps to the same numbers, so the
+    // The bound every grid cell in a layout file is sanitized against. A
+    // surface that drags a cell to a size clamps to the same number, so the
     // preview stops where the write would have stopped it anyway.
-    readonly property int gridMaxColumns: Logic.GRID_MAX_W
     readonly property int gridMaxRows: Logic.GRID_MAX_H
 
     // Placement geometry reported by the desktop host (screen-relative pixels),
@@ -123,11 +123,7 @@ Singleton {
     function barRemoveItem(pillId, index) { return changeBar(Logic.removeItem, pillId, index) }
     function barMoveItem(pillId, index, delta) { return changeBar(Logic.moveItem, pillId, index, delta) }
     function barSetDisplay(pillId, index, display) { return changeBar(Logic.setItemDisplay, pillId, index, display) }
-    // One item can be larger than its neighbours; the bar's own scale is the
-    // size of the whole strip.
-    function barSetItemSize(pillId, index, size) { return changeBar(Logic.setItemSize, pillId, index, size) }
     function barMovePill(pillId, delta) { return changeBar(Logic.movePill, pillId, delta) }
-    function barMovePillTo(pillId, zone, index) { return changeBar(Logic.movePillTo, pillId, zone, index) }
     function barSplitItem(pillId, index) { return changeBar(Logic.splitItem, pillId, index) }
     function barMergeWithNext(pillId) { return changeBar(Logic.mergeWithNext, pillId) }
     function barRemovePill(pillId) { return changeBar(Logic.removePill, pillId) }
@@ -350,7 +346,6 @@ Singleton {
     readonly property var lockLayout: config.lock || Logic.defaultLock()
     readonly property var lockTypes: Logic.lockTypes(lockLayout)
     readonly property var lockItems: Logic.lockItems(lockLayout)
-    property bool lockEditing: false
 
     function changeLockLayout(operation) {
         if (readOnly) return false
@@ -480,13 +475,6 @@ Singleton {
         beginChange()
         SettingsService.setAll({ "desktop.quickWidth": w, "desktop.quickHeight": h })
         return true
-    }
-
-    // Adds a pill and returns its id, or "" when nothing was added.
-    function barAddPillId(zone, type, display) {
-        if (!barAddPill(zone, type, display)) return ""
-        const list = bar[zone] || []
-        return list.length ? list[list.length - 1].id : ""
     }
 
     function defaultDisplay(type) {
@@ -713,7 +701,6 @@ Singleton {
         const migrated = result.ok && result.changed && result.from >= 1
         backupVersion = migrated ? result.from : 0
         config = Logic.sanitize(result.config)
-        notchStored = !!(result.config && result.config.notch)
         if (!loaded) layoutWasEmpty = result.ok && !text.trim().length && !unreadableReason.length
         loaded = true
         decideFresh()
@@ -730,73 +717,15 @@ Singleton {
         settleActiveState()
     }
 
-    // The notch used to be four booleans in settings.json. A layout file that
-    // has no notch of its own yet takes them once, so an existing session keeps
-    // the overview it had. The booleans stay where they are for now: removing
-    // them in the same change would let SettingsService strip them on the first
-    // unrelated write, before this ever ran.
-    //
-    // `sanitize` fills a missing notch in with the default, so whether the file
-    // really carried one has to be remembered separately - and the settings may
-    // still be loading when the layout arrives, which is why this is also tried
-    // again from the Connections below rather than only once.
-    property bool notchStored: false
-
-    // The big time and the long date used to be a header the overview drew
-    // above its list, whatever the list said. They are an item now, so a notch
-    // stored before that gets one, once, at the front - otherwise a session
-    // that had a clock in its notch would silently lose it. Marked in the
-    // settings rather than in the layout file, because the layout file's
-    // version is what tells a newer shell from an older one.
-    property bool headerAdopted: false
-    // Guarded by a marker in the layout file itself rather than in
-    // settings.json, because the sizes it resets live in the layout file. The
-    // old settings marker is still honoured so the run never repeats on a
-    // session that has already had it.
-    property bool quickSizesAdopted: false
-
     // Every one-shot in one pass, with one write of each file at the end: two
     // writes of the same file in the same turn of the event loop drop the
     // first one, which Quickshell says in the log and the smoke test fails on.
     function adoptOnce() {
         if (readOnly || !loaded || !SettingsService.loaded || !freshDecided) return
-        const marks = {}
         let touched = false
-        if (!headerAdopted) {
-            headerAdopted = true
-            if (SettingsService.value("notch.headerAdopted") !== true) {
-                marks["notch.headerAdopted"] = true
-                if (notchStored) {
-                    config = Logic.sanitize(Object.assign({}, config, { notch: Logic.adoptNotchHeader(config.notch) }))
-                    touched = true
-                }
-            }
-        }
-        if (!quickSizesAdopted) {
-            quickSizesAdopted = true
-            const marked = Logic.hasAdopted(config, "quickSizes")
-            const ran = marked || SettingsService.value("desktop.quickSizesAdopted") === true
-            if (!ran) {
-                // An undo step, because this resets every size the user set:
-                // it used to run through `mutate` alone, so the reset could
-                // not be taken back.
-                beginChange()
-                mutate((mode, next) => {
-                    mode.quick = Logic.adoptQuickSizes(mode.quick || Logic.defaultQuick())
-                    next.adopted = Logic.withAdopted(next, "quickSizes")
-                })
-                touched = true
-            } else if (!marked) {
-                // It ran before the marker moved into this file. Carry it over
-                // so a restored layout file cannot make it run again.
-                mutate((mode, next) => { next.adopted = Logic.withAdopted(next, "quickSizes") })
-                touched = true
-            }
-        }
         if (adoptModeAppearance()) touched = true
         if (dropAgendaCards()) touched = true
         if (dropLauncherCategories()) touched = true
-        if (Object.keys(marks).length) SettingsService.setAll(marks)
         if (touched) save()
     }
 
@@ -1161,6 +1090,14 @@ Singleton {
         }
         config = Logic.withMode(config, activeProfile, activeMode, nextMode)
         revision++
+    }
+
+    // Where a setting path is kept, as a settings row or section says it
+    // (SettingRow, SettingsSection): the mode's own, named, or the same in
+    // every profile. It reads activeMode and templates, so a binding on it
+    // follows a switch.
+    function scopeNote(path) {
+        return Scope.note(path, Profile.isModeScoped(path) ? Profile.label(activeMode, templates) : "")
     }
 
     // ---- the mode: one of the five ----------------------------------------

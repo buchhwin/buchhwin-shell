@@ -30,8 +30,6 @@ Singleton {
         { id: "dock", label: "Dock", dockOnly: true }
     ]
 
-    readonly property var allStyles: ["minimal", "capsule", "card"]
-
     readonly property var types: ({
         // The dock's own (shell/dock/Dock.qml): the pinned and running apps,
         // and a start button with the fastfetch Saturn that opens the start

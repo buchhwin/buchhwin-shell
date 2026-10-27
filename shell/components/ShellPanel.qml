@@ -320,9 +320,6 @@ PanelWindow {
     // the card, which clips. What has to leave the card is drawn here: the
     // ghost an arrange surface drags, and its drop marker.
     readonly property alias overlay: overlayLayer
-    // Where the card really is, for anything that has to sit on its corner -
-    // a grip that resizes the panel. Read only: the card places itself.
-    readonly property alias cardRect: card
     signal escapePressed()
     // A panel with steps of its own to go back through first (the start
     // menu: its menu, then All apps): a function that returns true when it

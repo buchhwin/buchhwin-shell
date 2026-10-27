@@ -208,16 +208,6 @@ ShellRoot {
         T.eq(types(fresh, "expanded"), ["clock", "weather", "media", "events", "status"],
              "and the overview with the big time, the weather and the rest")
 
-        // The header became an item, once, for a notch stored before it was.
-        const headless = L.sanitizeNotch({ collapsed: [{ id: "c", items: [{ type: "clock" }] }],
-                                           expanded: [{ id: "m", items: [{ type: "media" }] }] })
-        const adopted = L.adoptNotchHeader(headless)
-        T.eq(types(adopted, "expanded"), ["clock", "media"], "the overview gets a clock at the front")
-        T.eq(types(adopted, "collapsed"), ["clock"], "and the strip keeps its own")
-        T.ok(L.notchItems(adopted, "expanded")[0].id !== L.notchItems(adopted, "collapsed")[0].id,
-             "with an id of its own, because ids are unique across both zones")
-        T.eq(types(L.adoptNotchHeader(adopted), "expanded"), ["clock", "media"], "and never twice")
-        T.eq(JSON.stringify(L.adoptNotchHeader(fresh)), JSON.stringify(fresh), "a notch that already has one is untouched")
         T.eq(L.notchItems(fresh, "collapsed").map(item => item.id), ["notch-clock-1"],
              "and the editor gets its stored id with it")
         T.eq(L.notchItems(null, "collapsed"), [], "no notch, no items")

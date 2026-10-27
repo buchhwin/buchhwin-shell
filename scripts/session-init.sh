@@ -196,6 +196,11 @@ step "portal (Hyprland)" timeout 20 systemctl --user start xdg-desktop-portal-hy
 # environment import above) keeps its old desktop routing; restart it so Secret
 # requests reach KWallet like in Plasma.
 step "portal restarted" timeout 20 systemctl --user restart xdg-desktop-portal.service
+# The polkit agent needs neither the wallet nor the autostart entries below:
+# behind them it came up seconds into the session (behind a wallet prompt,
+# up to a minute and a half), and an admin prompt before that found no agent.
+# Its start is queued, not waited for.
+step "polkit agent" systemctl --user start --no-block plasma-polkit-agent.service
 
 # The wallet itself, after the shell is up and before anything that stores
 # secrets can start: the autostart entries below, and Brave through
@@ -258,7 +263,6 @@ if ! command -v jq >/dev/null 2>&1 || [[ ! -r $settings ]] || [[ $(jq -r '.autos
   # xdg-desktop-autostart.target refuses manual starts; this target wants it.
   step "XDG autostart" systemctl --user start buchhwin-shell-autostart.target
 fi
-step "polkit agent" systemctl --user start plasma-polkit-agent.service
 
 # A previous desktop setup installs this generic Hyprland service globally via
 # graphical-session.target. It owns the old dwl-style bar. Stop it only for this

@@ -1,6 +1,6 @@
 #%PAM-1.0
 # Nested lock screen tests only (BUCHHWIN_NESTED=1, BUCHHWIN_LOCK_KEY_SERVICE)
-# and tests/qml/LockScreenTest.qml: pam_u2f without a key plugged in - it
+# and tests/qml/LockKeyTest.qml: pam_u2f without a key plugged in - it
 # finds no key holding a credential, asks nothing and fails at once.
 auth     required  pam_deny.so
 account  required  pam_permit.so

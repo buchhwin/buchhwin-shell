@@ -36,7 +36,6 @@ ShellRoot {
         T.eq([S.openIndex([], "", 1), S.selection([], "", 1, 2)], [-1, -1], "no windows")
         T.eq(S.build(null), [], "missing client list")
         T.eq(S.wrap(-1, 3), 2, "wrap negative")
-        T.eq(S.normalizeAddress("0xABC"), "abc", "address normalisation")
         T.finish("SwitcherTest")
     }
 }

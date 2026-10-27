@@ -96,7 +96,8 @@ exec -a swayidle bash -c 'sleep 30 & trap "kill $!; exit 0" TERM; wait' "$@"
                        XDG_RUNTIME_DIR=str(run_dir), XDG_CONFIG_HOME=str(config_home), XDG_STATE_HOME=str(state_home),
                        XDG_CACHE_HOME=str(sb / "cache"), WAYLAND_DISPLAY="wayland-giveup",
                        HYPRLAND_INSTANCE_SIGNATURE="sig-test", HOME=str(sb), COUNT=str(count),
-                       HYPRCTL_LOG=str(hyprctl_log), SWAYIDLE_LOG=str(swayidle_log))
+                       HYPRCTL_LOG=str(hyprctl_log), SWAYIDLE_LOG=str(swayidle_log),
+                       BUCHHWIN_RESTART_PAUSE="0.05", BUCHHWIN_REAP_STEPS="10")
     fallback = run_dir / "buchhwin-shell" / "fallback-idle.sig-test"
     log = state_home / "buchhwin-shell" / "quickshell.log"
     started = []

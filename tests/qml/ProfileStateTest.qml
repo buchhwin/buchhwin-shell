@@ -46,7 +46,7 @@ ShellRoot {
         T.eq(["weather.lat", "weather.lon", "weather.locationName", "weather.autoLocate", "input.kbLayout",
               "input.kbVariant", "display.x11Scale", "display.xwaylandSharp", "onboarding.completed",
               "calendar.hiddenCalendars", "calendar.newEventCalendar", "colorPicker.history",
-              "wallpaper.recentFolders", "configVersion", "notch.headerAdopted", "desktop.quickSizesAdopted",
+              "wallpaper.recentFolders", "configVersion",
               "desktop.settingsMoveX", "desktop.settingsMoveY", "power.lockBeforeSleep", "power.lowBatteryLevel",
               "power.battery.lidAction", "power.ac.suspendMinutes", "lock.fingerprint"].filter(P.isProfileSetting), [],
              "the machine's and the person's settings are global, power and the fingerprint reader too")
@@ -97,7 +97,7 @@ ShellRoot {
             input: ["browserScroll", "passthroughCitrix", "repeatDelay", "repeatRate"],
             launcher: ["categories", "codeFolders", "conversions", "exchangeRates", "fileSearch", "modeOrder", "pinned",
                        "recentFiles", "searchEngine", "searchUrl", "showPinned", "windows"],
-            lock: ["showAvatar", "showMedia", "showPowerButtons", "showStatus"],
+            lock: ["showAvatar", "showPowerButtons", "showStatus"],
             login: ["accent", "blur", "dateFormat", "font", "wallpaper"],
             network: ["portalNotify"],
             nightLight: ["end", "lastMode", "mode", "start", "temperature"],

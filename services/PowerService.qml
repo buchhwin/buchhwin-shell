@@ -100,7 +100,7 @@ Singleton {
     Component.onCompleted: {
         batteryCheck.restart()
         if (lockProcess || !IdleService.realSession) login = 0
-        else loginCheck.running = true
+        else loginCheck.check()
         sourceCheck.restart()
         pushEffects()
     }
@@ -170,14 +170,12 @@ Singleton {
     // Whether this is the shell's first start in the login (1), a restart (0)
     // or not known yet (-1): the first start applies the source's profile,
     // because power-profiles-daemon comes back with whatever it last had. A
-    // restarted shell finds the mark in the runtime directory, which is
-    // emptied when the login ends.
+    // restarted shell finds the mark (LoginMark).
     property int login: -1
-    readonly property string loginMark: Paths.runtimeDir + "/power-profile-login"
-    Process {
+    LoginMark {
         id: loginCheck
-        command: ["sh", "-c", "[ -e \"$1\" ] && exit 0; mkdir -p -m 700 -- \"${1%/*}\" && : > \"$1\"; exit 3", "sh", root.loginMark]
-        onExited: code => root.login = code === 3 ? 1 : 0
+        name: "power-profile-login"
+        onDecided: first => root.login = first ? 1 : 0
     }
 
     function checkSource() {

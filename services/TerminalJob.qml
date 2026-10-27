@@ -35,6 +35,10 @@ Scope {
         starter.command = command
         starter.running = true
     }
+    // What a page says on `failed`.
+    function failureText(code) {
+        return "The terminal window could not be opened (" + (code < 0 ? "not started" : "exit " + code) + ")"
+    }
     function watch() {
         if (watching) return
         watcher.seen = false

@@ -128,13 +128,14 @@ function lockProcess(shell) {
 // without a word. The lock directory says who started it:
 // scripts/session-action.sh names it `…/lock` for the real session and
 // `…/lock-nested` for a nested one, so a directory that is not the nested
-// one refuses the hooks. A lock started by hand (nested screenshots, with
-// `quickshell -p lock.qml`) has none, and keeps them - the real session's
-// lock is only ever started by session-action.sh.
+// one refuses the hooks. So does none at all: a same-user process that ended
+// the real lock (Hyprland stays locked and lets a new lock client take over)
+// could start `BUCHHWIN_NESTED=1 quickshell -p lock.qml` with test-permit and
+// unlock with any input. A lock started by hand for nested screenshots
+// passes BUCHHWIN_LOCK_DIR=…/lock-nested.
 function testHooksAllowed(nested, lockDir) {
     if (nested !== true) return false
-    var dir = String(lockDir || "")
-    return !dir.length || /\/lock-nested\/?$/.test(dir)
+    return /\/lock-nested\/?$/.test(String(lockDir || ""))
 }
 
 // Only nested test sessions may use the test PAM services (tests/fixtures/pam).

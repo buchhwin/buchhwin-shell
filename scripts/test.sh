@@ -114,9 +114,27 @@ if command -v quickshell >/dev/null; then
   # The runner first: a runner that lets a binding loop pass would pass
   # every test below for the wrong reason.
   "$project_dir/tests/qml-runner-test.sh"
+  # Side by side - each runs in a sandbox of its own (run-qml-test.sh) - on
+  # half the cores and four at most, so the tests that wait on timers keep
+  # the time they expect: one after another they took ~3 of the suite's ~6
+  # minutes. Each one's output is kept and printed in order, and the first
+  # failure in that order ends the suite, as before.
+  qml_jobs=$(( $(nproc 2>/dev/null || echo 2) / 2 ))
+  (( qml_jobs < 1 )) && qml_jobs=1
+  (( qml_jobs > 4 )) && qml_jobs=4
+  qml_out=$(mktemp -d "${TMPDIR:-/tmp}/buchhwin-qmlout.XXXXXX")
+  printf '%s\0' "$project_dir"/tests/qml/*Test.qml | xargs -0 -P "$qml_jobs" -n 1 sh -c \
+    'name=${3##*/}; "$1" "$3" >"$2/$name.log" 2>&1; echo $? >"$2/$name.status"' sh "$project_dir/tests/run-qml-test.sh" "$qml_out" || true
   for test_file in "$project_dir"/tests/qml/*Test.qml; do
-    "$project_dir/tests/run-qml-test.sh" "$test_file"
+    test_name=${test_file##*/}
+    cat -- "$qml_out/$test_name.log" 2>/dev/null || true
+    test_status=$(cat -- "$qml_out/$test_name.status" 2>/dev/null || echo 1)
+    if [[ $test_status != 0 ]]; then
+      rm -rf -- "$qml_out"
+      exit "$test_status"
+    fi
   done
+  rm -rf -- "$qml_out"
 else
   note_skip 'QML/JS unit tests (quickshell not installed; package quickshell)'
 fi

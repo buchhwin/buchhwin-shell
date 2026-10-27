@@ -301,8 +301,7 @@ Singleton {
             return
         }
         saveState = "saved"
-        saveMessage = writer.kind === "add" ? "Event saved."
-            : writer.kind === "delete" || writer.kind === "exclude" ? "Event deleted." : "Event updated."
+        saveMessage = Edit.wroteMessage(writer.kind)
         if (writer.kind === "add" && writer.calendarId.length)
             SettingsService.set("calendar.newEventCalendar", writer.calendarId)
         if (writer.kind !== "add") {

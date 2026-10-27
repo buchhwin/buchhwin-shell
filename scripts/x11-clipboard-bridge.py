@@ -29,12 +29,8 @@ checked for warnings).
   x11-clipboard-bridge.py --display :1
 """
 
-import argparse
 import ctypes
-import ctypes.util
-import hashlib
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -60,7 +56,10 @@ SECRET_TARGETS = ("x-kde-passwordManagerHint", "ExcludeClipboardContentFromMonit
 
 
 def digest(data):
-    return hashlib.sha256(data).hexdigest() if data is not None else None
+    """What two copies are compared by within this process: Python's own
+    hash of the bytes (SipHash, keyed per process) and the length - hashlib
+    would load OpenSSL into a process that lives all session for this."""
+    return (hash(bytes(data)), len(data)) if data is not None else None
 
 
 def secret(targets):
@@ -244,12 +243,15 @@ def wait_forever():
 SONAMES = {"X11": "libX11.so.6", "Xfixes": "libXfixes.so.3"}
 
 
-def load_library(name, load=ctypes.CDLL, find=ctypes.util.find_library):
+def load_library(name, load=ctypes.CDLL, find=None):
     """The library for `name` ("X11", "Xfixes"), or None when there is none."""
     try:
         return load(SONAMES[name])
     except OSError:
         pass
+    if find is None:
+        import ctypes.util  # noqa: PLC0415 - only for the fallback (it pulls shutil, subprocess, tempfile)
+        find = ctypes.util.find_library
     path = find(name)
     if not path:
         return None
@@ -259,11 +261,31 @@ def load_library(name, load=ctypes.CDLL, find=ctypes.util.find_library):
         return None
 
 
+def display_of(argv):
+    """`--display :N` / `--display=:N`, else $DISPLAY. Anything else is a
+    usage error (exit 2), as it was with argparse."""
+    display = os.environ.get("DISPLAY", "")
+    args = list(argv)
+    while args:
+        arg = args.pop(0)
+        if arg == "--display" and args:
+            display = args.pop(0)
+        elif arg.startswith("--display="):
+            display = arg.split("=", 1)[1]
+        else:
+            print("usage: x11-clipboard-bridge.py [--display DISPLAY]", file=sys.stderr)
+            raise SystemExit(2)
+    return display
+
+
+def on_path(program):
+    return any(os.access(os.path.join(folder, program), os.X_OK)
+               for folder in os.environ.get("PATH", os.defpath).split(os.pathsep) if folder)
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--display", default=os.environ.get("DISPLAY", ""))
-    args = parser.parse_args(argv)
-    if not args.display or not shutil.which("xclip") or not shutil.which("wl-copy") or not shutil.which("wl-paste"):
+    display_name = display_of(sys.argv[1:] if argv is None else argv)
+    if not display_name or not all(on_path(program) for program in ("xclip", "wl-copy", "wl-paste")):
         return wait_forever()
     libx11 = load_library("X11")
     libxfixes = load_library("Xfixes")
@@ -291,7 +313,7 @@ def main(argv=None):
     io_handler = io_handler_type(lambda _display: os._exit(0))
     libx11.XSetIOErrorHandler(io_handler)
 
-    display = libx11.XOpenDisplay(args.display.encode())
+    display = libx11.XOpenDisplay(display_name.encode())
     if not display:
         return wait_forever()
     event_base, error_base = ctypes.c_int(), ctypes.c_int()
@@ -329,7 +351,7 @@ def main(argv=None):
             libx11.XFree(value)
         return wm_window[0]
 
-    x11_env = dict(os.environ, DISPLAY=args.display)
+    x11_env = dict(os.environ, DISPLAY=display_name)
     bridge = Bridge(
         x11=lambda target, timeout: run(["xclip", "-selection", "clipboard", "-o", "-t", target],
                                         env=x11_env, timeout=timeout),

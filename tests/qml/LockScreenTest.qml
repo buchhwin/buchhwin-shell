@@ -18,11 +18,12 @@ ShellRoot {
     // A password submitted before the reader speaks: test-fingerprint-late
     // starts like pam_fprintd, silent for a second, and then waits 4 s for a
     // finger. The password has to go to test-password at once when the reader
-    // speaks, not after the reader's wait.
+    // speaks, not after the reader's wait. The fixtures need a nested lock
+    // directory (LockLogic.testHooksAllowed): the runner's runtime one.
     LockScreen {
         id: early
         nested: true
-        dir: ""
+        dir: Quickshell.env("XDG_RUNTIME_DIR") + "/buchhwin-shell/lock-nested"
         requestedService: "test-fingerprint-late"
         lidHook: "0"
         surfaces: false
@@ -32,7 +33,7 @@ ShellRoot {
     LockScreen {
         id: wrong
         nested: true
-        dir: ""
+        dir: Quickshell.env("XDG_RUNTIME_DIR") + "/buchhwin-shell/lock-nested"
         requestedService: "test-password"
         lidHook: "0"
         surfaces: false
@@ -41,7 +42,7 @@ ShellRoot {
     LockScreen {
         id: faceState
         nested: true
-        dir: ""
+        dir: Quickshell.env("XDG_RUNTIME_DIR") + "/buchhwin-shell/lock-nested"
         requestedService: "test-password"
         lidHook: "0"
         surfaces: false

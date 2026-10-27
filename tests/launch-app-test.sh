@@ -56,8 +56,8 @@ export PATH="$project_dir/session/bin:$bin:$sys:$PATH"
 : > "$calls"
 out=$("$project_dir/scripts/launch-app.sh" brave-browser printf 'ran %s' hello)
 check '[[ $out == "ran hello" ]]' "the command runs inside the scope (got: $out)"
-check 'grep -qE "^systemd-run --user --scope --quiet --slice=app.slice --unit=app-buchhwin-brave\\\\x2dbrowser-[0-9]+\.scope -- printf ran %s hello$" "$calls"' \
-  "a scope named app-buchhwin-<escaped id>-<pid>, in app.slice ($(grep systemd-run "$calls" | head -1))"
+check 'grep -qE "^systemd-run --user --scope --quiet --collect --slice=app.slice --unit=app-buchhwin-brave\\\\x2dbrowser-[0-9]+\.scope -- printf ran %s hello$" "$calls"' \
+  "a scope named app-buchhwin-<escaped id>-<pid>, in app.slice, collected even when it failed ($(grep systemd-run "$calls" | head -1))"
 : > "$calls"
 "$project_dir/scripts/launch-app.sh" com.brave.Browser.desktop true
 check 'grep -qE "unit=app-buchhwin-com\.brave\.Browser-[0-9]+\.scope -- true$" "$calls"' "the .desktop suffix is dropped from the id"

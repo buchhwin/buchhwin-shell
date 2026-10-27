@@ -214,8 +214,7 @@ function uniqueName(text, taken) {
 // - whether new Alacritty windows come from one running Alacritty: a way of
 //   running the terminal, not a look of it;
 // - which screens show the dock and the notch, like the displays.
-var GLOBAL_SETTINGS = ["configVersion", "notch.headerAdopted", "desktop.quickSizesAdopted",
-                       "onboarding",
+var GLOBAL_SETTINGS = ["configVersion", "onboarding",
                        "weather.locationName", "weather.lat", "weather.lon", "weather.autoLocate",
                        "calendar.hiddenCalendars", "calendar.newEventCalendar",
                        "colorPicker.history", "wallpaper.recentFolders",

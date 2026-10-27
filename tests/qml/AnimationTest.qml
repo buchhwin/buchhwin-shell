@@ -94,45 +94,6 @@ ShellRoot {
         T.eq(A.mode("nonsense"), "full", "an unknown mode is Full, the way an unknown theme is dark")
         T.eq(A.mode(undefined), "full", "and so is none at all")
 
-        // The migration has to keep the session *looking* the same, and the
-        // arithmetic is the whole point: factor = modeFactor / speed, so
-        // Normal's 1.25 goes into the speed, divided, because a larger speed
-        // is a shorter animation.
-        T.eq(A.speedFor("fast", 1), 1, "Fast kept its pace")
-        T.eq(A.speedFor("fast", 1.5), 1.5, "whatever it was")
-        T.eq(A.speedFor("normal", 1), 0.8, "Normal at 1x was Full at 0.8x")
-        T.eq(A.speedFor("normal", 1.25), 1, "and Normal at 1.25x was the designed pace exactly")
-        T.eq(A.speedFor("normal", 0.25), 0.5, "clamped to the bottom of the slider")
-        T.eq(A.speedFor("full", 3), 2, "and the top of it")
-        T.eq(A.speedFor("fast", 0), 1, "a stored nothing is the designed pace")
-        T.eq(A.speedFor("fast", "x"), 1, "and so is a stored nonsense")
-
-        // And the same duration comes out the other side, which is the only
-        // promise that matters to somebody who never asked for this change.
-        const before = A.travel(340, 1.25 / 1.25, true)
-        const after = A.travel(340, 1 / A.speedFor("normal", 1.25), true)
-        T.eq(after, before, "a migrated Normal session opens a panel in the same time")
-
-        const migrated = A.migrate({ appearance: { animationMode: "normal", animationSpeed: 1.25, theme: "dark" } })
-        T.eq(migrated.appearance.animationMode, "full", "the document says Full afterwards")
-        T.eq(migrated.appearance.animationSpeed, 1, "with the pace carried across")
-        T.eq(migrated.appearance.theme, "dark", "and everything else left alone")
-
-        const fast = A.migrate({ appearance: { animationMode: "fast", animationSpeed: 1.5 } })
-        T.eq([fast.appearance.animationMode, fast.appearance.animationSpeed], ["full", 1.5], "Fast keeps its speed")
-
-        // Total and idempotent: running it twice is running it once, and
-        // anything it does not understand passes through untouched.
-        T.eq(JSON.stringify(A.migrate(migrated)), JSON.stringify(migrated), "migrating twice changes nothing")
-        const kept = { appearance: { animationMode: "reduced", animationSpeed: 2 } }
-        T.eq(JSON.stringify(A.migrate(kept)), JSON.stringify(kept), "Reduced is not touched")
-        T.eq(JSON.stringify(A.migrate({ appearance: { animationMode: "off" } })),
-             JSON.stringify({ appearance: { animationMode: "off" } }), "nor is Off")
-        T.eq(A.migrate(null), null, "no document is no document")
-        T.eq(JSON.stringify(A.migrate({})), "{}", "a document with no appearance survives")
-        T.eq(JSON.stringify(A.migrate({ appearance: null })), JSON.stringify({ appearance: null }),
-             "and so does one whose appearance is not an object")
-
         // The compositor's plan lost a branch with Normal; Full is the table.
         T.eq(H.entries("full").filter(e => e.leaf === "windows")[0].speed, 2, "Full is the table as written")
         T.eq(H.entries("reduced").filter(e => e.leaf === "windows")[0].speed, 1.2, "Reduced is shorter")

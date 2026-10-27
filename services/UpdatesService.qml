@@ -239,14 +239,14 @@ Singleton {
         unit: Logic.UPGRADE_UNIT
         label: "UpdatesService." + Logic.UPGRADE_UNIT
         onEnded: root.check(false)
-        onFailed: code => root.say("The terminal window could not be opened (" + (code < 0 ? "not started" : "exit " + code) + ")", true)
+        onFailed: code => root.say(upgradeJob.failureText(code), true)
     }
     TerminalJob {
         id: flatpakJob
         unit: Logic.FLATPAK_UNIT
         label: "UpdatesService." + Logic.FLATPAK_UNIT
         onEnded: root.check(false)
-        onFailed: code => root.say("The terminal window could not be opened (" + (code < 0 ? "not started" : "exit " + code) + ")", true)
+        onFailed: code => root.say(flatpakJob.failureText(code), true)
     }
 
     // A terminal started by the shell before a restart is still the page's.

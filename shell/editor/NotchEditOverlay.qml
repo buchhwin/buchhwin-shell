@@ -397,7 +397,7 @@ Item {
             readonly property var rect: overlay.rectOf("notch:" + modelData.id)
             readonly property bool sizing: overlay.sizeId === modelData.id
             readonly property string label: NotchService.entry(modelData.type).label
-            // The buttons are the arranged panels' (QuickSlot, DashboardSlot):
+            // The buttons are the arranged panels' (TileSlot):
             // 30 px where there is room, shrinking with a short cell, and down
             // to the 16 px the discs were, never so wide that the two on top
             // of one item meet - the remove button takes half its width from

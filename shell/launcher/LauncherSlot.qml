@@ -4,7 +4,7 @@ import qs.services
 import qs.shell.components
 import qs.shell.editor
 
-// One block of the launcher: the dashboard's `DashboardSlot` with the size
+// One block of the launcher: the dashboard's `TileSlot` with the size
 // handle, on a grid whose rows are a share of the card. The place comes from
 // the `ArrangeArea`, not from a layout, so the blocks can glide aside to open
 // a gap under the one being dragged.

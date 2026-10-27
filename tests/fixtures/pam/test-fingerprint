@@ -7,5 +7,5 @@
 auth     optional  pam_echo.so Place your finger on the fingerprint reader
 auth     optional  pam_exec.so quiet /usr/bin/sleep 25
 auth     optional  pam_echo.so Verification timed out
-auth     required  pam_exec.so expose_authtok quiet /usr/bin/false
+auth     required  pam_exec.so expose_authtok quiet quiet_log /usr/bin/false
 account  required  pam_permit.so

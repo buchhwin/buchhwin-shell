@@ -103,6 +103,9 @@ def main():
         (confdir / "lid-test").write_text(service(helper))
         (confdir / "lid-missing").write_text(service(tmp / "does-not-exist"))
         (confdir / "baseline").write_text(service(None))
+        # The default libpam reads beside every service: without it each
+        # pam_start wrote "no default config other" into the system journal.
+        (confdir / "other").write_text((ROOT / "tests/fixtures/pam/other").read_text())
 
         def authenticate(svc, lid_state, finger_ok, password_ok):
             (lid / "LID" / "state").write_text(f"state:      {lid_state}\n")

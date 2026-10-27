@@ -7,7 +7,6 @@ import QtQuick.Effects
 import qs.theme
 import qs.services
 import qs.shell.components
-import "../../services/switcher/SwitcherLogic.js" as Logic
 
 // Alt+Tab: a centred strip of windows in most-recently-used order with live
 // previews, the minimized ones last and faded. Hyprland drives it through
@@ -20,11 +19,6 @@ PanelWindow {
     property bool shown: false
     readonly property real cardHeight: Metrics.spaceSm * 2 + Metrics.switcherPreviewHeight + Metrics.switcherIconSize / 2
         + Metrics.spaceSm + title.implicitHeight
-
-    function toplevelFor(address) {
-        const key = Logic.normalizeAddress(address)
-        return Hyprland.toplevels.values.find(item => Logic.normalizeAddress(item.address) === key) || null
-    }
 
     screen: PanelService.screen
     visible: shown
@@ -166,7 +160,7 @@ PanelWindow {
                 required property var modelData
                 required property int index
                 readonly property bool isSelected: index === SwitcherService.selected
-                readonly property var toplevel: window.shown ? window.toplevelFor(modelData.address) : null
+                readonly property var toplevel: window.shown ? MinimizeService.toplevelFor(modelData.address) : null
                 readonly property var entry: LauncherService.entryForClass(modelData.appClass)
                 // Largest box with the window's aspect ratio inside the preview area.
                 readonly property real aspect: modelData.width > 0 && modelData.height > 0 ? modelData.width / modelData.height : 16 / 10

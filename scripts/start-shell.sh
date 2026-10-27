@@ -250,8 +250,9 @@ if (( reap_only )); then
   # Called as the compositor ends, with the shell on its way out behind it
   # (losing the compositor is an abort, not an exit): wait for its instance
   # to go, up to 5 s, rather than end helpers it still owns, and leave them
-  # alone if it never goes.
-  for _ in {1..100}; do
+  # alone if it never goes. The tests shorten the wait (BUCHHWIN_REAP_STEPS).
+  reap_steps=${BUCHHWIN_REAP_STEPS:-100}
+  for (( step = 0; step < reap_steps; step++ )); do
     instance_listed_anywhere || break
     sleep 0.05
   done
@@ -467,6 +468,8 @@ start_after_check() {
 # built with its crash reporter, it does all of the above whatever is set here.
 restart_window=60
 restart_limit=5
+# The pause before a restart; the tests shorten it (BUCHHWIN_RESTART_PAUSE).
+restart_pause=${BUCHHWIN_RESTART_PAUSE:-1}
 restarts=0
 window_started=$SECONDS
 stopping=0
@@ -697,7 +700,7 @@ while true; do
     exit "$status"
   fi
   note "the shell died on signal $signal, restarting ($restarts of $restart_limit)"
-  sleep 1
+  sleep "$restart_pause"
   # The dead shell's instance can outlive it for a moment (the same lag
   # reload-shell.sh waits out): a replacement started against it exits 0 at
   # once because of --no-duplicate, and that 0 is read above as a clean exit -

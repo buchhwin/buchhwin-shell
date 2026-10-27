@@ -163,8 +163,8 @@ ShellRoot {
         T.eq(L.testHooksAllowed(true, "/run/user/1000/buchhwin-shell/lock"), false,
              "the real session's lock directory refuses them, flag or not")
         T.eq(L.testHooksAllowed(true, "/run/user/1000/buchhwin-shell/lock-nestedx"), false, "only that exact name")
-        T.eq([L.testHooksAllowed(true, ""), L.testHooksAllowed(true, undefined)], [true, true],
-             "a lock started by hand (no directory) keeps them")
+        T.eq([L.testHooksAllowed(true, ""), L.testHooksAllowed(true, undefined)], [false, false],
+             "nor a lock without a directory: started by hand after the real one was ended, test-permit took any input")
         T.eq([L.testHooksAllowed(false, ""), L.testHooksAllowed(false, "/run/user/1000/buchhwin-shell/lock-nested"),
               L.testHooksAllowed("1", "")], [false, false, false], "never without the nested flag")
         T.eq(L.pamService(L.testHooksAllowed(true, "/run/user/1000/buchhwin-shell/lock"), "test-permit"), "buchhwin-lock",

@@ -3,5 +3,5 @@
 # rejects every answer - as a system error (pam_exec's own failure), on
 # which PamContext reports an error as well as the result. A wrong password
 # at a real login is PAM_AUTH_ERR; test-password takes that way.
-auth     required  pam_exec.so expose_authtok quiet /usr/bin/false
+auth     required  pam_exec.so expose_authtok quiet quiet_log /usr/bin/false
 account  required  pam_permit.so

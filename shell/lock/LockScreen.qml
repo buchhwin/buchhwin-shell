@@ -40,7 +40,6 @@ Scope {
     readonly property string user: Quickshell.env("USER") || Quickshell.env("LOGNAME") || ""
 
     readonly property bool showAvatar: SettingsService.value("lock.showAvatar")
-    readonly property bool showMedia: SettingsService.value("lock.showMedia")
     readonly property bool showStatus: SettingsService.value("lock.showStatus")
     readonly property bool showPowerButtons: SettingsService.value("lock.showPowerButtons")
 

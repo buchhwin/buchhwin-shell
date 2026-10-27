@@ -131,7 +131,6 @@ Singleton {
     function currentFor(screen) { return Logic.pathFor(state, screen, current, images, imagesReady, stateLoaded) }
     // One side of the pair, from Settings > Wallpaper: `dark` true for the
     // dark theme's. An empty path lets that side show the shared wallpaper.
-    function themeWallpaper(dark) { return dark ? darkPath : lightPath }
     function setThemeWallpaper(dark, path) {
         return SettingsService.set(Logic.pickKey(true, dark), String(path || ""))
     }
@@ -262,7 +261,6 @@ Singleton {
     function checkReady() {
         if (imagesReady || !folder.length) return
         if (folderModel.status !== FolderListModel.Ready || !Logic.listsFolder(folderModel.folder, folder)) return
-        if (subfolderModel.status !== FolderListModel.Ready || !Logic.listsFolder(subfolderModel.folder, folder)) return
         if (subfolders.every(path => subfolderImages[path] !== undefined)) imagesReady = true
     }
     Timer {
@@ -280,23 +278,16 @@ Singleton {
     // how the user groups their wallpapers (the picker's chips are these
     // folders); a folder inside a folder is not a second level of grouping,
     // it is somewhere the picker does not look.
+    //
+    // One model for both, so the folder is read and watched once: the name
+    // filters apply to files only, so the subfolders are listed beside the
+    // images (rebuildSubfolders takes those, refresh the files), and a new
+    // one appears as a chip without a restart.
     FolderListModel {
         id: folderModel
         folder: Logic.folderUrl(root.folder)
         nameFilters: root.imageFilters
-        showDirs: false
-        sortField: FolderListModel.Name
-        onStatusChanged: if (status === FolderListModel.Ready) root.refresh()
-        onCountChanged: root.refresh()
-    }
-
-    // The subfolders, watched the same way, so a new one appears as a chip
-    // without a restart.
-    FolderListModel {
-        id: subfolderModel
-        folder: Logic.folderUrl(root.folder)
         showDirs: true
-        showFiles: false
         showDotAndDotDot: false
         sortField: FolderListModel.Name
         onStatusChanged: if (status === FolderListModel.Ready) root.rebuildSubfolders()
@@ -312,9 +303,10 @@ Singleton {
         // user-dirs.dirs is read - and a model per folder of the home
         // directory followed. A zip's __MACOSX holds only hidden "._" files
         // and never makes a chip; it was a thread and a watch of its own.
-        if (Logic.listsFolder(subfolderModel.folder, root.folder))
-            for (let i = 0; i < subfolderModel.count; ++i) {
-                const path = subfolderModel.get(i, "filePath")
+        if (Logic.listsFolder(folderModel.folder, root.folder))
+            for (let i = 0; i < folderModel.count; ++i) {
+                if (!folderModel.get(i, "fileIsDir")) continue
+                const path = folderModel.get(i, "filePath")
                 if (Logic.isGroupFolder(path)) found.push(path)
             }
         // Only when it actually changed: assigning the same list would restart
@@ -375,7 +367,7 @@ Singleton {
         // Not the working directory's images (rebuildSubfolders).
         if (Logic.listsFolder(folderModel.folder, root.folder))
             for (let i = 0; i < folderModel.count; ++i)
-                result.push(folderModel.get(i, "filePath"))
+                if (!folderModel.get(i, "fileIsDir")) result.push(folderModel.get(i, "filePath"))
         for (const name of subfolders)
             for (const path of subfolderImages[name] || []) result.push(path)
         // Only when it changed, like the subfolders above: a folder is read

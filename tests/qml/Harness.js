@@ -55,6 +55,24 @@ function throwsError(callback, message) {
     }
 }
 
+// Asks `pred` every 20 ms until it holds or `timeoutMs` (3000) passed, then
+// calls done(held). For a step that needs something to have loaded: a fixed
+// delay was too short while the machine was busy (a build beside the run).
+// `parent` owns the Timer it polls with.
+function waitUntil(parent, pred, timeoutMs, done) {
+    const timer = Qt.createQmlObject("import QtQuick; Timer { interval: 20; repeat: true }", parent)
+    let left = Math.ceil((timeoutMs || 3000) / 20)
+    const held = () => { try { return !!pred() } catch (error) { return false } }
+    timer.triggered.connect(() => {
+        const now = held()
+        if (!now && --left > 0) return
+        timer.stop()
+        timer.destroy()
+        done(now)
+    })
+    timer.start()
+}
+
 function finish(name) {
     for (const failure of failures) console.info("FAIL " + name + ": " + failure)
     if (failures.length) console.info("TESTS FAILED " + name + " (" + failures.length + " failed, " + passed + " passed)")

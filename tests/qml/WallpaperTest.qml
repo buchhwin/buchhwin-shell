@@ -14,6 +14,8 @@ ShellRoot {
     readonly property string wallFolder: Paths.cacheDir + "/wallpaper-test"
     FileView { id: imageA; path: root.wallFolder + "/a.png"; printErrors: false }
     FileView { id: imageB; path: root.wallFolder + "/b.png"; printErrors: false }
+    // In a subfolder: the folder's one model lists it as a group, not as an image.
+    FileView { id: imageC; path: root.wallFolder + "/nature/c.png"; printErrors: false }
     // The service's state file, as it was written.
     FileView { id: written; path: Paths.configDir + "/wallpapers.json"; blockLoading: true; printErrors: false }
     // Where a wallpaper is handed to Qt: the desktop and an overview card.
@@ -111,19 +113,6 @@ ShellRoot {
         T.eq(W.moveIndex(4, -3, 7, 3), 1, "up moves one row")
         T.eq(W.moveIndex(1, -3, 7, 3), 1, "up stays put in the first row")
         T.eq(W.moveIndex(0, 1, 0, 3), 0, "an empty grid stays at zero")
-
-        // The settings migration: two values became three, read on load so
-        // nothing depends on a write landing first.
-        T.eq(W.migrate({ wallpaper: { favouritesOnly: true, slideshow: true } }).wallpaper,
-             { slideshow: true, slideshowSource: "favourites" }, "favourites-only becomes the favourites source")
-        T.eq(W.migrate({ wallpaper: { favouritesOnly: false } }).wallpaper,
-             { slideshowSource: "all" }, "and off becomes every image")
-        T.eq(W.migrate({ wallpaper: { slideshowSource: "chosen", favouritesOnly: true } }).wallpaper,
-             { slideshowSource: "chosen" }, "a document that already chose keeps its choice")
-        T.eq(W.migrate({ wallpaper: { folder: "~/Pictures" } }).wallpaper, { folder: "~/Pictures" },
-             "one that never had the boolean is left alone")
-        T.eq(W.migrate({ appearance: {} }), { appearance: {} }, "and so is one with no wallpaper section")
-        T.eq(W.migrate(null), null, "nothing at all migrates to nothing at all")
 
         // ---- subfolders as groups -----------------------------------------
 
@@ -405,6 +394,7 @@ ShellRoot {
         // ---- WallpaperService in the sandbox: a configured image that is gone
         imageA.setText("a\n")
         imageB.setText("b\n")
+        imageC.setText("c\n")
         SettingsService.setAll({ "wallpaper.folder": root.wallFolder, "wallpaper.path": root.wallFolder + "/gone.png",
                                  "appearance.accentFromWallpaper": true, "appearance.accent": "#50e2cb" })
         missing.start()
@@ -418,10 +408,12 @@ ShellRoot {
         repeat: true
         onTriggered: {
             root.waits += 1
-            const there = WallpaperService.images.length === 2 && WallpaperService.configuredMissing
+            const there = WallpaperService.images.length === 3 && WallpaperService.configuredMissing
             if (!there && root.waits < 100) return
             stop()
-            T.eq(WallpaperService.images, [root.wallFolder + "/a.png", root.wallFolder + "/b.png"], "the folder's two images")
+            T.eq(WallpaperService.images, [root.wallFolder + "/a.png", root.wallFolder + "/b.png", root.wallFolder + "/nature/c.png"],
+                 "the folder's two images, then its subfolder's")
+            T.eq(WallpaperService.subfolders, [root.wallFolder + "/nature"], "the subfolder is a group, not an image")
             T.ok(WallpaperService.configuredMissing, "the configured image is known to be gone")
             T.eq(WallpaperService.current, root.wallFolder + "/a.png", "and the first image of the folder is the wallpaper")
             SettingsService.set("wallpaper.path", root.wallFolder + "/b.png")

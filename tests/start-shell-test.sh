@@ -131,11 +131,13 @@ unset HYPRLAND_INSTANCE_SIGNATURE HYPR_INSTANCES
 # kdeglobals and settings.json, and the caller's own would decide it. So is
 # the runtime directory: before it starts the shell, the script clears the
 # instance directories Quickshell left there, and a test clears none of the
-# caller's.
+# caller's. The pause before a restart and the wait of a reap are short here:
+# the cases wait on the stand-in shells, not on the clock.
 export PATH="$SB/bin:$PATH" XDG_STATE_HOME="$SB/state" XDG_CONFIG_HOME="$SB/config" XDG_RUNTIME_DIR="$SB/run" \
   COUNT="$SB/count" LINGER="$SB/linger" \
   HELD="$SB/held" PKILLS="$SB/pkills" STUB_CFG="$SB/cfg" SESSION_ENV="$SB/session-env" REPO="$PWD" \
-  WAYLAND_DISPLAY=wayland-test BUCHHWIN_START_WITHOUT_HYPRLAND=1
+  WAYLAND_DISPLAY=wayland-test BUCHHWIN_START_WITHOUT_HYPRLAND=1 \
+  BUCHHWIN_RESTART_PAUSE=0.05 BUCHHWIN_REAP_STEPS=10
 # The shell's own settings and its record of them come from whoever runs this
 # test - a terminal or an editor the shell started has them - and would be
 # taken for the session's. So does a nested session's flag.

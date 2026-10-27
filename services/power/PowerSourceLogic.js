@@ -25,13 +25,16 @@ function isObject(value) {
 }
 
 // document: parsed settings.json. Returns the document unchanged when it
-// already has per-source settings, otherwise a copy where both sources start
-// with the old single values and the profile stays unchanged ("keep"), so an
-// update changes nothing the user did not choose.
+// already has per-source settings or none of the old single values (a file
+// written by hand or a nested session's seed: its sources are the defaults),
+// otherwise a copy where both sources start with the old single values and
+// the profile stays unchanged ("keep"), so an update changes nothing the
+// user did not choose.
 function migrate(document) {
     if (!isObject(document)) return document
     const power = isObject(document.power) ? document.power : {}
     if (isObject(power.battery) || isObject(power.ac)) return document
+    if (!LEGACY_KEYS.some(key => power[key] !== undefined)) return document
     const result = Object.assign({}, document)
     const next = {}
     for (const key of Object.keys(power)) {

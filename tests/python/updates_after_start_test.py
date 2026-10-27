@@ -37,7 +37,19 @@ check(after.hyprland_version('{"version": "0.56.2", "tag": "v0.56.2"}') == "0.56
 check(after.hyprland_version('{"tag": "v0.41.2"}') == "0.41.2", "an older one's tag")
 check(after.hyprland_version("", "Hyprland 0.56.2 built from branch v0.56.2 at commit x") == "0.56.2", "or Hyprland --version")
 check(after.read_state('{"version": 1, "quickshell": "0.3.2", "hyprland": "0.56.2", "head": "abc1234", "x": 1}')
-      == {"quickshell": "0.3.2", "hyprland": "0.56.2", "head": "abc1234"}, "the record")
+      == {"quickshell": "0.3.2", "hyprland": "0.56.2", "qt": "", "head": "abc1234"}, "the record")
+check(after.read_state('{"version": 1, "qt": "6.12.0"}')["qt"] == "6.12.0", "with the Qt the shell ran on")
+# Qt: a minor upgrade keeps Quickshell's version string, so it is a part of its own
+maps = "7f00-7f01 r--p 00000000 00:1f 123 /usr/lib/libQt6Core.so.6.12.0\n"
+check(after.qt_version(maps) == "6.12.0", "Qt from the running shell's maps")
+with tempfile.TemporaryDirectory() as raw:
+    link = pathlib.Path(raw) / "libQt6Core.so.6"
+    link.symlink_to("libQt6Core.so.6.13.1")
+    check(after.qt_version("", [str(link)]) == "6.13.1", "else from where the library's symlink points")
+    check(after.qt_version(maps, [str(link)]) == "6.12.0", "the running shell's first")
+check(after.qt_version("", []) == "", "unknown without either")
+check(after.changes({"quickshell": "0.3.2", "qt": "6.12.0"}, {"quickshell": "0.3.2", "qt": "6.13.0"})
+      == ["Qt 6.12.0 → 6.13.0"], "a Qt upgrade under the same Quickshell is a change")
 check(after.read_state("{broken") is None and after.read_state('{"version": 2}') is None, "no record")
 check(after.settings_of('{"updates": {"coreCheck": "always", "whatsNew": true}}') == ("always", True), "both settings")
 check(after.settings_of('{"updates": {"coreCheck": "loud", "whatsNew": "yes"}}') == ("problems", False), "the defaults for anything else")
@@ -114,7 +126,10 @@ esac
     code, said = run()
     check(code == 0 and [item["kind"] for item in said] == ["recorded"], "the first run only records (%s)" % said)
     head = record()["head"]
-    check(record() == {"version": 1, "quickshell": "0.3.2", "hyprland": "0.56.2", "head": head} and len(head) == 7, "the record")
+    # Qt is this machine's (no shell process to read here): only its key is known
+    qt = record().get("qt")
+    check(record() == {"version": 1, "quickshell": "0.3.2", "hyprland": "0.56.2", "qt": qt, "head": head}
+          and len(head) == 7 and isinstance(qt, str), "the record")
     check([item["kind"] for item in run()[1]] == ["unchanged"], "the same versions: nothing")
 
     # A core update, a clean minute: quiet by default, recorded.

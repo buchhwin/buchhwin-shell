@@ -72,7 +72,7 @@ Singleton {
         label: "SecurityKeyService.terminal"
         onEnded: root.refresh()
         onFailed: code => {
-            root.message = "The terminal window could not be opened (" + (code < 0 ? "not started" : "exit " + code) + ")"
+            root.message = job.failureText(code)
             root.messageError = true
         }
     }

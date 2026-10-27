@@ -70,8 +70,3 @@ function selection(windows, activeAddress, direction, extra) {
     const first = openIndex(windows, activeAddress, direction)
     return first < 0 ? -1 : wrap(first + (extra || 0), windows.length)
 }
-
-function normalizeAddress(address) {
-    const text = String(address || "").toLowerCase()
-    return text.startsWith("0x") ? text.slice(2) : text
-}
