@@ -143,6 +143,14 @@ fi
 if (( pam_wallet )); then
   step "kwallet handed the login" systemctl --user start plasma-kwallet-pam.service
 fi
+# Citrix's daemons leave their pid locks behind when they are killed (a logout,
+# a shutdown), and a lock whose pid is gone or now another program's starts
+# no daemon: Citrix Workspace stays white. Before the shell, which can start
+# Citrix; locks of a running Citrix process stay (scripts/citrix-locks.py).
+if [[ -d $HOME/.ICAClient/.tmp ]]; then
+  moved_locks=$(python3 "$project_dir/scripts/citrix-locks.py" 2>&1)
+  mark "citrix locks checked${moved_locks:+: ${moved_locks//$'\n'/, }}"
+fi
 # The shell starts before the portal work: it only needs the environment above,
 # and waiting for portal units (which can take a long time on a cold boot) used
 # to leave the screen black until they were done.
