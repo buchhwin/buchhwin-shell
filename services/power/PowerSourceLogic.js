@@ -54,12 +54,16 @@ function migrate(document) {
 // charger did nothing at all until the next unplug and plug. An option that
 // does not do what it says.
 //
-// The first source seen after the shell starts is still only remembered, so a
-// reload keeps a manual choice - at that moment nothing has changed yet, and
-// the shell has no business overruling a profile the user set by hand.
+// The first source seen after a *restart* of the shell is only remembered, so
+// a reload keeps a manual choice - at that moment nothing has changed yet, and
+// the shell has no business overruling a profile the user set by hand. The
+// first start of a login applies it: power-profiles-daemon comes back with the
+// profile it last had, and a laptop on the charger (choice: balanced) ran in
+// power saver from 22.10. to 27.10. - two 4K screens on the GPU's lowest clock.
 //
 // state: { source, choice } (source "" before UPower is ready)
-// input: { ready, source, choice } where choice is one of PROFILES
+// input: { ready, source, choice, login } where choice is one of PROFILES and
+// login is true for the shell's first start in the login
 // Returns { state, profile } with profile "" when nothing should change.
 function profileChange(state, input) {
     const last = state && typeof state.source === "string" ? state.source : ""
@@ -69,7 +73,7 @@ function profileChange(state, input) {
     const next = { source: input.source, choice: typeof input.choice === "string" ? input.choice : "" }
     // "keep" is index 0 and means "do not touch the profile at all".
     const choice = PROFILES.indexOf(input.choice) > 0 ? input.choice : ""
-    if (!last.length) return { state: next, profile: "" }
+    if (!last.length) return { state: next, profile: input.login === true ? choice : "" }
     if (last !== next.source || lastChoice !== next.choice) return { state: next, profile: choice }
     return { state: next, profile: "" }
 }

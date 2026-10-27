@@ -38,6 +38,13 @@ ShellRoot {
         result = P.profileChange(result.state, { ready: true, source: "battery", choice: "powerSaver" })
         T.eq(result, { state: { source: "battery", choice: "powerSaver" }, profile: "" },
              "first source after start is only remembered")
+        T.eq(P.profileChange({ source: "" }, { ready: true, source: "ac", choice: "balanced", login: true }),
+             { state: { source: "ac", choice: "balanced" }, profile: "balanced" },
+             "the first source of a new login applies its choice: the daemon keeps the last profile")
+        T.eq(P.profileChange({ source: "" }, { ready: true, source: "ac", choice: "keep", login: true }).profile, "",
+             "unless the choice is Don't change")
+        T.eq(P.profileChange({ source: "" }, { ready: true, source: "ac", choice: "balanced", login: false }).profile, "",
+             "a restarted shell keeps the profile")
         result = P.profileChange(result.state, { ready: true, source: "battery", choice: "powerSaver" })
         T.eq(result.profile, "", "same source and same choice changes nothing")
         result = P.profileChange(result.state, { ready: true, source: "ac", choice: "performance" })

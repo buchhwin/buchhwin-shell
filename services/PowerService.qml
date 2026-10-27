@@ -99,6 +99,8 @@ Singleton {
     onBatteryInputChanged: batteryCheck.restart()
     Component.onCompleted: {
         batteryCheck.restart()
+        if (lockProcess || !IdleService.realSession) login = 0
+        else loginCheck.running = true
         sourceCheck.restart()
         pushEffects()
     }
@@ -162,11 +164,27 @@ Singleton {
     readonly property string profileChoice: current("profile")
     readonly property bool sourceReady: device !== null && device.ready
     property var sourceState: ({ source: "", choice: "" })
-    readonly property string sourceInput: [sourceReady, source, profileChoice].join(",")
+    readonly property string sourceInput: [sourceReady, source, profileChoice, login].join(",")
     onSourceInputChanged: sourceCheck.restart()
 
+    // Whether this is the shell's first start in the login (1), a restart (0)
+    // or not known yet (-1): the first start applies the source's profile,
+    // because power-profiles-daemon comes back with whatever it last had. A
+    // restarted shell finds the mark in the runtime directory, which is
+    // emptied when the login ends.
+    property int login: -1
+    readonly property string loginMark: Paths.runtimeDir + "/power-profile-login"
+    Process {
+        id: loginCheck
+        command: ["sh", "-c", "[ -e \"$1\" ] && exit 0; mkdir -p -m 700 -- \"${1%/*}\" && : > \"$1\"; exit 3", "sh", root.loginMark]
+        onExited: code => root.login = code === 3 ? 1 : 0
+    }
+
     function checkSource() {
-        const result = PowerSourceLogic.profileChange(sourceState, { ready: sourceReady, source: source, choice: profileChoice })
+        // The first source waits for the answer.
+        if (login < 0 && !sourceState.source.length) return
+        const result = PowerSourceLogic.profileChange(sourceState, { ready: sourceReady, source: source, choice: profileChoice,
+                                                                     login: login === 1 })
         sourceState = result.state
         if (!result.profile.length || lockProcess || !IdleService.realSession) return
         const profiles = { powerSaver: PowerProfile.PowerSaver, balanced: PowerProfile.Balanced, performance: PowerProfile.Performance }
