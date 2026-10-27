@@ -46,6 +46,22 @@ else
   hyprctl --batch "keyword env XCURSOR_THEME,$theme ; keyword env XCURSOR_SIZE,$size" >/dev/null
 fi
 
+# X11 applications take XCURSOR_SIZE before Xcursor.size, so while X11 is
+# sharp the session's size beat the X11 one below, and since Hyprland no
+# longer enlarges an XWayland pointer (the cursor patch in
+# install/patches/Hyprland) theirs came out a third small - OnlyOffice on
+# 27.10. scripts/launch-app.sh hands the X11 size to what the shell starts,
+# from this file; most Wayland clients have the compositor draw their pointer
+# and never read the variable. Before the check below: it costs no process.
+if [[ -n ${XDG_RUNTIME_DIR:-} ]]; then
+  x11file=$XDG_RUNTIME_DIR/buchhwin-shell/x11-cursor-size
+  if [[ $x11size != "$size" ]]; then
+    mkdir -p -m 700 -- "${x11file%/*}" && printf '%s\n' "$x11size" >"$x11file"
+  else
+    rm -f -- "$x11file"
+  fi
+fi
+
 # Everything below outlives a config reload and is the same for every run of
 # one Hyprland session with the same values, and the shell runs this at every
 # start, every config reload and every X11 scale change: about twenty

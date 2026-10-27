@@ -117,6 +117,17 @@ check 'grep -q "XCURSOR_SIZE,24" "$CALLS" && grep -q "^dbus-update-activation-en
 check '! grep -q "^systemctl" "$CALLS"' 'and no separate systemctl set-environment'
 check 'grep -q "^xrdb -merge -nocpp -$" "$CALLS"' 'xrdb merges without the C preprocessor'
 check '! grep -q "36" "$CALLS"' 'and never the X11 size'
+# X11 applications read XCURSOR_SIZE first: the X11 size goes to what the
+# shell starts, and only while it differs from the session's
+check '[[ $(cat "$XDG_RUNTIME_DIR/buchhwin-shell/x11-cursor-size") == 36 ]]' 'the X11 size is left for the launcher'
+check '[[ $(XCURSOR_SIZE=24 bash ./scripts/launch-app.sh test sh -c "echo \$XCURSOR_SIZE") == 36 ]]' 'and an application started gets it'
+bash ./scripts/apply-cursor-env.sh macOS 24 36
+check '[[ $(cat "$XDG_RUNTIME_DIR/buchhwin-shell/x11-cursor-size") == 36 ]]' 'a repeated run keeps it'
+bash ./scripts/apply-cursor-env.sh macOS 24 24
+check '[[ ! -e "$XDG_RUNTIME_DIR/buchhwin-shell/x11-cursor-size" ]]' 'X11 at the session'"'"'s size: the file goes'
+check '[[ $(XCURSOR_SIZE=24 bash ./scripts/launch-app.sh test sh -c "echo \$XCURSOR_SIZE") == 24 ]]' 'and an application keeps the session'"'"'s size'
+: > "$DB"; : > "$CALLS"; fresh
+bash ./scripts/apply-cursor-env.sh macOS 24 36
 check 'grep -q "^gsettings set org.gnome.desktop.interface cursor-theme macOS$" "$CALLS" && grep -q "^gsettings set org.gnome.desktop.interface cursor-size 24$" "$CALLS"' \
   'the Settings portal (dconf) gets the theme and the real size, for Flatpak applications'
 : > "$DB"
