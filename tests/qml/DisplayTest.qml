@@ -394,6 +394,18 @@ ShellRoot {
              "a monitor plugged in: the draft cannot stay, and says it went")
         T.eq([D.refreshedDraft([], draftLive, []).draft.length, D.refreshedDraft(undefined, draftLive, undefined).dropped], [2, false],
              "the first reading is the draft")
+        // The screen moved by a pixel and back so XWayland hears the sizes
+        // again: the rightmost one with a place of its own.
+        const announceDesk = [{ name: "DP-8", x: 0, y: 0, width: 3840, height: 2160, mirror: "", disabled: false },
+                      { name: "DP-10", x: 2560, y: 0, width: 3840, height: 2160, mirror: "", disabled: false },
+                      { name: "DP-13", x: 5120, y: 0, width: 1920, height: 1080, mirror: "", disabled: false }]
+        T.eq(D.announceEntry(announceDesk).name, "DP-13", "the rightmost screen")
+        T.eq(D.announceEntry(announceDesk.map(m => m.name === "DP-13" ? Object.assign({}, m, { mirror: "DP-8" }) : m)).name, "DP-10",
+             "never a mirror: its rule would stop the mirroring")
+        T.eq(D.announceEntry(announceDesk.map(m => m.name === "DP-13" ? Object.assign({}, m, { disabled: true }) : m)).name, "DP-10",
+             "nor a screen switched off")
+        T.eq([D.announceEntry([]), D.announceEntry(null)], [null, null], "no screen, nothing")
+
         T.finish("DisplayTest")
     }
 }

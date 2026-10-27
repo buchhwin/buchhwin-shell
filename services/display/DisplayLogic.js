@@ -122,6 +122,16 @@ function parseMonitors(json) {
     }).sort((a, b) => a.x - b.x || a.y - b.y || (a.mirror !== "") - (b.mirror !== "") || a.name.localeCompare(b.name))
 }
 
+// The screen DisplayService.announceToXWayland moves by a pixel and back:
+// the rightmost one that is on and shows a place of its own - re-applied, a
+// mirror's rule would stop the mirroring (Commands.monitor writes no
+// source), and a screen switched off has no place to move. null: none.
+function announceEntry(monitors) {
+    const list = (Array.isArray(monitors) ? monitors : []).filter(item => item && !item.disabled && !item.mirror
+                                                                       && item.width > 0 && item.height > 0)
+    return list.length ? list.reduce((best, item) => item.x > best.x || (item.x === best.x && item.y > best.y) ? item : best) : null
+}
+
 function resolutions(monitor) {
     const seen = {}
     return monitor.modes.filter(mode => !seen[mode.width + "x" + mode.height] && (seen[mode.width + "x" + mode.height] = true))

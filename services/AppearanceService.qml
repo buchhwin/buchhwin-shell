@@ -143,10 +143,40 @@ Singleton {
         function onAnimationModeChanged() { debounce.restart() }
         function onAnimationSpeedChanged() { debounce.restart() }
         function onLightEffectsChanged() { debounce.restart() }
-        function onXwaylandSharpChanged() { debounce.restart() }
+        function onXwaylandSharpChanged() { debounce.restart(); root.announceX11Sizes(true) }
         function onCursorThemeChanged() { root.applyCursor() }
         function onCursorSizeChanged() { root.applyCursor() }
-        function onLoadedChanged() { if (SettingsService.loaded) { root.applyHyprland(); root.applyX11Scale(); root.applyCursor() } }
+        function onLoadedChanged() {
+            if (!SettingsService.loaded) return
+            root.applyHyprland()
+            root.applyX11Scale()
+            root.applyCursor()
+            root.announceX11Sizes(false)
+        }
+    }
+
+    // "Sharp X11 applications" reaches XWayland only when Hyprland announces
+    // the screens again (DisplayService.announceToXWayland): after the start
+    // and every config reload while it is on - the files ship it off, and the
+    // shell's own value comes after them - and after it is switched either
+    // way. Late enough that the saved arrangement is back first (DisplayService
+    // re-applies it 800 ms after a reload), and again while the screens are
+    // not known yet.
+    function announceX11Sizes(changed) {
+        if (lockProcess || !realSession) return
+        if (!changed && !SettingsService.xwaylandSharp) return
+        announceTimer.tries = 0
+        announceTimer.restart()
+    }
+    Timer {
+        id: announceTimer
+        property int tries: 0
+        interval: 1500
+        onTriggered: {
+            if (DisplayService.announceToXWayland() || tries >= 5) return
+            tries += 1
+            restart()
+        }
     }
 
     // The scale and the cursor's X11 size both move with it, so one change
@@ -160,6 +190,7 @@ Singleton {
             root.applyHyprland()
             root.applyX11Scale()
             root.applyCursor()
+            root.announceX11Sizes(false)
         }
     }
 

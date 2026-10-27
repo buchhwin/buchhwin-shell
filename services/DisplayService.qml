@@ -649,6 +649,41 @@ Singleton {
             }
         }
     }
+    // XWayland learns the screens' sizes only when Hyprland announces them -
+    // on a change of the monitors' layout or a config reload (Hyprland's
+    // XDGOutput.cpp) - and xwayland:force_zero_scaling (Settings > Displays >
+    // "Sharp X11 applications") changes what is announced, real pixels
+    // instead of logical ones, without announcing anything. The shell sets it
+    // after Hyprland has started and again after every reload, whose file
+    // ships it off, so X11 went on believing the logical sizes: a Citrix
+    // desktop drew 2560x1440 on a 4K screen at 1.5, its second screen inside
+    // the first, and clicks missed (27.10.). One screen moved by a pixel and
+    // back a second later announces them all again - one request with both
+    // rules is one layout and no change. Checked live: DP-13 moved, X11 went
+    // from 2560x1440 to 3840x2160 per 4K screen. AppearanceService asks for
+    // it; not while a new arrangement waits to be kept.
+    property bool announcing: false
+    function announceToXWayland() {
+        if (announcing || confirming) return false
+        const entry = Logic.announceEntry(monitors)
+        if (!entry) return false
+        announcing = true
+        announceBack.entry = entry
+        HyprCompat.configure(HyprCompat.commands.monitor(Object.assign({}, entry, { x: entry.x + 1 })))
+        announceBack.restart()
+        return true
+    }
+    Timer {
+        id: announceBack
+        property var entry: null
+        interval: 1000
+        onTriggered: {
+            if (entry) HyprCompat.configure(HyprCompat.commands.monitor(entry))
+            entry = null
+            root.announcing = false
+        }
+    }
+
     // Also the bound on reapplyQueued: a refresh that fails leaves it set.
     Timer {
         id: savedDelay
