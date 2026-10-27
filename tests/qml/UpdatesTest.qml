@@ -210,12 +210,12 @@ ShellRoot {
         // They open in the terminal Default apps names (launch-terminal.sh);
         // they used to be kitty whatever it said.
         const upgrade = U.terminalUpgradeCommand("/s/launch-terminal.sh")
-        T.eq(upgrade.slice(0, 9), ["/s/launch-terminal.sh", "--unit", "buchhwin-upgrade", "--hold", "--title", "System upgrade", "--", "sh", "-c"],
-             "Arch: the upgrade runs in the session's terminal, held, titled, as a unit of its own")
+        T.eq(upgrade.slice(0, 9), ["/s/launch-terminal.sh", "--unit", "buchhwin-upgrade", "--hold-on-error", "--title", "System upgrade", "--", "sh", "-c"],
+             "Arch: the upgrade runs in the session's terminal, held only on an error, titled, as a unit of its own")
         T.eq(upgrade.length, 10, "the upgrade is one script for sh -c")
         T.ok(/exec paru -Syu/.test(upgrade[9]) && /exec sudo pacman -Syu/.test(upgrade[9]), "an AUR helper first, pacman without one")
         T.eq(U.flatpakUpdateCommand("/s/launch-terminal.sh"),
-             ["/s/launch-terminal.sh", "--unit", "buchhwin-flatpak-update", "--hold", "--title", "Flatpak update", "--", "flatpak", "update", "--user", "-y"],
+             ["/s/launch-terminal.sh", "--unit", "buchhwin-flatpak-update", "--hold-on-error", "--title", "Flatpak update", "--", "flatpak", "update", "--user", "-y"],
              "user flatpak update in the session's terminal, as a unit")
         T.eq([U.UPGRADE_UNIT, U.FLATPAK_UNIT], ["buchhwin-upgrade", "buchhwin-flatpak-update"], "the units the page watches")
         const watch = U.unitWatchCommand("buchhwin-upgrade")

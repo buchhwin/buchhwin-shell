@@ -217,6 +217,19 @@ use org.gnome.Terminal.desktop
 RUN=1 run --hold -- sh -c 'echo "gnome $1"; exit 0' sh y
 check '[[ $status -eq 0 ]] && grep -q "^gnome y$" "$sandbox/out" && grep -q "\[exit status 0\] Press Enter" "$sandbox/out"' \
   "the hold wrapper runs the command's words as they are (status $status: $(tr "\n" " " < "$sandbox/out"))"
+# Held only on an error (the update terminals): a success closes the window
+# at once, a failure keeps it with the status - in every terminal the wrapper,
+# never the terminal's own hold.
+RUN=1 run --hold-on-error -- sh -c 'echo "done $1"; exit 0' sh z
+check '[[ $status -eq 0 ]] && grep -q "^done z$" "$sandbox/out" && ! grep -q "Press Enter" "$sandbox/out"' \
+  "a success ends without asking for Enter (status $status: $(tr "\n" " " < "$sandbox/out"))"
+RUN=1 run --hold-on-error -- sh -c 'echo failed; exit 5'
+check '[[ $status -eq 5 ]] && grep -q "^failed$" "$sandbox/out" && grep -q "\[exit status 5\] Press Enter to close this window." "$sandbox/out"' \
+  "a failure keeps the window with its status (status $status: $(tr "\n" " " < "$sandbox/out"))"
+use kitty.desktop
+run --hold-on-error --title "System upgrade" -- paru -Syu
+check '! grep -qx -- "--hold" "$argv" && grep -qx -- "-c" "$argv" && [[ $(tail -n 2 "$argv" | tr "\n" " ") == "paru -Syu " ]]' \
+  "kitty: the wrapper instead of its own --hold ($(shown))"
 
 # ---- kitty when there is nothing else -------------------------------------------
 rm -f -- "$data/applications/kitty.desktop" "$config/buchhwin-shell-xdg-terminals.list"

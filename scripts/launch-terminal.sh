@@ -3,7 +3,7 @@ set -euo pipefail
 
 # A command in the session's terminal (Settings > Default apps):
 #
-#   launch-terminal.sh [--hold] [--unit NAME] [--title TITLE] [--] [COMMAND [ARGS...]]
+#   launch-terminal.sh [--hold | --hold-on-error] [--unit NAME] [--title TITLE] [--] [COMMAND [ARGS...]]
 #
 # The shell's own terminals (Settings > Updates, the cursor install) and the
 # launcher's Terminal=true entries (htop, btop …) open here, in whichever
@@ -11,8 +11,11 @@ set -euo pipefail
 # the launcher's ran with no terminal at all. Each terminal has its own words
 # for the same three things - the command, a window title, and keeping the
 # window open once the command has ended (--hold) - and one without a word for
-# holding gets a wrapper that waits for Enter. Without a command the terminal
-# opens a shell, and --hold means nothing.
+# holding gets a wrapper that waits for Enter. --hold-on-error keeps the
+# window only when the command failed: a finished upgrade closes its window,
+# a failed one stays with its exit status (Settings > Updates, 27.10.). It is
+# the wrapper in every terminal, since none has a word for it. Without a
+# command the terminal opens a shell, and either hold means nothing.
 #
 # The terminal stays in the foreground. Konsole without --nofork, GNOME
 # Terminal without --wait and WezTerm without --always-new-process hand the
@@ -33,14 +36,16 @@ set -euo pipefail
 self=${BASH_SOURCE[0]}
 [[ $self == /* && ! -L $self ]] || self=$(readlink -f -- "$self")
 project_dir=${self%/*/*}
-usage='usage: launch-terminal.sh [--hold] [--unit NAME] [--title TITLE] [--] [COMMAND [ARGS...]]'
+usage='usage: launch-terminal.sh [--hold | --hold-on-error] [--unit NAME] [--title TITLE] [--] [COMMAND [ARGS...]]'
 
 hold=false
+hold_on_error=false
 unit=""
 title=""
 while (( $# )); do
   case $1 in
     --hold) hold=true; shift ;;
+    --hold-on-error) hold_on_error=true; shift ;;
     --unit | --title)
       if (( $# < 2 )) || [[ -z $2 ]]; then
         printf 'launch-terminal: %s needs a value\n%s\n' "$1" "$usage" >&2
@@ -53,12 +58,17 @@ while (( $# )); do
     *) break ;;
   esac
 done
-if (( $# == 0 )); then hold=false; fi
+if (( $# == 0 )); then hold=false; hold_on_error=false; fi
 
 # The hold for terminals without one: the command, its exit status, and the
 # window waits for Enter. POSIX sh, so it runs wherever the terminal starts
 # it; the arguments are the command's, never part of the script.
 hold_script='"$@"; status=$?; printf "\n[exit status %s] Press Enter to close this window." "$status"; read -r answer || :; exit "$status"'
+# The same, only when the command failed; it becomes the command itself.
+if $hold_on_error; then
+  set -- sh -c '"$@"; status=$?; if [ "$status" -ne 0 ]; then printf "\n[exit status %s] Press Enter to close this window." "$status"; read -r answer || :; fi; exit "$status"' sh "$@"
+  hold=false
+fi
 
 # The program behind a desktop entry: the first word of its Exec= line in the
 # first data directory that has it (the XDG order default-apps.py looks it up

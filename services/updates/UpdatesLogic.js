@@ -484,8 +484,9 @@ function discoverCommand(launchScript) {
 // stops cleanly ends its children, and the terminal with `pacman -Syu` in it
 // went with every reload, deploy and shell update, pacman mid-transaction
 // (16.10.). By name they can be watched, also by a shell started while one
-// runs. They open in the session's terminal (Settings > Default apps), held
-// open once the command has ended, under a title that says what runs.
+// runs. They open in the session's terminal (Settings > Default apps) under
+// a title that says what runs, and close by themselves once the command has
+// succeeded; a failed one keeps its window with the exit status.
 var UPGRADE_UNIT = "buchhwin-upgrade"
 var FLATPAK_UNIT = "buchhwin-flatpak-update"
 
@@ -494,7 +495,7 @@ var FLATPAK_UNIT = "buchhwin-flatpak-update"
 // An AUR helper upgrades the repositories and the AUR together; without one
 // pacman asks for the password itself.
 function terminalUpgradeCommand(terminalScript) {
-    return [terminalScript, "--unit", UPGRADE_UNIT, "--hold", "--title", "System upgrade", "--", "sh", "-c",
+    return [terminalScript, "--unit", UPGRADE_UNIT, "--hold-on-error", "--title", "System upgrade", "--", "sh", "-c",
             "if command -v paru >/dev/null 2>&1; then exec paru -Syu; "
             + "elif command -v yay >/dev/null 2>&1; then exec yay -Syu; "
             + "else exec sudo pacman -Syu; fi"]
@@ -503,7 +504,7 @@ function terminalUpgradeCommand(terminalScript) {
 // User installation only: system Flatpaks and packages go through Discover
 // (polkit asks for the administrator password there).
 function flatpakUpdateCommand(terminalScript) {
-    return [terminalScript, "--unit", FLATPAK_UNIT, "--hold", "--title", "Flatpak update", "--",
+    return [terminalScript, "--unit", FLATPAK_UNIT, "--hold-on-error", "--title", "Flatpak update", "--",
             "flatpak", "update", "--user", "-y"]
 }
 
