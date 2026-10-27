@@ -60,6 +60,7 @@ links=(
   "$link_dir/systemd/buchhwin-shell-session.target:$config_home/systemd/user/buchhwin-shell-session.target"
   "$link_dir/systemd/buchhwin-shell-autostart.target:$config_home/systemd/user/buchhwin-shell-autostart.target"
   "$link_dir/session/xdg-desktop-portal/buchhwin-shell-portals.conf:$config_home/xdg-desktop-portal/buchhwin-shell-portals.conf"
+  "$link_dir/systemd/citrix-stop.conf:$config_home/systemd/user/app-buchhwin-citrix\\x2dworkspace-.scope.d/buchhwin-shell.conf"
 )
 # The XDG autostart entries the session keeps out (scripts/lib/autostart-skip.sh)
 # get a drop-in each (systemd/autostart-skip.conf): skipped while
