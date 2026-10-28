@@ -108,6 +108,16 @@ function parseInstalled(text) {
     return result
 }
 
+// Arch's @local-builds: one package name a line → { name: true }.
+function parseNames(text) {
+    const result = {}
+    for (const line of String(text || "").split("\n")) {
+        const name = line.trim()
+        if (safeName(name)) result[name] = true
+    }
+    return result
+}
+
 // flatpak remote-ls --updates --columns=application,name,version,branch,origin,ref
 function parseFlatpakUpdates(text, installation) {
     const result = []
@@ -188,12 +198,14 @@ function parseReport(text) {
     if (packages !== null) {
         const installed = sections["installed"] ? parseInstalled(sections["installed"].text) : {}
         const advisories = sections["advisories"] && sections["advisories"].code === 0 ? parseAdvisories(sections["advisories"].text) : {}
+        const builtHere = sections["local-builds"] && sections["local-builds"].code === 0 ? parseNames(sections["local-builds"].text) : {}
         result.packages = packages.map(item => {
             const key = item.name + "." + item.arch
             const advisory = advisories[key]
             return { name: item.name, arch: item.arch, from: installed[key] || "", to: item.version,
                      repository: item.repository, security: !!advisory,
-                     severity: advisory ? advisory.severity : "", advisory: advisory ? advisory.id : "" }
+                     severity: advisory ? advisory.severity : "", advisory: advisory ? advisory.id : "",
+                     localBuild: builtHere[item.name] === true }
         }).sort((a, b) => (b.security - a.security) || (SEVERITY_RANK[b.severity] || 0) - (SEVERITY_RANK[a.severity] || 0) || versionSort(a, b))
         result.packagesKnown = true
     }
@@ -271,6 +283,7 @@ function versionText(from, to) {
 function packageSubtitle(item) {
     const parts = [versionText(item.from, item.to)]
     if (item.repository) parts.push(item.repository)
+    if (item.localBuild) parts.push("replaces your own build")
     return parts.join(" · ")
 }
 
@@ -302,6 +315,8 @@ function notifyBody(result) {
     if (result.flatpaks.length) parts.push(plural(result.flatpaks.length, "Flatpak", "Flatpaks"))
     const security = securityCount(result)
     if (security) parts.push(plural(security, "security update", "security updates"))
+    const local = localBuilds(result)
+    if (local.length) parts.push("replaces your own build of " + listText(local.map(item => item.name)))
     return parts.join(" · ")
 }
 
@@ -557,6 +572,42 @@ function coreNote(result) {
         + (session ? "Log out and back in afterwards - the compositor keeps running the old version until then."
                    : "Restart the shell afterwards (Super+Ctrl+R).")
         + " The shell checks itself after its next start."
+}
+
+// ---- Arch: packages built on this machine ----------------------------------------
+// updates-check.sh's @local-builds names the upgrades from the repositories
+// whose installed package was built here (makepkg: unsigned, "Unknown
+// Packager") - hyprland rebuilt with the shell's cursor patch, say. The
+// upgrade replaces it with the repository's build and drops what it was built
+// with. Said before the upgrade; nothing holds the package back (an IgnorePkg
+// on hyprland would keep it against the new libraries of the next -Syu, and
+// it would not start).
+
+function localBuilds(result) {
+    return (result && result.packages || []).filter(item => item.localBuild === true)
+}
+
+// "a", "a and b", "a, b and c".
+function listText(names) {
+    return names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names.join("")
+}
+
+// Where the shell keeps the patch a self-built Hyprland carries (its README
+// says what it fixes).
+var HYPRLAND_PATCHES = "install/patches/Hyprland"
+
+// The note above the package list when the upgrade replaces such a build.
+function localBuildNote(result) {
+    const names = localBuilds(result).map(item => item.name)
+    if (!names.length) return ""
+    const one = names.length === 1
+    const note = listText(names) + (one ? " is your own build" : " are your own builds")
+        + ", not the repository's. The upgrade replaces " + (one ? "it" : "them")
+        + " with the repository's build, and anything your build changed (a patch, for example) is lost."
+    return names.indexOf("hyprland") >= 0
+        ? note + " To keep the shell's cursor patch, build the new hyprland again with the patches in "
+          + HYPRLAND_PATCHES + " (in the shell's folder) after the upgrade and before you log out."
+        : note
 }
 
 // ---- Arch: news before the upgrade, configuration files after it ---------------

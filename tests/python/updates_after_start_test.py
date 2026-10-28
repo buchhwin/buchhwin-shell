@@ -65,6 +65,12 @@ log = "\n".join(["\x1b[31m  WARN: QSettings::value: Empty key passed\x1b[0m", " 
 found = after.problems(log)
 check(len(found) == 4 and found[0].startswith("WARN qml: @shell/bar/Bar.qml") and "died on signal" in found[3],
       "the log's problems, the known ones left out (%s)" % found)
+check(after.problems("2026-10-28T10:00:00+01:00 start-shell: the shell could not start (status 255) - not restarting it")
+      != [], "a shell that could not start is a problem")
+check(after.compositor_line("T", "/home/u/.local/state/buchhwin-shell/quickshell.log", "/home/u")
+      == "T - see ~/.local/state/buchhwin-shell/quickshell.log", "the compositor's line, the log under ~")
+check(after.compositor_line("T", "/srv/quickshell.log", "/home/u") == "T - see /srv/quickshell.log"
+      and after.compositor_line("T", "/home/user2/q.log", "/home/u") == "T - see /home/user2/q.log", "elsewhere as it is")
 check(after.count_targets("target bar\n  function x\ntarget notch\n") == 2, "IPC targets")
 changed = ["Quickshell 0.3.2 → 0.3.3"]
 check(after.core_notice(changed, [], 40, "problems") is None, "clean and 'problems': nothing to say")
@@ -93,9 +99,15 @@ case "$1" in
   ipc) [ "$TARGETS" = 0 ] || printf 'target bar\\ntarget notch\\n' ;;
 esac
 """)
-    (bin_dir / "hyprctl").write_text('#!/bin/sh\n[ "$1" = version ] && printf \'{"version": "%s"}\\n\' "$HYPR_VERSION"\n')
-    for name in ("quickshell", "hyprctl"):
+    (bin_dir / "hyprctl").write_text('#!/bin/sh\n[ "$1" = version ] && printf \'{"version": "%s"}\\n\' "$HYPR_VERSION"\n'
+                                     '[ "$1" = notify ] && printf \'%s\\n\' "$*" >> "$SENT"\nexit 0\n')
+    # Outside --dry-run: no notification server (the shell is down), and
+    # notify-send only writes down that it was asked.
+    (bin_dir / "busctl").write_text("#!/bin/sh\necho 'b false'\n")
+    (bin_dir / "notify-send").write_text('#!/bin/sh\nprintf \'notify-send %s\\n\' "$*" >> "$SENT"\n')
+    for name in ("quickshell", "hyprctl", "busctl", "notify-send"):
         (bin_dir / name).chmod(0o755)
+    sent = base / "sent.log"
     git = ["git", "-C", str(shell), "-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
     subprocess.run(["git", "init", "-q", str(shell)], check=True)
 
@@ -109,11 +121,14 @@ esac
     log_file.write_text("  INFO: Configuration Loaded\n")
     settings = config / "settings.json"
 
-    def run(qs="0.3.2", hypr="0.56.2", targets="2", pid=None):
+    def run(qs="0.3.2", hypr="0.56.2", targets="2", pid=None, dry=True, signature=None):
         env = dict(os.environ, PATH="%s:%s" % (bin_dir, os.environ.get("PATH", "")), QS_VERSION=qs, HYPR_VERSION=hypr,
-                   TARGETS=targets)
+                   TARGETS=targets, SENT=str(sent), HOME=str(base))
+        env.pop("HYPRLAND_INSTANCE_SIGNATURE", None)
+        if signature:
+            env["HYPRLAND_INSTANCE_SIGNATURE"] = signature
         args = [sys.executable, str(SCRIPT), "--shell-dir", str(shell), "--log", str(log_file), "--state-dir", str(state),
-                "--config-dir", str(config), "--settle", "0", "--server-wait", "0", "--dry-run"]
+                "--config-dir", str(config), "--settle", "0", "--server-wait", "0"] + (["--dry-run"] if dry else [])
         if pid is not None:
             args += ["--pid", str(pid)]
         done = subprocess.run(args, env=env, capture_output=True, text=True, timeout=60)
@@ -155,6 +170,22 @@ esac
     log_file.write_text("start-shell: the shell died on signal 11, restarting (1 of 5)\n")
     said = run(qs="0.3.5", hypr="0.57.0", pid=gone.pid)[1]
     check(said and said[-1]["kind"] == "core" and record()["quickshell"] == "0.3.5", "but a crash is a problem (%s)" % said)
+    # A shell that could not start (the configuration did not load, and
+    # start-shell.sh said so) is no stop either: told, and taken as seen.
+    log_file.write_text("  ERROR: Failed to load configuration\n"
+                        "2026-10-28T10:00:00+01:00 start-shell: the shell could not start (status 255) - not restarting it\n")
+    said = run(qs="0.3.5", hypr="0.57.1", pid=gone.pid)[1]
+    check(said and said[-1]["kind"] == "core" and said[-1]["problems"] == 2 and record()["hyprland"] == "0.57.1",
+          "a failed start is told, not taken for a stop (%s)" % said)
+    # Without the shell there is no notification server: the compositor shows it.
+    said = run(qs="0.3.5", hypr="0.57.2", pid=gone.pid, dry=False, signature="sig-test")[1]
+    line = "Hyprland 0.57.1 → 0.57.2: the shell found 2 problems - see ~/quickshell.log"
+    check(sent.read_text().splitlines() == ["notify 0 600000 0 " + line] and said and said[-1] == {"kind": "compositor", "text": line},
+          "no server: the problems go to the compositor, once (%s, %s)" % (sent.read_text(), said))
+    sent.write_text("")
+    said = run(qs="0.3.5", hypr="0.57.3", pid=gone.pid, dry=False)[1]
+    check(sent.read_text() == "" and not any(item["kind"] == "compositor" for item in said),
+          "and nothing without a compositor (%s, %s)" % (sent.read_text(), said))
     # Off: recorded, nothing said.
     settings.write_text(json.dumps({"updates": {"coreCheck": "off"}}))
     said = run(qs="0.3.6", hypr="0.57.0")[1]

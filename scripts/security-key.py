@@ -6,6 +6,7 @@ place (session/pam/buchhwin-lock-key, pam_u2f): its PIN, then a touch. This
 helper is what Settings > Lock Screen > Security key runs.
 
   security-key.py status   -> one JSON object; asks the key nothing
+  security-key.py pins     -> the plugged keys' PIN tries, for the lock screen
   security-key.py setup    in a terminal: pam-u2f, this key, the PAM file
   security-key.py add      in a terminal: one more key
   security-key.py off      in a terminal: the PAM file goes, the keys stay listed
@@ -185,6 +186,14 @@ def status():
             "pins": pins_now(listing) if found else []}
 
 
+def pins():
+    """The plugged keys' PIN tries, which the lock screen reads before it asks
+    a key (LockLogic.keyTries): from one listing, asking the keys nothing that
+    needs the PIN, so reading them costs no try."""
+    listing = fido2_token("-L")
+    return {"ok": True, "fido2Token": listing is not None, "pins": pins_now(listing) if listing else []}
+
+
 def write_mapping(text):
     """The mapping file as pam_u2f wants it: the user's own, 600 in a 700
     directory, written whole or not at all."""
@@ -284,6 +293,9 @@ def main(argv=None):
     if command == "status":
         print(json.dumps(status()))
         return 0
+    if command == "pins":
+        print(json.dumps(pins()))
+        return 0
     try:
         if command in ("setup", "add"):
             return command_setup(command == "add")
@@ -293,7 +305,7 @@ def main(argv=None):
         say()
         say("Stopped.")
         return 130
-    print("usage: security-key.py status | setup | add | off", file=sys.stderr)
+    print("usage: security-key.py status | pins | setup | add | off", file=sys.stderr)
     return 2
 
 

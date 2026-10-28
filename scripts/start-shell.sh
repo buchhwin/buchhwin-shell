@@ -313,7 +313,8 @@ start_sweep() {
 # ---- when it gives up ---------------------------------------------------------
 # Five crashes in a minute used to end in a log line and nothing else: no bar,
 # no notifications, no launcher and nothing on the screen to say why - a
-# crash loop at login or after a deploy looked like a black desktop. The
+# crash loop at login or after a deploy looked like a black desktop - and a
+# shell that could not start at all ended without even the log line. The
 # compositor draws a notice itself (`hyprctl notify`: no shell and no
 # notification server needed, the same request in both config dialects),
 # naming the key that starts the shell again - the one Settings > Shortcuts
@@ -374,10 +375,14 @@ fallback_idle() {
   printf '%s\n' "$!" 2>/dev/null >"$fallback_file" || true
   note "started a fallback lock (swayidle, pid $!) until a shell is back"
 }
+# The notice says why: the crashes, or a shell that could not start (`failed`).
 gave_up() {
   local key message
   key=$(restart_key)
   message="buchhwin-shell stopped after $restart_limit crashes in a minute - $key starts it again"
+  if [[ ${1:-} == failed ]]; then
+    message="buchhwin-shell could not start - see ${log_file/#"$HOME"/"~"} - $key starts it again"
+  fi
   if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && command -v hyprctl >/dev/null 2>&1; then
     # Icon 0 is the warning sign, colour 0 its own; half an hour on screen.
     if hyprctl notify 0 1800000 0 "$message" >/dev/null 2>&1; then
@@ -675,6 +680,23 @@ while true; do
   if (( stopping )); then
     note "asked to stop; the shell ended with status $status"
     exit 0
+  fi
+  # A shell that ends with an error of its own rather than a signal could not
+  # start: Quickshell exits 255 when the configuration does not load (a type
+  # renamed by a Quickshell or Qt upgrade, a half-deployed tree), at once and
+  # with nothing on the screen - and without the shell its swayidle, so the
+  # laptop slept unlocked. That is not restarted (it would fail the same way)
+  # but said, with the fallback lock, as when it gives up. Status 0 - a
+  # `quickshell kill` from a stop, a reload or a deploy, or --no-duplicate
+  # beside a running instance - stays quiet. A compositor on its way out
+  # takes the shell with it, with an error too: so only after the pause,
+  # with the compositor still there and nobody asking to stop.
+  if (( status != 0 && (status < 128 || status == 255) )); then
+    sleep "$restart_pause"
+    if (( stopping )) || ! compositor_alive; then exit "$status"; fi
+    note "the shell could not start (status $status) - not restarting it"
+    gave_up failed
+    exit "$status"
   fi
   (( status >= 128 )) || exit "$status"
   signal=$(( status - 128 ))

@@ -38,9 +38,11 @@ chmod +x "$SB/bin/"*
 # ordinary case below into the refusal and read as a pass.
 # The cursor script keeps its last run in the runtime directory, so that is
 # the sandbox's too, with a compositor signature of its own: the live
-# session's would mix the two.
+# session's would mix the two. A terminal of the live session also carries
+# the X11 scale and pointer size the scripts export; inherited, they read as
+# the scripts' own output.
 mkdir -p "$SB/no-nested" "$SB/run" "$SB/dconf"
-unset BUCHHWIN_NESTED
+unset BUCHHWIN_NESTED STEAM_FORCE_DESKTOPUI_SCALING XCURSOR_SIZE
 export PATH="$SB/bin:$PATH" DB="$SB/xrdb.db" CALLS="$SB/calls" DISPLAY=:9 XDG_CONFIG_HOME="$SB/config" \
   BUCHHWIN_NESTED_DIR="$SB/no-nested" XDG_RUNTIME_DIR="$SB/run" HYPRLAND_INSTANCE_SIGNATURE=sig-test DCONF="$SB/dconf"
 fail=0

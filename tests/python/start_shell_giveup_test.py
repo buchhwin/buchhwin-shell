@@ -69,11 +69,14 @@ with tempfile.TemporaryDirectory(prefix="buchhwin-giveup.") as base:
     settings = config_home / "buchhwin-shell" / "settings.json"
     write(settings, json.dumps({"power": {"lockBeforeSleep": True, "battery": {"lockMinutes": 5},
                                           "ac": {"lockMinutes": 0}}}))
-    # quickshell: never listed, and every start counted; CRASH=1 crashes, else a clean exit.
+    # quickshell: never listed, and every start counted; CRASH=1 crashes, EXIT
+    # ends it with that status (255: the configuration did not load), else a
+    # clean exit.
     write(bin_dir / "quickshell", """#!/usr/bin/env bash
 [[ ${1:-} == list ]] && exit 1
 n=$(cat "$COUNT" 2>/dev/null || echo 0); echo $((n+1)) > "$COUNT"
 [[ ${CRASH:-0} == 1 ]] && exit 139
+[[ -n ${EXIT:-} ]] && exit "$EXIT"
 exit 0
 """, 0o755)
     write(bin_dir / "hyprctl", '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$HYPRCTL_LOG"\nexit 0\n', 0o755)
@@ -179,6 +182,50 @@ exec -a swayidle bash -c 'sleep 30 & trap "kill $!; exit 0" TERM; wait' "$@"
         pid = int(read(fallback).strip() or 0)
         if pid:
             started.append(pid)
+
+        # ---- a shell that could not start ------------------------------------------
+        # Exit 255 at once (a configuration that does not load): not restarted,
+        # but said, with the log's place, and the fallback locks.
+        start()
+        hyprctl_log.write_text("")
+        swayidle_log.write_text("")
+        status = start(EXIT="255")
+        check(read(count).strip() == "1" and status == 255, "a failed start is not restarted (%s runs, status %d)"
+              % (read(count).strip(), status))
+        notices = [line for line in read(hyprctl_log).splitlines() if line.startswith("notify ")]
+        check(notices == ["notify 0 1800000 0 buchhwin-shell could not start - see ~/state/buchhwin-shell/quickshell.log"
+                          " - Super+Ctrl+R starts it again"], "a failed start is shown, once, with its log (%s)" % notices)
+        check(read(swayidle_log).strip() == "-w before-sleep %s" % lock, "and the fallback locks (%s)" % read(swayidle_log).strip())
+        pid = int(read(fallback).strip() or 0)
+        if pid:
+            started.append(pid)
+        check(pid > 0 and alive(pid), "the fallback is running (pid %s)" % pid)
+        check("could not start (status 255)" in read(log), "and the log says so")
+        # The next start takes both back, as after giving up.
+        hyprctl_log.write_text("")
+        start()
+        deadline = time.monotonic() + 5
+        while pid and alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        check(pid > 0 and not alive(pid) and "dismissnotify" in read(hyprctl_log).splitlines(),
+              "the next start ends the fallback and takes the notice away (%s)" % read(hyprctl_log))
+        # Any other error of its own is one too.
+        hyprctl_log.write_text("")
+        start(EXIT="1")
+        check("could not start" in read(hyprctl_log), "status 1 is a failed start too (%s)" % read(hyprctl_log))
+        pid = int(read(fallback).strip() or 0)
+        if pid:
+            started.append(pid)
+        start()
+        # A clean stop (a reload, a deploy, `quickshell kill`), a SIGTERM's
+        # status, or a compositor that is gone: quiet, no fallback.
+        for extra, what in ((dict(), "a clean exit"), (dict(EXIT="143"), "a SIGTERM"),
+                            (dict(EXIT="255", HYPRLAND_INSTANCE_SIGNATURE="sig-gone"), "a compositor that is gone")):
+            hyprctl_log.write_text("")
+            swayidle_log.write_text("")
+            start(**extra)
+            notices = [line for line in read(hyprctl_log).splitlines() if line.startswith("notify ")]
+            check(notices == [] and read(swayidle_log) == "", "%s says nothing (%s, %s)" % (what, notices, read(swayidle_log)))
     finally:
         for pid in started:
             try:

@@ -21,13 +21,32 @@ import qs.services
 // four of the seven windows of a single screen. A strip of 3840 x 27 pixels is
 // some 400 KB. The namespace stays `buchhwin-screencorners`: the blur-off
 // layer rule in hypr/ is keyed on it.
+//
+// No corners over a fullscreen window: while one is on a screen's active
+// workspace, that screen's two strips are unmapped, and they come back the
+// moment it ends - the window leaves fullscreen or closes, the workspace
+// changes, the screen goes. Any mapped Overlay surface keeps Hyprland from
+// handing the screen to the fullscreen window alone, so it composites the
+// whole screen in every frame instead: measured nested on a 4K screen at 1.5
+// with a fullscreen client, 353 ms of Hyprland's GPU time per second with the
+// corners and 207 without. Unmapped, not transparent: it is the mapped
+// surface that costs, and an unmapped strip gives back its render thread too.
 Variants {
+    id: corners
     model: Quickshell.screens
+
+    // Whether a screen shows a fullscreen window: the question the dock and
+    // the notch ask too (HyprlandService.fullscreenOn). A property so a test
+    // can answer it in the compositor's place.
+    property var coveredOn: screen => HyprlandService.fullscreenOn(screen)
 
     Scope {
         id: screenScope
         required property var modelData
         readonly property int radius: AppearanceService.screenCornerRadius
+        // Asked of this scope's own screen, and of nothing the corners set
+        // themselves, so mapping or unmapping a strip never changes the answer.
+        readonly property bool shown: radius > 0 && !corners.coveredOn(modelData)
 
         // One wedge, drawn inside a strip: `square` is the square corner of
         // the screen, `from`/`to` the two points on the edges where the arc
@@ -62,13 +81,13 @@ Variants {
         // One strip: the screen's width, the radius tall, along one edge.
         component CornerStrip: PanelWindow {
             screen: screenScope.modelData
-            visible: screenScope.radius > 0
+            visible: screenScope.shown
             color: "transparent"
             exclusionMode: ExclusionMode.Ignore
             implicitHeight: screenScope.radius
             WlrLayershell.namespace: "buchhwin-screencorners"
-            // Above everything, including a fullscreen window, or the corners
-            // would disappear exactly where they are most visible.
+            // Above the panels and every window; a fullscreen window unmaps
+            // them instead (above).
             WlrLayershell.layer: WlrLayer.Overlay
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
             // An empty input region: the corners are decoration, never a target.

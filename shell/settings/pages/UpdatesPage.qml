@@ -231,6 +231,24 @@ ColumnLayout {
             }
         }
 
+        // Arch: the upgrade replaces a package built on this machine (a
+        // hyprland with the shell's cursor patch) - said above the button,
+        // shown whether or not the list is open.
+        ShellCard {
+            Layout.fillWidth: true
+            visible: UpdatesService.localBuildNote.length > 0
+            implicitHeight: localBuildText.implicitHeight + Metrics.spaceMd * 2
+            ShellText {
+                id: localBuildText
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: Metrics.spaceMd
+                text: UpdatesService.localBuildNote
+                wrapMode: Text.Wrap
+            }
+        }
+
         ListRow {
             focusOnTab: true
             level: 1

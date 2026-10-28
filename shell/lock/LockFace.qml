@@ -296,6 +296,18 @@ Item {
                     onClicked: keyLink.leaving ? root.lockState.leaveKey() : root.lockState.useKey()
                 }
             }
+            // In the link's place while the key is not asked: why
+            // (LockScreen.keyNotice - few PIN tries left, or two wrong PINs).
+            LockLabel {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.maximumWidth: Metrics.lockMediaWidth
+                visible: text.length > 0
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                text: root.lockState.keyNotice
+                color: Colors.lockMuted
+                role: "small"
+            }
         }
 
         // Power buttons (optional): a second click confirms.

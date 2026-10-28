@@ -5,7 +5,7 @@ import "Harness.js" as T
 import "../../services/updates/UpdatesLogic.js" as U
 
 // Settings > Updates around the shell itself: the "Shell core" tag and its
-// note, Arch's news before the upgrade and the .pacnew files after it (from
+// note, the note on an upgrade that replaces a package built here, Arch's news before the upgrade and the .pacnew files after it (from
 // tests/fixtures/updates-arch-extras.txt), what updates.json keeps of them,
 // and the version line and recent changes Settings > About shows.
 ShellRoot {
@@ -25,6 +25,30 @@ ShellRoot {
         const session = { packages: ["hyprland", "aquamarine", "hyprutils", "hyprlang", "quickshell", "qt6-base"].map(name => ({ name: name })) }
         T.eq(U.coreNote(session), "Shell core in this upgrade: hyprland, aquamarine, hyprutils, hyprlang and 2 more. Log out and back in afterwards - the compositor keeps running the old version until then. The shell checks itself after its next start.", "the compositor: log in again")
         T.eq(U.coreNote({ packages: [{ name: "linux" }] }), "", "no note without one")
+
+        // ---- a package built here (Arch's @local-builds) -----------------------------
+        const report = "@dnf 0\n" + JSON.stringify({ upgrades: [
+            { name: "hyprland", arch: "x86_64", evr: "0.56.2-5", repository: "extra" },
+            { name: "mesa", arch: "x86_64", evr: "1:26.2.6-1", repository: "extra" }] })
+            + "\n@installed 0\nhyprland.x86_64\t0.56.2-4.1\nmesa.x86_64\t1:26.2.5-1\n\n@local-builds 0\nhyprland\n../bad name\n\n@end 0\n"
+        const built = U.parseReport(report)
+        T.eq(built.packages.map(item => [item.name, item.localBuild]), [["hyprland", true], ["mesa", false]], "the build of its own is marked")
+        T.eq(U.packageSubtitle(built.packages[0]), "0.56.2-4.1 → 0.56.2-5 · extra · replaces your own build", "its row says so")
+        T.eq(U.packageSubtitle(built.packages[1]), "1:26.2.5-1 → 1:26.2.6-1 · extra", "the others do not")
+        T.eq(U.localBuildNote(built), "hyprland is your own build, not the repository's. The upgrade replaces it with the repository's build, "
+             + "and anything your build changed (a patch, for example) is lost. To keep the shell's cursor patch, build the new hyprland "
+             + "again with the patches in install/patches/Hyprland (in the shell's folder) after the upgrade and before you log out.",
+             "the note before the upgrade, with where the patch is")
+        T.eq(U.notifyBody(built), "2 system packages · replaces your own build of hyprland", "and so does the notice")
+        const two = U.parseReport(report.replace("@local-builds 0\nhyprland", "@local-builds 0\nhyprland\nmesa"))
+        T.eq(U.localBuildNote(two).indexOf("hyprland and mesa are your own builds, not the repository's. The upgrade replaces them"), 0, "two of them")
+        const mesa = U.parseReport(report.replace("@local-builds 0\nhyprland", "@local-builds 0\nmesa"))
+        T.eq(U.localBuildNote(mesa), "mesa is your own build, not the repository's. The upgrade replaces it with the repository's build, "
+             + "and anything your build changed (a patch, for example) is lost.", "the cursor patch only for hyprland")
+        T.eq(U.localBuildNote(U.parseReport(report.replace(/@local-builds 0\n[^@]*/, ""))), "", "no note without the section (other distributions)")
+        T.eq(U.localBuildNote(U.parseReport(report.replace("@local-builds 0", "@local-builds 1"))), "", "nor from a failed one")
+        T.eq(U.parseState(U.serializeState(Object.assign(U.parseState(""), { result: built }))).result.packages[0].localBuild, true,
+             "updates.json keeps the mark")
 
         // ---- Arch news and .pacnew --------------------------------------------------------
         const parsed = U.parseExtras(extras.text())

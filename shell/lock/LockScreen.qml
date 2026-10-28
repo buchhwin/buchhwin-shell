@@ -139,7 +139,9 @@ Scope {
     // `keyPin` while it waits for the PIN, `keyTouch` while the key waits for
     // a finger on it. What was typed before the PIN prompt is a password and
     // never goes to the key: each wrong PIN counts against the key's own
-    // tries, and the key's FIDO part locks when they run out.
+    // tries, and the key's FIDO part locks when they run out. For the same
+    // reason the key is asked only while it has tries to spare, and not after
+    // two wrong PINs in this lock (`keyTries`, `keyWrong`, LockLogic.keyPause).
     readonly property string keyMode: SettingsService.value("lock.securityKey")
     property bool keyServiceInstalled: false
     // The /etc/pam.d/buchhwin-lock-key check has finished (test services need none).
@@ -157,7 +159,21 @@ Scope {
     property bool keyClosing: false
     // PINs this lock gave the key (the test holds the "never a password" rule to it).
     property int keyPinsSent: 0
-    readonly property bool keyOffered: keyService.length > 0 && !keyStage && !unlocking && SettingsService.loaded
+    // The plugged key's PIN tries (LockLogic.keyTries), read without the PIN
+    // before the key's first turn and again on each "Use security key"; null
+    // until read. A test lock reads `keyPinsHook`, never a key.
+    property string keyPinsHook: Logic.KEY_TEST_PINS
+    property var keyTries: null
+    // PINs of this lock that did not unlock; the PIN of the running
+    // conversation was sent; "Use security key" waits for the tries.
+    property int keyWrong: 0
+    property bool keyPinGiven: false
+    property bool keyWanted: false
+    readonly property string keyPause: keyService.length > 0 ? Logic.keyPause(keyTries, keyWrong) : ""
+    // Said where the "Use security key" link was.
+    readonly property string keyNotice: keyStage ? "" : Logic.keyPauseText(keyPause, keyTries ? keyTries.retries : -1)
+    readonly property bool keyOffered: keyService.length > 0 && keyPause === "" && !keyStage && !unlocking && SettingsService.loaded
+    onKeyServiceChanged: readKeyTries()
     // A start waits for the settings, the PAM file check and the lid state.
     property bool startQueued: false
 
@@ -167,7 +183,10 @@ Scope {
             easing.type: root.unlocking ? Easing.InCubic : Easing.OutCubic
         }
     }
-    Component.onCompleted: fade = 1
+    Component.onCompleted: {
+        fade = 1
+        readKeyTries()
+    }
 
     function engage() {
         engaged = true
@@ -218,6 +237,7 @@ Scope {
                 password = ""
                 keyPin = false
                 keyPinsSent += 1
+                keyPinGiven = true
                 pam.respond(pin)
                 return
             }
@@ -271,13 +291,13 @@ Scope {
     function tryStart(force) {
         if (!startQueued) return
         const ready = SettingsService.loaded && passwordServiceChecked && keyServiceChecked && lidChecked
+                      && (!keyService.length || keyTries !== null)
         if (!ready && !force) return
         if (!lidChecked) lidClosed = false
         startQueued = false
         startWatchdog.stop()
         if (pam.active || unlocking) return
-        if (Logic.startsWithKey(keyService, keyTurn, submitPending)) {
-            keyTurn = false
+        if (Logic.startsWithKey(keyService, keyTurn, submitPending, keyTries, keyWrong)) {
             beginKey(false)
             return
         }
@@ -291,6 +311,8 @@ Scope {
         root.passwordOnly = false
         fingerprintStage = false
         fingerprint = ""
+        keyTurn = false
+        keyPinGiven = false
         keyManual = manual === true
         keyClosing = false
         keyAsked = false
@@ -309,6 +331,8 @@ Scope {
     function leaveKey() {
         if (!keyStage || unlocking) return
         if (pam.active) pam.abort()
+        // A PIN sent and then left may have been a wrong one.
+        if (keyPinGiven) keyMissed()
         // A PIN half typed is no password.
         if (keyPin) password = ""
         keyStage = false
@@ -318,8 +342,26 @@ Scope {
         clearStatus()
         startPam(submitPending)
     }
-    // "Use security key": the key once more, whatever runs now.
+    // "Use security key": the key once more, whatever runs now - once its
+    // tries were read again, so that a key plugged in meanwhile is asked and
+    // one with few tries left is not.
     function useKey() {
+        if (!keyOffered || busy || keyWanted) return
+        keyWanted = true
+        readKeyTries()
+    }
+    function readKeyTries() {
+        if (!keyService.length || keyTriesProc.running) return
+        keyTriesProc.running = true
+    }
+    function keyTriesRead(text) {
+        keyTries = Logic.keyTries(text)
+        if (!keyWanted) {
+            tryStart(false)
+            return
+        }
+        keyWanted = false
+        // Few tries left, or a password sent meanwhile: the password goes on.
         if (!keyOffered || busy) return
         if (pam.active) pam.abort()
         clearStatus()
@@ -327,8 +369,15 @@ Scope {
         submitPending = false
         beginKey(true)
     }
+    // A PIN that did not unlock: one try fewer on the key, one more of this lock's.
+    function keyMissed() {
+        keyPinGiven = false
+        keyWrong += 1
+        keyTries = Logic.keyTriesAfterWrong(keyTries)
+    }
     function keyDone(success) {
         if (!keyStage) return
+        if (!success && keyPinGiven) keyMissed()
         const next = Logic.afterKey(success, keyAsked, keyManual)
         keyStage = false
         keyPin = false
@@ -624,6 +673,14 @@ Scope {
             root.keyServiceChecked = true
             root.tryStart(false)
         }
+    }
+
+    // The key's PIN tries (readKeyTries), asked without its PIN, so the read
+    // costs no try; a test lock prints its hook instead and asks no key.
+    Process {
+        id: keyTriesProc
+        command: root.testHooks ? ["printf", "%s\n", root.keyPinsHook] : [Paths.script("security-key.py"), "pins"]
+        stdout: StdioCollector { onStreamFinished: root.keyTriesRead(text) }
     }
 
     // The password-only PAM service is optional (install/system-install.sh).

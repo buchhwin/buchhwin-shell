@@ -55,6 +55,10 @@ Singleton {
     readonly property var corePackages: Logic.corePackages(result)
     readonly property string coreNote: Logic.coreNote(result)
     function coreKind(item) { return Logic.coreKind(item ? item.name : "") }
+    // Arch: upgrades that replace a package built on this machine, such as
+    // hyprland with the shell's cursor patch (UpdatesLogic, "packages built
+    // on this machine").
+    readonly property string localBuildNote: Logic.localBuildNote(result)
     // Arch: the news to read before the upgrade and the .pacnew files left
     // after one, from the last check that asked (UpdatesLogic, "Arch: news
     // before the upgrade"). The preview has a fixture of its own for them.

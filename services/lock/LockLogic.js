@@ -247,12 +247,86 @@ function keyService(hooks, requested, installed, mode) {
     return installed === true ? "buchhwin-lock-key" : ""
 }
 
+// The lock never spends the key's last PIN tries: at 0 its FIDO part has to
+// be reset, which removes its other sign-ins too (a Microsoft or Google
+// one). It asks a key only while that has more than KEY_MIN_TRIES left, and
+// after KEY_MAX_WRONG PINs that did not unlock it asks no key until the next
+// lock - so whoever sits at a locked screen cannot use the tries up.
+var KEY_MIN_TRIES = 3
+var KEY_MAX_WRONG = 2
+// A test lock's key (keyPinsHook unset): plenty of tries.
+var KEY_TEST_PINS = '{"ok": true, "fido2Token": true, "pins": [{"set": true, "retries": 8}]}'
+
+// The plugged keys' PIN tries from `scripts/security-key.py pins` (its last
+// line), read without the PIN:
+//   ok      – every key with a PIN has more than KEY_MIN_TRIES left
+//   few     – one has KEY_MIN_TRIES or fewer
+//   none    – no key plugged in (pam_u2f would end at once)
+//   unknown – the tries could not be read: no fido2-token, no answer, a key
+//             with a PIN that did not say its tries
+// `retries`: the smallest count read, -1 without one. A key without a PIN
+// counts for nothing: pam_u2f (pinverification=1) refuses it unasked.
+function keyTries(text) {
+    var unknown = { state: "unknown", retries: -1 }
+    var answer = null
+    try {
+        answer = JSON.parse(String(text || "").trim().split("\n").pop() || "null")
+    } catch (error) {
+        return unknown
+    }
+    if (!answer || answer.ok !== true || answer.fido2Token !== true || !Array.isArray(answer.pins)) return unknown
+    if (!answer.pins.length) return { state: "none", retries: -1 }
+    var least = -1
+    for (var i = 0; i < answer.pins.length; ++i) {
+        var pin = answer.pins[i]
+        if (!pin || typeof pin !== "object") return unknown
+        var counted = typeof pin.retries === "number" && isFinite(pin.retries) && pin.retries >= 0
+        if (!counted && pin.set === false) continue
+        if (!counted) return unknown
+        least = least < 0 ? pin.retries : Math.min(least, pin.retries)
+    }
+    return { state: least >= 0 && least <= KEY_MIN_TRIES ? "few" : "ok", retries: least }
+}
+
+// The tries after a PIN that did not unlock: one fewer. A missing touch after
+// the right PIN ends the same way and is counted too - the safe side.
+function keyTriesAfterWrong(tries) {
+    if (!tries || typeof tries.retries !== "number" || tries.retries < 0) return tries
+    var left = Math.max(0, tries.retries - 1)
+    return { state: left <= KEY_MIN_TRIES ? "few" : "ok", retries: left }
+}
+
+// Why the lock asks no key now, or "" while it may: `tries` from keyTries
+// (null before the first read), `wrong` the PINs this lock gave the key that
+// did not unlock.
+//   wrong   – KEY_MAX_WRONG of them: no key until the next lock
+//   few     – the key has KEY_MIN_TRIES or fewer left
+//   unknown – its tries could not be read
+//   reading – not read yet
+function keyPause(tries, wrong) {
+    if (wrong >= KEY_MAX_WRONG) return "wrong"
+    if (!tries) return "reading"
+    if (tries.state === "few" || tries.state === "unknown") return tries.state
+    return ""
+}
+
+// The lock's words for a pause (beside the "Use security key" link it replaces).
+function keyPauseText(reason, retries) {
+    if (reason === "wrong") return "Security key off for this lock after " + KEY_MAX_WRONG + " wrong PINs. Use your password."
+    if (reason === "few") return "Security key not asked: only " + (retries >= 0 ? retries : "a few") + " PIN "
+        + (retries === 1 ? "try" : "tries") + " left on it. Use your password."
+    if (reason === "unknown") return "Security key not asked: its PIN tries could not be read. Use your password."
+    return ""
+}
+
 // Whether a start begins with the key's conversation: there is one, the lock
 // has not used its turn (the first start, or a click on "Use security key"),
-// and no password is waiting to be checked - a password already sent never
-// meets the key's PIN prompt.
-function startsWithKey(service, turn, pending) {
+// no password is waiting to be checked - a password already sent never
+// meets the key's PIN prompt - and a plugged key has tries to spare
+// (keyTries "ok", keyPause "").
+function startsWithKey(service, turn, pending, tries, wrong) {
     return String(service || "").length > 0 && turn === true && pending !== true
+        && !!tries && tries.state === "ok" && keyPause(tries, wrong) === ""
 }
 
 // A message of the key's conversation. pam_u2f asks for the PIN only once it

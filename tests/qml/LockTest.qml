@@ -215,9 +215,44 @@ ShellRoot {
         T.eq([L.keyService(true, "test-key", false, "auto"), L.keyService(true, "", true, "auto"), L.keyService(true, "test-permit", true, "auto"),
               L.keyService(true, "test-key", false, "off")], ["test-key", "", "", ""], "a test lock takes a key fixture or none")
         T.eq(L.keyService(false, "", true, "bogus"), "buchhwin-lock-key", "an unknown mode behaves like automatic")
-        T.eq([L.startsWithKey("buchhwin-lock-key", true, false), L.startsWithKey("buchhwin-lock-key", false, false),
-              L.startsWithKey("", true, false), L.startsWithKey("buchhwin-lock-key", true, true)], [true, false, false, false],
+        const plenty = { state: "ok", retries: 8 }
+        T.eq([L.startsWithKey("buchhwin-lock-key", true, false, plenty, 0), L.startsWithKey("buchhwin-lock-key", false, false, plenty, 0),
+              L.startsWithKey("", true, false, plenty, 0), L.startsWithKey("buchhwin-lock-key", true, true, plenty, 0)], [true, false, false, false],
              "the key goes first on its turn, never with a password already sent")
+        T.eq([L.startsWithKey("buchhwin-lock-key", true, false, null, 0),
+              L.startsWithKey("buchhwin-lock-key", true, false, { state: "few", retries: 3 }, 0),
+              L.startsWithKey("buchhwin-lock-key", true, false, { state: "unknown", retries: -1 }, 0),
+              L.startsWithKey("buchhwin-lock-key", true, false, { state: "none", retries: -1 }, 0),
+              L.startsWithKey("buchhwin-lock-key", true, false, plenty, 2)], [false, false, false, false, false],
+             "the key is not asked first before its tries are read, with 3 or fewer, unread, unplugged, or after two wrong PINs")
+        // The key's PIN tries (security-key.py pins), asked without the PIN.
+        const pins = list => JSON.stringify({ ok: true, fido2Token: true, pins: list })
+        T.eq(L.keyTries(pins([{ set: true, retries: 8 }])), { state: "ok", retries: 8 }, "plenty of tries")
+        T.eq([L.keyTries(pins([{ set: true, retries: 4 }])).state, L.keyTries(pins([{ set: true, retries: 3 }])).state,
+              L.keyTries(pins([{ set: true, retries: 0 }])).state], ["ok", "few", "few"], "more than 3 tries, or few")
+        T.eq(L.keyTries(pins([{ set: true, retries: 8 }, { set: true, retries: 2 }])), { state: "few", retries: 2 },
+             "two keys: the one with fewer tries counts")
+        T.eq(L.keyTries(pins([])), { state: "none", retries: -1 }, "no key plugged in")
+        T.eq(L.keyTries(pins([{ set: false, retries: null }])), { state: "ok", retries: -1 }, "a key without a PIN loses no tries")
+        T.eq([L.keyTries(pins([{ set: true, retries: null }])).state, L.keyTries(pins([{ set: null, retries: null }])).state,
+              L.keyTries(JSON.stringify({ ok: true, fido2Token: false, pins: [] })).state, L.keyTries("").state,
+              L.keyTries("not json").state, L.keyTries(pins([null])).state],
+             ["unknown", "unknown", "unknown", "unknown", "unknown", "unknown"],
+             "tries that could not be read are unknown, never plenty")
+        T.eq(L.keyTries("a warning\n" + pins([{ set: true, retries: 6 }])).retries, 6, "the last line is the answer")
+        T.eq([L.keyTriesAfterWrong({ state: "ok", retries: 5 }), L.keyTriesAfterWrong({ state: "ok", retries: 4 }),
+              L.keyTriesAfterWrong({ state: "ok", retries: -1 }), L.keyTriesAfterWrong(null)],
+             [{ state: "ok", retries: 4 }, { state: "few", retries: 3 }, { state: "ok", retries: -1 }, null],
+             "a wrong PIN costs one try")
+        T.eq([L.keyPause(plenty, 0), L.keyPause(plenty, 1), L.keyPause(plenty, 2), L.keyPause(null, 0),
+              L.keyPause({ state: "few", retries: 3 }, 0), L.keyPause({ state: "unknown", retries: -1 }, 0),
+              L.keyPause({ state: "none", retries: -1 }, 0), L.keyPause({ state: "few", retries: 3 }, 2)],
+             ["", "", "wrong", "reading", "few", "unknown", "", "wrong"], "why the key is not asked")
+        T.eq([L.keyPauseText("", 8), L.keyPauseText("reading", -1)], ["", ""], "nothing said while the key may be asked")
+        T.ok(/2 wrong PINs.*password/.test(L.keyPauseText("wrong", 6)), "two wrong PINs said: " + L.keyPauseText("wrong", 6))
+        T.eq([L.keyPauseText("few", 3).indexOf("only 3 PIN tries"), L.keyPauseText("few", 1).indexOf("only 1 PIN try ")].map(at => at > 0),
+             [true, true], "few tries said with their number: " + L.keyPauseText("few", 1))
+        T.ok(/could not be read.*password/.test(L.keyPauseText("unknown", -1)), "unread tries said")
         T.eq([L.keyEvent("Please enter the PIN: ", true), L.keyEvent("Password: ", true), L.keyEvent("Please touch the FIDO authenticator.", false),
               L.keyEvent("something else", false), L.keyEvent("", false)], ["pin", "pin", "touch", "", ""], "the key's prompt and cue")
         T.eq([L.afterKey(true, true, false).action, L.afterKey(false, true, false).action, L.afterKey(false, false, false).action],

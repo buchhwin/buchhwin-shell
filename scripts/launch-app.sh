@@ -43,7 +43,8 @@ app_env=${BASH_SOURCE[0]}
 if [[ $app_env != /* || -L $app_env ]]; then
   app_env=$(readlink -f -- "$app_env" 2>/dev/null) || app_env=${BASH_SOURCE[0]}
 fi
-app_env="${app_env%/*}/lib/app-env.sh"
+script_dir=${app_env%/*}
+app_env="$script_dir/lib/app-env.sh"
 # shellcheck source=lib/app-env.sh
 if [[ -r $app_env ]] && source "$app_env" && declare -F app_env_restore >/dev/null; then
   app_env_restore || true
@@ -69,6 +70,13 @@ id=${1:?usage: launch-app.sh [--unit NAME] <desktop-id> <command> [args...]}
 shift
 (( $# )) || { printf 'launch-app: nothing to run for %s\n' "$id" >&2; exit 2; }
 id=${id%.desktop}
+# Citrix Workspace: daemons an earlier start left running hang the new one
+# (27.10.); while no session needs them, their scopes are stopped first and
+# their locks moved aside (scripts/citrix-locks.py --before-start). Not from
+# a nested session: the user manager and Citrix are the real session's.
+if [[ $id == citrix-workspace && -z ${BUCHHWIN_NESTED:-} ]]; then
+  python3 "$script_dir/citrix-locks.py" --before-start || true
+fi
 
 # On the path of every start, so without a process of its own (16.10.: the
 # two questions below cost 18 ms of a terminal's 340 to its window).

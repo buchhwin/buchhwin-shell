@@ -20,6 +20,8 @@ set -uo pipefail
 #   @advisories       dnf5 advisory list --json (cache only, after @dnf)
 #   @installed        rpm NAME.ARCH<TAB>EPOCH:VERSION-RELEASE of the upgrades
 #                     (on Arch the old versions checkupdates names)
+#   @local-builds     Arch: the repository upgrades whose installed package
+#                     was built on this machine (pacman -Qi), one name a line
 #   @flatpak-system / @flatpak-user   remote-ls --updates (+ -stderr, -cached)
 #   @flatpak-installed                flatpak list with the installation
 #   @news             Arch: the AUR helper's -Pw, the Arch news newer than the
@@ -97,9 +99,21 @@ pacman_json() {
   LC_ALL=C pacman -Sl --dbpath "$1" >"$tmp/repos.txt" 2>/dev/null || : >"$tmp/repos.txt"
   python3 "$pacman_converter" json "$tmp/repos.txt" "$tmp/pacman.txt" "$tmp/aur.txt" >"$tmp/out" 2>>"$tmp/err"
 }
+# pacman_installed: the @installed lines, then @local-builds - the upgrades
+# from the repositories that replace a package built here (a patched
+# hyprland, say), read from the system's own database.
 pacman_installed() {
+  local names=()
   printf '@installed 0\n'
   python3 "$pacman_converter" installed "$tmp/pacman.txt" "$tmp/aur.txt" 2>/dev/null
+  printf '\n@local-builds 0\n'
+  mapfile -t names < <(python3 "$pacman_converter" names "$tmp/pacman.txt" 2>/dev/null)
+  if (( ${#names[@]} )); then
+    # Exits 1 when one of them is not installed (a new dependency); the
+    # others are still listed.
+    LC_ALL=C timeout 30 pacman -Qi -- "${names[@]}" >"$tmp/qi.txt" 2>/dev/null </dev/null
+    python3 "$pacman_converter" local "$tmp/qi.txt" 2>/dev/null
+  fi
   printf '\n'
 }
 pacman_updates() {

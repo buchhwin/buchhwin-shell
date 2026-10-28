@@ -111,6 +111,20 @@ check(token_calls == [("-L",), ("-I", "/dev/hidraw9")], "from one listing, then 
 check(set(answer) == {"ok", "module", "tool", "service", "serviceCurrent", "keys", "devices", "fido2Token", "pins"},
       "with the fields the shell reads")
 
+# The lock screen's read: the PIN tries alone, from one listing.
+token_calls.clear()
+out = io.StringIO()
+with contextlib.redirect_stdout(out):
+    code = module.main(["pins"])
+answer = json.loads(out.getvalue())
+check(code == 0 and answer == {"ok": True, "fido2Token": True, "pins": [{"set": True, "retries": 7}]},
+      "pins is one JSON object with each key's PIN tries: %s" % answer)
+check(token_calls == [("-L",), ("-I", "/dev/hidraw9")], "and asks the keys nothing else: %s" % token_calls)
+module.fido2_token = lambda *args: None
+check(module.pins() == {"ok": True, "fido2Token": False, "pins": []}, "without fido2-token the tries are not known")
+module.fido2_token = lambda *args: ""
+check(module.pins() == {"ok": True, "fido2Token": True, "pins": []}, "no key plugged in: no tries")
+
 if failures:
     for failure in failures:
         print("FAIL", failure)

@@ -97,6 +97,25 @@ mkdir -p "$sandbox/min"; ln -s /usr/bin/printf "$sandbox/min/printf" 2>/dev/null
 : > "$calls"
 out=$(PATH="$sandbox/min" /bin/bash "$project_dir/scripts/launch-app.sh" kitty printf plain)
 check '[[ $out == plain && ! -s $calls ]]' "without systemd-run the command simply runs"
+# Citrix Workspace: daemons an earlier start left behind are looked for
+# first (scripts/citrix-locks.py --before-start, here a python3 that only
+# records it - this test never looks at the machine's Citrix), before the
+# scope; for nothing else, and not from a nested session.
+mkdir -p "$sandbox/py"
+printf '#!/bin/sh\nprintf "python3 %%s\\n" "$*" >> "%s"\n' "$calls" > "$sandbox/py/python3"; chmod +x "$sandbox/py/python3"
+: > "$calls"
+out=$(PATH="$sandbox/py:$PATH" BUCHHWIN_NESTED='' "$project_dir/scripts/launch-app.sh" citrix-workspace.desktop printf ws)
+check '[[ $out == ws ]] && [[ $(head -1 "$calls") == "python3 $project_dir/scripts/citrix-locks.py --before-start" ]] && grep -q "^systemd-run .*citrix\\\\x2dworkspace-" "$calls"' \
+  "Workspace's leftovers are seen to before its scope starts ($(tr '\n' ' ' < "$calls"))"
+: > "$calls"
+out=$(PATH="$sandbox/py:$PATH" BUCHHWIN_NESTED=1 "$project_dir/scripts/launch-app.sh" citrix-workspace printf ws)
+check '[[ $out == ws ]] && ! grep -q "^python3" "$calls"' "a nested session leaves the real session's Citrix alone"
+: > "$calls"
+out=$(PATH="$sandbox/py:$PATH" BUCHHWIN_NESTED='' "$project_dir/scripts/launch-app.sh" 'Citrix_subscribed_Desk' printf desk)
+check '[[ $out == desk ]] && ! grep -q "^python3" "$calls"' "any other start runs no helper"
+printf '#!/bin/sh\nexit 1\n' > "$sandbox/py/python3"
+out=$(PATH="$sandbox/py:$PATH" BUCHHWIN_NESTED='' "$project_dir/scripts/launch-app.sh" citrix-workspace printf ws)
+check '[[ $out == ws ]]' "a helper that fails stops no start"
 
 # ---- the application's environment ---------------------------------------------
 # What start-shell.sh sets for the shell alone is undone before the

@@ -28,6 +28,9 @@ The first run of all only writes the record: there is nothing to compare yet.
 Notices go to the shell's own notification server and only once it owns
 org.freedesktop.Notifications (asked with --auto-start=no: a notify-send
 before that would start Plasma's server, which has a service file on Arch).
+A shell that never got that far - the case the check is for - has no server:
+then its problems go to the compositor (`hyprctl notify`, one line naming
+the log, as start-shell.sh does when the shell could not start).
 Each decision is a JSON line on stdout (start-shell.sh keeps the last
 start's in STATE/after-start.log); --dry-run puts the notice it would send
 there instead of sending it (tests, and nested sessions, where the host's
@@ -49,7 +52,9 @@ CORE_CHECKS = ("off", "problems", "always")
 # What counts as a problem in the shell's log, as the smoke test reads it
 # (scripts/smoke-session.sh), and what it knows to be harmless there.
 PROBLEM = re.compile(r"ERROR|CRIT|TypeError|ReferenceError|is not a type|Cannot assign|Unable to assign"
-                     r"|Binding loop detected|died on signal")
+                     r"|Binding loop detected|died on signal|could not start")
+# start-shell.sh's own lines for a shell that ended by a fault, not by a stop.
+FAILED = ("died on signal", "could not start")
 KNOWN = re.compile(r"quickshell\.desktopentry|Could not register notification server|Registration will be attempted again"
                    r"|channelVolumes and channelMap are not the same size|QSettings::value: Empty key passed|playerctld"
                    r"|qt\.qml\.propertyCache\.append|qt\.svg: |QWaylandTextInputv3::")
@@ -169,6 +174,15 @@ def core_notice(changed, found, targets, mode):
         return None
     return ("%s: the shell started cleanly" % head,
             "No errors in its log during the first minute, and it answers on %d IPC targets." % targets, False)
+
+
+def compositor_line(title, log, home):
+    """The one line `hyprctl notify` shows for a problem notice, the log's
+    place under the home written with ~."""
+    shown = str(log)
+    if home and shown.startswith(home.rstrip("/") + "/"):
+        shown = "~" + shown[len(home.rstrip("/")):]
+    return "%s - see %s" % (title, shown)
 
 
 def whats_new_notice(subjects, total):
@@ -326,9 +340,11 @@ def main(argv=None):
     except OSError:
         log_text = ""
     found = problems(log_text)
-    if args.pid is not None and not alive(args.pid) and not any("died on signal" in line for line in found):
+    if args.pid is not None and not alive(args.pid) and not any(mark in line for line in found for mark in FAILED):
         # Stopped on purpose within the minute (a reload, a deploy): the next
-        # start watches again, so the versions are not taken as seen.
+        # start watches again, so the versions are not taken as seen. A shell
+        # that crashed or could not start (start-shell.sh says which) is
+        # what this check is for, and is told.
         say("stopped", changes=changed)
         return 0
     targets = count_targets(run(["quickshell", "ipc", "--path", str(args.shell_dir), "show"]))
@@ -342,6 +358,12 @@ def main(argv=None):
         say("core", title=notice[0], body=notice[1], problems=len(found), targets=targets)
         return 0
     if not server_up(args.server_wait):
+        # No server: the shell is down or broken. Its problems go to the
+        # compositor, ten minutes on screen; a clean start can wait.
+        if notice[2] and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            line = compositor_line(notice[0], args.log, os.path.expanduser("~"))
+            run(["hyprctl", "notify", "0", "600000", "0", line])
+            say("compositor", text=line)
         return 0
     if notice[2]:
         if notify(notice[0], notice[1], ("log", "Open log"), False) == "log":

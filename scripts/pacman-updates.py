@@ -14,6 +14,15 @@ distribution:
         packages from AUR are "aur".
     pacman-updates.py installed CHECKUPDATES [AUR]
         "name.arch<TAB>old" lines, the @installed section.
+    pacman-updates.py names CHECKUPDATES
+        the names of the repositories' updates, one per line (for pacman -Qi).
+    pacman-updates.py local QI
+        the names in QI, `pacman -Qi NAME...` in the C locale, whose installed
+        package is a build of this machine's own (the @local-builds section):
+        makepkg's unsigned "Validated By : None", or its "Unknown Packager".
+        The repositories' upgrade replaces such a build, and whatever it was
+        built with - a patch, say - is gone. AUR packages are built locally by
+        design and are never asked about.
 
 pacman lists no architecture per update, so every entry carries the
 machine's (`uname -m`): the key only has to be the same in both sections.
@@ -78,6 +87,28 @@ def installed(pacman_text, aur_text="", arch=None):
     return lines
 
 
+def names(pacman_text):
+    return [name for name, _old, _new in updates(pacman_text)]
+
+
+def local_builds(qi_text):
+    """`pacman -Qi` blocks → the names of the ones built on this machine."""
+    result = []
+    for block in re.split(r"\n\s*\n", str(qi_text or "")):
+        fields = {}
+        for line in block.splitlines():
+            key, colon, value = line.partition(":")
+            # A field starts at the line's start; indented lines continue
+            # the one before (a long list of optional dependencies).
+            if colon and key.strip() and not line[:1].isspace():
+                fields.setdefault(key.strip(), value.strip())
+        name = fields.get("Name", "")
+        if NAME.match(name) and (fields.get("Validated By") == "None"
+                                 or fields.get("Packager") == "Unknown Packager"):
+            result.append(name)
+    return result
+
+
 def read(path):
     with open(path, encoding="utf-8", errors="replace") as handle:
         return handle.read()
@@ -94,11 +125,15 @@ def main(argv):
             for line in installed(read(argv[2]), aur):
                 print(line)
             return 0
+        if len(argv) == 3 and argv[1] in ("names", "local"):
+            for name in (names if argv[1] == "names" else local_builds)(read(argv[2])):
+                print(name)
+            return 0
     except OSError as error:
         print(error, file=sys.stderr)
         return 1
-    print("usage: pacman-updates.py json REPOS CHECKUPDATES [AUR] | installed CHECKUPDATES [AUR]",
-          file=sys.stderr)
+    print("usage: pacman-updates.py json REPOS CHECKUPDATES [AUR] | installed CHECKUPDATES [AUR]"
+          " | names CHECKUPDATES | local QI", file=sys.stderr)
     return 2
 
 

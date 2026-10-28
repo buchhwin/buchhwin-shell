@@ -6,6 +6,7 @@ set -euo pipefail
 # checkupdates' exit 2 (nothing to update), a list turned into dnf5's JSON
 # and the @installed lines, the AUR beside it and skipped with --cache-only,
 # a missing checkupdates naming itself, the cached list when the sync fails,
+# @local-builds (pacman -Qi of the repositories' upgrades, never the AUR's),
 # and the choice of the package manager by os-release rather than by what
 # happens to be installed (Arch's extra packages dnf5 and zypper too).
 project_dir=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/.." && pwd)
@@ -37,7 +38,9 @@ esac
 [ -z "$out" ] || printf "%s\n" "$out"
 exit "$code"'
 stub paru '[ -n "$STUB_AUR" ] || exit 1; printf "%s\n" "$STUB_AUR"'
-stub pacman 'case "$*" in -Sl*) printf "core linux 6.17.1.arch1-1\nextra firefox 144.0-1\n" ;; esac'
+# pacman -Qi answers STUB_QI (printf %b), the installed packages' fields.
+stub pacman 'case "$*" in -Sl*) printf "core linux 6.17.1.arch1-1\nextra firefox 144.0-1\n" ;;
+  -Qi*) [ -z "$STUB_QI" ] || printf "%b" "$STUB_QI" ;; esac'
 stub flatpak
 stub dnf5 'case "$*" in check-upgrade*) printf "{\"upgrades\": []}\n" ;; advisory*) printf "[]\n" ;; esac'
 stub zypper
@@ -74,14 +77,20 @@ run "$sandbox/os-arch"
 check '[[ $status -eq 0 ]] && has "@dnf 0" && [[ $(sec dnf) == "{\"upgrades\": []}" ]]' \
   "exit 2 is no updates, not a failure (got: $(sec dnf | head -1))"
 check 'has "@installed 0" && [[ -z $(sec installed) ]] && has "@end 0"' "an empty @installed, and the report ends"
+check 'has "@local-builds 0" && [[ -z $(sec local-builds) ]] && ! grep -q "^pacman -Qi" "$calls"' \
+  "an empty @local-builds, without asking pacman -Qi about nothing"
 check 'grep -qx "db=$db" "$calls"' "checkupdates syncs the shell's own copy of the database ($(grep "^db=" "$calls"))"
 check '! grep -q "^checkupdates .*--nosync" "$calls"' "and a normal check syncs it"
 
 # ---- a list, with the AUR beside it ------------------------------------------
 stubs "linux 6.17.0.arch1-1 -> 6.17.1.arch1-1
 pinned-app 25.08-1 -> 26.04-1 [ignored]" 0 "" "brave-bin 1.97.1-1 -> 1.97.2-1"
+export STUB_QI="Name            : linux\nPackager        : Unknown Packager\nValidated By    : None\n"
 run "$sandbox/os-arch"
+unset STUB_QI
 json=$(sec dnf)
+check 'grep -qx -- "pacman -Qi -- linux" "$calls"' "pacman -Qi is asked about the repositories' upgrades only ($(grep "^pacman -Qi" "$calls"))"
+check '[[ $(sec local-builds) == linux ]]' "an upgrade replacing a build of this machine is in @local-builds ($(sec local-builds))"
 check '[[ $json == *"\"name\": \"linux\", \"arch\": \"$machine\", \"evr\": \"6.17.1.arch1-1\", \"repository\": \"core\""* ]]' \
   "the list becomes dnf5's JSON, with the repository from the synced copy ($json)"
 check '[[ $json == *"\"name\": \"brave-bin\""*"\"repository\": \"aur\""* ]]' "the AUR's updates are in it, from aur"
