@@ -105,8 +105,9 @@ ShellRoot {
     // (ScrimLayer.qml). Inside the Top layer the compositor stacks by
     // creation, and the notch, the bar and the dock are made once the layout
     // or the settings have loaded - after the scrim, so they sit above it and
-    // are never dimmed.
-    ScrimLayer {}
+    // are never dimmed. Built anew whenever the screens change (PanelService,
+    // `scrimBuilt`): a screen going away took the mapped surface with it.
+    LazyLoader { source: "shell/components/ScrimLayer.qml"; active: PanelService.scrimBuilt }
 
     Launcher {}
     // The panels in a LazyLoader on `PanelService.demanded` are built on their

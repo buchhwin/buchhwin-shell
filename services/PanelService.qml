@@ -50,9 +50,35 @@ Singleton {
     // to the next panel and the scrim must not see that.
     property bool scrimWanted: false
     property color scrimColor: Colors.scrim
-    // Counted up by every open over a fullscreen window: the scrim maps its
-    // surface anew for it (ScrimLayer, which says why).
+    // Counted up whenever the scrim is wanted over a fullscreen window - an
+    // open over one, or one going fullscreen while a panel is open: the scrim
+    // maps its surface anew for it (ScrimLayer, which says why). The second
+    // half is new (2026-11-03): nested, a window made fullscreen under an open
+    // control center took the dimming away until the next open.
     property int scrimOverFullscreen: 0
+    readonly property bool scrimCovered: scrimWanted && HyprlandService.fullscreenOn(screen)
+    onScrimCoveredChanged: if (scrimCovered) scrimOverFullscreen += 1
+    // **A screen that goes away takes the scrim with it** (2026-11-03). The
+    // scrim stays mapped for as long as the dimming is on, so when the dock
+    // dropped its screens (a login, a resume) and the scrim was on one of
+    // them, its surface went with the screen - "attempted to use dangling
+    // screen object" in the log - and nothing ever made it again: no
+    // `buchhwin-scrim` in `hyprctl layers`, no dimming behind any panel for
+    // the rest of the session, the switch in Settings still on ("it keeps
+    // turning itself off"). Nested: an output removed under the scrim, and
+    // every open after it undimmed, fullscreen or not. So shell.qml builds it
+    // anew whenever the screens change; a new surface lands where a move to
+    // another screen already put it, above the notch in the Top layer.
+    property bool scrimBuilt: true
+    Connections {
+        target: Quickshell
+        function onScreensChanged() { root.rebuildScrim() }
+    }
+    function rebuildScrim() {
+        if (!scrimBuilt) return
+        scrimBuilt = false
+        Qt.callLater(() => { root.scrimBuilt = true })
+    }
     // The panel that is on screen says how deep its scrim is, as it always
     // did; `ShellPanel` pushes it here when it becomes the active one.
     // And whether a click beside it closes it: the scrim's surface is what
@@ -168,7 +194,6 @@ Singleton {
         // it keeps its own placement (anchorX …) during its close animation.
         if (active.length && active !== panelId) active = ""
         args = options || {}
-        if (HyprlandService.fullscreenOn(screen)) scrimOverFullscreen += 1
         active = panelId
         scrimWanted = true
         return true
