@@ -54,10 +54,25 @@ printf '== Hyprland configuration\n'
 # installed - only the two parses need the binary.
 python3 "$project_dir/scripts/lib/checks.py" binds
 python3 "$project_dir/scripts/lib/checks.py" hypr
+# Hyprland 0.57 reads every config file as Lua: hyprland.conf fails on its
+# first comment there, and a nested session cannot start with it. The conf
+# dialect is still the one older Hyprland reads (Leap's build, Fedora), so
+# it is checked wherever one of those is installed. An unreadable version
+# counts as an older one - the checks run, as they always did.
+hyprland_reads_conf() {
+  local version
+  version=$(Hyprland --version 2>/dev/null | awk 'NR == 1 { print $2 }')
+  [[ $version =~ ^([0-9]+)\.([0-9]+) ]] || return 0
+  (( BASH_REMATCH[1] == 0 && BASH_REMATCH[2] < 57 ))
+}
 if command -v Hyprland >/dev/null; then
-  verify_output=$(Hyprland --verify-config --config "$project_dir/hypr/hyprland.conf" 2>&1)
-  grep -q 'config ok' <<<"$verify_output" || { printf '%s\n' "$verify_output"; exit 1; }
-  printf 'config ok\n'
+  if hyprland_reads_conf; then
+    verify_output=$(Hyprland --verify-config --config "$project_dir/hypr/hyprland.conf" 2>&1)
+    grep -q 'config ok' <<<"$verify_output" || { printf '%s\n' "$verify_output"; exit 1; }
+    printf 'config ok\n'
+  else
+    note_skip 'hyprland.conf parses (this Hyprland reads only hyprland.lua, 0.57+)'
+  fi
   lua_output=$(Hyprland --verify-config --config "$project_dir/hypr/hyprland.lua" 2>&1)
   grep -q 'config ok' <<<"$lua_output" || { printf '%s\n' "$lua_output"; exit 1; }
   printf 'lua config ok\n'
@@ -226,7 +241,11 @@ smoke() {
 }
 if [[ ${1:-} == --session ]]; then
   printf '== Nested session smoke test\n'
-  smoke 'Nested session smoke test'
+  if ! command -v Hyprland >/dev/null || hyprland_reads_conf; then
+    smoke 'Nested session smoke test'
+  else
+    note_skip 'Nested session smoke test with hyprland.conf (this Hyprland reads only hyprland.lua, 0.57+)'
+  fi
   printf '== Nested session smoke test (Lua config)\n'
   BUCHHWIN_NESTED_LUA=1 smoke 'Nested session smoke test (Lua config)'
 fi
