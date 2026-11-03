@@ -12,3 +12,10 @@ of date (the build record keeps each patch's hash), so the next run rebuilds.
   surfaces as scaled by the monitor they are shown on, size and hotspot alike.
   Theme cursors drawn by XWayland itself follow `Xcursor.size`, which the shell
   already sets to the scaled size (scripts/apply-cursor-env.sh).
+
+  Where Hyprland is a package (Arch, Fedora) the same fix is a plugin instead,
+  `hypr/plugins/xcursor-scale`, which `scripts/hypr-plugin.sh` builds against
+  the installed headers at the first login after an upgrade: a package upgrade
+  used to drop a patched build, and the pointer was too big again until
+  Hyprland was rebuilt. This patch does not apply to 0.57 (the cursor code was
+  rewritten); a home-built Hyprland needs it ported, and then loads no plugin.

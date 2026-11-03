@@ -80,6 +80,20 @@ else
   note_skip 'Hyprland configuration parses (Hyprland not installed; package hyprland on Fedora and Arch, or install/build-hyprland-leap.sh on Leap)'
 fi
 
+printf '== Hyprland plugin\n'
+# The plugin compiles against the installed Hyprland's headers: an upgrade
+# that renames what it hooks shows here, not as a big pointer at the next
+# login. Built into a cache of its own (about five seconds).
+if command -v g++ >/dev/null && pkg-config --exists hyprland 2>/dev/null; then
+  plugin_cache=$(mktemp -d "${TMPDIR:-/tmp}/buchhwin-plugin.XXXXXX")
+  plugin_status=0
+  XDG_CACHE_HOME=$plugin_cache "$project_dir/scripts/hypr-plugin.sh" build || plugin_status=$?
+  rm -rf -- "$plugin_cache"
+  (( plugin_status == 0 )) || exit "$plugin_status"
+else
+  note_skip 'Hyprland plugin builds (needs g++ and the hyprland headers, pkg-config hyprland)'
+fi
+
 printf '== Style tokens\n'
 if [[ $strict_style == 1 ]]; then
   python3 "$project_dir/scripts/lib/checks.py" style --strict

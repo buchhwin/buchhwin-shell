@@ -89,6 +89,14 @@ hyprctl setcursor "$XCURSOR_THEME" "$XCURSOR_SIZE" >/dev/null 2>&1 &
 # this mark is what tells them apart.
 mark "cursor set"
 
+# X11 pointers at the right size while X11 is sharp: the project's Hyprland
+# plugin (scripts/hypr-plugin.sh), built anew after a Hyprland upgrade -
+# about five seconds - and loaded. Not waited for; it says how it went in a
+# log of its own, the last login's only.
+setsid -f "$project_dir/scripts/hypr-plugin.sh" load </dev/null \
+  >"$(dirname -- "$startup_log")/hypr-plugin.log" 2>&1
+mark "plugin started"
+
 # PAM_KWALLET5_LOGIN is what pam_kwallet_init (plasma-kwallet-pam.service, below)
 # reads to hand the session environment to the ksecretd that pam_kwallet5
 # started with the login password; without it in the user manager's
