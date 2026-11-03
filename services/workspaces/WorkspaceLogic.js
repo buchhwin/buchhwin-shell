@@ -332,7 +332,11 @@ function misplaced(order, workspaces) {
 // without a word to the shell (no `workspace` event), so at a login with
 // three monitors the first one was left on 3 while the shell and its pips
 // said 1. It goes back to its own - unless one of the arrivals has windows
-// and was on screen, which is somebody's work arriving.
+// and was on screen, which is somebody's work arriving. Its own only when
+// that one has windows or is its lowest: an empty one above it is a number
+// Hyprland handed out. Docked with the lid shut, Hyprland gave the panel 1
+// and the first desk screen 2; the panel went off, its 1 went to that screen
+// unseen, and every app clicked after the login opened on 2 (2026-11-03).
 //
 // A screen showing a workspace from beyond the blocks (a monitor that is
 // gone: undock, and Hyprland hands 11-20 to the laptop with their ids) is
@@ -389,6 +393,10 @@ function views(order, placed, actives, moves, back) {
             const arriving = movedIds.filter(other => monitorIndexOf(other) === index
                                              && shown.indexOf(other) >= 0 && windowsOf(other) > 0)
             if (arriving.length) { result.push({ monitor: name, id: Math.min.apply(null, arriving) }); continue }
+            if (valid && monitorIndexOf(id) === index && windowsOf(id) === 0 && own.length && own[0] !== id) {
+                result.push({ monitor: name, id: own[0] })
+                continue
+            }
             if (valid && (monitorIndexOf(id) === index || (monitorIndexOf(id) >= monitors.length && windowsOf(id) > 0))) {
                 result.push({ monitor: name, id: id })
                 continue

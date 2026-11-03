@@ -339,6 +339,19 @@ ShellRoot {
         T.eq(W.views(login, loginPlaced, loginActives, loginMoves),
              [{ monitor: "W-1", id: 1 }, { monitor: "W-2", id: 11 }, { monitor: "W-3", id: 21 }],
              "the first screen back on 1, the others on their own first")
+        // The same login with the lid shut: Hyprland gave the panel 1 and the
+        // desk screens 2, 3 and 4; the panel went off and its 1 went to the
+        // first desk screen unseen, which still showed 2.
+        const lidShut = ["DP-8", "DP-10", "DP-13"]
+        const lidPlaced = [{ id: 1, monitor: "DP-8", windows: 0 }, { id: 2, monitor: "DP-8", windows: 0 },
+                           { id: 3, monitor: "DP-10", windows: 0 }, { id: 4, monitor: "DP-13", windows: 0 }]
+        const lidActives = [{ monitor: "DP-8", id: 2 }, { monitor: "DP-10", id: 3 }, { monitor: "DP-13", id: 4 }]
+        T.eq(W.views(lidShut, lidPlaced, lidActives, W.misplaced(lidShut, lidPlaced)),
+             [{ monitor: "DP-8", id: 1 }, { monitor: "DP-10", id: 11 }, { monitor: "DP-13", id: 21 }],
+             "the first desk screen on its 1, not the empty 2 Hyprland gave it")
+        T.eq(W.views(lidShut, lidPlaced.map(item => item.id === 2 ? Object.assign({}, item, { windows: 1 }) : item),
+                     lidActives, W.misplaced(lidShut, lidPlaced))[0], { monitor: "DP-8", id: 2 },
+             "one with a window on it is stayed with")
         // Docking: the new first screen takes 3 and 5 from the laptop, which
         // was on 5. The view goes with the work, not to the lowest of the
         // block.
@@ -396,8 +409,8 @@ ShellRoot {
         // on A meanwhile; told what it showed, it shows 11 again.
         const offAndOn = [{ id: 1, monitor: "A", windows: 0 }, { id: 11, monitor: "A", windows: 0 }, { id: 12, monitor: "B", windows: 0 }]
         const offAndOnActives = [{ monitor: "A", id: 1 }, { monitor: "B", id: 12 }]
-        T.eq(W.views(["A", "B"], offAndOn, offAndOnActives, W.misplaced(["A", "B"], offAndOn)), [{ monitor: "B", id: 12 }],
-             "not told, it stays on the new one (its own)")
+        T.eq(W.views(["A", "B"], offAndOn, offAndOnActives, W.misplaced(["A", "B"], offAndOn)), [{ monitor: "B", id: 11 }],
+             "not told, it leaves the new, empty one for its lowest")
         T.eq(W.views(["A", "B"], offAndOn, offAndOnActives, W.misplaced(["A", "B"], offAndOn), { B: 11 }), [{ monitor: "B", id: 11 }],
              "told, the one it showed before")
         // "External only", "Laptop only", then "Extend": B coming back took
